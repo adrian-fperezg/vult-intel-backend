@@ -1,0 +1,28 @@
+--- src/services/scanService.ts
++++ src/services/scanService.ts
+@@ -107,6 +107,24 @@
+       "content": "Markdown content with a tree view of key pages."
+     },
+     {
++      "id": "site-pages",
++      "title": "Discovered Pages",
++      "summary": "Full site map and SEO details.",
++      "content": "A list of discovered pages.",
++      "pages": [
++        {
++          "path": "/",
++          "type": "Homepage",
++          "discoveryDate": "2026-02-25T00:00:00.000Z",
++          "seoReport": "Markdown content with detailed Google HCU-compliant SEO analysis for this page."
++        },
++        {
++          "path": "/about",
++          "type": "Landing Page",
++          "discoveryDate": "2026-02-20T00:00:00.000Z",
++          "seoReport": "Markdown content with SEO analysis."
++        }
++      ]
++    },
++    {
+       "id": "content-audit",
+       "title": "Content Audit",

@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #136dec;
+  --color-primary-hover: #1160d1;
+  --color-background-light: #f6f7f8;
+  --color-background-dark: var(--bg-main);
+  --color-surface-dark: var(--surface-main);
+  --color-surface-lighter: var(--surface-light);
+  --color-surface-mid: var(--surface-mid);
+  --color-surface-border: var(--surface-border);
+  --color-accent-purple: #8b5cf6;
+  --color-accent-teal: #14b8a6;
+  --color-accent-green: #2ea043;
+  --color-accent-orange: #f97316;
+  --color-accent-red: #ef4444;
+  --color-score-good: #3fb950;
+  --color-score-avg: #d29922;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-spin-slow: spin 3s linear infinite;
+
+  /* Global Color Inversion Hooks */
+  --color-white: var(--tw-white);
+  --color-black: var(--tw-black);
+
+  --color-slate-50: var(--tw-slate-50);
+  --color-slate-100: var(--tw-slate-100);
+  --color-slate-200: var(--tw-slate-200);
+  --color-slate-300: var(--tw-slate-300);
+  --color-slate-400: var(--tw-slate-400);
+  --color-slate-500: var(--tw-slate-500);
+  --color-slate-600: var(--tw-slate-600);
+  --color-slate-700: var(--tw-slate-700);
+  --color-slate-800: var(--tw-slate-800);
+  --color-slate-900: var(--tw-slate-900);
+  --color-slate-950: var(--tw-slate-950);
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root,
+.dark {
+  --bg-main: #0A0A0A;
+  --surface-main: #161b22;
+  --surface-light: #1c2128;
+  --surface-mid: #21262d;
+  --surface-border: #30363d;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+
+  --tw-white: #ffffff;
+  --tw-black: #000000;
+  --tw-slate-50: #f8fafc;
+  --tw-slate-100: #f1f5f9;
+  --tw-slate-200: #e2e8f0;
+  --tw-slate-300: #cbd5e1;
+  --tw-slate-400: #94a3b8;
+  --tw-slate-500: #64748b;
+  --tw-slate-600: #475569;
+  --tw-slate-700: #334155;
+  --tw-slate-800: #1e293b;
+  --tw-slate-900: #0f172a;
+  --tw-slate-950: #020617;
+}
+
+.light {
+  --bg-main: #f1f5f9;
+  --surface-main: #ffffff;
+  --surface-light: #f1f5f9;
+  --surface-mid: #e2e8f0;
+  --surface-border: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+
+  /* Inverted scale for extreme contrast in light mode */
+  --tw-white: #0a0a0b;
+  --tw-black: #ffffff;
+  --tw-slate-50: #020617;
+  --tw-slate-100: #0f172a;
+  --tw-slate-200: #1e293b;
+  --tw-slate-300: #334155;
+  --tw-slate-400: #475569;
+  --tw-slate-500: #64748b;
+  --tw-slate-600: #94a3b8;
+  --tw-slate-700: #cbd5e1;
+  --tw-slate-800: #e2e8f0;
+  --tw-slate-900: #f1f5f9;
+  --tw-slate-950: #f8fafc;
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-[#161b22]/70 backdrop-blur-md border border-[#30363d]/50;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+}
+
+body {
+  @apply bg-background-dark text-[var(--text-main)] font-sans antialiased;
+}

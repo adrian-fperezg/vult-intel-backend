@@ -1,0 +1,146 @@
+{
+    "landing": {
+        "hero": {
+            "badge": "Vult Intel",
+            "title1": "El primer ecosistema de marketing",
+            "title2": "donde la IA",
+            "title3": "hace el trabajo pesado por ti",
+            "subtitle": "Desde agencias que necesitan escalar hasta startups o dueños de negocio que buscan a un experto in-house. Ahorra cientos de dólares en suscripciones desconectadas con un solo cerebro impulsado por Gemini y Veo.",
+            "cta_primary": "Empieza a escalar hoy",
+            "cta_secondary": "Ver demostración"
+        },
+        "personas": {
+            "title": "Para quién es Vult Intel",
+            "subtitle": "Un ecosistema diseñado para adaptarse a tu nivel de experiencia y volumen de trabajo.",
+            "agency": {
+                "title": "Agencia Boutique",
+                "desc": "Maneja múltiples proyectos a la vez, escala operaciones y consolida herramientas sin contratar más personal."
+            },
+            "freelancer": {
+                "title": "Freelancer",
+                "desc": "Un punto de partida potente y todoterreno con IA específica por nicho para entregar resultados rápidos y destacar."
+            },
+            "cmo": {
+                "title": "CMO de Startup",
+                "desc": "Reportes estratégicos de alto valor (Deep Scans) para definir el mensaje correcto y posicionar la marca con precisión."
+            },
+            "local": {
+                "title": "Dueño de Negocio Local",
+                "desc": "Ahorra el salario de una agencia. Deja que la IA actúe como tu experto y guía paso a paso en tu propio marketing."
+            }
+        },
+        "problem": {
+            "title": "El Problema vs. La Solución",
+            "subtitle": "Deja de quemar dinero en herramientas desconectadas.",
+            "old_way": {
+                "title": "La forma antigua (>$420/mes)",
+                "tool1": "Herramienta SEO",
+                "tool2": "Asistente AI de Copy",
+                "tool3": "Constructor de Embudos",
+                "tool4": "Generador de Imágenes"
+            },
+            "new_way": {
+                "title": "El ecosistema Vult Intel",
+                "feature1": "Deep Scans automatizados",
+                "feature2": "Clonación de voz de marca al 100%",
+                "feature3": "Embudos visuales de alta conversión",
+                "feature4": "AI Chat estratégico unificado"
+            }
+        },
+        "features": {
+            "title": "Tus Nuevas Ventajas Desleales",
+            "badgeNew": "NUEVO",
+            "feature1": {
+                "title": "Deep Scan",
+                "desc": "Auditorías de mercado y competidores totalmente automatizadas. El diagnóstico favorito de los estrategas y CMOs."
+            },
+            "feature2": {
+                "title": "Global Brand Strategy",
+                "desc": "Inyección de contexto total para que la IA clone el 100% de la voz de tu marca. La salvación de cualquier dueño de negocio."
+            },
+            "feature3": {
+                "title": "Visual Workflows & Blueprints",
+                "desc": "Mapeo visual de embudos y copy de alta conversión listo para usar. El arma secreta de la agencia que busca escalar."
+            },
+            "feature4": {
+                "title": "AI Chat Inyectado",
+                "desc": "Un asistente inteligente que ya conoce todo sobre la marca y audiencia de tu cliente, brindando respuestas expertas y precisas."
+            }
+        },
+        "pricing": {
+            "title": "Escala a tu propio ritmo",
+            "subtitle": "Elige el plan perfecto para tu volumen de trabajo.",
+            "billing_monthly": "Facturación mensual",
+            "solo": {
+                "name": "Probador",
+                "ideal_for": "Ideal para Freelancers y Negocios Locales",
+                "price": "$89",
+                "period": "/mes",
+                "features": {
+                    "f1": "2 Proyectos",
+                    "f2": "1.5M Tokens de IA",
+                    "f3": "20 Deep Scans",
+                    "f4": "10 Imágenes generadas",
+                    "f5": "AI Chat Estándar",
+                    "f6": "Exportación manual"
+                },
+                "button": "Comenzar con Probador"
+            },
+            "growth": {
+                "badge": "Destacado",
+                "name": "Tu Agencia In-House",
+                "ideal_for": "Ideal para CMOs y Startups",
+                "price": "$299",
+                "period": "/mes",
+                "features": {
+                    "f1": "5 Proyectos",
+                    "f2": "4M Tokens de IA",
+                    "f3": "100 Deep Scans",
+                    "f4": "150 Imágenes generadas",
+                    "f5": "Clonación de Voz 100%",
+                    "f6": "Visual Workflows ilimitados",
+                    "f7": "AI Chat Estratégico",
+                    "f8": "Exportación Premium 1-clic"
+                },
+                "button": "Acelerar con Growth"
+            },
+            "agency": {
+                "name": "Escala Ilimitada",
+                "ideal_for": "Ideal para Agencias Boutique",
+                "price": "$599",
+                "period": "/mes",
+                "features": {
+                    "f1": "20 Proyectos",
+                    "f2": "8M Tokens de IA",
+                    "f3": "300 Deep Scans",
+                    "f4": "400 Imágenes generadas",
+                    "f5": "Marca Blanca (White-labeling)",
+                    "f6": "Soporte Prioritario"
+                },
+                "button": "Escalar a Nivel Agencia",
+                "note": "¿Manejas más de 20 proyectos? Contáctanos para un plan a la medida."
+            }
+        },
+        "addon": {
+            "title": "Veo Studio Pack",
+            "price": "+$49/mes",
+            "desc": "Añade producción audiovisual a cualquier plan. Genera 32 videos de alta fidelidad (Veo 3.1) al mes para tus campañas."
+        },
+        "faq": {
+            "title": "Preguntas Frecuentes",
+            "q1": "¿Cuál es la curva de aprendizaje?",
+            "a1": "Hemos diseñado la plataforma para que sea intuitiva. Un freelancer experto puede volar en minutos, y un dueño de negocio local será guiado paso a paso por nuestro AI Chat Inyectado, por lo que la curva es mínima.",
+            "q2": "¿Cómo funcionan los límites de tokens?",
+            "a2": "Los tokens son la moneda de inteligencia. Las solicitudes (como escribir un correo o analizar métricas) consumen muy poco. Con el plan Growth (4M tokens), tendrás saldo de sobra para el trabajo diario de hasta 5 proyectos activos durante todo el mes.",
+            "q3": "¿Cómo funciona la inyección de contexto (Global Brand Strategy)?",
+            "a3": "Es nuestro 'secreto de estado'. Entrenas a la IA subiendo tus guías de estilo, tono, cliente ideal y ofertas. A partir de ahí, la IA no empieza 'de cero' en cada instrucción, sino que asume la identidad perfecta para tu marca.",
+            "q4": "¿Puedo cancelar en cualquier momento?",
+            "a4": "Sí. Eres dueño de tu cuenta. No hay contratos a largo plazo ni compromisos engañosos. Cancelas con un par de clics y sigues usando la cuenta hasta que finalice el ciclo de pago mensual."
+        },
+        "footer": {
+            "rights": "© {{year}} Vult Intel. Todos los derechos reservados.",
+            "privacy": "Política de Privacidad",
+            "terms": "Términos de Servicio"
+        }
+    }
+}
