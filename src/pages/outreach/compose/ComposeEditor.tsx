@@ -4,6 +4,8 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { TealButton } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import ScheduleModal from './ScheduleModal';
+import EmailEditor from '../components/EmailEditor';
 
 interface ComposeEditorProps {
   emailId: string;
@@ -40,6 +42,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
   });
 
   const [status, setStatus] = useState<'draft' | 'scheduled' | 'sent'>('draft');
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   // Load supporting data (mailboxes, contacts)
   useEffect(() => {
@@ -237,6 +240,14 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
         </div>
       </div>
 
+      {/* Schedule Modal */}
+      <ScheduleModal 
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        initialDate={form.scheduled_at}
+        onSchedule={(date) => setForm({ ...form, scheduled_at: date })}
+      />
+
       {/* Editor Body */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <div className="max-w-4xl mx-auto space-y-4">
@@ -254,7 +265,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
               >
                 <option value="" disabled>Select a connected Gmail...</option>
                 {mailboxes.map(mb => (
-                  <option key={mb.id} value={mb.id}>{mb.email_address}</option>
+                  <option key={mb.id} value={mb.id}>{mb.email}</option>
                 ))}
               </select>
             </div>
@@ -291,17 +302,30 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
             {/* Schedule (Optional) */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Schedule For (Optional)</label>
-              <div className="relative">
-                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-500 pointer-events-none" />
-                <input
-                  type="datetime-local"
-                  value={form.scheduled_at}
-                  onChange={e => setForm({ ...form, scheduled_at: e.target.value })}
-                  disabled={isReadOnly}
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl text-sm text-white focus:outline-none transition-colors disabled:opacity-50 form-input color-scheme-dark"
-                  style={{ colorScheme: 'dark' }}
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(true)}
+                disabled={isReadOnly}
+                className="w-full h-[42px] flex items-center justify-between px-4 bg-[#161b22] border border-[#30363d] hover:border-teal-500/50 rounded-xl text-sm text-white focus:outline-none transition-all disabled:opacity-50 group"
+              >
+                <div className="flex items-center gap-3">
+                  <Clock className={cn("size-4", form.scheduled_at ? "text-teal-400" : "text-slate-500")} />
+                  <span className={cn(form.scheduled_at ? "text-white" : "text-slate-500")}>
+                    {form.scheduled_at 
+                      ? new Date(form.scheduled_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+                      : 'Not scheduled'
+                    }
+                  </span>
+                </div>
+                {form.scheduled_at && !isReadOnly && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setForm({ ...form, scheduled_at: '' }); }}
+                    className="p-1 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </button>
             </div>
           </div>
 
@@ -320,40 +344,12 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
           </div>
 
           {/* Body */}
-          <div className="space-y-1.5 mt-8 h-[400px] flex flex-col">
-            <textarea
-              placeholder="Write your email here..."
+          <div className="mt-8">
+            <EmailEditor 
               value={form.body_html}
-              onChange={e => setForm({ ...form, body_html: e.target.value })}
+              onChange={(val) => setForm({ ...form, body_html: val })}
               disabled={isReadOnly}
-              className="flex-1 w-full bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl p-4 text-sm text-slate-300 focus:outline-none transition-colors disabled:opacity-50 resize-none font-mono"
             />
-            {/* Editor Toolbar */}
-            <div className="flex items-center gap-2 mt-2 px-1">
-              <button disabled className="p-1.5 text-slate-500 hover:text-slate-300 rounded hover:bg-white/5 transition-colors" title="Attachments coming soon">
-                <Paperclip className="size-4" />
-              </button>
-              
-              <div className="relative group">
-                <button type="button" disabled={isReadOnly} className="p-1.5 flex items-center gap-1.5 text-xs font-semibold text-teal-400 hover:text-teal-300 rounded hover:bg-white/5 transition-colors disabled:opacity-50">
-                  <Type className="size-3.5" /> Insert Variable
-                </button>
-                <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl z-10 w-40 overflow-hidden">
-                  {['first_name', 'last_name', 'company', 'title'].map(v => (
-                    <button 
-                      key={v}
-                      type="button"
-                      onClick={() => setForm(prev => ({ ...prev, body_html: prev.body_html + `{{${v}}}` }))}
-                      className="block w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-teal-500/10 hover:text-white transition-colors"
-                    >
-                      {`{{${v}}}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <span className="text-[10px] text-slate-500 font-semibold tracking-wider text-right uppercase ml-auto">HTML Output</span>
-            </div>
           </div>
 
         </div>

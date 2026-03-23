@@ -7,6 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge, OutreachEmptyState, TealButton, OutreachConfirmDialog } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import SequenceWizard from './sequences/SequenceWizard';
 
 type StepType = 'email' | 'linkedin_connect' | 'linkedin_message' | 'call' | 'task';
 
@@ -67,6 +68,7 @@ export default function OutreachSequences() {
   const [showGenModal, setShowGenModal] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
   const [genForm, setGenForm] = useState({ offer: '', persona: '', goal: 'book a call', tone: 'casual', steps: '5' });
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   useEffect(() => {
     loadSequences();
@@ -90,14 +92,8 @@ export default function OutreachSequences() {
     }
   };
 
-  const handleCreate = async () => {
-    try {
-      const seq = await api.createSequence('New Sequence');
-      await loadSequences();
-      if (seq) setSelected(seq.id);
-    } catch (error) {
-      console.error('Error creating sequence:', error);
-    }
+  const handleCreate = () => {
+    setIsWizardOpen(true);
   };
 
   const handleGenerate = async () => {
@@ -361,6 +357,12 @@ export default function OutreachSequences() {
           </>
         )}
       </AnimatePresence>
+
+      <SequenceWizard 
+        isOpen={isWizardOpen} 
+        onClose={() => setIsWizardOpen(false)} 
+        onComplete={loadSequences} 
+      />
     </div>
   );
 }

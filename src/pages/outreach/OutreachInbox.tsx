@@ -8,6 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { Sparkles, Loader2, Building2, User, Phone, Linkedin, Globe } from 'lucide-react';
 
 type IntentLabel = 'INTERESTED' | 'MEETING_REQUEST' | 'NOT_NOW' | 'UNSUBSCRIBE' | 'OUT_OF_OFFICE' | 'WRONG_PERSON' | 'NEUTRAL';
 
@@ -121,6 +122,9 @@ export default function OutreachInbox() {
   const [intentFilter, setIntentFilter] = useState<IntentLabel | 'all'>('all');
   const [replyText, setReplyText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [showContext, setShowContext] = useState(true);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   useEffect(() => {
     loadInbox();
@@ -141,10 +145,10 @@ export default function OutreachInbox() {
         subject: `RE: Campaign`,
         preview: m.intent || 'New reply',
         fullBody: '',
-        campaign: 'Campaign',
+        campaign: m.metadata ? (JSON.parse(m.metadata).campaign_name || 'Direct Email') : 'Direct Email',
         mailbox: '',
         messages: [
-          { role: 'received' as const, body: m.last_event || 'No message preview', at: m.event_at || '' }
+          { role: 'received' as const, body: m.last_event || 'No message preview', at: m.event_at ? new Date(m.event_at).toLocaleTimeString() : '' }
         ]
       })));
     } catch (error) {
@@ -180,6 +184,26 @@ export default function OutreachInbox() {
     setThreads(prev => prev.map(t => t.id === id ? { ...t, isArchived: true } : t));
     if (selected === id) setSelected(null);
   };
+
+  const handleSummarize = async () => {
+    if (!activeThread) return;
+    setIsSummarizing(true);
+    setSummary(null);
+    try {
+      const res = await api.summarizeInbox(activeThread.id);
+      if (res?.summary) setSummary(res.summary);
+    } catch (e) {
+      console.error(e);
+      setSummary("Failed to generate summary. Please try again.");
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+  
+  // Clear summary when thread changes
+  useEffect(() => {
+    setSummary(null);
+  }, [activeThread?.id]);
 
   const handleSend = async () => {
     if (!replyText.trim() || !activeThread) return;
@@ -276,8 +300,9 @@ export default function OutreachInbox() {
                     {thread.subject}
                   </p>
                   <p className="text-[10px] text-slate-600 truncate line-clamp-1">{thread.preview}</p>
-                  <div className="mt-2">
+                  <div className="mt-2 flex items-center justify-between">
                     <OutreachBadge variant={intentCfg.variant}>{intentCfg.label}</OutreachBadge>
+                    <span className="text-[9px] font-medium text-slate-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{thread.campaign}</span>
                   </div>
                 </button>
               );
@@ -370,6 +395,80 @@ export default function OutreachInbox() {
           </>
         )}
       </div>
+
+      {/* Context Panel */}
+      {activeThread && showContext && (
+        <div className="w-80 shrink-0 border-l border-white/5 bg-background-dark/95 backdrop-blur overflow-y-auto custom-scrollbar flex flex-col">
+          <div className="p-5 border-b border-white/5">
+            <h3 className="text-sm font-bold text-white mb-4">Contact Profile</h3>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="size-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+                <span className="text-sm font-bold text-teal-400">{activeThread.contact.name[0]}</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">{activeThread.contact.name}</p>
+                <p className="text-xs text-slate-400">{activeThread.contact.company}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-sm">
+                <Mail className="size-4 text-slate-500" />
+                <span className="text-slate-300">{activeThread.contact.email}</span>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <Building2 className="size-4 text-slate-500" />
+                <span className="text-slate-300">{activeThread.contact.company}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-5 flex-1">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="size-4 text-amber-400" /> AI Summary
+              </h3>
+              {!summary && !isSummarizing && (
+                <button 
+                  onClick={handleSummarize}
+                  className="px-3 py-1 bg-white/5 hover:bg-white/10 text-xs font-semibold text-white rounded-lg transition-colors"
+                >
+                  Generate
+                </button>
+              )}
+            </div>
+            
+            {isSummarizing ? (
+              <div className="py-8 flex flex-col items-center justify-center text-slate-500 space-y-3">
+                <Loader2 className="size-6 animate-spin text-teal-500" />
+                <p className="text-xs">Analyzing thread...</p>
+              </div>
+            ) : summary ? (
+              <div className="p-4 rounded-xl bg-teal-500/5 border border-teal-500/20 text-sm text-slate-300 leading-relaxed">
+                {summary}
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl border border-dashed border-white/10 text-center text-xs text-slate-500">
+                Click generate to get an AI summary of this conversation and suggested next steps.
+              </div>
+            )}
+            
+            <h3 className="text-sm font-bold text-white mt-8 mb-4">Activity</h3>
+            <div className="space-y-4 relative before:absolute before:inset-y-2 before:left-2 before:w-px before:bg-white/10 ml-2 border-slate-700">
+              <div className="relative pl-6">
+                <div className="absolute left-0 top-1.5 -translate-x-1/2 size-2 rounded-full bg-slate-500 border-2 border-background-dark" />
+                <p className="text-xs font-semibold text-slate-300">{activeThread.campaign}</p>
+                <p className="text-[10px] text-slate-500">Source Event</p>
+              </div>
+              <div className="relative pl-6">
+                <div className="absolute left-0 top-1.5 -translate-x-1/2 size-2 rounded-full bg-teal-400 border-2 border-background-dark shadow-[0_0_8px_rgba(45,212,191,0.5)]" />
+                <p className="text-xs font-semibold text-white">Latest Reply ({INTENT_CFG[activeThread.intent].label})</p>
+                <p className="text-[10px] text-slate-500">{activeThread.receivedAt}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,7 +4,12 @@ import { useProject } from '@/contexts/ProjectContext';
 
 const BASE_URL = (import.meta.env.VITE_OUTREACH_API_URL ?? 'http://localhost:3001') + '/api/outreach';
 
-
+export interface AnalyticsData {
+  daily_data: { day: string; sent: number; opens: number; replies: number; clicks: number }[];
+  intent_data: { name: string; value: number; color?: string }[];
+  campaign_comparison: { name: string; open: number; reply: number }[];
+  mailbox_health: { email: string; score: number; status: string; sent: number; bounceRate: number; spamRate: number }[];
+}
 /**
  * Central hook for all Outreach API calls.
  *
@@ -104,6 +109,16 @@ export function useOutreachApi() {
     (id: string) => del(`/campaigns/${id}`),
     [del],
   );
+  
+  const launchCampaign = useCallback(
+    (id: string, data: any) => post<any>(`/campaigns/${id}/launch`, data),
+    [post]
+  );
+
+  const getDeliveryEstimate = useCallback(
+    (id: string) => get<{ estimate: string }>(`/campaigns/${id}/delivery-estimate`),
+    [get]
+  );
 
   // ── Sequences ────────────────────────────────────────────────────────────
 
@@ -144,13 +159,54 @@ export function useOutreachApi() {
     [del],
   );
 
+  // ── Contact Lists ────────────────────────────────────────────────────────
+
+  const fetchContactLists = useCallback(() => get<any[]>('/contact-lists'), [get]);
+
+  const createContactList = useCallback(
+    (name: string) => post<any>('/contact-lists', { name }),
+    [post]
+  );
+
+  const fetchContactListMembers = useCallback(
+    (id: string) => get<string[]>(`/contact-lists/${id}/members`),
+    [get]
+  );
+
+  const addContactsToList = useCallback(
+    (id: string, contact_ids: string[]) => post<any>(`/contact-lists/${id}/members`, { contact_ids }),
+    [post]
+  );
+
+  // ── Suppression List ─────────────────────────────────────────────────────
+
+  const fetchSuppressionList = useCallback(() => get<any[]>('/suppression-list'), [get]);
+
+  const addToSuppressionList = useCallback(
+    (email: string, reason?: string) => post<any>('/suppression-list', { email, reason }),
+    [post]
+  );
+
+  const removeFromSuppressionList = useCallback(
+    (email: string) => del(`/suppression-list?email=${encodeURIComponent(email)}`),
+    [del]
+  );
+
   // ── Inbox ────────────────────────────────────────────────────────────────
 
   const fetchInbox = useCallback(() => get<any[]>('/inbox'), [get]);
 
-  // ── Mailboxes ─────────────────────────────────────────────────────────────
+  const summarizeInbox = useCallback(
+    (id: string) => post<{ summary: string }>(`/inbox/${id}/summarize`, {}),
+    [post]
+  );
 
+  // ── Mailboxes ─────────────────────────────────────────────────────────────
   const fetchMailboxes = useCallback(() => get<any[]>('/mailboxes'), [get]);
+
+  // ── Analytics ─────────────────────────────────────────────────────────────
+
+  const fetchAnalytics = useCallback((days: number) => get<AnalyticsData>(`/analytics?days=${days}`), [get]);
 
   const disconnectMailbox = useCallback(
     (id: string) => del(`/mailboxes/${id}`),
@@ -215,6 +271,8 @@ export function useOutreachApi() {
     createCampaign,
     toggleCampaignStatus,
     deleteCampaign,
+    launchCampaign,
+    getDeliveryEstimate,
     // Sequences
     fetchSequences,
     createSequence,
@@ -227,6 +285,7 @@ export function useOutreachApi() {
     deleteContact,
     // Inbox
     fetchInbox,
+    summarizeInbox,
     // Compose
     fetchIndividualEmails,
     getIndividualEmail,
@@ -238,5 +297,15 @@ export function useOutreachApi() {
     fetchMailboxes,
     disconnectMailbox,
     connectGmail,
+    // Analytics
+    fetchAnalytics,
+    // Contact Lists & Suppression
+    fetchContactLists,
+    createContactList,
+    fetchContactListMembers,
+    addContactsToList,
+    fetchSuppressionList,
+    addToSuppressionList,
+    removeFromSuppressionList,
   };
 }

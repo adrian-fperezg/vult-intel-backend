@@ -11,6 +11,7 @@ import {
   TealButton, OutreachConfirmDialog
 } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import CampaignWizard from './campaigns/CampaignWizard';
 
 type CampaignStatus = 'active' | 'paused' | 'draft' | 'completed' | 'scheduled';
 
@@ -67,7 +68,7 @@ export default function OutreachCampaigns() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   useEffect(() => {
     loadCampaigns();
@@ -94,16 +95,8 @@ export default function OutreachCampaigns() {
     }
   };
 
-  const handleCreate = async () => {
-    setIsCreating(true);
-    try {
-      await api.createCampaign('New Campaign');
-      await loadCampaigns();
-    } catch (error) {
-      console.error('Error creating campaign:', error);
-    } finally {
-      setIsCreating(false);
-    }
+  const handleCreate = () => {
+    setIsWizardOpen(true);
   };
 
   const handleDuplicate = async (id: string) => {
@@ -157,7 +150,7 @@ export default function OutreachCampaigns() {
             <h1 className="text-2xl font-bold text-white">Campaigns</h1>
             <p className="text-sm text-slate-400 mt-0.5">Manage and launch your outreach campaigns</p>
           </div>
-          <TealButton onClick={handleCreate} loading={isCreating}>
+          <TealButton onClick={handleCreate}>
             <Plus className="size-4" /> New Campaign
           </TealButton>
         </div>
@@ -176,7 +169,7 @@ export default function OutreachCampaigns() {
             icon={<Mail />}
             title="No campaigns yet"
             description="Create your first outreach campaign to start connecting with prospects at scale."
-            action={<TealButton onClick={handleCreate} loading={isCreating}><Plus className="size-4" /> New Campaign</TealButton>}
+            action={<TealButton onClick={handleCreate}><Plus className="size-4" /> New Campaign</TealButton>}
           />
         ) : (
           <div className="p-6 space-y-3">
@@ -338,6 +331,12 @@ export default function OutreachCampaigns() {
         description="This campaign and all its configuration will be permanently deleted. Enrolled lead data and analytics are preserved."
         confirmLabel="Delete Campaign"
         danger
+      />
+
+      <CampaignWizard 
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onComplete={loadCampaigns}
       />
     </div>
   );

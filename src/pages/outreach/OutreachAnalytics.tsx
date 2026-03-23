@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   BarChart2, TrendingUp, Users, Mail, MousePointer,
-  MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield
+  MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield, Loader2
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -9,31 +9,7 @@ import {
 } from 'recharts';
 import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader } from './OutreachCommon';
 import { cn } from '@/lib/utils';
-
-const DAILY_DATA = [
-  { day: 'Mar 8',  sent: 40,  opens: 17, replies: 4, clicks: 3 },
-  { day: 'Mar 9',  sent: 52,  opens: 24, replies: 5, clicks: 4 },
-  { day: 'Mar 10', sent: 61,  opens: 28, replies: 6, clicks: 5 },
-  { day: 'Mar 11', sent: 45,  opens: 19, replies: 3, clicks: 2 },
-  { day: 'Mar 12', sent: 72,  opens: 33, replies: 8, clicks: 7 },
-  { day: 'Mar 13', sent: 55,  opens: 24, replies: 5, clicks: 4 },
-  { day: 'Mar 14', sent: 68,  opens: 31, replies: 7, clicks: 6 },
-];
-
-const INTENT_DATA = [
-  { name: 'Interested',       value: 31, color: '#14B8A6' },
-  { name: 'Meeting Request',  value: 18, color: '#22C55E' },
-  { name: 'Not Now',          value: 24, color: '#EAB308' },
-  { name: 'Unsubscribe',      value: 8,  color: '#EF4444' },
-  { name: 'Out of Office',    value: 12, color: '#64748B' },
-  { name: 'Other',            value: 7,  color: '#3B82F6' },
-];
-
-const MAILBOX_HEALTH = [
-  { email: 'alex@company.com',  score: 92, status: 'excellent', sent: 1240, bounceRate: 1.2, spamRate: 0.1 },
-  { email: 'sales@company.com', score: 78, status: 'good',      sent: 643,  bounceRate: 2.1, spamRate: 0.3 },
-  { email: 'hello@company.com', score: 61, status: 'fair',      sent: 320,  bounceRate: 4.5, spamRate: 0.8 },
-];
+import { useOutreachApi, AnalyticsData } from '@/hooks/useOutreachApi';
 
 const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -52,11 +28,40 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 
 export default function OutreachAnalytics() {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const { fetchAnalytics, activeProjectId } = useOutreachApi();
 
-  const totalSent = DAILY_DATA.reduce((s, d) => s + d.sent, 0);
-  const totalOpens = DAILY_DATA.reduce((s, d) => s + d.opens, 0);
-  const totalReplies = DAILY_DATA.reduce((s, d) => s + d.replies, 0);
-  const totalClicks = DAILY_DATA.reduce((s, d) => s + d.clicks, 0);
+  useEffect(() => {
+    async function load() {
+      if (!activeProjectId) return;
+      setIsLoading(true);
+      try {
+        const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+        const res = await fetchAnalytics(days);
+        if (res) setData(res);
+      } catch (err) {
+        console.error('Failed to load analytics:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
+  }, [timeRange, activeProjectId, fetchAnalytics]);
+
+  if (isLoading || !data) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-slate-500">
+        <Loader2 className="size-8 animate-spin mb-4 text-teal-500" />
+        <p>Loading analytics...</p>
+      </div>
+    );
+  }
+
+  const totalSent = data.daily_data.reduce((s, d) => s + d.sent, 0);
+  const totalOpens = data.daily_data.reduce((s, d) => s + d.opens, 0);
+  const totalReplies = data.daily_data.reduce((s, d) => s + d.replies, 0);
+  const totalClicks = data.daily_data.reduce((s, d) => s + d.clicks, 0);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
@@ -85,10 +90,10 @@ export default function OutreachAnalytics() {
 
         {/* Top Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <OutreachMetricCard label="Total Sent" value={totalSent.toLocaleString()} teal icon={<Mail />} trend="up" trendValue="+14% vs last week" />
-          <OutreachMetricCard label="Open Rate" value={`${((totalOpens / totalSent) * 100).toFixed(1)}%`} icon={<TrendingUp />} trend="up" trendValue="vs 21% avg" sub="industry avg 21%" />
-          <OutreachMetricCard label="Reply Rate" value={`${((totalReplies / totalSent) * 100).toFixed(1)}%`} icon={<MessageSquare />} trend="up" trendValue="vs 5% avg" />
-          <OutreachMetricCard label="Click Rate" value={`${((totalClicks / totalSent) * 100).toFixed(1)}%`} icon={<MousePointer />} trend="neutral" trendValue="stable" />
+          <OutreachMetricCard label="Total Sent" value={totalSent.toLocaleString()} teal icon={<Mail />} trend="neutral" trendValue="vs previous period" />
+          <OutreachMetricCard label="Open Rate" value={`${totalSent > 0 ? ((totalOpens / totalSent) * 100).toFixed(1) : 0}%`} icon={<TrendingUp />} trend="neutral" trendValue="vs average" sub="industry avg 21%" />
+          <OutreachMetricCard label="Reply Rate" value={`${totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : 0}%`} icon={<MessageSquare />} trend="neutral" trendValue="vs average" />
+          <OutreachMetricCard label="Click Rate" value={`${totalSent > 0 ? ((totalClicks / totalSent) * 100).toFixed(1) : 0}%`} icon={<MousePointer />} trend="neutral" trendValue="stable" />
         </div>
 
         {/* Time Series Chart */}
@@ -99,7 +104,7 @@ export default function OutreachAnalytics() {
             subtitle="Daily email volume and engagement metrics"
           />
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={DAILY_DATA}>
+            <LineChart data={data.daily_data}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
@@ -119,14 +124,14 @@ export default function OutreachAnalytics() {
             <OutreachSectionHeader icon={<MessageSquare />} title="Reply Intent Breakdown" subtitle="AI-categorized reply intent" />
             <div className="flex items-center gap-4">
               <PieChart width={140} height={140}>
-                <Pie data={INTENT_DATA} cx={70} cy={70} innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={0}>
-                  {INTENT_DATA.map((entry, i) => (
+                <Pie data={data.intent_data} cx={70} cy={70} innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={0}>
+                  {data.intent_data.map((entry, i) => (
                     <Cell key={i} fill={entry.color} />
                   ))}
                 </Pie>
               </PieChart>
               <div className="flex-1 space-y-2">
-                {INTENT_DATA.map(({ name, value, color }) => (
+                {data.intent_data.map(({ name, value, color }) => (
                   <div key={name} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span className="size-2 rounded-full shrink-0" style={{ background: color }} />
@@ -143,18 +148,20 @@ export default function OutreachAnalytics() {
           <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
             <OutreachSectionHeader icon={<BarChart2 />} title="Campaign Comparison" subtitle="Open & reply rates per campaign" />
             <ResponsiveContainer width="100%" height={160}>
-              <BarChart layout="vertical" data={[
-                { name: 'Q1 SaaS DMs',      open: 42.3, reply: 8.7 },
-                { name: 'Agency Re-Engage', open: 61.2, reply: 14.9 },
-                { name: 'Fintech Test',     open: 28.0, reply: 3.3 },
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
-                <Tooltip content={<CUSTOM_TOOLTIP />} />
-                <Bar dataKey="open"  name="Open Rate"  fill="#14B8A6" radius={[0, 4, 4, 0]} />
-                <Bar dataKey="reply" name="Reply Rate" fill="#22C55E" radius={[0, 4, 4, 0]} />
-              </BarChart>
+              {data.campaign_comparison.length > 0 ? (
+                <BarChart layout="vertical" data={data.campaign_comparison} margin={{ left: 0, right: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
+                  <Tooltip content={<CUSTOM_TOOLTIP />} />
+                  <Bar dataKey="open"  name="Open Rate"  fill="#14B8A6" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="reply" name="Reply Rate" fill="#22C55E" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs">
+                  No campaign data found for this period.
+                </div>
+              )}
             </ResponsiveContainer>
           </div>
         </div>
@@ -167,7 +174,7 @@ export default function OutreachAnalytics() {
             subtitle="Deliverability score per connected mailbox"
           />
           <div className="space-y-4">
-            {MAILBOX_HEALTH.map(({ email, score, status, sent, bounceRate, spamRate }) => {
+            {data.mailbox_health.length > 0 ? data.mailbox_health.map(({ email, score, status, sent, bounceRate, spamRate }) => {
               const scoreColor = score >= 85 ? '#14B8A6' : score >= 70 ? '#EAB308' : '#EF4444';
               const scoreBadge = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
               return (
@@ -204,7 +211,11 @@ export default function OutreachAnalytics() {
                   </div>
                 </div>
               );
-            })}
+            }) : (
+              <div className="text-slate-500 text-sm text-center py-4">
+                No mailboxes connected or active in this time period.
+              </div>
+            )}
           </div>
         </div>
       </div>

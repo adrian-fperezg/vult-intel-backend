@@ -8,6 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import ContactProfilePanel from './contacts/ContactProfilePanel';
 
 type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
 
@@ -89,10 +90,36 @@ export default function OutreachContacts() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [profileContactId, setProfileContactId] = useState<string | null>(null);
+
+  // Lists & Suppression
+  const [contactLists, setContactLists] = useState<any[]>([]);
+  const [listFilter, setListFilter] = useState<string>('all');
+  const [listMemberIds, setListMemberIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadContacts();
+    loadLists();
   }, [api.activeProjectId]);
+
+  useEffect(() => {
+    if (listFilter === 'all') {
+      setListMemberIds(new Set());
+      return;
+    }
+    api.fetchContactListMembers(listFilter)
+       .then(ids => setListMemberIds(new Set(ids || [])))
+       .catch(e => console.error('Failed to load list members', e));
+  }, [listFilter, api.activeProjectId]);
+
+  const loadLists = async () => {
+    try {
+      const lists = await api.fetchContactLists();
+      setContactLists(lists || []);
+    } catch (e) {
+      console.error('Failed to load lists', e);
+    }
+  };
 
   const loadContacts = async () => {
     setIsLoading(true);
@@ -139,6 +166,7 @@ export default function OutreachContacts() {
       );
     }
     if (statusFilter !== 'all') list = list.filter(c => c.status === statusFilter);
+    if (listFilter !== 'all') list = list.filter(c => listMemberIds.has(c.id));
     list.sort((a, b) => {
       const va = a[sortKey] ?? '';
       const vb = b[sortKey] ?? '';
@@ -174,6 +202,16 @@ export default function OutreachContacts() {
       await Promise.all(idsToDelete.map(id => api.deleteContact(id)));
     } catch {
       await loadContacts();
+    }
+  };
+
+  const handleSuppress = async (email: string) => {
+    try {
+      await api.addToSuppressionList(email, "Manual suppression from profile");
+      await api.updateContact(contacts.find(c => c.email === email)!.id, { status: 'unsubscribed' });
+      await loadContacts();
+    } catch (e) {
+      console.error('Failed to suppress contact', e);
     }
   };
 
@@ -226,6 +264,18 @@ export default function OutreachContacts() {
               className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-colors"
             />
           </div>
+          
+          <select
+            value={listFilter}
+            onChange={e => setListFilter(e.target.value)}
+            className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none cursor-pointer"
+          >
+            <option value="all">All Lists</option>
+            {contactLists.map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+
           <div className="flex items-center gap-1.5 flex-wrap">
             {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
               <button
@@ -399,8 +449,17 @@ export default function OutreachContacts() {
                               </div>
                             )}
                             <div className="ml-auto flex items-center gap-2">
+                              <button 
+                                onClick={() => handleSuppress(contact.email)}
+                                className="px-3 py-1.5 text-xs font-semibold text-red-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg transition-colors"
+                              >
+                                Suppress
+                              </button>
                               <TealButton size="sm">Enroll in Sequence</TealButton>
-                              <button className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                              <button 
+                                onClick={() => setProfileContactId(contact.id)}
+                                className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                              >
                                 View Profile
                               </button>
                             </div>
@@ -424,6 +483,12 @@ export default function OutreachContacts() {
         description="This will permanently delete these contacts and remove them from all campaigns. This action cannot be undone."
         confirmLabel="Delete Contacts"
         danger
+      />
+
+      <ContactProfilePanel 
+        contact={contacts.find(c => c.id === profileContactId) || null}
+        isOpen={!!profileContactId}
+        onClose={() => setProfileContactId(null)}
       />
     </div>
   );
