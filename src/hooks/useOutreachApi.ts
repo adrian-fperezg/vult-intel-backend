@@ -176,6 +176,38 @@ export function useOutreachApi() {
     window.location.href = url;
   }, [currentUser, activeProjectId, authHeaders]);
 
+  // ── Compose ──────────────────────────────────────────────────────────────
+
+  const fetchIndividualEmails = useCallback(
+    (status?: string) => get<any[]>(status ? `/compose?status=${status}` : '/compose'),
+    [get]
+  );
+
+  const getIndividualEmail = useCallback(
+    (id: string) => get<any>(`/compose/${id}`),
+    [get]
+  );
+
+  const createIndividualEmail = useCallback(
+    (data: Record<string, unknown>) => post<any>('/compose', data),
+    [post]
+  );
+
+  const updateIndividualEmail = useCallback(
+    (id: string, data: Record<string, unknown>) => patch<any>(`/compose/${id}`, data),
+    [patch]
+  );
+
+  const deleteIndividualEmail = useCallback(
+    (id: string) => del(`/compose/${id}`),
+    [del]
+  );
+
+  const sendIndividualEmail = useCallback(
+    (id: string, scheduledAt?: string) => post<any>(`/compose/${id}/send`, scheduledAt ? { scheduled_at: scheduledAt } : {}),
+    [post]
+  );
+
   return {
     activeProjectId,
     // Campaigns
@@ -195,6 +227,13 @@ export function useOutreachApi() {
     deleteContact,
     // Inbox
     fetchInbox,
+    // Compose
+    fetchIndividualEmails,
+    getIndividualEmail,
+    createIndividualEmail,
+    updateIndividualEmail,
+    deleteIndividualEmail,
+    sendIndividualEmail,
     // Mailboxes / OAuth
     fetchMailboxes,
     disconnectMailbox,

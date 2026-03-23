@@ -89,6 +89,37 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, project_id, email)
   );
+
+  CREATE TABLE IF NOT EXISTS outreach_individual_emails (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    mailbox_id TEXT NOT NULL,
+    contact_id TEXT,
+    to_email TEXT NOT NULL,
+    subject TEXT,
+    body_html TEXT,
+    status TEXT NOT NULL DEFAULT 'draft', -- 'draft', 'scheduled', 'sent', 'failed'
+    scheduled_at DATETIME,
+    sent_at DATETIME,
+    thread_id TEXT,
+    message_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(mailbox_id) REFERENCES outreach_mailboxes(id),
+    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS outreach_individual_email_events (
+    id TEXT PRIMARY KEY,
+    email_id TEXT NOT NULL,
+    event_type TEXT NOT NULL, -- 'open', 'click'
+    ip_address TEXT,
+    user_agent TEXT,
+    link_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(email_id) REFERENCES outreach_individual_emails(id)
+  );
 `);
 
 // ─── Migrations: add columns if they don't exist yet ────────────────────────

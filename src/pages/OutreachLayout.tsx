@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOutreachSubscription } from '@/hooks/useOutreachSubscription';
+import { useOutreachApi } from '@/hooks/useOutreachApi';
 import OutreachUpgradeScreen from './outreach/OutreachUpgradeScreen';
 import OutreachLockedScreen from './outreach/OutreachLockedScreen';
 import OutreachCampaigns from './outreach/OutreachCampaigns';
@@ -11,11 +12,13 @@ import OutreachContacts from './outreach/OutreachContacts';
 import OutreachInbox from './outreach/OutreachInbox';
 import OutreachAnalytics from './outreach/OutreachAnalytics';
 import OutreachSettings from './outreach/OutreachSettings';
+import OutreachCompose from './outreach/OutreachCompose';
 import { PaperPlaneIcon } from './outreach/OutreachCommon';
 
-type OutreachTab = 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings';
+type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings';
 
-const TABS: Array<{ id: OutreachTab; label: string }> = [
+const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
+  { id: 'compose',    label: 'Compose', badge: true },
   { id: 'campaigns',  label: 'Campaigns' },
   { id: 'sequences',  label: 'Sequences' },
   { id: 'contacts',   label: 'Contacts' },
@@ -26,8 +29,31 @@ const TABS: Array<{ id: OutreachTab; label: string }> = [
 
 export default function OutreachLayout() {
   const { status, daysRemaining, isLoading } = useOutreachSubscription();
+  const { fetchIndividualEmails } = useOutreachApi();
   const [activeTab, setActiveTab] = useState<OutreachTab>('campaigns');
   const [trialBannerDismissed, setTrialBannerDismissed] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
+
+  // Poll for draft count
+  useEffect(() => {
+    if (status === 'inactive' || status === 'expired' || status === 'cancelled') return;
+
+    let isMounted = true;
+    const loadDrafts = () => {
+      fetchIndividualEmails('draft').then((data) => {
+        if (isMounted && data) {
+          setDraftCount(data.length);
+        }
+      }).catch(console.error);
+    };
+
+    loadDrafts();
+    const interval = setInterval(loadDrafts, 15000); // Check every 15s
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    }
+  }, [fetchIndividualEmails, status]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -102,7 +128,7 @@ export default function OutreachLayout() {
 
           {/* Horizontal Tab Bar */}
           <nav className="flex items-center gap-0" role="tablist">
-            {TABS.map(({ id, label }) => {
+            {TABS.map(({ id, label, badge }) => {
               const isActive = activeTab === id;
               return (
                 <button
@@ -111,11 +137,19 @@ export default function OutreachLayout() {
                   aria-selected={isActive}
                   onClick={() => setActiveTab(id)}
                   className={cn(
-                    'relative px-5 pb-3.5 pt-1 text-sm font-semibold transition-colors',
+                    'relative px-5 pb-3.5 pt-1 text-sm font-semibold transition-colors flex items-center gap-2',
                     isActive ? 'text-teal-400' : 'text-slate-500 hover:text-slate-300'
                   )}
                 >
                   {label}
+                  {badge && draftCount > 0 && (
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-bold",
+                      isActive ? "bg-teal-500/20 text-teal-300" : "bg-white/10 text-slate-400"
+                    )}>
+                      {draftCount}
+                    </span>
+                  )}
                   {isActive && (
                     <motion.div
                       layoutId="outreach-tab-underline"
@@ -141,6 +175,7 @@ export default function OutreachLayout() {
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className="h-full"
           >
+            {activeTab === 'compose'    && <OutreachCompose />}
             {activeTab === 'campaigns'  && <OutreachCampaigns />}
             {activeTab === 'sequences'  && <OutreachSequences />}
             {activeTab === 'contacts'   && <OutreachContacts />}
