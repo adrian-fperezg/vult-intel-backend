@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
+import cookieSession from "cookie-session";
 import db from "./db";
 import { emailQueue, campaignQueue, processEmail } from "./queues/emailQueue.js";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
@@ -41,6 +42,18 @@ app.use(
   }),
 );
 app.use(express.json());
+
+// Initialize session handling for production/incognito stability
+app.use(
+  cookieSession({
+    name: "vult-session",
+    keys: [process.env.SESSION_SECRET || "vult-intel-default-secret"],
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: "none",
+    secure: true, // Required for SameSite: none
+    httpOnly: true,
+  }),
+);
 
 // ─── Public health check ──────────────────────────────────────────────────────
 
@@ -1200,12 +1213,11 @@ app.delete("/api/outreach/compose/:id", (req: AuthRequest, res) => {
 // POST /api/outreach/compose/:id/send
 app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
   const { id } = req.params;
-  const { scheduled_at } = req.body; 
-
+  const { scheduled_at } = req.body;
   const userId = req.user?.uid;
+
   if (!userId) {
-    console.error(`ERROR: Send failed for email ${id} - Missing user authentication`);
-    return res.status(401).json({ error: "Auth required" });
+    return res.status(401).json({ error: "User not authenticated" });
   }
 
   console.log(`[OUTREACH] Attempting to send email. id=${id}, userId=${userId}`);
