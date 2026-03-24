@@ -10,7 +10,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 class DbWrapper {
   private sqlite?: any;
   private pgPool?: pg.Pool;
-  private isPostgres: boolean;
+  public isPostgres: boolean;
 
   constructor() {
     this.isPostgres = !!DATABASE_URL;

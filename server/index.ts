@@ -1738,9 +1738,13 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     const cutoffIso = cutoffDate.toISOString();
 
     // Daily Engagement
+    const dateExpr = db.isPostgres 
+      ? "to_char(e.created_at, 'YYYY-MM-DD')" 
+      : "substr(e.created_at, 1, 10)";
+
     const dailyEvents = await db.prepare(`
       SELECT 
-        substr(e.created_at, 1, 10) as "dayStr",
+        ${dateExpr} as "dayStr",
         e.type,
         count(*) as count
       FROM outreach_events e
@@ -2044,7 +2048,7 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
       const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
       // The @google/genai package from the test script uses this structure
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash', // Use a fast stable model
+        model: 'gemini-1.5-flash', // Downgraded from 2.0 due to regional availability issues
         contents: `User Request: ${prompt}\n\nExisting ICP Context for this project:\n${JSON.stringify(icpContext || {})}`,
         config: {
           systemInstruction: `You are a Lead Generation Parameter Extractor. 
