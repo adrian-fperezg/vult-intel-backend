@@ -41,7 +41,8 @@ export function useOutreachSubscription(): OutreachSubscription {
 
       try {
         const token = await currentUser.getIdToken();
-        const response = await fetch('http://localhost:3001/api/outreach/subscription', {
+        const apiBase = import.meta.env.VITE_OUTREACH_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${apiBase}/api/outreach/subscription`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }

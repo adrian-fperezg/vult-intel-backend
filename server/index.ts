@@ -107,7 +107,7 @@ app.get("/api/outreach/auth/google/callback", async (req, res) => {
     error?: string;
   };
 
-  const frontendBase = process.env.FRONTEND_URL || ALLOWED_ORIGINS[0] || "http://localhost:3000";
+  const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? ALLOWED_ORIGINS[0] : "http://localhost:3000");
 
   if (error || !code || !state) {
     return res.redirect(
