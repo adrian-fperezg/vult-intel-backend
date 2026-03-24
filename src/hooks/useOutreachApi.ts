@@ -227,6 +227,11 @@ export function useOutreachApi() {
     [post]
   );
 
+  const syncInbox = useCallback(
+    () => post<any>(`/projects/${activeProjectId}/sync-inbox`, {}),
+    [post, activeProjectId]
+  );
+
   // ── Mailboxes ─────────────────────────────────────────────────────────────
   const fetchMailboxes = useCallback(() => get<any[]>('/mailboxes'), [get]);
 
@@ -312,6 +317,7 @@ export function useOutreachApi() {
     // Inbox
     fetchInbox,
     summarizeInbox,
+    syncInbox,
     // Compose
     fetchIndividualEmails,
     getIndividualEmail,

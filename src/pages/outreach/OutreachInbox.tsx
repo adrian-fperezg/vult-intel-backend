@@ -125,10 +125,26 @@ export default function OutreachInbox() {
   const [showContext, setShowContext] = useState(true);
   const [summary, setSummary] = useState<string | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
-    loadInbox();
+    handleSync();
   }, [api.activeProjectId]);
+
+  const handleSync = async () => {
+    if (!api.activeProjectId) return;
+    setIsSyncing(true);
+    try {
+      await api.syncInbox();
+      await loadInbox();
+    } catch (e) {
+      console.error('Sync failed:', e);
+      // Fallback to just loading local data
+      await loadInbox();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const loadInbox = async () => {
     setIsLoading(true);
@@ -224,9 +240,22 @@ export default function OutreachInbox() {
       <div className="w-80 shrink-0 border-r border-white/5 flex flex-col bg-surface-dark/20">
         {/* Filters */}
         <div className="p-4 border-b border-white/5 space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-            <input placeholder="Search inbox..." className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none" />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
+              <input placeholder="Search inbox..." className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none" />
+            </div>
+            <button 
+              onClick={handleSync}
+              disabled={isSyncing}
+              className={cn(
+                "p-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-slate-400 hover:text-white",
+                isSyncing && "animate-pulse"
+              )}
+              title="Sync Gmail Inbox"
+            >
+              <CheckCircle2 className={cn("size-4", isSyncing ? "animate-spin text-teal-500" : "text-slate-500")} />
+            </button>
           </div>
           <div className="flex items-center gap-1.5">
             {(['all', 'unread', 'starred'] as const).map(f => (

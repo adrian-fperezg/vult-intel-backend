@@ -36,6 +36,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify', // Added for thread/mailbox management
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
 ].join(' ');
@@ -94,6 +95,31 @@ export async function exchangeCodeForTokens(code: string): Promise<GoogleTokenRe
   if (!response.ok) {
     const err = await response.text();
     throw new Error(`Failed to exchange code for tokens: ${err}`);
+  }
+
+  return response.json() as Promise<GoogleTokenResponse>;
+}
+
+export async function refreshGoogleToken(refreshToken: string): Promise<GoogleTokenResponse> {
+  const clientId = process.env.GOOGLE_CLIENT_ID!;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
+
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token',
+  });
+
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to refresh Google token: ${err}`);
   }
 
   return response.json() as Promise<GoogleTokenResponse>;

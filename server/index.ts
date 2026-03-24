@@ -10,10 +10,12 @@ import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
   fetchGoogleUserInfo,
+  refreshGoogleToken,
   encryptToken,
   decryptToken,
 } from "./oauth.js";
 import { domainSearch, emailFinder, emailVerifier, getAccountInformation } from "./lib/outreach/hunter.js";
+import { syncMailbox } from "./lib/outreach/gmailSync.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -80,7 +82,7 @@ app.get("/api/outreach/auth/google/callback", async (req, res) => {
     error?: string;
   };
 
-  const frontendBase = "http://localhost:3000/outreach";
+  const frontendBase = process.env.FRONTEND_URL || ALLOWED_ORIGINS[0] || "http://localhost:3000";
 
   if (error || !code || !state) {
     return res.redirect(
@@ -105,7 +107,10 @@ app.get("/api/outreach/auth/google/callback", async (req, res) => {
     ).toISOString();
 
     const encryptedAccess = encryptToken(tokens.access_token);
-    const encryptedRefresh = encryptToken(tokens.refresh_token || "");
+    // Only encrypt if refresh_token is present to avoid overwriting existing
+    const encryptedRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : "";
+
+    const mailboxId = uuidv4();
 
     // Save or update mailbox
     db.prepare(
@@ -116,10 +121,11 @@ app.get("/api/outreach/auth/google/callback", async (req, res) => {
         access_token = excluded.access_token,
         refresh_token = CASE WHEN excluded.refresh_token != '' THEN excluded.refresh_token ELSE outreach_mailboxes.refresh_token END,
         expires_at = excluded.expires_at,
-        scope = excluded.scope
+        scope = excluded.scope,
+        status = 'active'
     `,
     ).run(
-      uuidv4(),
+      mailboxId,
       userId,
       projectId,
       userInfo.email,
@@ -130,16 +136,50 @@ app.get("/api/outreach/auth/google/callback", async (req, res) => {
       tokens.scope,
     );
 
+    // Initial sync
+    syncMailbox(mailboxId, getValidAccessToken).catch(console.error);
+
     return res.redirect(
-      `${frontendBase}?gmail_connected=1&email=${encodeURIComponent(userInfo.email)}`,
+      `${frontendBase}/outreach?gmail_connected=1&email=${encodeURIComponent(userInfo.email)}`,
     );
   } catch (err: any) {
     console.error("OAuth callback error:", err);
     return res.redirect(
-      `${frontendBase}?gmail_error=${encodeURIComponent(err.message)}`,
+      `${frontendBase}/outreach?gmail_error=${encodeURIComponent(err.message)}`,
     );
   }
 });
+
+// Helper to get a valid access token, refreshing if necessary
+async function getValidAccessToken(mailboxId: string): Promise<string> {
+  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  if (!mailbox) throw new Error("Mailbox not found");
+
+  const now = new Date();
+  const expiresAt = new Date(mailbox.expires_at);
+
+  // If token is still valid (with 5 min buffer), return it
+  if (expiresAt.getTime() > now.getTime() + 5 * 60 * 1000) {
+    return decryptToken(mailbox.access_token);
+  }
+
+  // Otherwise, refresh it
+  if (!mailbox.refresh_token) throw new Error("No refresh token available");
+  
+  const refreshToken = decryptToken(mailbox.refresh_token);
+  const tokens = await refreshGoogleToken(refreshToken);
+
+  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+  const encryptedAccess = encryptToken(tokens.access_token);
+
+  db.prepare(`
+    UPDATE outreach_mailboxes 
+    SET access_token = ?, expires_at = ?
+    WHERE id = ?
+  `).run(encryptedAccess, newExpiresAt, mailboxId);
+
+  return tokens.access_token;
+}
 
 // ─── Protected routes (require Firebase token) ────────────────────────────────
 
@@ -193,6 +233,17 @@ app.get("/api/outreach/mailboxes", (req: AuthRequest, res) => {
     .all(userId, project_id);
 
   res.json(mailboxes);
+});
+
+// POST /api/outreach/mailboxes/:id/sync
+app.post("/api/outreach/mailboxes/:id/sync", async (req: AuthRequest, res) => {
+  const mailboxId = req.params.id;
+  try {
+    const count = await syncMailbox(mailboxId, getValidAccessToken);
+    res.json({ success: true, newMessages: count });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/outreach/auth/gmail-url?project_id=xxx
