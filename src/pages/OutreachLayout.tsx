@@ -91,7 +91,7 @@ export default function OutreachLayout() {
 
   // ── Full Module (active | trial) ──────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full w-full overflow-hidden">
       {/* Module Header */}
       <div className="shrink-0 border-b border-white/5 bg-[#0d1117]">
         {/* Trial Banner */}

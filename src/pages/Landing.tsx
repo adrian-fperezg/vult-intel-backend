@@ -65,7 +65,7 @@ const Landing = () => {
     };
 
     return (
-        <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden ${theme === 'dark' ? 'bg-slate-950 text-slate-50' : 'bg-white text-slate-900'}`}>
+        <div className={`flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden transition-colors duration-500 ${theme === 'dark' ? 'bg-slate-950 text-slate-50' : 'bg-white text-slate-900'}`}>
 
             {/* Floating Navbar */}
             <nav className="fixed top-4 md:top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-7xl z-50">

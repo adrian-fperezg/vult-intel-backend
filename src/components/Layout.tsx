@@ -41,14 +41,14 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background-dark text-slate-100 font-sans relative">
+    <div className="flex flex-row h-screen w-screen overflow-hidden bg-background-dark text-slate-100 font-sans relative">
       <Sidebar />
 
       {/* Main Content Area */}
-      <main className="flex-1 min-h-screen overflow-x-hidden lg:ml-[260px] xl:ml-[280px]">
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col overflow-x-hidden lg:ml-[260px] xl:ml-[280px]">
         {/* Global Header */}
         <header className={cn(
-          "relative z-20 w-full flex items-center h-16 px-4 lg:px-8 border-b border-white/5 transition-all",
+          "relative z-20 w-full flex items-center shrink-0 h-16 px-4 lg:px-8 border-b border-white/5 transition-all",
           theme === 'dark' ? "bg-[#171b23]" : "bg-[#ffffff]"
         )}>
           <div className="flex items-center gap-4 w-full">
@@ -64,7 +64,7 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <div className="relative z-0">
+        <div className="flex-1 min-h-0 w-full overflow-y-auto relative z-0">
           <Outlet />
         </div>
       </main>
