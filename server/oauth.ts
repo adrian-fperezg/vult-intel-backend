@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import db from './db.js';
+import redis from './redis.js';
 
 dotenv.config();
 
@@ -160,6 +161,76 @@ export async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUs
   return response.json() as Promise<GoogleUserInfo>;
 }
 
+// helper to save tokens to both SQLite and Redis
+export async function saveTokens(mailboxId: string, tokens: GoogleTokenResponse, currentRefreshToken?: string) {
+  const { access_token, refresh_token, expires_in, scope } = tokens;
+  const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
+
+  const encryptedAccess = encryptToken(access_token);
+  const encryptedRefresh = refresh_token ? encryptToken(refresh_token) : (currentRefreshToken ? encryptToken(currentRefreshToken) : null);
+
+  // Save to SQLite
+  db.prepare(`
+    UPDATE outreach_mailboxes 
+    SET access_token = ?, refresh_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(encryptedAccess, encryptedRefresh, expiresAt, scope, mailboxId);
+
+  // Save to Redis for persistence across deployments
+  try {
+    const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+    if (mailbox) {
+      await redis.set(`mailbox:${mailboxId}`, JSON.stringify(mailbox), 'EX', 60 * 60 * 24 * 30); // 30 days
+      console.log(`Synced mailbox ${mailboxId} to Redis`);
+    }
+  } catch (err) {
+    console.error(`Failed to sync mailbox ${mailboxId} to Redis:`, err);
+  }
+}
+
+/**
+ * Startup task: Sync mailboxes from Redis back to SQLite if they are missing.
+ * This is crucial for Railway deployments where the SQLite file is reset.
+ */
+export async function syncMailboxesFromRedis() {
+  console.log("Checking Redis for persistent mailboxes...");
+  try {
+    const keys = await redis.keys("mailbox:*");
+    if (keys.length === 0) {
+      console.log("No mailboxes found in Redis.");
+      return;
+    }
+
+    let restoredCount = 0;
+    for (const key of keys) {
+      const data = await redis.get(key);
+      if (!data) continue;
+
+      const mailbox = JSON.parse(data);
+      const exists = db.prepare("SELECT id FROM outreach_mailboxes WHERE id = ?").get(mailbox.id);
+      
+      if (!exists) {
+        db.prepare(`
+          INSERT INTO outreach_mailboxes (id, user_id, project_id, email, name, access_token, refresh_token, expires_at, scope, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          mailbox.id, mailbox.user_id, mailbox.project_id, mailbox.email, mailbox.name,
+          mailbox.access_token, mailbox.refresh_token, mailbox.expires_at, mailbox.scope,
+          mailbox.created_at, mailbox.updated_at
+        );
+        restoredCount++;
+      }
+    }
+    if (restoredCount > 0) {
+      console.log(`Successfully restored ${restoredCount} mailboxes from Redis persistence.`);
+    } else {
+      console.log("SQLite is already in sync with Redis.");
+    }
+  } catch (err) {
+    console.error("Failed to sync mailboxes from Redis:", err);
+  }
+}
+
 // Helper to get a valid access token, refreshing if necessary
 export async function getValidAccessToken(mailboxId: string): Promise<string> {
   const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
@@ -179,14 +250,7 @@ export async function getValidAccessToken(mailboxId: string): Promise<string> {
   const refreshToken = decryptToken(mailbox.refresh_token);
   const tokens = await refreshGoogleToken(refreshToken);
 
-  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-  const encryptedAccess = encryptToken(tokens.access_token);
-
-  db.prepare(`
-    UPDATE outreach_mailboxes 
-    SET access_token = ?, expires_at = ?
-    WHERE id = ?
-  `).run(encryptedAccess, newExpiresAt, mailboxId);
+  await saveTokens(mailboxId, tokens, refreshToken);
 
   return tokens.access_token;
 }

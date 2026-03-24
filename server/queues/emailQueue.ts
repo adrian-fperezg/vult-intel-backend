@@ -1,24 +1,16 @@
 import { Queue, Worker, Job } from 'bullmq';
-import IORedis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db.js';
+import db from '../db.js';
 import dotenv from 'dotenv';
 import { getValidAccessToken } from '../oauth.js';
+import redis from '../redis.js';
 
 dotenv.config();
-
-const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
-
-connection.on('error', (err) => {
-  console.error('Redis connection error:', err);
-});
 
 // ─── QUEUES ──────────────────────────────────────────────────────────────────
 
 export const emailQueue = new Queue('email-queue', { 
-  connection,
+  connection: redis,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -30,7 +22,7 @@ export const emailQueue = new Queue('email-queue', {
 });
 
 export const campaignQueue = new Queue('campaign-queue', { 
-  connection,
+  connection: redis,
   defaultJobOptions: {
     removeOnComplete: true,
   }
@@ -64,14 +56,16 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
   } finally {
     clearTimeout(timeoutId);
   }
-}, { connection });
+}, { connection: redis as any });
 
-async function processEmail(emailId: string, signal: AbortSignal) {
+export async function processEmail(emailId: string, signal?: AbortSignal) {
   const email = db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
   if (!email) throw new Error(`Email ${emailId} not found in DB`);
 
   const mailboxId = email.mailbox_id;
   const accessToken = await getValidAccessToken(mailboxId);
+  
+  console.log("TOKEN_STATUS:", !!accessToken);
 
   // 1. Build the RFC822 message
   const subject = email.subject || "(No Subject)";
@@ -221,7 +215,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
       console.error(`Failed to process enrollment ${enrollment.id}:`, err);
     }
   }
-}, { connection });
+}, { connection: redis as any });
 
 emailWorker.on('failed', (job, err) => {
   console.error(`Job ${job?.id} failed: ${err.message}`);

@@ -4,7 +4,7 @@ import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import db from "./db";
-import { emailQueue, campaignQueue } from "./queues/emailQueue.js";
+import { emailQueue, campaignQueue, processEmail } from "./queues/emailQueue.js";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
 import {
   buildGoogleAuthUrl,
@@ -14,6 +14,8 @@ import {
   encryptToken,
   decryptToken,
   getValidAccessToken,
+  saveTokens,
+  syncMailboxesFromRedis,
 } from "./oauth.js";
 import { domainSearch, emailFinder, emailVerifier, getAccountInformation } from "./lib/outreach/hunter.js";
 import { syncMailbox } from "./lib/outreach/gmailSync.js";
@@ -1199,43 +1201,45 @@ app.delete("/api/outreach/compose/:id", (req: AuthRequest, res) => {
 app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
-  const { scheduled_at } = req.body; // Optional scheduling
+  const { scheduled_at } = req.body; 
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  const email = db
-    .prepare(
-      "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
-    )
-    .get(id, userId) as any;
+  const email = db.prepare(
+    "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
+  ).get(id, userId) as any;
   if (!email) return res.status(404).json({ error: "Email not found" });
 
-  if (scheduled_at) {
-    db.prepare(
-      "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).run("scheduled", scheduled_at, id);
-    return res.json({ success: true, status: "scheduled" });
-  }
-
   try {
-    const delay = scheduled_at ? Math.max(0, new Date(scheduled_at).getTime() - Date.now()) : 0;
+    if (scheduled_at) {
+      const delay = Math.max(0, new Date(scheduled_at).getTime() - Date.now());
+      db.prepare(
+        "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).run("scheduled", scheduled_at, id);
+      
+      await emailQueue.add(`send-email-${id}`, { emailId: id }, { delay });
+      
+      return res.json({ success: true, status: "scheduled", scheduled_at });
+    }
+
+    // Individual send — wait for Gmail API OK
+    console.log(`Attempting direct send for email ${id}...`);
     
-    // Update status to scheduled or pending_send
+    // We update status to pending_send first
     db.prepare(
-      "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).run(scheduled_at ? "scheduled" : "pending_send", scheduled_at || null, id);
+      "UPDATE outreach_individual_emails SET status = 'pending_send', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).run(id);
 
-    // Add to BullMQ queue
-    await emailQueue.add(`send-email-${id}`, { emailId: id }, { delay });
-
+    const result = await processEmail(id);
+    
     res.json({
       success: true,
-      status: scheduled_at ? "scheduled" : "pending_send",
-      scheduled_at: scheduled_at || null,
+      status: "sent",
+      messageId: result.messageId
     });
-  } catch (error) {
-    console.error("Failed to queue email:", error);
-    res.status(500).json({ error: "Failed to queue email" });
+  } catch (error: any) {
+    console.error("Failed to send email:", error);
+    res.status(500).json({ error: error.message || "Failed to send email" });
   }
 });
 
@@ -1578,6 +1582,9 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+// Start sync
+syncMailboxesFromRedis();
+
+app.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`🚀 Outreach API running at http://localhost:${PORT}`);
 });
