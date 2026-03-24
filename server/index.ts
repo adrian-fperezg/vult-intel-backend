@@ -1199,19 +1199,34 @@ app.delete("/api/outreach/compose/:id", (req: AuthRequest, res) => {
 
 // POST /api/outreach/compose/:id/send
 app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
   const { id } = req.params;
   const { scheduled_at } = req.body; 
 
-  if (!userId) return res.status(401).json({ error: "Auth required" });
+  const userId = req.user?.uid;
+  if (!userId) {
+    console.error(`ERROR: Send failed for email ${id} - Missing user authentication`);
+    return res.status(401).json({ error: "Auth required" });
+  }
 
-  const email = db.prepare(
-    "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
-  ).get(id, userId) as any;
-  if (!email) return res.status(404).json({ error: "Email not found" });
+  console.log(`[OUTREACH] Attempting to send email. id=${id}, userId=${userId}`);
 
   try {
+    const email = db.prepare(
+      "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
+    ).get(id, userId) as any;
+
+    if (!email) {
+      console.error(`ERROR: Email ${id} not found for user ${userId}`);
+      return res.status(404).json({ error: "Email record not found" });
+    }
+
+    if (!email.mailbox_id) {
+      console.error(`ERROR: Email ${id} is missing mailbox_id`);
+      return res.status(400).json({ error: "No mailbox associated with this email. Please select a mailbox." });
+    }
+
     if (scheduled_at) {
+      console.log(`[OUTREACH] Scheduling email ${id} for ${scheduled_at}`);
       const delay = Math.max(0, new Date(scheduled_at).getTime() - Date.now());
       db.prepare(
         "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1223,7 +1238,7 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
     }
 
     // Individual send — wait for Gmail API OK
-    console.log(`Attempting direct send for email ${id}...`);
+    console.log(`[OUTREACH] Initiating direct send for email ${id}. Mailbox: ${email.mailbox_id}`);
     
     // We update status to pending_send first
     db.prepare(
@@ -1232,14 +1247,20 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
 
     const result = await processEmail(id);
     
+    console.log(`[OUTREACH] Direct send successful for email ${id}. messageId: ${result.messageId}`);
     res.json({
       success: true,
       status: "sent",
       messageId: result.messageId
     });
   } catch (error: any) {
-    console.error("Failed to send email:", error);
-    res.status(500).json({ error: error.message || "Failed to send email" });
+    console.error("CRITICAL ERROR: Failed to send email (500):");
+    console.error(error); // Print full stack trace
+
+    res.status(500).json({ 
+      error: error.message || "Failed to send email",
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    });
   }
 });
 

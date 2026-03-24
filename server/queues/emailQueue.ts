@@ -59,10 +59,21 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 }, { connection: redis as any });
 
 export async function processEmail(emailId: string, signal?: AbortSignal) {
+  console.log(`[processEmail] Starting for emailId: ${emailId}`);
   const email = db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
-  if (!email) throw new Error(`Email ${emailId} not found in DB`);
+  
+  if (!email) {
+    console.error(`[processEmail] Email ${emailId} not found in DB`);
+    throw new Error(`Email ${emailId} not found in DB`);
+  }
 
   const mailboxId = email.mailbox_id;
+  if (!mailboxId) {
+    console.error(`[processEmail] Email ${emailId} is missing mailbox_id`);
+    throw new Error(`Email ${emailId} is missing mailbox_id`);
+  }
+
+  console.log(`[processEmail] Found email record. mailboxId: ${mailboxId}. Fetching token...`);
   const accessToken = await getValidAccessToken(mailboxId);
   
   console.log("TOKEN_STATUS:", !!accessToken);
@@ -88,26 +99,42 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     .replace(/=+$/, "");
 
   // 2. Send via Gmail API
-  const response = await fetch(
-    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ raw: encodedMessage }),
-      signal, // Pass the abort signal
-    }
-  );
+  console.log(`[processEmail] Sending RFC822 message to Gmail API for emailId: ${emailId}`);
+  
+  let response;
+  try {
+    response = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ raw: encodedMessage }),
+        signal, // Pass the abort signal
+      }
+    );
+  } catch (fetchErr: any) {
+    console.error(`[processEmail] Network error or timeout calling Gmail API for emailId ${emailId}:`, fetchErr);
+    throw new Error(`Failed to reach Gmail API: ${fetchErr.message}`);
+  }
 
   if (!response.ok) {
     const errorData = await response.text();
+    console.error(`[processEmail] Gmail API responded with error ${response.status} for emailId ${emailId}:`, errorData);
     throw new Error(`Gmail API error: ${response.status} - ${errorData}`);
   }
 
-  const result = await response.json() as { id: string; threadId: string };
-  console.log(`Email ${emailId} sent successfully via Gmail. Message ID: ${result.id}`);
+  let result;
+  try {
+    result = await response.json() as { id: string; threadId: string };
+  } catch (jsonErr: any) {
+    console.error(`[processEmail] Failed to parse Gmail API response for emailId ${emailId}:`, jsonErr);
+    throw new Error(`Invalid response from Gmail API: ${jsonErr.message}`);
+  }
+
+  console.log(`[processEmail] Email ${emailId} sent successfully. Gmail ID: ${result.id}`);
 
   db.prepare(`
     UPDATE outreach_individual_emails 
