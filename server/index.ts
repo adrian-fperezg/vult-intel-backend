@@ -100,7 +100,7 @@ app.get("/api/outreach/auth/google", async (req, res) => {
   }
 });
 
-app.get("/api/outreach/auth/google/callback", async (req, res) => {
+app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], async (req, res) => {
   const { code, state, error } = req.query as {
     code?: string;
     state?: string;
