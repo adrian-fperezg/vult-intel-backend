@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, Send, Save, Trash2, Clock, X, Paperclip, Type } from 'lucide-react';
+import { Loader2, Send, Save, Trash2, Clock, X, Paperclip, Type, ChevronDown, Mail, Flame } from 'lucide-react';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { TealButton } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
@@ -43,6 +43,19 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
 
   const [status, setStatus] = useState<'draft' | 'scheduled' | 'sent'>('draft');
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isMailboxOpen, setIsMailboxOpen] = useState(false);
+  const mailboxRef = useRef<HTMLDivElement>(null);
+
+  // Click outside handler for custom dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (mailboxRef.current && !mailboxRef.current.contains(event.target as Node)) {
+        setIsMailboxOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Load supporting data (mailboxes, contacts)
   useEffect(() => {
@@ -255,19 +268,70 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-4">
             {/* From */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" ref={mailboxRef}>
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">From Account</label>
-              <select
-                value={form.mailbox_id}
-                onChange={e => setForm({ ...form, mailbox_id: e.target.value })}
-                disabled={isReadOnly}
-                className="w-full bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none transition-colors disabled:opacity-50 appearance-none"
-              >
-                <option value="" disabled>Select a connected Gmail...</option>
-                {mailboxes.map(mb => (
-                  <option key={mb.id} value={mb.id}>{mb.email}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => !isReadOnly && setIsMailboxOpen(!isMailboxOpen)}
+                  disabled={isReadOnly}
+                  className="w-full h-[46px] flex items-center justify-between px-4 bg-[#161b22] border border-[#30363d] focus-within:border-teal-500/50 hover:border-teal-500/50 rounded-xl text-sm text-white focus:outline-none transition-all disabled:opacity-50"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    {(() => {
+                      const selected = mailboxes.find(m => m.id === form.mailbox_id);
+                      if (!selected) return <span className="text-slate-500">Select a connected account...</span>;
+                      return (
+                        <>
+                          {selected.warmupActive ? (
+                            <div className="flex items-center gap-2">
+                              <Flame className="size-4 text-orange-500 shrink-0" />
+                              <span className="truncate">{selected.email}</span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 shrink-0">Warming Up</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Mail className="size-4 text-slate-400 shrink-0" />
+                              <span className="truncate">{selected.email}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <ChevronDown className={cn("size-4 text-slate-500 transition-transform shrink-0", isMailboxOpen && "rotate-180")} />
+                </button>
+                
+                {isMailboxOpen && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-2 max-h-64 overflow-y-auto bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl py-1">
+                    {mailboxes.length === 0 && (
+                      <div className="px-4 py-3 text-sm text-slate-500 text-center">No connected mailboxes</div>
+                    )}
+                    {mailboxes.map(mb => (
+                      <button
+                        key={mb.id}
+                        type="button"
+                        onClick={() => {
+                          setForm({ ...form, mailbox_id: mb.id });
+                          setIsMailboxOpen(false);
+                        }}
+                        className={cn(
+                           "w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition-colors hover:bg-white/5",
+                           form.mailbox_id === mb.id ? "bg-teal-500/10 text-teal-400" : "text-slate-300"
+                        )}
+                      >
+                        {mb.warmupActive ? <Flame className="size-4 text-orange-500 shrink-0" /> : <Mail className="size-4 text-slate-400 shrink-0" />}
+                        <span className="truncate">{mb.email}</span>
+                        {mb.warmupActive ? (
+                           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 ml-auto shrink-0">Warming Up</span>
+                        ) : (
+                           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 ml-auto shrink-0">Mailbox</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* To Email */}
@@ -279,24 +343,27 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
                 value={form.to_email}
                 onChange={e => setForm({ ...form, to_email: e.target.value })}
                 disabled={isReadOnly}
-                className="w-full bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none transition-colors disabled:opacity-50"
+                className="w-full h-[46px] bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl px-4 text-sm text-white focus:outline-none transition-colors disabled:opacity-50"
               />
             </div>
 
             {/* Link Contact (Optional) */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 relative">
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Link to Contact (Optional)</label>
-              <select
-                value={form.contact_id || ''}
-                onChange={e => setForm({ ...form, contact_id: e.target.value })}
-                disabled={isReadOnly}
-                className="w-full bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none transition-colors disabled:opacity-50 appearance-none"
-              >
-                <option value="">No linked contact</option>
-                {contacts.map(c => (
-                  <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.email})</option>
-                ))}
-              </select>
+              <div className="relative w-full">
+                <select
+                  value={form.contact_id || ''}
+                  onChange={e => setForm({ ...form, contact_id: e.target.value })}
+                  disabled={isReadOnly}
+                  className="w-full h-[46px] bg-[#161b22] border border-[#30363d] focus:border-teal-500/50 rounded-xl px-4 text-sm text-white focus:outline-none transition-colors disabled:opacity-50 appearance-none pr-10"
+                >
+                  <option value="">No linked contact</option>
+                  {contacts.map(c => (
+                    <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.email})</option>
+                  ))}
+                </select>
+                <ChevronDown className="size-4 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
             </div>
 
             {/* Schedule (Optional) */}
@@ -306,7 +373,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
                 type="button"
                 onClick={() => setIsScheduleModalOpen(true)}
                 disabled={isReadOnly}
-                className="w-full h-[42px] flex items-center justify-between px-4 bg-[#161b22] border border-[#30363d] hover:border-teal-500/50 rounded-xl text-sm text-white focus:outline-none transition-all disabled:opacity-50 group"
+                className="w-full h-[46px] flex items-center justify-between px-4 bg-[#161b22] border border-[#30363d] hover:border-teal-500/50 rounded-xl text-sm text-white focus:outline-none transition-all disabled:opacity-50 group"
               >
                 <div className="flex items-center gap-3">
                   <Clock className={cn("size-4", form.scheduled_at ? "text-teal-400" : "text-slate-500")} />
@@ -339,7 +406,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
               value={form.subject}
               onChange={e => setForm({ ...form, subject: e.target.value })}
               disabled={isReadOnly}
-              className="w-full bg-transparent border-none text-2xl font-bold text-white placeholder:text-slate-600 focus:outline-none focus:ring-0 px-0"
+              className="w-full bg-transparent border-none text-2xl font-bold text-white placeholder:text-slate-600 focus:outline-none focus:ring-0 px-1"
             />
           </div>
 
