@@ -941,7 +941,7 @@ app.get("/api/outreach/inbox", (req: AuthRequest, res) => {
       FROM outreach_events
       WHERE type IN ('reply')
       GROUP BY contact_id
-      HAVING created_at = MAX(created_at)
+      HAVING outreach_events.created_at = MAX(outreach_events.created_at)
     ) e ON c.id = e.contact_id
     WHERE c.user_id = ?
       AND c.project_id = ?

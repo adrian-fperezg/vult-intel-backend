@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
