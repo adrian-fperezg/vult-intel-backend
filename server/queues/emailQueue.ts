@@ -223,8 +223,8 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           WHERE id = ?
         `).run(firstStep.id, enrollment.id);
 
-        // Queue the email job
-        emailQueue.add(`email-${emailId}`, { emailId });
+        // Queue the email job with a deterministic jobId for easy cancellation
+        emailQueue.add(`email-${emailId}`, { emailId }, { jobId: emailId });
       })();
     } catch (err) {
       console.error(`Failed to process enrollment ${enrollment.id}:`, err);
@@ -239,3 +239,37 @@ emailWorker.on('failed', (job, err) => {
 emailWorker.on('completed', (job) => {
   console.log(`Job ${job.id} completed successfully`);
 });
+
+/**
+ * Cancels all pending (waiting/delayed) jobs associated with a given mailbox.
+ * Also marks associated outreach_individual_emails as 'cancelled' in the DB.
+ */
+export async function cancelMailboxJobs(mailboxId: string) {
+  console.log(`[cancelMailboxJobs] Cancelling pending jobs for mailbox: ${mailboxId}`);
+  
+  // 1. Find all 'scheduled' emails for this mailbox
+  const pendingEmails = db.prepare(`
+    SELECT id FROM outreach_individual_emails 
+    WHERE mailbox_id = ? AND status = 'scheduled'
+  `).all(mailboxId) as { id: string }[];
+
+  let cancelledCount = 0;
+  for (const email of pendingEmails) {
+    try {
+      // Since we now use jobId: emailId, we can remove it directly
+      const job = await emailQueue.getJob(email.id);
+      if (job) {
+        await job.remove();
+        cancelledCount++;
+      }
+      
+      // Update DB status regardless of whether job was found in queue (might have just started)
+      db.prepare("UPDATE outreach_individual_emails SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.id);
+    } catch (err) {
+      console.error(`[cancelMailboxJobs] Failed to cancel job for email ${email.id}:`, err);
+    }
+  }
+
+  console.log(`[cancelMailboxJobs] Cancelled ${cancelledCount} jobs for mailbox ${mailboxId}`);
+  return cancelledCount;
+}

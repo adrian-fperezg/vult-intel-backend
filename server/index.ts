@@ -5,8 +5,8 @@ import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import cookieSession from "cookie-session";
 import db from "./db";
-import { emailQueue, campaignQueue, processEmail } from "./queues/emailQueue.js";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
+import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs } from "./queues/emailQueue.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -218,13 +218,18 @@ app.get("/api/outreach/mailboxes", (req: AuthRequest, res) => {
   if (!project_id)
     return res.status(400).json({ error: "project_id is required" });
 
-  const mailboxes = db
-    .prepare(
-      "SELECT id, email, name, status, expires_at, scope, created_at FROM outreach_mailboxes WHERE user_id = ? AND project_id = ? AND status != 'disconnected' ORDER BY created_at ASC",
-    )
-    .all(userId, project_id);
+  try {
+    const mailboxes = db
+      .prepare(
+        "SELECT id, email, name, status, expires_at, scope, created_at FROM outreach_mailboxes WHERE user_id = ? AND project_id = ? AND status != 'disconnected' ORDER BY created_at ASC",
+      )
+      .all(userId, project_id);
 
-  res.json(mailboxes);
+    res.json(mailboxes);
+  } catch (err: any) {
+    console.error("[GET /mailboxes] Error:", err);
+    res.status(500).json({ error: "Failed to fetch mailboxes", details: err.message });
+  }
 });
 
 // POST /api/outreach/mailboxes/:id/sync
@@ -264,21 +269,40 @@ app.get("/api/outreach/auth/gmail-url", (req: AuthRequest, res) => {
 });
 
 // DELETE /api/outreach/mailboxes/:id
-app.delete("/api/outreach/mailboxes/:id", (req: AuthRequest, res) => {
+app.delete("/api/outreach/mailboxes/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
+  const { project_id } = req.query as { project_id?: string };
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id query param is required" });
 
-  const result = db
-    .prepare("DELETE FROM outreach_mailboxes WHERE id = ? AND user_id = ?")
-    .run(id, userId);
+  try {
+    console.log(`[DELETE /mailboxes/${id}] Disconnecting mailbox for user: ${userId}, project: ${project_id}`);
 
-  if (result.changes === 0) {
-    return res.status(404).json({ error: "Mailbox not found" });
+    // 1. Verify ownership and project association BEFORE mutation
+    const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ? AND user_id = ? AND project_id = ?").get(id, userId, project_id) as any;
+    
+    if (!mailbox) {
+      return res.status(404).json({ error: "Mailbox not found or does not belong to this project" });
+    }
+
+    // 2. Soft delete: Clear tokens and set status to 'disconnected'
+    db.prepare(`
+      UPDATE outreach_mailboxes 
+      SET status = 'disconnected', access_token = NULL, refresh_token = NULL, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(id);
+
+    // 3. Cancel any pending jobs associated with this mailbox
+    const cancelledJobs = await cancelMailboxJobs(id);
+
+    console.log(`[DELETE /mailboxes/${id}] Success. Cancelled ${cancelledJobs} jobs.`);
+    res.json({ success: true, cancelledJobs });
+  } catch (err: any) {
+    console.error(`[DELETE /mailboxes/${id}] Fatal Error:`, err);
+    res.status(500).json({ error: "Failed to disconnect mailbox", message: err.message });
   }
-
-  res.json({ success: true });
 });
 
 // ─── CAMPAIGNS ────────────────────────────────────────────────────────────────

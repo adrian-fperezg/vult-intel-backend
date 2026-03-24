@@ -267,8 +267,8 @@ export function useOutreachApi() {
   const fetchAnalytics = useCallback((days: number) => get<AnalyticsData>(`/analytics?days=${days}`), [get]);
 
   const disconnectMailbox = useCallback(
-    (id: string) => del(`/mailboxes/${id}`),
-    [del],
+    (id: string) => del(`/mailboxes/${id}?project_id=${activeProjectId}`),
+    [del, activeProjectId],
   );
 
   /**
