@@ -1212,23 +1212,24 @@ app.delete("/api/outreach/compose/:id", (req: AuthRequest, res) => {
 
 // POST /api/outreach/compose/:id/send
 app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
-  const { id } = req.params;
-  const { scheduled_at } = req.body;
-  const userId = req.user?.uid;
-
-  if (!userId) {
-    return res.status(401).json({ error: "User not authenticated" });
-  }
-
-  console.log(`[OUTREACH] Attempting to send email. id=${id}, userId=${userId}`);
-
   try {
+    const { id } = req.params;
+    const { scheduled_at } = req.body || {};
+    const userId = req.user?.uid;
+
+    if (!userId) {
+      console.warn(`[OUTREACH] Unauthorized access attempt to /send for id=${id}`);
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    console.log(`[OUTREACH] Attempting to send email. id=${id}, userId=${userId}`);
+
     const email = db.prepare(
       "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
     ).get(id, userId) as any;
 
     if (!email) {
-      console.error(`ERROR: Email ${id} not found for user ${userId}`);
+      console.error(`[OUTREACH ERROR] Email ${id} not found for user ${userId}`);
       return res.status(404).json({ error: "Email record not found" });
     }
 
