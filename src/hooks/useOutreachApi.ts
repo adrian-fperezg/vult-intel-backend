@@ -211,6 +211,9 @@ export function useOutreachApi() {
   const hunterEmailVerifier = useCallback((email: string) => 
     post<any>('/hunter/email-verifier', { email }), [post]
   );
+  const hunterAiAssist = useCallback((prompt: string) => 
+    post<any>('/hunter/ai-assist', { prompt }), [post]
+  );
 
   // ── Contact Lists ────────────────────────────────────────────────────────
 
@@ -373,5 +376,6 @@ export function useOutreachApi() {
     hunterDomainSearch,
     hunterEmailFinder,
     hunterEmailVerifier,
+    hunterAiAssist,
   };
 }

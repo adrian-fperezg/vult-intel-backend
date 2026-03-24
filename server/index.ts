@@ -123,6 +123,7 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
 
     // Exchange code for tokens
     const tokens = await exchangeCodeForTokens(code);
+    console.log('[OAuth] Tokens received from Google - hasRefreshToken:', !!tokens.refresh_token, 'expiry_date:', tokens.expiry_date);
 
     // Fetch the Google account's email
     const userInfo = (await fetchGoogleUserInfo(tokens.access_token!)) as any;
@@ -793,6 +794,9 @@ app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
     status,
     tags,
     project_id,
+    source_detail,
+    confidence_score,
+    verification_status,
   } = req.body;
 
   if (!project_id)
@@ -802,8 +806,12 @@ app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
   const id = uuidv4();
   db.prepare(
     `
-    INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, title, company, website, phone, linkedin, status, tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO outreach_contacts (
+      id, user_id, project_id, first_name, last_name, email, 
+      title, company, website, phone, linkedin, status, tags,
+      source_detail, confidence_score, verification_status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -819,6 +827,9 @@ app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
     linkedin || "",
     status || "not_enrolled",
     JSON.stringify(tags || []),
+    source_detail || null,
+    confidence_score || null,
+    verification_status || null,
   );
 
   const contact = db
@@ -1661,6 +1672,44 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/hunter/ai-assist", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, prompt } = req.body;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY || "",
+    });
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-haiku-20240307",
+      max_tokens: 500,
+      temperature: 0,
+      system: `You are a lead generation assistant. Your goal is to convert a user request into a domain search for Hunter.io. 
+      If the user provides a company name, try to guess their likely domain (e.g. Stripe -> stripe.com).
+      If the user provides a niche and location, try to identify 3-5 major domains in that niche.
+      Return ONLY a JSON object with a 'domains' array (max 5) and a 'query' string for display.
+      
+      Example Output:
+      {
+        "domains": ["stripe.com"],
+        "suggested_query": "Stripe"
+      }`,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = (response.content[0] as any).text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const data = jsonMatch ? JSON.parse(jsonMatch[0]) : { domains: [], suggested_query: prompt };
+    
+    res.json(data);
+  } catch (error: any) {
+    console.error("AI Assist Error:", error);
+    res.status(500).json({ error: "Failed to process AI request" });
   }
 });
 

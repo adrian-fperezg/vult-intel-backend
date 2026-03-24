@@ -11,6 +11,12 @@ const ALGORITHM = 'aes-256-cbc';
 
 function getKey(): Buffer {
   const raw = process.env.OUTREACH_TOKEN_ENCRYPTION_KEY || '';
+  if (raw) {
+    const hash = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 8);
+    console.log(`[OAuth] Using encryption key hash (first 8 chars): ${hash}`);
+  } else {
+    console.warn('[OAuth] NO ENCRYPTION KEY FOUND in environment!');
+  }
   // Pad / trim to exactly 32 bytes
   return Buffer.from(raw.padEnd(32, '0').slice(0, 32), 'utf8');
 }
@@ -101,12 +107,20 @@ export async function fetchGoogleUserInfo(accessToken: string) {
  */
 export async function getValidGmailClient(mailboxId: string) {
   const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
-  if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
+  if (!mailbox) {
+    console.error(`[OAuth] Mailbox ${mailboxId} not found in database`);
+    throw new Error("MAILBOX_NOT_FOUND");
+  }
+
+  console.log(`[OAuth] Diagnosing mailbox ${mailboxId}: email=${mailbox.email}, status=${mailbox.status}, hasExpiresAt=${!!mailbox.expires_at}`);
 
   const accessToken = decryptToken(mailbox.access_token);
   const refreshToken = decryptToken(mailbox.refresh_token);
 
+  console.log(`[OAuth] Token existence after decryption: hasAccessToken=${!!accessToken}, hasRefreshToken=${!!refreshToken}`);
+
   if (!accessToken && !refreshToken) {
+    console.error(`[OAuth] Decryption failed for mailbox ${mailboxId}. Token fields may be malformed or key changed.`);
     throw new Error("DECRYPTION_FAILED");
   }
 
@@ -122,20 +136,30 @@ export async function getValidGmailClient(mailboxId: string) {
   oauth2Client.on('tokens', (tokens) => {
     if (tokens.access_token) {
       wasRefreshed = true;
-      console.log(`[OAuth] Access token refreshed for mailbox ${mailboxId}`);
+      console.log(`[OAuth] Access token refreshed via event for mailbox ${mailboxId}`);
     }
   });
 
   // This will trigger a refresh if the token is expired
   try {
-    await oauth2Client.getAccessToken();
+    console.log(`[OAuth] Probing access token for mailbox ${mailboxId}...`);
+    const { token } = await oauth2Client.getAccessToken();
+    if (!token) {
+       console.error(`[OAuth] getAccessToken returned null for mailbox ${mailboxId}`);
+       throw new Error("GMAIL_AUTH_FAILED");
+    }
+    console.log(`[OAuth] Access token is valid for mailbox ${mailboxId}`);
   } catch (err) {
     console.error(`[OAuth] Refresh failed for mailbox ${mailboxId}:`, err.message);
+    if (err.message.includes('invalid_grant')) {
+      console.error(`[OAuth] INVALID_GRANT for ${mailboxId} - User may have revoked access or refresh token expired.`);
+    }
     throw new Error("GMAIL_AUTH_FAILED");
   }
 
   if (wasRefreshed) {
     const tokens = oauth2Client.credentials;
+    console.log(`[OAuth] Committing refreshed tokens to DB for ${mailboxId}`);
     await saveTokens(mailboxId, {
       access_token: tokens.access_token!,
       refresh_token: tokens.refresh_token || refreshToken, // fallback to existing one
@@ -152,12 +176,16 @@ export async function getValidGmailClient(mailboxId: string) {
  */
 export async function getValidAccessToken(mailboxId: string): Promise<string> {
   const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
-  if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
+  if (!mailbox) {
+    console.error(`[OAuth] getValidAccessToken: Mailbox ${mailboxId} not found`);
+    throw new Error("MAILBOX_NOT_FOUND");
+  }
 
   const accessToken = decryptToken(mailbox.access_token);
   const refreshToken = decryptToken(mailbox.refresh_token);
 
   if (!accessToken && !refreshToken) {
+    console.error(`[OAuth] getValidAccessToken: Decryption failed for mailbox ${mailboxId}`);
     throw new Error("DECRYPTION_FAILED");
   }
 
@@ -168,15 +196,24 @@ export async function getValidAccessToken(mailboxId: string): Promise<string> {
     expiry_date: mailbox.expires_at ? new Date(mailbox.expires_at).getTime() : 0,
   });
 
-  const { token } = await oauth2Client.getAccessToken();
-  if (!token) throw new Error("GMAIL_AUTH_FAILED");
-  
-  return token;
+  try {
+    const { token } = await oauth2Client.getAccessToken();
+    if (!token) {
+      console.error(`[OAuth] getValidAccessToken: Returned null for ${mailboxId}`);
+      throw new Error("GMAIL_AUTH_FAILED");
+    }
+    return token;
+  } catch (err) {
+    console.error(`[OAuth] getValidAccessToken: Refresh failed for ${mailboxId}:`, err.message);
+    throw new Error("GMAIL_AUTH_FAILED");
+  }
 }
 
 export async function saveTokens(mailboxId: string, tokens: { access_token: string; refresh_token?: string; expiry_date: number; scope: string }) {
   const { access_token, refresh_token, expiry_date, scope } = tokens;
   const expiresAt = new Date(expiry_date).toISOString();
+
+  console.log(`[OAuth] Saving tokens for ${mailboxId}: hasRefreshToken=${!!refresh_token}, expiresAt=${expiresAt}`);
 
   const encryptedAccess = encryptToken(access_token);
   const encryptedRefresh = refresh_token ? encryptToken(refresh_token) : null;

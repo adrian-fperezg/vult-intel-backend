@@ -14,19 +14,21 @@ import OutreachInbox from './outreach/OutreachInbox';
 import OutreachAnalytics from './outreach/OutreachAnalytics';
 import OutreachSettings from './outreach/OutreachSettings';
 import OutreachCompose from './outreach/OutreachCompose';
+import OutreachLeadFinder from './outreach/OutreachLeadFinder';
 import { PaperPlaneIcon } from './outreach/OutreachCommon';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
-type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings';
+type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings' | 'lead-finder';
 
 const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
-  { id: 'analytics',  label: 'Analytics' },
-  { id: 'compose',    label: 'Compose', badge: true },
-  { id: 'campaigns',  label: 'Campaigns' },
-  { id: 'sequences',  label: 'Sequences' },
-  { id: 'contacts',   label: 'Contacts' },
-  { id: 'inbox',      label: 'Inbox' },
-  { id: 'settings',   label: 'Settings' },
+  { id: 'analytics',    label: 'Analytics' },
+  { id: 'lead-finder',  label: 'Lead Finder' },
+  { id: 'compose',      label: 'Compose', badge: true },
+  { id: 'campaigns',    label: 'Campaigns' },
+  { id: 'sequences',    label: 'Sequences' },
+  { id: 'contacts',     label: 'Contacts' },
+  { id: 'inbox',        label: 'Inbox' },
+  { id: 'settings',     label: 'Settings' },
 ];
 
 export default function OutreachLayout() {
@@ -48,6 +50,16 @@ export default function OutreachLayout() {
       setActiveTab('settings');
       window.history.replaceState({}, '', window.location.pathname);
     }
+
+    // Listen for cross-tab navigation events
+    const handleTabChange = (e: any) => {
+      const target = e.detail as OutreachTab;
+      if (TABS.some(t => t.id === target)) {
+        setActiveTab(target);
+      }
+    };
+    window.addEventListener('outreach-tab-change', handleTabChange);
+    return () => window.removeEventListener('outreach-tab-change', handleTabChange);
   }, []);
 
   // Poll for draft count
@@ -199,6 +211,7 @@ export default function OutreachLayout() {
               {activeTab === 'inbox'      && <OutreachInbox />}
               {activeTab === 'analytics'  && <OutreachAnalytics />}
               {activeTab === 'settings'   && <OutreachSettings />}
+              {activeTab === 'lead-finder' && <OutreachLeadFinder />}
             </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
