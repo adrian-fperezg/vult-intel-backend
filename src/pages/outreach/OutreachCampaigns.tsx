@@ -201,16 +201,16 @@ export default function OutreachCampaigns() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2.5 flex-wrap">
-                          <h3 className="font-semibold text-white text-sm truncate">{campaign.name}</h3>
+                          <h3 className="font-semibold text-white text-sm truncate">{String(campaign.name || 'Untitled')}</h3>
                           <OutreachBadge variant={statusCfg.variant} dot={campaign.status === 'active'}>
-                            {statusCfg.label}
+                            {String(statusCfg.label)}
                           </OutreachBadge>
                           {isDuplicating === campaign.id && (
                             <Loader2 className="size-3.5 animate-spin text-teal-400" />
                           )}
                         </div>
                         {campaign.sequence && (
-                          <p className="text-xs text-slate-500 mt-1">{campaign.sequence}</p>
+                          <p className="text-xs text-slate-500 mt-1">{String(campaign.sequence)}</p>
                         )}
                         <div className="flex items-center gap-4 mt-3 flex-wrap">
                           <span className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -232,7 +232,7 @@ export default function OutreachCampaigns() {
                             </span>
                           )}
                           <span className="flex items-center gap-1 text-xs text-slate-600">
-                            <Clock className="size-3" /> {campaign.createdAt}
+                            <Clock className="size-3" /> {String(campaign.createdAt)}
                           </span>
                         </div>
                       </div>

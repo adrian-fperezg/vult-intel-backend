@@ -159,15 +159,20 @@ export default function OutreachAnalytics() {
                 </Pie>
               </PieChart>
               <div className="flex-1 space-y-2">
-                {data.intent_data.map(({ name, value, color }) => (
-                  <div key={name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="size-2 rounded-full shrink-0" style={{ background: color }} />
-                      <span className="text-slate-400">{name}</span>
+                {(data?.intent_data || []).map((item) => {
+                  const name = item?.name || 'Unknown';
+                  const value = item?.value || 0;
+                  const color = item?.color || '#333';
+                  return (
+                    <div key={String(name)} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="size-2 rounded-full shrink-0" style={{ background: color }} />
+                        <span className="text-slate-400">{String(name)}</span>
+                      </div>
+                      <span className="font-bold text-white">{String(value)}%</span>
                     </div>
-                    <span className="font-bold text-white">{value}%</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -206,30 +211,30 @@ export default function OutreachAnalytics() {
               const scoreColor = score >= 85 ? '#14B8A6' : score >= 70 ? '#EAB308' : '#EF4444';
               const scoreBadge = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
               return (
-                <div key={email} className="flex items-center gap-5 p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                <div key={String(email)} className="flex items-center gap-5 p-4 rounded-xl bg-white/[0.02] border border-white/5">
                   <div style={{ '--score-color': scoreColor } as any} className="relative size-14 shrink-0">
                     <svg viewBox="0 0 36 36" className="size-14 -rotate-90">
                       <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="2.5" />
                       <circle
                         cx="18" cy="18" r="15" fill="none"
                         stroke={scoreColor} strokeWidth="2.5"
-                        strokeDasharray={`${(score / 100) * 94.2} 94.2`}
+                        strokeDasharray={`${(Number(score) / 100) * 94.2} 94.2`}
                         strokeLinecap="round"
                       />
                     </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-sm font-bold" style={{ color: scoreColor }}>{score}</span>
+                    <span className="absolute inset-0 flex items-center justify-center text-sm font-bold" style={{ color: scoreColor }}>{String(score)}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold text-white text-sm">{email}</p>
+                      <p className="font-semibold text-white text-sm">{String(email)}</p>
                       <OutreachBadge variant={scoreBadge as any}>
-                        {status}
+                        {String(status)}
                       </OutreachBadge>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-slate-500">
-                      <span>{sent.toLocaleString()} sent</span>
-                      <span className={bounceRate > 3 ? 'text-red-400' : 'text-slate-400'}>Bounce: {bounceRate}%</span>
-                      <span className={spamRate > 0.5 ? 'text-amber-400' : 'text-slate-400'}>Spam: {spamRate}%</span>
+                      <span>{Number(sent).toLocaleString()} sent</span>
+                      <span className={Number(bounceRate) > 3 ? 'text-red-400' : 'text-slate-400'}>Bounce: {String(bounceRate)}%</span>
+                      <span className={Number(spamRate) > 0.5 ? 'text-amber-400' : 'text-slate-400'}>Spam: {String(spamRate)}%</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 shrink-0 text-xs">

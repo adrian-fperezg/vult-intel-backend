@@ -310,28 +310,28 @@ export default function OutreachInbox() {
                 >
                   <div className="flex items-start gap-2.5 mb-1.5">
                     <div className="size-7 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[10px] font-bold text-teal-400">{thread.contact.name[0]}</span>
+                      <span className="text-[10px] font-bold text-teal-400">{String(thread.contact.name?.[0] || '?')}</span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
                         <p className={cn('text-xs font-semibold truncate', !thread.isRead ? 'text-white' : 'text-slate-300')}>
-                          {thread.contact.name}
+                          {String(thread.contact.name)}
                         </p>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex-shrink-0 flex items-center gap-1">
                           {thread.isStarred && <Star className="size-3 text-amber-400 fill-amber-400" />}
-                          <span className="text-[10px] text-slate-600">{thread.receivedAt}</span>
+                          <span className="text-[10px] text-slate-600">{String(thread.receivedAt)}</span>
                         </div>
                       </div>
                       <p className="text-[11px] text-slate-500 truncate">{thread.contact.company}</p>
                     </div>
                   </div>
                   <p className={cn('text-[11px] font-semibold truncate mb-1', !thread.isRead ? 'text-white' : 'text-slate-400')}>
-                    {thread.subject}
+                    {String(thread.subject)}
                   </p>
-                  <p className="text-[10px] text-slate-600 truncate line-clamp-1">{thread.preview}</p>
+                  <p className="text-[10px] text-slate-600 truncate line-clamp-1">{String(thread.preview)}</p>
                   <div className="mt-2 flex items-center justify-between">
                     <OutreachBadge variant={intentCfg.variant}>{intentCfg.label}</OutreachBadge>
-                    <span className="text-[9px] font-medium text-slate-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{thread.campaign}</span>
+                    <span className="text-[9px] font-medium text-slate-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{String(thread.campaign)}</span>
                   </div>
                 </button>
               );
@@ -354,15 +354,15 @@ export default function OutreachInbox() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2.5 mb-1">
-                    <h2 className="font-bold text-white">{activeThread.subject}</h2>
-                    <OutreachBadge variant={INTENT_CFG[activeThread.intent].variant}>
-                      {INTENT_CFG[activeThread.intent].label}
+                    <h2 className="font-bold text-white">{String(activeThread.subject)}</h2>
+                    <OutreachBadge variant={INTENT_CFG[activeThread.intent]?.variant || 'gray'}>
+                      {INTENT_CFG[activeThread.intent]?.label || 'Neutral'}
                     </OutreachBadge>
                   </div>
                   <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1"><Mail className="size-3" /> {activeThread.mailbox}</span>
-                    <span className="flex items-center gap-1"><Tag className="size-3" /> {activeThread.campaign}</span>
-                    <span className="flex items-center gap-1"><Clock className="size-3" /> {activeThread.receivedAt}</span>
+                    <span className="flex items-center gap-1"><Mail className="size-3" /> {String(activeThread.mailbox)}</span>
+                    <span className="flex items-center gap-1"><Tag className="size-3" /> {String(activeThread.campaign)}</span>
+                    <span className="flex items-center gap-1"><Clock className="size-3" /> {String(activeThread.receivedAt)}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -435,8 +435,8 @@ export default function OutreachInbox() {
                 <span className="text-sm font-bold text-teal-400">{activeThread.contact.name[0]}</span>
               </div>
               <div>
-                <p className="text-sm font-semibold text-white">{activeThread.contact.name}</p>
-                <p className="text-xs text-slate-400">{activeThread.contact.company}</p>
+                <p className="text-sm font-semibold text-white">{String(activeThread.contact.name)}</p>
+                <p className="text-xs text-slate-400">{String(activeThread.contact.company)}</p>
               </div>
             </div>
             

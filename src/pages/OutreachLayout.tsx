@@ -15,6 +15,7 @@ import OutreachAnalytics from './outreach/OutreachAnalytics';
 import OutreachSettings from './outreach/OutreachSettings';
 import OutreachCompose from './outreach/OutreachCompose';
 import { PaperPlaneIcon } from './outreach/OutreachCommon';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings';
 
@@ -190,13 +191,15 @@ export default function OutreachLayout() {
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className="h-full"
           >
-            {activeTab === 'compose'    && <OutreachCompose />}
-            {activeTab === 'campaigns'  && <OutreachCampaigns />}
-            {activeTab === 'sequences'  && <OutreachSequences />}
-            {activeTab === 'contacts'   && <OutreachContacts />}
-            {activeTab === 'inbox'      && <OutreachInbox />}
-            {activeTab === 'analytics'  && <OutreachAnalytics />}
-            {activeTab === 'settings'   && <OutreachSettings />}
+            <ErrorBoundary name={`Outreach:${activeTab}`}>
+              {activeTab === 'compose'    && <OutreachCompose />}
+              {activeTab === 'campaigns'  && <OutreachCampaigns />}
+              {activeTab === 'sequences'  && <OutreachSequences />}
+              {activeTab === 'contacts'   && <OutreachContacts />}
+              {activeTab === 'inbox'      && <OutreachInbox />}
+              {activeTab === 'analytics'  && <OutreachAnalytics />}
+              {activeTab === 'settings'   && <OutreachSettings />}
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </div>

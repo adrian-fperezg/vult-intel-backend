@@ -43,7 +43,7 @@ export default function ProjectSelector({ forceShow = false }: { forceShow?: boo
                         Project
                     </p>
                     <h3 className="text-sm font-semibold text-white truncate leading-tight">
-                        {isLoading ? 'Syncing...' : currentProject?.name || 'Select Project'}
+                        {isLoading ? 'Syncing...' : String(currentProject?.name || 'Select Project')}
                     </h3>
                 </div>
                 <ChevronDown className={cn("size-4 text-slate-500 transition-transform duration-200 group-hover:text-slate-300", isOpen && "rotate-180")} />
@@ -84,10 +84,10 @@ export default function ProjectSelector({ forceShow = false }: { forceShow?: boo
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <h4 className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors truncate">
-                                                {project.name}
+                                                {String(project.name)}
                                             </h4>
                                             <p className="text-[11px] text-slate-500 truncate opacity-70">
-                                                {project.url}
+                                                {String(project.url)}
                                             </p>
                                         </div>
                                         {activeProjectId === project.id && (
