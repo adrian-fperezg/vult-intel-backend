@@ -12,7 +12,8 @@ import {
   fetchGoogleUserInfo,
   encryptToken,
   decryptToken,
-} from "./oauth";
+} from "./oauth.js";
+import { domainSearch, emailFinder, emailVerifier, getAccountInformation } from "./lib/outreach/hunter.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1458,6 +1459,99 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error("Analytics Error:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+
+app.get("/api/outreach/settings", (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query as { project_id?: string };
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+  const row = db.prepare("SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+  let hasHunterKey = false;
+  if (row && row.hunter_api_key) {
+    hasHunterKey = true;
+  }
+
+  res.json({ hasHunterKey });
+});
+
+app.post("/api/outreach/settings", (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, hunter_api_key } = req.body;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+  if (hunter_api_key !== undefined) {
+    const encrypted = hunter_api_key ? encryptToken(hunter_api_key) : null;
+    db.prepare(`
+      INSERT INTO outreach_settings (project_id, hunter_api_key, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(project_id) DO UPDATE SET
+        hunter_api_key = excluded.hunter_api_key,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(project_id, encrypted);
+  }
+
+  res.json({ success: true });
+});
+
+// ─── HUNTER.IO INTEGRATION ────────────────────────────────────────────────────
+
+app.post("/api/outreach/hunter/domain-search", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, domain, options } = req.body;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const data = await domainSearch(project_id, userId, domain, options || {});
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/hunter/email-finder", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, domain, first_name, last_name } = req.body;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const data = await emailFinder(project_id, userId, domain, first_name, last_name);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/hunter/email-verifier", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, email } = req.body;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const data = await emailVerifier(project_id, userId, email);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query as { project_id?: string };
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const data = await getAccountInformation(project_id!);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

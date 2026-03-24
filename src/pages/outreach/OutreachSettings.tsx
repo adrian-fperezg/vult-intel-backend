@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
+import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 
 type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications' | 'team';
@@ -57,9 +58,50 @@ export default function OutreachSettings() {
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
+  // Hunter Integration States
+  const [hunterKeyInput, setHunterKeyInput] = useState('');
+  const [savingHunter, setSavingHunter] = useState(false);
+  const [hunterData, setHunterData] = useState<any>(null);
+  const [hunterConnected, setHunterConnected] = useState(false);
+  const [showHunterSetup, setShowHunterSetup] = useState(false);
+  const [fetchingHunter, setFetchingHunter] = useState(false);
+
   useEffect(() => {
     if (activeTab === 'mailboxes') loadMailboxes();
+    if (activeTab === 'integrations' && api.activeProjectId) loadHunterStatus();
   }, [activeTab, api.activeProjectId]);
+
+  const loadHunterStatus = async () => {
+    try {
+      setFetchingHunter(true);
+      const settings = await api.fetchSettings();
+      setHunterConnected(settings?.hasHunterKey || false);
+      if (settings?.hasHunterKey) {
+        const account = await api.fetchHunterAccount();
+        setHunterData(account);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setFetchingHunter(false);
+    }
+  };
+
+  const handleSaveHunterKey = async () => {
+    if (!hunterKeyInput.trim()) return;
+    try {
+      setSavingHunter(true);
+      await api.updateSettings({ hunter_api_key: hunterKeyInput.trim() });
+      toast.success('Hunter.io API Key saved successfully');
+      setHunterKeyInput('');
+      setShowHunterSetup(false);
+      await loadHunterStatus();
+    } catch (err: any) {
+      toast.error('Failed to save Hunter key: ' + err.message);
+    } finally {
+      setSavingHunter(false);
+    }
+  };
 
   const loadMailboxes = async () => {
     setMailboxesLoading(true);
@@ -464,9 +506,98 @@ export default function OutreachSettings() {
               <p className="text-sm text-slate-400 mt-0.5">Connect third-party tools to power Outreach</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              {/* Hunter.io Custom Card */}
+              <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 hover:border-white/15 transition-all">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="size-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                    <span className="text-lg font-bold text-teal-400">H</span>
+                  </div>
+                  {fetchingHunter ? (
+                    <Loader2 className="size-4 animate-spin text-slate-400" />
+                  ) : hunterConnected ? (
+                    <OutreachBadge variant="teal" dot>Connected</OutreachBadge>
+                  ) : (
+                    <TealButton size="sm" variant="outline" onClick={() => setShowHunterSetup(!showHunterSetup)}>
+                      Connect
+                    </TealButton>
+                  )}
+                </div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <p className="font-semibold text-white text-sm">Hunter.io</p>
+                  {hunterConnected && (
+                    <button onClick={() => setShowHunterSetup(!showHunterSetup)} className="text-[10px] text-slate-500 hover:text-white uppercase tracking-wider font-bold">
+                      Config
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-teal-400/60 mb-1">Email Finder</p>
+                <p className="text-xs text-slate-500 mb-4">Find professional email addresses by domain</p>
+
+                <AnimatePresence>
+                  {showHunterSetup && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <div className="p-4 bg-black/20 rounded-xl border border-white/5 space-y-3 mt-2">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-400 mb-1.5 block">Hunter.io API Key</label>
+                          <input 
+                            type="password" 
+                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50" 
+                            placeholder="Data is encrypted at rest"
+                            value={hunterKeyInput}
+                            onChange={(e) => setHunterKeyInput(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <TealButton size="sm" className="w-full" disabled={!hunterKeyInput.trim() || savingHunter} onClick={handleSaveHunterKey}>
+                            {savingHunter ? 'Saving...' : 'Save API Key'}
+                          </TealButton>
+                          {hunterConnected && (
+                            <button className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-white hover:bg-red-500/20 rounded-xl transition-all border border-red-500/10"
+                             onClick={async () => {
+                               await api.updateSettings({ hunter_api_key: '' });
+                               setHunterConnected(false);
+                               setHunterData(null);
+                               toast.success('Hunter.io disconnected');
+                             }}
+                            >Disconnect</button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {hunterConnected && hunterData && !showHunterSetup && (
+                  <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Current Plan</span>
+                      <span className="font-semibold text-white">{hunterData.plan_name}</span>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-500">Searches Used</span>
+                        <span className="text-teal-400 font-bold">{hunterData.requests?.searches?.used} / {hunterData.requests?.searches?.available}</span>
+                      </div>
+                      <div className="h-1.5 bg-white/10 rounded-full">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.requests?.searches?.used / hunterData.requests?.searches?.available) * 100}%` }} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-500">Verifications Used</span>
+                        <span className="text-teal-400 font-bold">{hunterData.requests?.verifications?.used} / {hunterData.requests?.verifications?.available}</span>
+                      </div>
+                      <div className="h-1.5 bg-white/10 rounded-full">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.requests?.verifications?.used / hunterData.requests?.verifications?.available) * 100}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Other Built-in Integrations (Mocked) */}
               {[
-                { name: 'Apollo.io',    cat: 'Lead Database',       status: 'connect',  desc: 'Find verified B2B contacts' },
-                { name: 'Hunter.io',    cat: 'Email Finder',        status: 'connect',  desc: 'Find email addresses by domain' },
                 { name: 'ZeroBounce',   cat: 'Email Verification',  status: 'connect',  desc: 'Validate and clean email lists' },
                 { name: 'Mail-Tester',  cat: 'Spam Testing',        status: 'connect',  desc: 'Score your spam rating' },
                 { name: 'MXToolbox',    cat: 'Blocklist Monitor',   status: 'connected', desc: 'Monitor IP/domain blocklists' },

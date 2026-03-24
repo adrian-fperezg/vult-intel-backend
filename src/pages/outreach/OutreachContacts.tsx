@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Upload, Download, Filter, MoreHorizontal,
   Building2, Mail, Phone, Linkedin, ChevronDown, ChevronUp,
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
+import LeadFinderPanel from './contacts/LeadFinderPanel';
 
 type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
 
@@ -91,6 +92,17 @@ export default function OutreachContacts() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [profileContactId, setProfileContactId] = useState<string | null>(null);
+  const [showLeadFinder, setShowLeadFinder] = useState(false);
+
+  const handleSaveContactFromFinder = async (contactPayload: any) => {
+    try {
+      await api.createContact(contactPayload);
+      await loadContacts();
+    } catch (e: any) {
+      console.error('Failed to save contact from Lead Finder', e);
+      throw e;
+    }
+  };
 
   // Lists & Suppression
   const [contactLists, setContactLists] = useState<any[]>([]);
@@ -246,6 +258,12 @@ export default function OutreachContacts() {
             </button>
             <button className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
               <Download className="size-4" /> Export
+            </button>
+            <button 
+              onClick={() => setShowLeadFinder(true)}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
+            >
+              <Search className="size-4" /> Find Leads
             </button>
             <TealButton size="sm" onClick={handleCreate} loading={isCreating}>
               <Plus className="size-4" /> Add Contact
@@ -490,6 +508,15 @@ export default function OutreachContacts() {
         isOpen={!!profileContactId}
         onClose={() => setProfileContactId(null)}
       />
+
+      <AnimatePresence>
+        {showLeadFinder && (
+          <LeadFinderPanel 
+            onClose={() => setShowLeadFinder(false)}
+            onSaveContact={handleSaveContactFromFinder}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

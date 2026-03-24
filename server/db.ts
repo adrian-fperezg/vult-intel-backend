@@ -120,6 +120,22 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(email_id) REFERENCES outreach_individual_emails(id)
   );
+
+  CREATE TABLE IF NOT EXISTS outreach_settings (
+    project_id TEXT PRIMARY KEY,
+    hunter_api_key TEXT, -- AES-256 encrypted
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS hunter_usage_log (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL, -- 'domain-search', 'email-finder', 'email-verifier'
+    credits_used INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'success', -- 'success', 'rate-limited', 'error'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // ─── Migrations: add columns if they don't exist yet ────────────────────────
@@ -152,6 +168,10 @@ const migrations: Array<{ table: string; col: string; def: string }> = [
   { table: 'outreach_campaigns', col: 'min_delay', def: "ALTER TABLE outreach_campaigns ADD COLUMN min_delay INTEGER DEFAULT 2" },
   { table: 'outreach_campaigns', col: 'max_delay', def: "ALTER TABLE outreach_campaigns ADD COLUMN max_delay INTEGER DEFAULT 5" },
   { table: 'outreach_campaigns', col: 'send_weekends', def: "ALTER TABLE outreach_campaigns ADD COLUMN send_weekends BOOLEAN DEFAULT 0" },
+  { table: 'outreach_contacts',  col: 'source_detail', def: "ALTER TABLE outreach_contacts ADD COLUMN source_detail TEXT" },
+  { table: 'outreach_contacts',  col: 'confidence_score', def: "ALTER TABLE outreach_contacts ADD COLUMN confidence_score INTEGER" },
+  { table: 'outreach_contacts',  col: 'verification_status', def: "ALTER TABLE outreach_contacts ADD COLUMN verification_status TEXT" },
+  { table: 'outreach_contacts',  col: 'verified_at', def: "ALTER TABLE outreach_contacts ADD COLUMN verified_at DATETIME" },
 ];
 
 for (const { table, col, def } of migrations) {

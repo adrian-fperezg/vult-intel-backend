@@ -169,6 +169,22 @@ export function useOutreachApi() {
     [del],
   );
 
+  // ── Settings & Integrations ──────────────────────────────────────────────
+
+  const fetchSettings = useCallback(() => get<any>('/settings'), [get]);
+  const updateSettings = useCallback((settings: any) => post<any>('/settings', settings), [post]);
+  const fetchHunterAccount = useCallback(() => get<any>('/hunter/account'), [get]);
+
+  const hunterDomainSearch = useCallback((domain: string, options?: any) => 
+    post<any>('/hunter/domain-search', { domain, options }), [post]
+  );
+  const hunterEmailFinder = useCallback((domain: string, first_name: string, last_name: string) => 
+    post<any>('/hunter/email-finder', { domain, first_name, last_name }), [post]
+  );
+  const hunterEmailVerifier = useCallback((email: string) => 
+    post<any>('/hunter/email-verifier', { email }), [post]
+  );
+
   // ── Contact Lists ────────────────────────────────────────────────────────
 
   const fetchContactLists = useCallback(() => get<any[]>('/contact-lists'), [get]);
@@ -317,5 +333,12 @@ export function useOutreachApi() {
     fetchSuppressionList,
     addToSuppressionList,
     removeFromSuppressionList,
+    // Settings & Integrations
+    fetchSettings,
+    updateSettings,
+    fetchHunterAccount,
+    hunterDomainSearch,
+    hunterEmailFinder,
+    hunterEmailVerifier,
   };
 }
