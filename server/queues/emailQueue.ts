@@ -2,7 +2,7 @@ import { Queue, Worker, Job } from 'bullmq';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import dotenv from 'dotenv';
-import { getValidAccessToken } from '../oauth.js';
+import { getValidGmailClient } from '../oauth.js';
 import redis from '../redis.js';
 
 dotenv.config();
@@ -64,30 +64,32 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   
   if (!email) {
     console.error(`[processEmail] Email ${emailId} not found in DB`);
-    throw new Error(`Email ${emailId} not found in DB`);
+    throw new Error("EMAIL_NOT_FOUND");
   }
 
   const mailboxId = email.mailbox_id;
   if (!mailboxId) {
     console.error(`[processEmail] Email ${emailId} is missing mailbox_id`);
-    throw new Error(`Email ${emailId} is missing mailbox_id`);
+    throw new Error("MAILBOX_MISSING");
   }
 
-  console.log(`[processEmail] Found email record. mailboxId: ${mailboxId}. Fetching token...`);
-  const accessToken = await getValidAccessToken(mailboxId);
+  console.log(`[processEmail] Found email record. mailboxId: ${mailboxId}. Fetching Gmail client...`);
   
-  console.log("TOKEN_STATUS:", !!accessToken);
-
-  // 1. Build the RFC822 message
+  // This will handle refresh if needed
+  const gmail = await getValidGmailClient(mailboxId);
+  
+  // 1. Build the RFC822 message accurately
   const subject = email.subject || "(No Subject)";
   const body = email.body_html || "";
   const to = email.to_email;
 
+  // Gmail API requires a properly formatted MIME message
+  const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
   const str = [
     `Content-Type: text/html; charset="UTF-8"`,
     `MIME-Version: 1.0`,
-    `to: ${to}`,
-    `subject: ${subject}`,
+    `To: ${to}`,
+    `Subject: ${utf8Subject}`,
     ``,
     `${body}`,
   ].join("\r\n");
@@ -98,61 +100,47 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-  // 2. Send via Gmail API
-  console.log(`[processEmail] Sending RFC822 message to Gmail API for emailId: ${emailId}`);
+  // 2. Send via Gmail SDK
+  console.log(`[processEmail] Sending via Gmail SDK for emailId: ${emailId}`);
   
-  let response;
   try {
-    response = await fetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ raw: encodedMessage }),
-        signal, // Pass the abort signal
-      }
-    );
-  } catch (fetchErr: any) {
-    console.error(`[processEmail] Network error or timeout calling Gmail API for emailId ${emailId}:`, fetchErr);
-    throw new Error(`Failed to reach Gmail API: ${fetchErr.message}`);
-  }
+    const res = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
 
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error(`[processEmail] Gmail API responded with error ${response.status} for emailId ${emailId}:`, errorData);
-    throw new Error(`Gmail API error: ${response.status} - ${errorData}`);
-  }
+    const result = res.data;
+    console.log(`[processEmail] Email ${emailId} sent successfully. Gmail ID: ${result.id}`);
 
-  let result;
-  try {
-    result = await response.json() as { id: string; threadId: string };
-  } catch (jsonErr: any) {
-    console.error(`[processEmail] Failed to parse Gmail API response for emailId ${emailId}:`, jsonErr);
-    throw new Error(`Invalid response from Gmail API: ${jsonErr.message}`);
-  }
-
-  console.log(`[processEmail] Email ${emailId} sent successfully. Gmail ID: ${result.id}`);
-
-  db.prepare(`
-    UPDATE outreach_individual_emails 
-    SET status = 'sent', sent_at = CURRENT_TIMESTAMP, message_id = ?, thread_id = ?, updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ?
-  `).run(result.id, result.threadId, emailId);
-
-  // Log event and update contact
-  if (email.contact_id) {
     db.prepare(`
-      INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(uuidv4(), email.contact_id, email.project_id, 'email_sent', JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
-    
-    db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
-  }
+      UPDATE outreach_individual_emails 
+      SET status = 'sent', sent_at = CURRENT_TIMESTAMP, message_id = ?, thread_id = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(result.id, result.threadId, emailId);
 
-  return { success: true, messageId: result.id };
+    // Log event and update contact
+    if (email.contact_id) {
+      db.prepare(`
+        INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(uuidv4(), email.contact_id, email.project_id, 'email_sent', JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
+      
+      db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
+    }
+
+    return { success: true, messageId: result.id };
+  } catch (err: any) {
+    console.error(`[processEmail] Gmail SDK error for emailId ${emailId}:`, err.message);
+    
+    // Check for specific auth errors
+    if (err.code === 401 || err.code === 403 || err.message?.includes('invalid_grant')) {
+      throw new Error("GMAIL_AUTH_FAILED");
+    }
+    
+    throw new Error(`GMAIL_API_ERROR: ${err.message}`);
+  }
 }
 
 // 2. Worker for campaigns

@@ -64,7 +64,16 @@ export function useOutreachApi() {
         headers,
         body: JSON.stringify({ ...body, project_id: activeProjectId }),
       });
-      if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+      if (!res.ok) {
+        let errorMsg = `POST ${path} failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+        } catch {
+          // No JSON body
+        }
+        throw new Error(errorMsg);
+      }
       return res.json() as Promise<T>;
     },
     [activeProjectId, authHeaders],
@@ -79,7 +88,16 @@ export function useOutreachApi() {
         headers,
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
+      if (!res.ok) {
+        let errorMsg = `PATCH ${path} failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+        } catch {
+          // No JSON body
+        }
+        throw new Error(errorMsg);
+      }
       return res.json() as Promise<T>;
     },
     [authHeaders],
@@ -93,7 +111,16 @@ export function useOutreachApi() {
         method: 'DELETE',
         headers,
       });
-      if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
+      if (!res.ok) {
+        let errorMsg = `DELETE ${path} failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+        } catch {
+          // No JSON body
+        }
+        throw new Error(errorMsg);
+      }
     },
     [authHeaders],
   );

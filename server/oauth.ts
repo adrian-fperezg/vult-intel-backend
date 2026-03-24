@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import db from './db.js';
 import redis from './redis.js';
+import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 
 dotenv.config();
 
@@ -14,192 +16,203 @@ function getKey(): Buffer {
 }
 
 export function encryptToken(plain: string): string {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
-  const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
-}
-
-export function decryptToken(cipherText: string): string {
-  const [ivHex, encHex] = cipherText.split(':');
-  if (!ivHex || !encHex) return '';
-  const iv = Buffer.from(ivHex, 'hex');
-  const enc = Buffer.from(encHex, 'hex');
-  const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
-  const decrypted = Buffer.concat([decipher.update(enc), decipher.final()]);
-  return decrypted.toString('utf8');
-}
-
-// ─── Utility: fetch with timeout ─────────────────────────────────────────────
-async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  if (!plain) return '';
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(id);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    return iv.toString('hex') + ':' + encrypted.toString('hex');
+  } catch (err) {
+    console.error('[ENCRYPT ERROR]:', err);
+    return '';
   }
 }
 
-// ─── Google OAuth helpers ────────────────────────────────────────────────────
+export function decryptToken(cipherText: string): string {
+  if (!cipherText || !cipherText.includes(':')) return '';
+  try {
+    const [ivHex, encHex] = cipherText.split(':');
+    if (!ivHex || !encHex) return '';
+    const iv = Buffer.from(ivHex, 'hex');
+    const enc = Buffer.from(encHex, 'hex');
+    const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
+    const decrypted = Buffer.concat([decipher.update(enc), decipher.final()]);
+    return decrypted.toString('utf8');
+  } catch (err) {
+    // This is a common crash point if OUTREACH_TOKEN_ENCRYPTION_KEY changes
+    console.error('[DECRYPT ERROR] Possible key mismatch or malformed token:', err.message);
+    return '';
+  }
+}
 
-const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+// ─── Google OAuth constants ──────────────────────────────────────────────────
 
 const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.modify', // Added for thread/mailbox management
+  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
-].join(' ');
+];
 
-export function buildGoogleAuthUrl(userId: string, projectId: string): string {
+function createOAuthClient(): OAuth2Client {
   const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI;
 
-  if (!clientId || !redirectUri) {
-    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI must be set in .env');
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI must be set');
   }
 
-  // Encode userId + projectId in the state param so we can retrieve them in the callback
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
+
+// ─── Exported Helpers ────────────────────────────────────────────────────────
+
+export function buildGoogleAuthUrl(userId: string, projectId: string): string {
+  const oauth2Client = createOAuthClient();
   const state = Buffer.from(JSON.stringify({ userId, projectId })).toString('base64url');
 
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: GMAIL_SCOPES,
+  return oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',   // Always request refresh_token
+    scope: GMAIL_SCOPES,
+    prompt: 'consent',
     state,
   });
-
-  return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
-export interface GoogleTokenResponse {
-  access_token: string;
-  refresh_token?: string;
-  expires_in: number;
-  scope: string;
-  token_type: string;
+export async function exchangeCodeForTokens(code: string) {
+  const oauth2Client = createOAuthClient();
+  const { tokens } = await oauth2Client.getToken(code);
+  return tokens;
 }
 
-export async function exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse> {
-  const clientId = process.env.GOOGLE_CLIENT_ID!;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI!;
+export async function fetchGoogleUserInfo(accessToken: string) {
+  const oauth2Client = createOAuthClient();
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+  const res = await oauth2.userinfo.get();
+  return res.data;
+}
 
-  const body = new URLSearchParams({
-    code,
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri,
-    grant_type: 'authorization_code',
-  });
+/**
+ * Robustly retrieves a valid Gmail client for a mailbox.
+ * Handles token decryption, auto-refresh, and database persistence.
+ */
+export async function getValidGmailClient(mailboxId: string) {
+  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
-  const response = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  const accessToken = decryptToken(mailbox.access_token);
+  const refreshToken = decryptToken(mailbox.refresh_token);
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Failed to exchange code for tokens: ${err}`);
+  if (!accessToken && !refreshToken) {
+    throw new Error("DECRYPTION_FAILED");
   }
 
-  return response.json() as Promise<GoogleTokenResponse>;
-}
-
-export async function refreshGoogleToken(refreshToken: string): Promise<GoogleTokenResponse> {
-  const clientId = process.env.GOOGLE_CLIENT_ID!;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
-
-  const body = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
+  const oauth2Client = createOAuthClient();
+  oauth2Client.setCredentials({
+    access_token: accessToken,
     refresh_token: refreshToken,
-    grant_type: 'refresh_token',
+    expiry_date: mailbox.expires_at ? new Date(mailbox.expires_at).getTime() : 0,
   });
 
-  const response = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+  // Track if tokens was refreshed
+  let wasRefreshed = false;
+  oauth2Client.on('tokens', (tokens) => {
+    if (tokens.access_token) {
+      wasRefreshed = true;
+      console.log(`[OAuth] Access token refreshed for mailbox ${mailboxId}`);
+    }
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Failed to refresh Google token: ${err}`);
+  // This will trigger a refresh if the token is expired
+  try {
+    await oauth2Client.getAccessToken();
+  } catch (err) {
+    console.error(`[OAuth] Refresh failed for mailbox ${mailboxId}:`, err.message);
+    throw new Error("GMAIL_AUTH_FAILED");
   }
 
-  return response.json() as Promise<GoogleTokenResponse>;
-}
-
-export interface GoogleUserInfo {
-  sub: string;
-  email: string;
-  name: string;
-  picture?: string;
-}
-
-export async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-  const response = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch Google user info');
+  if (wasRefreshed) {
+    const tokens = oauth2Client.credentials;
+    await saveTokens(mailboxId, {
+      access_token: tokens.access_token!,
+      refresh_token: tokens.refresh_token || refreshToken, // fallback to existing one
+      expiry_date: tokens.expiry_date!,
+      scope: tokens.scope!,
+    });
   }
 
-  return response.json() as Promise<GoogleUserInfo>;
+  return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
-// helper to save tokens to both SQLite and Redis
-export async function saveTokens(mailboxId: string, tokens: GoogleTokenResponse, currentRefreshToken?: string) {
-  const { access_token, refresh_token, expires_in, scope } = tokens;
-  const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
+/**
+ * Convenience helper that just returns a valid access token string.
+ */
+export async function getValidAccessToken(mailboxId: string): Promise<string> {
+  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
+
+  const accessToken = decryptToken(mailbox.access_token);
+  const refreshToken = decryptToken(mailbox.refresh_token);
+
+  if (!accessToken && !refreshToken) {
+    throw new Error("DECRYPTION_FAILED");
+  }
+
+  const oauth2Client = createOAuthClient();
+  oauth2Client.setCredentials({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expiry_date: mailbox.expires_at ? new Date(mailbox.expires_at).getTime() : 0,
+  });
+
+  const { token } = await oauth2Client.getAccessToken();
+  if (!token) throw new Error("GMAIL_AUTH_FAILED");
+  
+  return token;
+}
+
+export async function saveTokens(mailboxId: string, tokens: { access_token: string; refresh_token?: string; expiry_date: number; scope: string }) {
+  const { access_token, refresh_token, expiry_date, scope } = tokens;
+  const expiresAt = new Date(expiry_date).toISOString();
 
   const encryptedAccess = encryptToken(access_token);
-  const encryptedRefresh = refresh_token ? encryptToken(refresh_token) : (currentRefreshToken ? encryptToken(currentRefreshToken) : null);
+  const encryptedRefresh = refresh_token ? encryptToken(refresh_token) : null;
 
   // Save to SQLite
-  db.prepare(`
-    UPDATE outreach_mailboxes 
-    SET access_token = ?, refresh_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(encryptedAccess, encryptedRefresh, expiresAt, scope, mailboxId);
+  if (encryptedRefresh) {
+    db.prepare(`
+      UPDATE outreach_mailboxes 
+      SET access_token = ?, refresh_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(encryptedAccess, encryptedRefresh, expiresAt, scope, mailboxId);
+  } else {
+    db.prepare(`
+      UPDATE outreach_mailboxes 
+      SET access_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(encryptedAccess, expiresAt, scope, mailboxId);
+  }
 
-  // Save to Redis for persistence across deployments
+  // Save to Redis for persistence across ephemeral Railway deployments
   try {
     const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
     if (mailbox) {
       await redis.set(`mailbox:${mailboxId}`, JSON.stringify(mailbox), 'EX', 60 * 60 * 24 * 30); // 30 days
-      console.log(`Synced mailbox ${mailboxId} to Redis`);
+      console.log(`[Persistence] Mailbox ${mailboxId} synced to Redis`);
     }
   } catch (err) {
-    console.error(`Failed to sync mailbox ${mailboxId} to Redis:`, err);
+    console.error(`[Persistence] Failed to sync mailbox ${mailboxId} to Redis:`, err.message);
   }
 }
 
-/**
- * Startup task: Sync mailboxes from Redis back to SQLite if they are missing.
- * This is crucial for Railway deployments where the SQLite file is reset.
- */
 export async function syncMailboxesFromRedis() {
-  console.log("Checking Redis for persistent mailboxes...");
+  console.log("[Persistence] Checking Redis for persistent mailboxes...");
   try {
     const keys = await redis.keys("mailbox:*");
-    if (keys.length === 0) {
-      console.log("No mailboxes found in Redis.");
-      return;
-    }
+    if (keys.length === 0) return;
 
     let restoredCount = 0;
     for (const key of keys) {
@@ -222,35 +235,9 @@ export async function syncMailboxesFromRedis() {
       }
     }
     if (restoredCount > 0) {
-      console.log(`Successfully restored ${restoredCount} mailboxes from Redis persistence.`);
-    } else {
-      console.log("SQLite is already in sync with Redis.");
+      console.log(`[Persistence] Restored ${restoredCount} mailboxes from Redis.`);
     }
   } catch (err) {
-    console.error("Failed to sync mailboxes from Redis:", err);
+    console.error("[Persistence] Sync from Redis failed:", err.message);
   }
-}
-
-// Helper to get a valid access token, refreshing if necessary
-export async function getValidAccessToken(mailboxId: string): Promise<string> {
-  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
-  if (!mailbox) throw new Error("Mailbox not found");
-
-  const now = new Date();
-  const expiresAt = new Date(mailbox.expires_at);
-
-  // If token is still valid (with 5 min buffer), return it
-  if (expiresAt.getTime() > now.getTime() + 5 * 60 * 1000) {
-    return decryptToken(mailbox.access_token);
-  }
-
-  // Otherwise, refresh it
-  if (!mailbox.refresh_token) throw new Error("No refresh token available");
-  
-  const refreshToken = decryptToken(mailbox.refresh_token);
-  const tokens = await refreshGoogleToken(refreshToken);
-
-  await saveTokens(mailboxId, tokens, refreshToken);
-
-  return tokens.access_token;
 }

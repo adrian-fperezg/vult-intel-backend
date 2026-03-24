@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, Send, Save, Trash2, Clock, X, Paperclip, Type, ChevronDown, Mail, Flame } from 'lucide-react';
+import { Loader2, Send, Save, Trash2, Clock, X, Paperclip, Type, ChevronDown, Mail, Flame, AlertCircle, RefreshCw } from 'lucide-react';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { TealButton } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
@@ -44,6 +44,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
   const [status, setStatus] = useState<'draft' | 'scheduled' | 'sent'>('draft');
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isMailboxOpen, setIsMailboxOpen] = useState(false);
+  const [authError, setAuthError] = useState(false);
   const mailboxRef = useRef<HTMLDivElement>(null);
 
   // Click outside handler for custom dropdown
@@ -162,7 +163,12 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
       onClose();
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || 'Failed to send');
+      if (err.message?.includes('GMAIL_AUTH_FAILED')) {
+        setAuthError(true);
+        toast.error('Gmail connection expired. Please reconnect.');
+      } else {
+        toast.error(err.message || 'Failed to send');
+      }
     } finally {
       setIsSending(false);
     }
@@ -264,6 +270,27 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
       {/* Editor Body */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <div className="max-w-4xl mx-auto space-y-4">
+          
+          {authError && (
+            <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="size-5 text-red-400 shrink-0" />
+                <div>
+                  <h4 className="text-sm font-bold text-white">Gmail Authentication Failed</h4>
+                  <p className="text-xs text-slate-400">Your Google connection has expired or been revoked. Please reconnect to send emails.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  window.location.href = `${process.env.NEXT_PUBLIC_API_URL || ''}/api/outreach/auth/google`;
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors shrink-0"
+              >
+                <RefreshCw className="size-3" />
+                Reconnect Gmail
+              </button>
+            </div>
+          )}
           
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-4">

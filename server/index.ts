@@ -11,10 +11,10 @@ import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
   fetchGoogleUserInfo,
-  refreshGoogleToken,
   encryptToken,
   decryptToken,
   getValidAccessToken,
+  getValidGmailClient,
   saveTokens,
   syncMailboxesFromRedis,
 } from "./oauth.js";
@@ -125,13 +125,11 @@ app.get("/api/outreach/auth/google/callback", async (req, res) => {
     const tokens = await exchangeCodeForTokens(code);
 
     // Fetch the Google account's email
-    const userInfo = await fetchGoogleUserInfo(tokens.access_token);
+    const userInfo = (await fetchGoogleUserInfo(tokens.access_token!)) as any;
 
-    const expiresAt = new Date(
-      Date.now() + tokens.expires_in * 1000,
-    ).toISOString();
+    const expiresAt = new Date(tokens.expiry_date!).toISOString();
 
-    const encryptedAccess = encryptToken(tokens.access_token);
+    const encryptedAccess = encryptToken(tokens.access_token!);
     // Only encrypt if refresh_token is present to avoid overwriting existing
     const encryptedRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : "";
 
@@ -1267,20 +1265,39 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
       "UPDATE outreach_individual_emails SET status = 'pending_send', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ).run(id);
 
-    const result = await processEmail(id);
-    
-    console.log(`[OUTREACH] Direct send successful for email ${id}. messageId: ${result.messageId}`);
-    res.json({
-      success: true,
-      status: "sent",
-      messageId: result.messageId
-    });
+    try {
+      const result = await processEmail(id);
+      
+      console.log(`[OUTREACH] Direct send successful for email ${id}. messageId: ${result.messageId}`);
+      res.json({
+        success: true,
+        status: "sent",
+        messageId: result.messageId
+      });
+    } catch (innerErr: any) {
+      console.error(`[OUTREACH ERROR] Direct send failed for email ${id}:`, innerErr.message);
+      
+      // Map specific errors to 400/401 instead of 500
+      if (innerErr.message === "GMAIL_AUTH_FAILED" || innerErr.message === "DECRYPTION_FAILED") {
+        return res.status(401).json({ 
+          error: "Gmail authentication failed. Please reconnect your mailbox.",
+          code: "GMAIL_AUTH_FAILED"
+        });
+      }
+
+      if (innerErr.message === "MAILBOX_MISSING") {
+        return res.status(400).json({ error: "Mailbox information is missing for this email." });
+      }
+
+      throw innerErr; // Re-throw to be caught by outer catch
+    }
   } catch (error: any) {
-    console.error("CRITICAL ERROR: Failed to send email (500):");
-    console.error(error); // Print full stack trace
+    console.error(`[OUTREACH CRITICAL] 500 Error in /send for email ${req.params.id}:`, error.message);
+    if (error.stack) console.error(error.stack);
 
     res.status(500).json({ 
-      error: error.message || "Failed to send email",
+      error: error.message || "An unexpected server error occurred while sending email",
+      code: "SERVER_ERROR",
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
     });
   }
