@@ -36,9 +36,19 @@ export function useOutreachApi() {
     async <T>(path: string, extraParams?: Record<string, string>): Promise<T | null> => {
       if (!activeProjectId) return null;
       const headers = await authHeaders();
-      const params = new URLSearchParams({ project_id: activeProjectId, ...extraParams });
-      const res = await fetch(`${BASE_URL}${path}?${params}`, { headers });
-      if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+      const queryParams = new URLSearchParams({ project_id: activeProjectId, ...extraParams });
+      const separator = path.includes('?') ? '&' : '?';
+      const res = await fetch(`${BASE_URL}${path}${separator}${queryParams}`, { headers });
+      if (!res.ok) {
+        let errorMsg = `GET ${path} failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+        } catch {
+          // No JSON body
+        }
+        throw new Error(errorMsg);
+      }
       return res.json() as Promise<T>;
     },
     [activeProjectId, authHeaders],

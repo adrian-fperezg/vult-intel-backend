@@ -1365,13 +1365,13 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     // We group by date string from created_at
     const dailyEvents = db.prepare(`
       SELECT 
-        substr(created_at, 1, 10) as dayStr,
-        type,
+        substr(e.created_at, 1, 10) as dayStr,
+        e.type,
         count(*) as count
       FROM outreach_events e
       JOIN outreach_contacts c ON e.contact_id = c.id
       WHERE c.user_id = ? AND c.project_id = ? AND e.created_at >= ?
-      GROUP BY dayStr, type
+      GROUP BY dayStr, e.type
     `).all(userId, project_id, cutoffIso) as any[];
 
     // Construct the DAILY_DATA array for the last N days

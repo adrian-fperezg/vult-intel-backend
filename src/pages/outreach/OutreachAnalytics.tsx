@@ -30,18 +30,25 @@ export default function OutreachAnalytics() {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { fetchAnalytics, activeProjectId } = useOutreachApi();
 
   useEffect(() => {
     async function load() {
       if (!activeProjectId) return;
       setIsLoading(true);
+      setError(null);
       try {
         const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
         const res = await fetchAnalytics(days);
-        if (res) setData(res);
-      } catch (err) {
+        if (res) {
+          setData(res);
+        } else {
+          setError('No data returned from the server.');
+        }
+      } catch (err: any) {
         console.error('Failed to load analytics:', err);
+        setError(err.message || 'Failed to connect to the analytics service.');
       } finally {
         setIsLoading(false);
       }
@@ -49,7 +56,7 @@ export default function OutreachAnalytics() {
     load();
   }, [timeRange, activeProjectId, fetchAnalytics]);
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-500">
         <Loader2 className="size-8 animate-spin mb-4 text-teal-500" />
@@ -58,10 +65,31 @@ export default function OutreachAnalytics() {
     );
   }
 
-  const totalSent = data.daily_data.reduce((s, d) => s + d.sent, 0);
-  const totalOpens = data.daily_data.reduce((s, d) => s + d.opens, 0);
-  const totalReplies = data.daily_data.reduce((s, d) => s + d.replies, 0);
-  const totalClicks = data.daily_data.reduce((s, d) => s + d.clicks, 0);
+  if (error || !data) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-8">
+        <div className="size-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+          <AlertTriangle className="size-8 text-red-500" />
+        </div>
+        <h3 className="text-xl font-bold text-white mb-2">Analytics Unavailable</h3>
+        <p className="text-slate-400 max-w-xs mb-6">
+          {error || "We couldn't retrieve your analytics data. Please check your connection and try again."}
+        </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-white transition-all"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  const dailyData = data?.daily_data || [];
+  const totalSent = dailyData.reduce((s, d) => s + d.sent, 0);
+  const totalOpens = dailyData.reduce((s, d) => s + d.opens, 0);
+  const totalReplies = dailyData.reduce((s, d) => s + d.replies, 0);
+  const totalClicks = dailyData.reduce((s, d) => s + d.clicks, 0);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
@@ -104,7 +132,7 @@ export default function OutreachAnalytics() {
             subtitle="Daily email volume and engagement metrics"
           />
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={data.daily_data}>
+            <LineChart data={dailyData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
@@ -124,8 +152,8 @@ export default function OutreachAnalytics() {
             <OutreachSectionHeader icon={<MessageSquare />} title="Reply Intent Breakdown" subtitle="AI-categorized reply intent" />
             <div className="flex items-center gap-4">
               <PieChart width={140} height={140}>
-                <Pie data={data.intent_data} cx={70} cy={70} innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={0}>
-                  {data.intent_data.map((entry, i) => (
+                <Pie data={data?.intent_data || []} cx={70} cy={70} innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={0}>
+                  {(data?.intent_data || []).map((entry, i) => (
                     <Cell key={i} fill={entry.color} />
                   ))}
                 </Pie>
@@ -148,8 +176,8 @@ export default function OutreachAnalytics() {
           <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
             <OutreachSectionHeader icon={<BarChart2 />} title="Campaign Comparison" subtitle="Open & reply rates per campaign" />
             <ResponsiveContainer width="100%" height={160}>
-              {data.campaign_comparison.length > 0 ? (
-                <BarChart layout="vertical" data={data.campaign_comparison} margin={{ left: 0, right: 30 }}>
+              {(data?.campaign_comparison || []).length > 0 ? (
+                <BarChart layout="vertical" data={data?.campaign_comparison || []} margin={{ left: 0, right: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
@@ -174,7 +202,7 @@ export default function OutreachAnalytics() {
             subtitle="Deliverability score per connected mailbox"
           />
           <div className="space-y-4">
-            {data.mailbox_health.length > 0 ? data.mailbox_health.map(({ email, score, status, sent, bounceRate, spamRate }) => {
+            {(data?.mailbox_health || []).length > 0 ? (data?.mailbox_health || []).map(({ email, score, status, sent, bounceRate, spamRate }) => {
               const scoreColor = score >= 85 ? '#14B8A6' : score >= 70 ? '#EAB308' : '#EF4444';
               const scoreBadge = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
               return (
