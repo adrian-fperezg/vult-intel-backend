@@ -29,6 +29,21 @@ export function decryptToken(cipherText: string): string {
   return decrypted.toString('utf8');
 }
 
+// ─── Utility: fetch with timeout ─────────────────────────────────────────────
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 // ─── Google OAuth helpers ────────────────────────────────────────────────────
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -87,7 +102,7 @@ export async function exchangeCodeForTokens(code: string): Promise<GoogleTokenRe
     grant_type: 'authorization_code',
   });
 
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -112,7 +127,7 @@ export async function refreshGoogleToken(refreshToken: string): Promise<GoogleTo
     grant_type: 'refresh_token',
   });
 
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -134,7 +149,7 @@ export interface GoogleUserInfo {
 }
 
 export async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+  const response = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
