@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "../../oauth.js";
 
@@ -14,7 +15,7 @@ interface GmailMessage {
 }
 
 export async function syncMailbox(mailboxId: string, getAccessToken: (id: string) => Promise<string>) {
-  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("Mailbox not found");
 
   const accessToken = await getAccessToken(mailboxId);
@@ -39,7 +40,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
   for (const msgRef of messages) {
     // Check if we already processed this message
-    const existing = db.prepare("SELECT id FROM outreach_events WHERE metadata LIKE ?").get(`%${msgRef.id}%`);
+    const existing = await db.prepare("SELECT id FROM outreach_events WHERE metadata LIKE ?").get(`%${msgRef.id}%`);
     if (existing) continue;
 
     // 2. Get full message
@@ -57,35 +58,33 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     if (!fromEmail) continue;
 
     // 3. Check if sender is a known contact in this project
-    const contact = db.prepare(`
+    const contact = await db.prepare(`
       SELECT * FROM outreach_contacts 
       WHERE email = ? AND project_id = ?
     `).get(fromEmail, mailbox.project_id) as any;
 
     if (contact) {
       // 4. Record a reply event
-      import('uuid').then(({ v4: uuidv4 }) => {
-        db.prepare(`
-          INSERT INTO outreach_events (id, campaign_id, contact_id, project_id, type, metadata, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          uuidv4(),
-          null, // TODO: try to identify campaign from thread or contact last activity
-          contact.id,
-          mailbox.project_id,
-          'reply',
-          JSON.stringify({
-            gmail_message_id: msg.id,
-            gmail_thread_id: msg.threadId,
-            snippet: msg.snippet,
-            from: fromHeader
-          }),
-          new Date(parseInt(msg.internalDate)).toISOString()
-        );
+      await db.prepare(`
+        INSERT INTO outreach_events (id, campaign_id, contact_id, project_id, type, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        uuidv4(),
+        null, // TODO: try to identify campaign from thread or contact last activity
+        contact.id,
+        mailbox.project_id,
+        'reply',
+        JSON.stringify({
+          gmail_message_id: msg.id,
+          gmail_thread_id: msg.threadId,
+          snippet: msg.snippet,
+          from: fromHeader
+        }),
+        new Date(parseInt(msg.internalDate)).toISOString()
+      );
 
-        // Update contact status
-        db.prepare("UPDATE outreach_contacts SET status = 'replied' WHERE id = ?").run(contact.id);
-      });
+      // Update contact status
+      await db.prepare("UPDATE outreach_contacts SET status = 'replied' WHERE id = ?").run(contact.id);
       
       newCount++;
     }

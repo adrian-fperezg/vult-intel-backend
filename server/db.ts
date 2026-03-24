@@ -1,274 +1,357 @@
 import Database from 'better-sqlite3';
+import pg from 'pg';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.resolve(__dirname, '../outreach.db');
+const DATABASE_URL = process.env.DATABASE_URL;
 
-export const db = new Database(dbPath);
+class DbWrapper {
+  private sqlite?: any;
+  private pgPool?: pg.Pool;
+  private isPostgres: boolean;
 
-// Enable WAL mode for better concurrent read performance
-db.pragma('journal_mode = WAL');
+  constructor() {
+    this.isPostgres = !!DATABASE_URL;
+    if (this.isPostgres) {
+      console.log('[DB] Using PostgreSQL (Production Mode)');
+      this.pgPool = new pg.Pool({
+        connectionString: DATABASE_URL,
+        ssl: DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
+      });
+    } else {
+      console.log('[DB] Using SQLite (Development Mode)');
+      this.sqlite = new Database(dbPath);
+      this.sqlite.pragma('journal_mode = WAL');
+    }
+  }
 
-// ─── Base Tables ────────────────────────────────────────────────────────────
+  private convertSql(sql: string): string {
+    if (!this.isPostgres) return sql;
+    // Simple conversion of ? to $1, $2, etc. (caution: doesn't handle strings with ?)
+    let count = 1;
+    return sql.replace(/\?/g, () => `$${count++}`);
+  }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS outreach_subscriptions (
-    user_id TEXT PRIMARY KEY,
-    status TEXT NOT NULL, -- 'active' | 'trial' | 'expired'
-    trial_start_at DATETIME,
-    ends_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  async exec(sql: string) {
+    if (this.isPostgres) {
+      await this.pgPool!.query(sql);
+    } else {
+      this.sqlite.exec(sql);
+    }
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_campaigns (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL DEFAULT '',
-    name TEXT NOT NULL,
-    status TEXT DEFAULT 'draft', -- 'draft' | 'active' | 'paused' | 'completed'
-    type TEXT DEFAULT 'email',
-    settings TEXT, -- JSON settings
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  async run(sql: string, ...params: any[]) {
+    const convertedSql = this.convertSql(sql);
+    if (this.isPostgres) {
+      const res = await this.pgPool!.query(convertedSql, params);
+      return { lastInsertRowid: null, changes: res.rowCount };
+    } else {
+      return this.sqlite.prepare(sql).run(...params);
+    }
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_sequences (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL DEFAULT '',
-    name TEXT NOT NULL,
-    steps TEXT, -- JSON array of steps
-    status TEXT DEFAULT 'draft',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  async get<T>(sql: string, ...params: any[]): Promise<T | undefined> {
+    const convertedSql = this.convertSql(sql);
+    if (this.isPostgres) {
+      const res = await this.pgPool!.query(convertedSql, params);
+      return res.rows[0];
+    } else {
+      return this.sqlite.prepare(sql).get(...params);
+    }
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_contacts (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL DEFAULT '',
-    email TEXT NOT NULL,
-    first_name TEXT,
-    last_name TEXT,
-    title TEXT,
-    company TEXT,
-    website TEXT,
-    phone TEXT,
-    linkedin TEXT,
-    status TEXT DEFAULT 'not_enrolled',
-    tags TEXT, -- JSON array
-    intent TEXT,
-    last_contacted_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  async all<T>(sql: string, ...params: any[]): Promise<T[]> {
+    const convertedSql = this.convertSql(sql);
+    if (this.isPostgres) {
+      const res = await this.pgPool!.query(convertedSql, params);
+      return res.rows;
+    } else {
+      return this.sqlite.prepare(sql).all(...params);
+    }
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_events (
-    id TEXT PRIMARY KEY,
-    campaign_id TEXT,
-    contact_id TEXT,
-    project_id TEXT NOT NULL DEFAULT '',
-    type TEXT NOT NULL, -- 'open' | 'click' | 'reply' | 'bounce'
-    metadata TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(campaign_id) REFERENCES outreach_campaigns(id),
-    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
-  );
+  prepare(sql: string) {
+    const convertedSql = this.convertSql(sql);
+    
+    return {
+      run: async (...params: any[]) => {
+        if (this.isPostgres) {
+          const res = await this.pgPool!.query(convertedSql, params);
+          return { lastInsertRowid: null, changes: res.rowCount };
+        } else {
+          return this.sqlite.prepare(sql).run(...params);
+        }
+      },
+      get: async <T>(...params: any[]): Promise<T | undefined> => {
+        if (this.isPostgres) {
+          const res = await this.pgPool!.query(convertedSql, params);
+          return res.rows[0];
+        } else {
+          return this.sqlite.prepare(sql).get(...params);
+        }
+      },
+      all: async <T>(...params: any[]): Promise<T[]> => {
+        if (this.isPostgres) {
+          const res = await this.pgPool!.query(convertedSql, params);
+          return res.rows || [];
+        } else {
+          return this.sqlite.prepare(sql).all(...params);
+        }
+      },
+    };
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_mailboxes (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
-    email TEXT NOT NULL,
-    name TEXT,
-    access_token TEXT NOT NULL,   -- AES-256 encrypted
-    refresh_token TEXT NOT NULL,  -- AES-256 encrypted
-    expires_at DATETIME,
-    scope TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, project_id, email)
-  );
+  // SQLite PRAGMA compatibility
+  async pragma(sql: string) {
+    if (!this.isPostgres) {
+      return this.sqlite.pragma(sql);
+    }
+    // For migrations (table_info)
+    if (sql.startsWith('table_info')) {
+      const parts = sql.match(/table_info\((.*)\)/);
+      const tableName = parts ? parts[1] : '';
+      const res = await this.pgPool!.query(
+        "SELECT column_name as name FROM information_schema.columns WHERE table_name = $1",
+        [tableName]
+      );
+      return res.rows;
+    }
+    return [];
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_individual_emails (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
-    mailbox_id TEXT NOT NULL,
-    contact_id TEXT,
-    to_email TEXT NOT NULL,
-    subject TEXT,
-    body_html TEXT,
-    status TEXT NOT NULL DEFAULT 'draft', -- 'draft', 'scheduled', 'sent', 'failed'
-    scheduled_at DATETIME,
-    sent_at DATETIME,
-    thread_id TEXT,
-    message_id TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(mailbox_id) REFERENCES outreach_mailboxes(id),
-    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
-  );
+  // Simple transaction wrapper
+  async transaction(cb: () => Promise<void> | void) {
+    if (this.isPostgres) {
+      const client = await this.pgPool!.connect();
+      try {
+        await client.query('BEGIN');
+        await cb();
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    } else {
+      this.sqlite.transaction(cb)();
+    }
+  }
 
-  CREATE TABLE IF NOT EXISTS outreach_individual_email_events (
-    id TEXT PRIMARY KEY,
-    email_id TEXT NOT NULL,
-    event_type TEXT NOT NULL, -- 'open', 'click'
-    ip_address TEXT,
-    user_agent TEXT,
-    link_url TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(email_id) REFERENCES outreach_individual_emails(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS outreach_settings (
-    project_id TEXT PRIMARY KEY,
-    hunter_api_key TEXT, -- AES-256 encrypted
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS icp_profiles (
-    id TEXT PRIMARY KEY,
-    project_id TEXT UNIQUE NOT NULL,
-    job_titles TEXT, -- JSON string array
-    industries TEXT, -- JSON string array
-    company_sizes TEXT, -- JSON string array (e.g. ["1-10", "11-50"])
-    countries TEXT, -- JSON string array
-    seniority TEXT, -- JSON string array
-    technologies TEXT, -- JSON string array
-    keywords TEXT, -- Free text
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS hunter_usage_log (
-    id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    endpoint TEXT NOT NULL, -- 'domain-search', 'email-finder', 'email-verifier'
-    credits_used INTEGER DEFAULT 1,
-    status TEXT DEFAULT 'success', -- 'success', 'rate-limited', 'error'
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// ─── Migrations: add columns if they don't exist yet ────────────────────────
-// (Runs safely every startup — SQLite doesn't support "ADD COLUMN IF NOT EXISTS")
-
-const tableColumns: Record<string, string[]> = {
-  outreach_campaigns: db.prepare("PRAGMA table_info(outreach_campaigns)").all().map((r: any) => r.name),
-  outreach_sequences: db.prepare("PRAGMA table_info(outreach_sequences)").all().map((r: any) => r.name),
-  outreach_contacts:  db.prepare("PRAGMA table_info(outreach_contacts)").all().map((r: any) => r.name),
-  outreach_mailboxes: db.prepare("PRAGMA table_info(outreach_mailboxes)").all().map((r: any) => r.name),
-};
-
-const migrations: Array<{ table: string; col: string; def: string }> = [
-  { table: 'outreach_campaigns', col: 'project_id', def: "ALTER TABLE outreach_campaigns ADD COLUMN project_id TEXT NOT NULL DEFAULT ''" },
-  { table: 'outreach_sequences', col: 'project_id', def: "ALTER TABLE outreach_sequences ADD COLUMN project_id TEXT NOT NULL DEFAULT ''" },
-  { table: 'outreach_sequences', col: 'daily_limit', def: "ALTER TABLE outreach_sequences ADD COLUMN daily_limit INTEGER DEFAULT 50" },
-  { table: 'outreach_sequences', col: 'min_delay', def: "ALTER TABLE outreach_sequences ADD COLUMN min_delay INTEGER DEFAULT 2" },
-  { table: 'outreach_sequences', col: 'max_delay', def: "ALTER TABLE outreach_sequences ADD COLUMN max_delay INTEGER DEFAULT 5" },
-  { table: 'outreach_sequences', col: 'send_weekends', def: "ALTER TABLE outreach_sequences ADD COLUMN send_weekends BOOLEAN DEFAULT 0" },
-  { table: 'outreach_contacts',  col: 'project_id', def: "ALTER TABLE outreach_contacts  ADD COLUMN project_id TEXT NOT NULL DEFAULT ''" },
-  { table: 'outreach_contacts',  col: 'title',      def: "ALTER TABLE outreach_contacts  ADD COLUMN title TEXT" },
-  { table: 'outreach_contacts',  col: 'website',    def: "ALTER TABLE outreach_contacts  ADD COLUMN website TEXT" },
-  { table: 'outreach_contacts',  col: 'phone',      def: "ALTER TABLE outreach_contacts  ADD COLUMN phone TEXT" },
-  { table: 'outreach_contacts',  col: 'linkedin',   def: "ALTER TABLE outreach_contacts  ADD COLUMN linkedin TEXT" },
-  { table: 'outreach_contacts',  col: 'tags',       def: "ALTER TABLE outreach_contacts  ADD COLUMN tags TEXT" },
-  { table: 'outreach_events',    col: 'project_id', def: "ALTER TABLE outreach_events    ADD COLUMN project_id TEXT NOT NULL DEFAULT ''" },
-  { table: 'outreach_mailboxes', col: 'status',     def: "ALTER TABLE outreach_mailboxes ADD COLUMN status TEXT DEFAULT 'active'" },
-  { table: 'outreach_campaigns', col: 'sequence_id', def: "ALTER TABLE outreach_campaigns ADD COLUMN sequence_id TEXT" },
-  { table: 'outreach_campaigns', col: 'daily_limit', def: "ALTER TABLE outreach_campaigns ADD COLUMN daily_limit INTEGER DEFAULT 50" },
-  { table: 'outreach_campaigns', col: 'min_delay', def: "ALTER TABLE outreach_campaigns ADD COLUMN min_delay INTEGER DEFAULT 2" },
-  { table: 'outreach_campaigns', col: 'max_delay', def: "ALTER TABLE outreach_campaigns ADD COLUMN max_delay INTEGER DEFAULT 5" },
-  { table: 'outreach_campaigns', col: 'send_weekends', def: "ALTER TABLE outreach_campaigns ADD COLUMN send_weekends BOOLEAN DEFAULT 0" },
-  { table: 'outreach_contacts',  col: 'source_detail', def: "ALTER TABLE outreach_contacts ADD COLUMN source_detail TEXT" },
-  { table: 'outreach_contacts',  col: 'confidence_score', def: "ALTER TABLE outreach_contacts ADD COLUMN confidence_score INTEGER" },
-  { table: 'outreach_contacts',  col: 'verification_status', def: "ALTER TABLE outreach_contacts ADD COLUMN verification_status TEXT" },
-  { table: 'outreach_contacts',  col: 'verified_at', def: "ALTER TABLE outreach_contacts ADD COLUMN verified_at DATETIME" },
-];
-
-for (const { table, col, def } of migrations) {
-  if (!tableColumns[table]?.includes(col)) {
-    try {
-      db.exec(def);
-    } catch {
-      // Column already exists in some edge case — ignore
+  async close() {
+    if (this.isPostgres) {
+      await this.pgPool!.end();
+    } else {
+      this.sqlite.close();
     }
   }
 }
 
-// Create missing tables requested in the requirements
-db.exec(`
-  CREATE TABLE IF NOT EXISTS inbox_threads (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
-    mailbox_id TEXT NOT NULL,
-    contact_id TEXT,
-    subject TEXT,
-    snippet TEXT,
-    status TEXT DEFAULT 'open', -- 'open', 'snoozed', 'closed'
-    last_message_at DATETIME,
-    ai_summary TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(mailbox_id) REFERENCES outreach_mailboxes(id),
-    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
-  );
+export const db = new DbWrapper();
 
-  CREATE TABLE IF NOT EXISTS contact_lists (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    source TEXT, -- e.g., 'CSV Upload', 'Manual'
-    contact_count INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+export const initDb = async () => {
+  console.log("[DB] Verifying/Initializing tables...");
+  try {
+    // 1. Subscriptions
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_subscriptions (
+        user_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        trial_start_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ends_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS contact_list_members (
-    list_id TEXT NOT NULL,
-    contact_id TEXT NOT NULL,
-    PRIMARY KEY(list_id, contact_id),
-    FOREIGN KEY(list_id) REFERENCES contact_lists(id),
-    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
-  );
+    // 2. Campaigns
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_campaigns (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL,
+        subject TEXT,
+        body TEXT,
+        status TEXT DEFAULT 'draft',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS suppression_list (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
-    email TEXT NOT NULL,
-    reason TEXT, -- 'unsubscribed', 'bounced', 'manual'
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(project_id, email)
-  );
+    // 3. Sequences
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_sequences (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL,
+        steps TEXT,
+        status TEXT DEFAULT 'draft',
+        daily_limit INTEGER DEFAULT 50,
+        min_delay INTEGER DEFAULT 2,
+        max_delay INTEGER DEFAULT 5,
+        send_weekends BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS outreach_campaign_enrollments (
-    id TEXT PRIMARY KEY,
-    campaign_id TEXT NOT NULL,
-    contact_id TEXT NOT NULL,
-    status TEXT DEFAULT 'pending', 
-    current_step_id TEXT,
-    last_event_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(campaign_id, contact_id),
-    FOREIGN KEY(campaign_id) REFERENCES outreach_campaigns(id),
-    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
-  );
-  CREATE TABLE IF NOT EXISTS outreach_sequence_enrollments (
-    id TEXT PRIMARY KEY,
-    sequence_id TEXT NOT NULL,
-    contact_id TEXT NOT NULL,
-    status TEXT DEFAULT 'pending', 
-    current_step_id TEXT,
-    last_event_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(sequence_id, contact_id),
-    FOREIGN KEY(sequence_id) REFERENCES outreach_sequences(id),
-    FOREIGN KEY(contact_id) REFERENCES outreach_contacts(id)
-  );
-`);
+    // 4. Contacts
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_contacts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL,
+        first_name TEXT,
+        last_name TEXT,
+        title TEXT,
+        company TEXT,
+        website TEXT,
+        phone TEXT,
+        linkedin TEXT,
+        status TEXT DEFAULT 'not_enrolled',
+        tags TEXT,
+        intent TEXT,
+        source_detail TEXT,
+        confidence_score INTEGER,
+        verification_status TEXT,
+        verified_at TIMESTAMP,
+        last_contacted_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, email)
+      )
+    `);
+
+    // 5. Events
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_events (
+        id TEXT PRIMARY KEY,
+        campaign_id TEXT REFERENCES outreach_campaigns(id),
+        contact_id TEXT REFERENCES outreach_contacts(id),
+        project_id TEXT NOT NULL DEFAULT '',
+        type TEXT NOT NULL,
+        metadata TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 6. Mailboxes
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_mailboxes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        name TEXT,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL,
+        expires_at TIMESTAMP,
+        scope TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, project_id, email)
+      )
+    `);
+
+    // 7. Individual Emails
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_individual_emails (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        mailbox_id TEXT NOT NULL REFERENCES outreach_mailboxes(id),
+        contact_id TEXT REFERENCES outreach_contacts(id),
+        to_email TEXT NOT NULL,
+        subject TEXT,
+        body_html TEXT,
+        status TEXT NOT NULL DEFAULT 'draft',
+        scheduled_at TIMESTAMP,
+        sent_at TIMESTAMP,
+        thread_id TEXT,
+        message_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 8. Settings
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_settings (
+        project_id TEXT PRIMARY KEY,
+        hunter_api_key TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 9. ICP Profiles
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS icp_profiles (
+        id TEXT PRIMARY KEY,
+        project_id TEXT UNIQUE NOT NULL,
+        job_titles TEXT,
+        industries TEXT,
+        company_sizes TEXT,
+        countries TEXT,
+        seniority TEXT,
+        technologies TEXT,
+        keywords TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 10. Contact Lists
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS contact_lists (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 11. Contact List Members
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS contact_list_members (
+        list_id TEXT REFERENCES contact_lists(id) ON DELETE CASCADE,
+        contact_id TEXT REFERENCES outreach_contacts(id) ON DELETE CASCADE,
+        PRIMARY KEY (list_id, contact_id)
+      )
+    `);
+
+    // 12. Suppression List
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS suppression_list (
+        project_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        reason TEXT,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_id, email)
+      )
+    `);
+
+    // 13. Tracking Events
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_individual_email_events (
+        id TEXT PRIMARY KEY,
+        mailbox_id TEXT,
+        contact_id TEXT,
+        type TEXT,
+        metadata TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log("✅ Database initialized successfully");
+  } catch (err) {
+    console.error("❌ Database initialization failed:", err);
+    throw err;
+  }
+};
 
 export default db;

@@ -186,6 +186,11 @@ export function useOutreachApi() {
     [post],
   );
 
+  const createContactsBulk = useCallback(
+    (project_id: string, contacts: Record<string, unknown>[]) => post<any>('/contacts/bulk', { project_id, contacts }),
+    [post],
+  );
+
   const updateContact = useCallback(
     (id: string, updates: Record<string, unknown>) => patch<any>(`/contacts/${id}`, updates),
     [patch],
@@ -346,6 +351,7 @@ export function useOutreachApi() {
     // Contacts
     fetchContacts,
     createContact,
+    createContactsBulk,
     updateContact,
     deleteContact,
     // Inbox

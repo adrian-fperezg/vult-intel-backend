@@ -50,7 +50,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
     });
     
     // Mark as failed in DB
-    db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
+    await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
     
     throw error;
   } finally {
@@ -60,7 +60,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
 export async function processEmail(emailId: string, signal?: AbortSignal) {
   console.log(`[processEmail] Starting for emailId: ${emailId}`);
-  const email = db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+  const email = await db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
   
   if (!email) {
     console.error(`[processEmail] Email ${emailId} not found in DB`);
@@ -114,7 +114,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     const result = res.data;
     console.log(`[processEmail] Email ${emailId} sent successfully. Gmail ID: ${result.id}`);
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE outreach_individual_emails 
       SET status = 'sent', sent_at = CURRENT_TIMESTAMP, message_id = ?, thread_id = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
@@ -122,12 +122,12 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
 
     // Log event and update contact
     if (email.contact_id) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
         VALUES (?, ?, ?, ?, ?)
       `).run(uuidv4(), email.contact_id, email.project_id, 'email_sent', JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
       
-      db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
+      await db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
     }
 
     return { success: true, messageId: result.id };
@@ -148,7 +148,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
   const { campaignId } = job.data;
   console.log(`Processing campaign: ${campaignId}`);
 
-  const campaign = db.prepare(`
+  const campaign = await db.prepare(`
     SELECT c.*, s.steps as sequence_steps 
     FROM outreach_campaigns c
     LEFT JOIN outreach_sequences s ON c.sequence_id = s.id
@@ -170,7 +170,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
   }
 
   // Find pending enrollments
-  const enrollments = db.prepare(`
+  const enrollments = await db.prepare(`
     SELECT e.*, c.email as contact_email, c.first_name, c.last_name, c.company
     FROM outreach_campaign_enrollments e
     JOIN outreach_contacts c ON e.contact_id = c.id
@@ -181,7 +181,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
 
   for (const enrollment of enrollments) {
     try {
-      db.transaction(() => {
+      await db.transaction(async () => {
         // Create individual email
         const emailId = uuidv4();
         
@@ -202,7 +202,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           bodyHtml = bodyHtml.replace(regex, value);
         });
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
         `).run(
@@ -217,7 +217,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         );
 
         // Update enrollment
-        db.prepare(`
+        await db.prepare(`
           UPDATE outreach_campaign_enrollments 
           SET status = 'active', current_step_id = ?, last_event_at = CURRENT_TIMESTAMP 
           WHERE id = ?
@@ -225,7 +225,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
 
         // Queue the email job with a deterministic jobId for easy cancellation
         emailQueue.add(`email-${emailId}`, { emailId }, { jobId: emailId });
-      })();
+      });
     } catch (err) {
       console.error(`Failed to process enrollment ${enrollment.id}:`, err);
     }
@@ -248,7 +248,7 @@ export async function cancelMailboxJobs(mailboxId: string) {
   console.log(`[cancelMailboxJobs] Cancelling pending jobs for mailbox: ${mailboxId}`);
   
   // 1. Find all 'scheduled' emails for this mailbox
-  const pendingEmails = db.prepare(`
+  const pendingEmails = await db.prepare(`
     SELECT id FROM outreach_individual_emails 
     WHERE mailbox_id = ? AND status = 'scheduled'
   `).all(mailboxId) as { id: string }[];
@@ -264,7 +264,7 @@ export async function cancelMailboxJobs(mailboxId: string) {
       }
       
       // Update DB status regardless of whether job was found in queue (might have just started)
-      db.prepare("UPDATE outreach_individual_emails SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.id);
+      await db.prepare("UPDATE outreach_individual_emails SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.id);
     } catch (err) {
       console.error(`[cancelMailboxJobs] Failed to cancel job for email ${email.id}:`, err);
     }

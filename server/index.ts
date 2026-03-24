@@ -4,8 +4,10 @@ import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import cookieSession from "cookie-session";
-import db from "./db";
+import session from "express-session";
+import { RedisStore } from "connect-redis";
+import redis from "./redis";
+import db, { initDb } from "./db";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs } from "./queues/emailQueue.js";
 import {
@@ -53,17 +55,32 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   next();
 });
 
-// Initialize session handling for production/incognito stability
+// Initialize session handling with Redis for persistence across deployments
+const redisStore = new RedisStore({
+  client: redis,
+  prefix: "vult-session:",
+});
+
 app.use(
-  cookieSession({
+  session({
+    store: redisStore,
     name: "vult-session",
-    keys: [process.env.SESSION_SECRET || "vult-intel-default-secret"],
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: "none",
-    secure: true, // Required for SameSite: none
-    httpOnly: true,
+    secret: process.env.SESSION_SECRET || "vult-intel-default-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: "none",
+      secure: true, // Required for SameSite: none
+      httpOnly: true,
+    },
   }),
 );
+
+// Initialize DB schema on startup
+initDb().catch(err => {
+  console.error('[DB] Initialization failed:', err);
+});
 
 // ─── Public health check ──────────────────────────────────────────────────────
 
@@ -138,7 +155,7 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
     const mailboxId = uuidv4();
 
     // Save or update mailbox
-    db.prepare(
+    await db.prepare(
       `
       INSERT INTO outreach_mailboxes (id, user_id, project_id, email, name, access_token, refresh_token, expires_at, scope)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -181,18 +198,18 @@ app.use("/api/outreach", verifyFirebaseToken as any);
 
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
 
-app.get("/api/outreach/subscription", (req: AuthRequest, res) => {
+app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  let sub = db
+  let sub = await db
     .prepare("SELECT * FROM outreach_subscriptions WHERE user_id = ?")
     .get(userId) as any;
 
   if (!sub) {
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
-    db.prepare(
+    await db.prepare(
       `
       INSERT INTO outreach_subscriptions (user_id, status, trial_start_at, ends_at)
       VALUES (?, 'trial', CURRENT_TIMESTAMP, ?)
@@ -208,11 +225,170 @@ app.get("/api/outreach/subscription", (req: AuthRequest, res) => {
   res.json(sub);
 });
 
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+
+// GET /api/outreach/settings
+app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
+  const { project_id } = req.query as { project_id?: string };
+  if (!project_id) return res.status(400).json({ error: "project_id is required" });
+
+  try {
+    const settings = await db.prepare("SELECT * FROM outreach_settings WHERE project_id = ?").get(project_id);
+    res.json(settings || { project_id, hunter_api_key: null });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch settings", message: err.message });
+  }
+});
+
+// POST /api/outreach/settings
+app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
+  const { project_id, hunter_api_key } = req.body;
+  if (!project_id) return res.status(400).json({ error: "project_id is required" });
+
+  try {
+    const existing = await db.prepare("SELECT project_id FROM outreach_settings WHERE project_id = ?").get(project_id);
+    if (existing) {
+      await db.prepare("UPDATE outreach_settings SET hunter_api_key = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+        .run(hunter_api_key, project_id);
+    } else {
+      await db.prepare("INSERT INTO outreach_settings (project_id, hunter_api_key) VALUES (?, ?)")
+        .run(project_id, hunter_api_key);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save settings", message: err.message });
+  }
+});
+
+// ─── CONTACTS ─────────────────────────────────────────────────────────────────
+
+// GET /api/outreach/contacts
+app.get("/api/outreach/contacts", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query as { project_id?: string };
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id is required" });
+
+  try {
+    const contacts = await db.prepare(
+      "SELECT * FROM outreach_contacts WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC"
+    ).all(userId, project_id);
+    res.json(contacts);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch contacts", message: err.message });
+  }
+});
+
+// POST /api/outreach/contacts
+// Upsert contact by email within a project
+app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  const {
+    id,
+    project_id,
+    email,
+    first_name,
+    last_name,
+    title,
+    company,
+    website,
+    phone,
+    linkedin,
+    status,
+    tags,
+    intent,
+    source_detail,
+    confidence_score,
+    verification_status
+  } = req.body;
+
+  if (!project_id || !email) {
+    return res.status(400).json({ error: "project_id and email are required" });
+  }
+
+  try {
+    const existing = await db.prepare(
+      "SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ? AND user_id = ?"
+    ).get(email, project_id, userId) as any;
+
+    if (existing) {
+      await db.prepare(`
+        UPDATE outreach_contacts SET
+          first_name = COALESCE(?, first_name),
+          last_name = COALESCE(?, last_name),
+          title = COALESCE(?, title),
+          company = COALESCE(?, company),
+          website = COALESCE(?, website),
+          phone = COALESCE(?, phone),
+          linkedin = COALESCE(?, linkedin),
+          status = COALESCE(?, status),
+          tags = COALESCE(?, tags),
+          intent = COALESCE(?, intent),
+          source_detail = COALESCE(?, source_detail),
+          confidence_score = COALESCE(?, confidence_score),
+          verification_status = COALESCE(?, verification_status)
+        WHERE id = ?
+      `).run(
+        first_name, last_name, title, company, website, phone, linkedin,
+        status, tags, intent, source_detail, confidence_score, verification_status,
+        existing.id
+      );
+      const updated = await db.prepare("SELECT * FROM outreach_contacts WHERE id = ?").get(existing.id);
+      res.json(updated);
+    } else {
+      const { v4: uuidv4 } = await import('uuid');
+      const newId = id || uuidv4();
+      await db.prepare(`
+        INSERT INTO outreach_contacts (
+          id, user_id, project_id, email, first_name, last_name, title, company, 
+          website, phone, linkedin, status, tags, intent, source_detail, 
+          confidence_score, verification_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        newId, userId, project_id, email, first_name, last_name, title, company,
+        website, phone, linkedin, status || 'not_enrolled', tags, intent, source_detail,
+        confidence_score, verification_status
+      );
+      const inserted = await db.prepare("SELECT * FROM outreach_contacts WHERE id = ?").get(newId);
+      res.json(inserted);
+    }
+  } catch (err: any) {
+    console.error("[POST /contacts] Error:", err);
+    res.status(500).json({ error: "Failed to save contact", message: err.message });
+  }
+});
+
+// DELETE /api/outreach/contacts/:id
+app.delete("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+  const { project_id } = req.query as { project_id?: string };
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id is required" });
+
+  try {
+    const result = await db.prepare(
+      "DELETE FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?"
+    ).run(id, userId, project_id);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete contact", message: err.message });
+  }
+});
+
 // ─── MAILBOXES ────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/mailboxes?project_id=xxx
 // Returns mailboxes (without raw tokens)
-app.get("/api/outreach/mailboxes", (req: AuthRequest, res) => {
+app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
@@ -221,7 +397,7 @@ app.get("/api/outreach/mailboxes", (req: AuthRequest, res) => {
     return res.status(400).json({ error: "project_id is required" });
 
   try {
-    const mailboxes = db
+    const mailboxes = await db
       .prepare(
         "SELECT id, email, name, status, expires_at, scope, created_at FROM outreach_mailboxes WHERE user_id = ? AND project_id = ? AND status != 'disconnected' ORDER BY created_at ASC",
       )
@@ -283,14 +459,14 @@ app.delete("/api/outreach/mailboxes/:id", async (req: AuthRequest, res) => {
     console.log(`[DELETE /mailboxes/${id}] Disconnecting mailbox for user: ${userId}, project: ${project_id}`);
 
     // 1. Verify ownership and project association BEFORE mutation
-    const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ? AND user_id = ? AND project_id = ?").get(id, userId, project_id) as any;
+    const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ? AND user_id = ? AND project_id = ?").get(id, userId, project_id) as any;
     
     if (!mailbox) {
       return res.status(404).json({ error: "Mailbox not found or does not belong to this project" });
     }
 
     // 2. Soft delete: Clear tokens and set status to 'disconnected'
-    db.prepare(`
+    await db.prepare(`
       UPDATE outreach_mailboxes 
       SET status = 'disconnected', access_token = NULL, refresh_token = NULL, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
@@ -310,23 +486,27 @@ app.delete("/api/outreach/mailboxes/:id", async (req: AuthRequest, res) => {
 // ─── CAMPAIGNS ────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/campaigns?project_id=xxx
-app.get("/api/outreach/campaigns", (req: AuthRequest, res) => {
+app.get("/api/outreach/campaigns", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!project_id) return res.json([]); // No project = empty
 
-  const campaigns = db
-    .prepare(
-      "SELECT * FROM outreach_campaigns WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC",
-    )
-    .all(userId, project_id);
+  try {
+    const campaigns = await db
+      .prepare(
+        "SELECT * FROM outreach_campaigns WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC",
+      )
+      .all(userId, project_id);
 
-  res.json(campaigns);
+    res.json(campaigns);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch campaigns", message: err.message });
+  }
 });
 
 // POST /api/outreach/campaigns
-app.post("/api/outreach/campaigns", (req: AuthRequest, res) => {
+app.post("/api/outreach/campaigns", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { name, type, settings, project_id } = req.body;
 
@@ -334,7 +514,7 @@ app.post("/api/outreach/campaigns", (req: AuthRequest, res) => {
     return res.status(400).json({ error: "project_id is required" });
 
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     `
     INSERT INTO outreach_campaigns (id, user_id, project_id, name, type, settings)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -348,14 +528,14 @@ app.post("/api/outreach/campaigns", (req: AuthRequest, res) => {
     JSON.stringify(settings || {}),
   );
 
-  const campaign = db
+  const campaign = await db
     .prepare("SELECT * FROM outreach_campaigns WHERE id = ?")
     .get(id);
   res.status(201).json(campaign);
 });
 
 // PATCH /api/outreach/campaigns/:id
-app.patch("/api/outreach/campaigns/:id", (req: AuthRequest, res) => {
+app.patch("/api/outreach/campaigns/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const { name, status } = req.body;
@@ -378,21 +558,21 @@ app.patch("/api/outreach/campaigns/:id", (req: AuthRequest, res) => {
   fields.push("updated_at = CURRENT_TIMESTAMP");
   values.push(id, userId);
 
-  db.prepare(
+  await db.prepare(
     `UPDATE outreach_campaigns SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
   ).run(...values);
 
-  const campaign = db
+  const campaign = await db
     .prepare("SELECT * FROM outreach_campaigns WHERE id = ?")
     .get(id);
   res.json(campaign);
 });
 // DELETE /api/outreach/campaigns/:id
-app.delete("/api/outreach/campaigns/:id", (req: AuthRequest, res) => {
+app.delete("/api/outreach/campaigns/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
-  const result = db
+  const result = await db
     .prepare("DELETE FROM outreach_campaigns WHERE id = ? AND user_id = ?")
     .run(id, userId);
 
@@ -402,7 +582,7 @@ app.delete("/api/outreach/campaigns/:id", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/campaigns/:id/launch
-app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
+app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id: campaignId } = req.params;
   const { 
@@ -416,12 +596,12 @@ app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const campaign = db.prepare("SELECT project_id FROM outreach_campaigns WHERE id = ?").get(campaignId) as any;
+    const campaign = await db.prepare("SELECT project_id FROM outreach_campaigns WHERE id = ?").get(campaignId) as any;
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
-    db.transaction(() => {
+    await db.transaction(async () => {
       // 1. Update Campaign Settings & Scheduling
-      db.prepare(`
+      await db.prepare(`
         UPDATE outreach_campaigns 
         SET status = 'active', 
             mailbox_id = ?, 
@@ -450,7 +630,7 @@ app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
         body_html: content.body_html
       }];
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO outreach_sequences (id, user_id, project_id, name, steps, status)
         VALUES (?, ?, ?, ?, ?, 'active')
       `).run(
@@ -462,10 +642,10 @@ app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
       );
 
       // Link sequence to campaign
-      db.prepare("UPDATE outreach_campaigns SET sequence_id = ? WHERE id = ?").run(sequenceId, campaignId);
+      await db.prepare("UPDATE outreach_campaigns SET sequence_id = ? WHERE id = ?").run(sequenceId, campaignId);
 
       // 3. Upsert Contacts and Enroll them
-      const insertContact = db.prepare(`
+      const insertContactQuery = `
         INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'enrolled')
         ON CONFLICT(email, project_id) DO UPDATE SET
@@ -473,27 +653,27 @@ app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
           last_name = COALESCE(excluded.last_name, outreach_contacts.last_name),
           company = COALESCE(excluded.company, outreach_contacts.company),
           status = 'enrolled'
-      `);
+      `;
 
-      const enrollInCampaign = db.prepare(`
+      const enrollQuery = `
         INSERT INTO outreach_campaign_enrollments (id, campaign_id, contact_id, status)
         VALUES (?, ?, ?, 'pending')
         ON CONFLICT(campaign_id, contact_id) DO NOTHING
-      `);
+      `;
 
       for (const contactData of contacts) {
         const email = contactData[columnMapping.email];
         if (!email) continue;
 
-        const existingContact = db.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, campaign.project_id) as any;
+        const existingContact = await db.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, campaign.project_id) as any;
         
         let contactId;
         if (existingContact) {
           contactId = existingContact.id;
-          db.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
+          await db.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
         } else {
           contactId = uuidv4();
-          insertContact.run(
+          await db.prepare(insertContactQuery).run(
             contactId,
             userId,
             campaign.project_id,
@@ -504,13 +684,13 @@ app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
           );
         }
 
-        enrollInCampaign.run(
+        await db.prepare(enrollQuery).run(
           uuidv4(),
           campaignId,
           contactId,
         );
       }
-    })();
+    });
 
     // 4. Trigger Campaign Processing
     campaignQueue.add(`campaign-launch-${campaignId}`, { campaignId });
@@ -523,13 +703,13 @@ app.post("/api/outreach/campaigns/:id/launch", (req: AuthRequest, res) => {
 });
 
 // GET /api/outreach/campaigns/:id/delivery-estimate
-app.get("/api/outreach/campaigns/:id/delivery-estimate", (req: AuthRequest, res) => {
+app.get("/api/outreach/campaigns/:id/delivery-estimate", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  const enrollmentCount = db.prepare("SELECT COUNT(*) as count FROM outreach_campaign_enrollments WHERE campaign_id = ?").get(id) as any;
+  const enrollmentCount = await db.prepare("SELECT COUNT(*) as count FROM outreach_campaign_enrollments WHERE campaign_id = ?").get(id) as any;
   
   // Basic math: 200 emails per day limit
   const days = Math.ceil((enrollmentCount?.count || 0) / 200);
@@ -541,13 +721,13 @@ app.get("/api/outreach/campaigns/:id/delivery-estimate", (req: AuthRequest, res)
 // ─── SEQUENCES ────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/sequences?project_id=xxx
-app.get("/api/outreach/sequences", (req: AuthRequest, res) => {
+app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!project_id) return res.json([]);
 
-  const sequences = db
+  const sequences = await db
     .prepare(
       "SELECT * FROM outreach_sequences WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC",
     )
@@ -562,7 +742,7 @@ app.get("/api/outreach/sequences", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/sequences
-app.post("/api/outreach/sequences", (req: AuthRequest, res) => {
+app.post("/api/outreach/sequences", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { name, steps, project_id } = req.body;
 
@@ -570,7 +750,7 @@ app.post("/api/outreach/sequences", (req: AuthRequest, res) => {
     return res.status(400).json({ error: "project_id is required" });
 
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     `
     INSERT INTO outreach_sequences (id, user_id, project_id, name, steps, status)
     VALUES (?, ?, ?, ?, ?, 'draft')
@@ -583,14 +763,14 @@ app.post("/api/outreach/sequences", (req: AuthRequest, res) => {
     JSON.stringify(steps || []),
   );
 
-  const sequence = db
+  const sequence = await db
     .prepare("SELECT * FROM outreach_sequences WHERE id = ?")
     .get(id);
   res.status(201).json(sequence);
 });
 
 // PATCH /api/outreach/sequences/:id
-app.patch("/api/outreach/sequences/:id", (req: AuthRequest, res) => {
+app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const { name, status, steps } = req.body;
@@ -617,22 +797,22 @@ app.patch("/api/outreach/sequences/:id", (req: AuthRequest, res) => {
   fields.push("updated_at = CURRENT_TIMESTAMP");
   values.push(id, userId);
 
-  db.prepare(
+  await db.prepare(
     `UPDATE outreach_sequences SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
   ).run(...values);
 
-  const sequence = db
+  const sequence = await db
     .prepare("SELECT * FROM outreach_sequences WHERE id = ?")
     .get(id);
   res.status(200).json(sequence);
 });
 
 // DELETE /api/outreach/sequences/:id
-app.delete("/api/outreach/sequences/:id", (req: AuthRequest, res) => {
+app.delete("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
-  const result = db
+  const result = await db
     .prepare("DELETE FROM outreach_sequences WHERE id = ? AND user_id = ?")
     .run(id, userId);
 
@@ -642,7 +822,7 @@ app.delete("/api/outreach/sequences/:id", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/sequences/:id/launch
-app.post("/api/outreach/sequences/:id/launch", (req: AuthRequest, res) => {
+app.post("/api/outreach/sequences/:id/launch", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id: sequenceId } = req.params;
   const { 
@@ -656,12 +836,12 @@ app.post("/api/outreach/sequences/:id/launch", (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const sequence = db.prepare("SELECT project_id FROM outreach_sequences WHERE id = ?").get(sequenceId) as any;
+    const sequence = await db.prepare("SELECT project_id FROM outreach_sequences WHERE id = ?").get(sequenceId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
 
-    db.transaction(() => {
+    await db.transaction(async () => {
       // 1. Update Sequence Settings & Scheduling
-      db.prepare(`
+      await db.prepare(`
         UPDATE outreach_sequences 
         SET status = 'active', 
             name = ?,
@@ -683,7 +863,7 @@ app.post("/api/outreach/sequences/:id/launch", (req: AuthRequest, res) => {
       );
 
       // 2. Upsert Contacts and Enroll them
-      const insertContact = db.prepare(`
+      const insertContactQuery = `
         INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'enrolled')
         ON CONFLICT(email, project_id) DO UPDATE SET
@@ -691,27 +871,27 @@ app.post("/api/outreach/sequences/:id/launch", (req: AuthRequest, res) => {
           last_name = COALESCE(excluded.last_name, outreach_contacts.last_name),
           company = COALESCE(excluded.company, outreach_contacts.company),
           status = 'enrolled'
-      `);
+      `;
 
-      const enrollInSequence = db.prepare(`
+      const enrollQuery = `
         INSERT INTO outreach_sequence_enrollments (id, sequence_id, contact_id, status)
         VALUES (?, ?, ?, 'pending')
         ON CONFLICT(sequence_id, contact_id) DO NOTHING
-      `);
+      `;
 
       for (const contactData of contacts) {
         const email = contactData[columnMapping.email];
         if (!email) continue;
 
-        const existingContact = db.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, sequence.project_id) as any;
+        const existingContact = await db.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, sequence.project_id) as any;
         
         let contactId;
         if (existingContact) {
           contactId = existingContact.id;
-          db.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
+          await db.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
         } else {
           contactId = uuidv4();
-          insertContact.run(
+          await db.prepare(insertContactQuery).run(
             contactId,
             userId,
             sequence.project_id,
@@ -722,13 +902,13 @@ app.post("/api/outreach/sequences/:id/launch", (req: AuthRequest, res) => {
           );
         }
 
-        enrollInSequence.run(
+        await db.prepare(enrollQuery).run(
           uuidv4(),
           sequenceId,
           contactId,
         );
       }
-    })();
+    });
 
     // 4. Trigger Sequence Processing
     campaignQueue.add(`sequence-launch-${sequenceId}`, { sequenceId });
@@ -741,13 +921,13 @@ app.post("/api/outreach/sequences/:id/launch", (req: AuthRequest, res) => {
 });
 
 // GET /api/outreach/sequences/:id/delivery-estimate
-app.get("/api/outreach/sequences/:id/delivery-estimate", (req: AuthRequest, res) => {
+app.get("/api/outreach/sequences/:id/delivery-estimate", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  const enrollmentCount = db.prepare("SELECT COUNT(*) as count FROM outreach_sequence_enrollments WHERE sequence_id = ?").get(id) as any;
+  const enrollmentCount = await db.prepare("SELECT COUNT(*) as count FROM outreach_sequence_enrollments WHERE sequence_id = ?").get(id) as any;
   
   // Basic math: 200 emails per day limit
   const days = Math.ceil((enrollmentCount?.count || 0) / 200);
@@ -760,13 +940,13 @@ app.get("/api/outreach/sequences/:id/delivery-estimate", (req: AuthRequest, res)
 // ─── CONTACTS ─────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/contacts?project_id=xxx
-app.get("/api/outreach/contacts", (req: AuthRequest, res) => {
+app.get("/api/outreach/contacts", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!project_id) return res.json([]);
 
-  const contacts = db
+  const contacts = await db
     .prepare(
       "SELECT * FROM outreach_contacts WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC",
     )
@@ -781,7 +961,7 @@ app.get("/api/outreach/contacts", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/contacts
-app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
+app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const {
     first_name,
@@ -805,7 +985,7 @@ app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
   if (!email) return res.status(400).json({ error: "email is required" });
 
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     `
     INSERT INTO outreach_contacts (
       id, user_id, project_id, first_name, last_name, email, 
@@ -813,6 +993,18 @@ app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
       source_detail, confidence_score, verification_status
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(project_id, email) DO UPDATE SET
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      title = EXCLUDED.title,
+      company = EXCLUDED.company,
+      website = EXCLUDED.website,
+      phone = EXCLUDED.phone,
+      linkedin = EXCLUDED.linkedin,
+      tags = EXCLUDED.tags,
+      source_detail = EXCLUDED.source_detail,
+      confidence_score = EXCLUDED.confidence_score,
+      verification_status = EXCLUDED.verification_status
   `,
   ).run(
     id,
@@ -833,14 +1025,76 @@ app.post("/api/outreach/contacts", (req: AuthRequest, res) => {
     verification_status || null,
   );
 
-  const contact = db
-    .prepare("SELECT * FROM outreach_contacts WHERE id = ?")
-    .get(id);
+  const contact = await db
+    .prepare("SELECT * FROM outreach_contacts WHERE project_id = ? AND email = ?")
+    .get(project_id, email);
   res.status(201).json(contact);
 });
 
+// POST /api/outreach/contacts/bulk
+app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, contacts } = req.body;
+
+  if (!project_id || !Array.isArray(contacts)) {
+    return res.status(400).json({ error: "Missing project_id or contacts array" });
+  }
+
+  try {
+    await db.transaction(async () => {
+      const query = `
+        INSERT INTO outreach_contacts (
+          id, user_id, project_id, first_name, last_name, email, 
+          title, company, website, phone, linkedin, status, tags,
+          source_detail, confidence_score, verification_status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, email) DO UPDATE SET
+          first_name = EXCLUDED.first_name,
+          last_name = EXCLUDED.last_name,
+          title = EXCLUDED.title,
+          company = EXCLUDED.company,
+          website = EXCLUDED.website,
+          phone = EXCLUDED.phone,
+          linkedin = EXCLUDED.linkedin,
+          tags = EXCLUDED.tags,
+          source_detail = EXCLUDED.source_detail,
+          confidence_score = EXCLUDED.confidence_score,
+          verification_status = EXCLUDED.verification_status
+      `;
+
+      for (const contact of contacts) {
+        if (!contact.email) continue;
+        await db.prepare(query).run(
+          uuidv4(),
+          userId,
+          project_id,
+          contact.first_name || "",
+          contact.last_name || "",
+          contact.email,
+          contact.title || "",
+          contact.company || "",
+          contact.website || "",
+          contact.phone || "",
+          contact.linkedin || "",
+          contact.status || "not_enrolled",
+          JSON.stringify(contact.tags || []),
+          contact.source_detail || null,
+          contact.confidence_score || null,
+          contact.verification_status || null,
+        );
+      }
+    });
+
+    res.json({ success: true, count: contacts.length });
+  } catch (error: any) {
+    console.error("Bulk contact save failed:", error);
+    res.status(500).json({ error: error.message || "Bulk save failed" });
+  }
+});
+
 // PATCH /api/outreach/contacts/:id
-app.patch("/api/outreach/contacts/:id", (req: AuthRequest, res) => {
+app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const { status, intent, first_name, last_name, company } = req.body;
@@ -873,22 +1127,22 @@ app.patch("/api/outreach/contacts/:id", (req: AuthRequest, res) => {
     return res.status(400).json({ error: "Nothing to update" });
 
   values.push(id, userId);
-  db.prepare(
+  await db.prepare(
     `UPDATE outreach_contacts SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
   ).run(...values);
 
-  const contact = db
+  const contact = await db
     .prepare("SELECT * FROM outreach_contacts WHERE id = ?")
     .get(id);
   res.json(contact);
 });
 
 // DELETE /api/outreach/contacts/:id
-app.delete("/api/outreach/contacts/:id", (req: AuthRequest, res) => {
+app.delete("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
-  const result = db
+  const result = await db
     .prepare("DELETE FROM outreach_contacts WHERE id = ? AND user_id = ?")
     .run(id, userId);
 
@@ -900,13 +1154,13 @@ app.delete("/api/outreach/contacts/:id", (req: AuthRequest, res) => {
 // ─── CONTACT LISTS ────────────────────────────────────────────────────────────
 
 // GET /api/outreach/contact-lists?project_id=xxx
-app.get("/api/outreach/contact-lists", (req: AuthRequest, res) => {
+app.get("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!userId || !project_id) return res.json([]);
 
-  const lists = db
+  const lists = await db
     .prepare("SELECT * FROM contact_lists WHERE project_id = ? ORDER BY created_at DESC")
     .all(project_id);
 
@@ -914,27 +1168,27 @@ app.get("/api/outreach/contact-lists", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/contact-lists
-app.post("/api/outreach/contact-lists", (req: AuthRequest, res) => {
+app.post("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, name } = req.body;
 
   if (!project_id || !name) return res.status(400).json({ error: "project_id and name required" });
 
   const id = uuidv4();
-  db.prepare("INSERT INTO contact_lists (id, project_id, name) VALUES (?, ?, ?)")
+  await db.prepare("INSERT INTO contact_lists (id, project_id, name) VALUES (?, ?, ?)")
     .run(id, project_id, name);
 
   res.json({ id, project_id, name });
 });
 
 // GET /api/outreach/contact-lists/:id/members
-app.get("/api/outreach/contact-lists/:id/members", (req: AuthRequest, res) => {
+app.get("/api/outreach/contact-lists/:id/members", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
   if (!userId) return res.json([]);
 
-  const members = db
+  const members = await db
     .prepare("SELECT contact_id FROM contact_list_members WHERE list_id = ?")
     .all(id);
 
@@ -942,19 +1196,19 @@ app.get("/api/outreach/contact-lists/:id/members", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/contact-lists/:id/members
-app.post("/api/outreach/contact-lists/:id/members", (req: AuthRequest, res) => {
+app.post("/api/outreach/contact-lists/:id/members", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const { contact_ids } = req.body;
 
   if (!userId || !Array.isArray(contact_ids)) return res.status(400).json({ error: "Invalid payload" });
 
-  db.transaction(() => {
-    const insert = db.prepare("INSERT OR IGNORE INTO contact_list_members (list_id, contact_id) VALUES (?, ?)");
+  await db.transaction(async () => {
+    const query = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
     for (const cid of contact_ids) {
-      insert.run(id, cid);
+      await db.prepare(query).run(id, cid);
     }
-  })();
+  });
 
   res.json({ success: true });
 });
@@ -962,13 +1216,13 @@ app.post("/api/outreach/contact-lists/:id/members", (req: AuthRequest, res) => {
 // ─── SUPPRESSION LIST ─────────────────────────────────────────────────────────
 
 // GET /api/outreach/suppression-list?project_id=xxx
-app.get("/api/outreach/suppression-list", (req: AuthRequest, res) => {
+app.get("/api/outreach/suppression-list", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!userId || !project_id) return res.json([]);
 
-  const list = db
+  const list = await db
     .prepare("SELECT * FROM suppression_list WHERE project_id = ? ORDER BY added_at DESC")
     .all(project_id);
 
@@ -976,26 +1230,26 @@ app.get("/api/outreach/suppression-list", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/suppression-list
-app.post("/api/outreach/suppression-list", (req: AuthRequest, res) => {
+app.post("/api/outreach/suppression-list", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, email, reason } = req.body;
 
   if (!project_id || !email) return res.status(400).json({ error: "project_id and email required" });
 
-  db.prepare("INSERT OR REPLACE INTO suppression_list (project_id, email, reason) VALUES (?, ?, ?)")
+  await db.prepare("INSERT INTO suppression_list (project_id, email, reason) VALUES (?, ?, ?) ON CONFLICT(project_id, email) DO UPDATE SET reason = excluded.reason")
     .run(project_id, email, reason || "manual");
 
   res.json({ success: true });
 });
 
 // DELETE /api/outreach/suppression-list?project_id=xxx&email=xxx
-app.delete("/api/outreach/suppression-list", (req: AuthRequest, res) => {
+app.delete("/api/outreach/suppression-list", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, email } = req.query as { project_id?: string; email?: string };
 
   if (!project_id || !email) return res.status(400).json({ error: "project_id and email required" });
 
-  db.prepare("DELETE FROM suppression_list WHERE project_id = ? AND email = ?")
+  await db.prepare("DELETE FROM suppression_list WHERE project_id = ? AND email = ?")
     .run(project_id, email);
 
   res.json({ success: true });
@@ -1004,13 +1258,13 @@ app.delete("/api/outreach/suppression-list", (req: AuthRequest, res) => {
 // ─── INBOX ────────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/inbox?project_id=xxx
-app.get("/api/outreach/inbox", (req: AuthRequest, res) => {
+app.get("/api/outreach/inbox", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!project_id) return res.json([]);
 
-  const messages = db
+  const messages = await db
     .prepare(
       `
     SELECT c.*, e.type as last_event, e.created_at as event_at
@@ -1019,7 +1273,7 @@ app.get("/api/outreach/inbox", (req: AuthRequest, res) => {
       SELECT contact_id, type, created_at
       FROM outreach_events
       WHERE type IN ('reply')
-      GROUP BY contact_id
+      GROUP BY contact_id, type, created_at
       HAVING outreach_events.created_at = MAX(outreach_events.created_at)
     ) e ON c.id = e.contact_id
     WHERE c.user_id = ?
@@ -1041,7 +1295,7 @@ app.post("/api/outreach/inbox/:id/summarize", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const events = db
+    const events = await db
       .prepare(`
         SELECT * FROM outreach_events 
         WHERE contact_id = ? 
@@ -1084,7 +1338,7 @@ app.post("/api/outreach/inbox/:id/summarize", async (req: AuthRequest, res) => {
 
 // ─── COMPOSE ──────────────────────────────────────────────────────────────────
 // GET /api/outreach/compose?project_id=xxx&status=draft
-app.get("/api/outreach/compose", (req: AuthRequest, res) => {
+app.get("/api/outreach/compose", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, status } = req.query as {
     project_id?: string;
@@ -1104,18 +1358,18 @@ app.get("/api/outreach/compose", (req: AuthRequest, res) => {
 
   query += " ORDER BY created_at DESC";
 
-  const emails = db.prepare(query).all(...params);
+  const emails = await db.prepare(query).all(...params);
   res.json(emails);
 });
 
 // GET /api/outreach/compose/:id
-app.get("/api/outreach/compose/:id", (req: AuthRequest, res) => {
+app.get("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  const email = db
+  const email = await db
     .prepare(
       "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
     )
@@ -1126,7 +1380,7 @@ app.get("/api/outreach/compose/:id", (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/compose
-app.post("/api/outreach/compose", (req: AuthRequest, res) => {
+app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const {
     project_id,
@@ -1147,7 +1401,7 @@ app.post("/api/outreach/compose", (req: AuthRequest, res) => {
   if (!to_email) return res.status(400).json({ error: "to_email is required" });
 
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     `
     INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status, scheduled_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1165,14 +1419,14 @@ app.post("/api/outreach/compose", (req: AuthRequest, res) => {
     scheduled_at || null,
   );
 
-  const email = db
+  const email = await db
     .prepare("SELECT * FROM outreach_individual_emails WHERE id = ?")
     .get(id);
   res.status(201).json(email);
 });
 
 // PATCH /api/outreach/compose/:id
-app.patch("/api/outreach/compose/:id", (req: AuthRequest, res) => {
+app.patch("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const {
@@ -1225,24 +1479,24 @@ app.patch("/api/outreach/compose/:id", (req: AuthRequest, res) => {
   fields.push("updated_at = CURRENT_TIMESTAMP");
   values.push(id, userId);
 
-  db.prepare(
+  await db.prepare(
     `UPDATE outreach_individual_emails SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
   ).run(...values);
 
-  const email = db
+  const email = await db
     .prepare("SELECT * FROM outreach_individual_emails WHERE id = ?")
     .get(id);
   res.json(email);
 });
 
 // DELETE /api/outreach/compose/:id
-app.delete("/api/outreach/compose/:id", (req: AuthRequest, res) => {
+app.delete("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  const result = db
+  const result = await db
     .prepare(
       "DELETE FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
     )
@@ -1267,7 +1521,7 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
 
     console.log(`[OUTREACH] Attempting to send email. id=${id}, userId=${userId}`);
 
-    const email = db.prepare(
+    const email = await db.prepare(
       "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
     ).get(id, userId) as any;
 
@@ -1284,7 +1538,7 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
     if (scheduled_at) {
       console.log(`[OUTREACH] Scheduling email ${id} for ${scheduled_at}`);
       const delay = Math.max(0, new Date(scheduled_at).getTime() - Date.now());
-      db.prepare(
+      await db.prepare(
         "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       ).run("scheduled", scheduled_at, id);
       
@@ -1297,7 +1551,7 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
     console.log(`[OUTREACH] Initiating direct send for email ${id}. Mailbox: ${email.mailbox_id}`);
     
     // We update status to pending_send first
-    db.prepare(
+    await db.prepare(
       "UPDATE outreach_individual_emails SET status = 'pending_send', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ).run(id);
 
@@ -1348,13 +1602,13 @@ app.post("/api/outreach/individual-emails/:id/schedule", async (req: AuthRequest
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!scheduled_at) return res.status(400).json({ error: "scheduled_at is required for scheduling" });
 
-  const email = db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?").get(id, userId) as any;
+  const email = await db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?").get(id, userId) as any;
   if (!email) return res.status(404).json({ error: "Email not found" });
 
   try {
     const delay = Math.max(0, new Date(scheduled_at).getTime() - Date.now());
     
-    db.prepare(
+    await db.prepare(
       "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ).run("scheduled", scheduled_at, id);
 
@@ -1370,20 +1624,20 @@ app.post("/api/outreach/individual-emails/:id/schedule", async (req: AuthRequest
 // ─── TRACKING ─────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/track/:emailId/open.gif
-app.get("/api/outreach/track/:emailId/open.gif", (req, res) => {
+app.get("/api/outreach/track/:emailId/open.gif", async (req, res) => {
   const { emailId } = req.params;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   const userAgent = req.headers["user-agent"];
 
   try {
-    const email = db
+    const email = await db
       .prepare(
         "SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?",
       )
       .get(emailId) as any;
 
     if (email) {
-      db.prepare(
+      await db.prepare(
         `
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
         VALUES (?, ?, 'open', ?, ?)
@@ -1391,7 +1645,7 @@ app.get("/api/outreach/track/:emailId/open.gif", (req, res) => {
       ).run(uuidv4(), emailId, String(ip), String(userAgent));
 
       if (email.contact_id) {
-        db.prepare(
+        await db.prepare(
           `
           INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
           VALUES (?, ?, ?, 'open', ?)
@@ -1424,7 +1678,7 @@ app.get("/api/outreach/track/:emailId/open.gif", (req, res) => {
 });
 
 // GET /api/outreach/track/:emailId/click?url=...
-app.get("/api/outreach/track/:emailId/click", (req, res) => {
+app.get("/api/outreach/track/:emailId/click", async (req, res) => {
   const { emailId } = req.params;
   const targetUrl = req.query.url as string;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -1433,14 +1687,14 @@ app.get("/api/outreach/track/:emailId/click", (req, res) => {
   if (!targetUrl) return res.status(400).send("Missing URL parameter");
 
   try {
-    const email = db
+    const email = await db
       .prepare(
         "SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?",
       )
       .get(emailId) as any;
 
     if (email) {
-      db.prepare(
+      await db.prepare(
         `
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent, link_url)
         VALUES (?, ?, 'click', ?, ?, ?)
@@ -1448,7 +1702,7 @@ app.get("/api/outreach/track/:emailId/click", (req, res) => {
       ).run(uuidv4(), emailId, String(ip), String(userAgent), targetUrl);
 
       if (email.contact_id) {
-        db.prepare(
+        await db.prepare(
           `
           INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
           VALUES (?, ?, ?, 'click', ?)
@@ -1472,11 +1726,11 @@ app.get("/api/outreach/track/:emailId/click", (req, res) => {
 
 app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const project_id = req.query.project_id as string;
-  const days = parseInt(req.query.days as string) || 7;
+  const { project_id, daysStr } = req.query as { project_id?: string, daysStr?: string };
+  const days = parseInt(daysStr || '7');
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!project_id) return res.json({});
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
 
   try {
     const cutoffDate = new Date();
@@ -1484,16 +1738,15 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     const cutoffIso = cutoffDate.toISOString();
 
     // Daily Engagement
-    // We group by date string from created_at
-    const dailyEvents = db.prepare(`
+    const dailyEvents = await db.prepare(`
       SELECT 
-        substr(e.created_at, 1, 10) as dayStr,
+        substr(e.created_at, 1, 10) as "dayStr",
         e.type,
         count(*) as count
       FROM outreach_events e
       JOIN outreach_contacts c ON e.contact_id = c.id
       WHERE c.user_id = ? AND c.project_id = ? AND e.created_at >= ?
-      GROUP BY dayStr, e.type
+      GROUP BY "dayStr", e.type
     `).all(userId, project_id, cutoffIso) as any[];
 
     // Construct the DAILY_DATA array for the last N days
@@ -1510,15 +1763,15 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     dailyEvents.forEach(e => {
       const iso = e.dayStr;
       if (dailyMap[iso]) {
-        if (e.type === 'sent') dailyMap[iso].sent += e.count;
-        if (e.type === 'opened') dailyMap[iso].opens += e.count;
-        if (e.type === 'replied' || e.type === 'reply') dailyMap[iso].replies += e.count;
-        if (e.type === 'clicked') dailyMap[iso].clicks += e.count;
+        if (e.type === 'sent') dailyMap[iso].sent += Number(e.count);
+        if (e.type === 'opened') dailyMap[iso].opens += Number(e.count);
+        if (e.type === 'replied' || e.type === 'reply') dailyMap[iso].replies += Number(e.count);
+        if (e.type === 'clicked') dailyMap[iso].clicks += Number(e.count);
       }
     });
 
     // Mailbox Health
-    const mailboxes = db.prepare(`
+    const mailboxes = await db.prepare(`
       SELECT m.email,
         (SELECT count(*) FROM outreach_events e 
          JOIN outreach_contacts c ON e.contact_id = c.id
@@ -1528,8 +1781,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     `).all(cutoffIso, userId, project_id, userId, project_id) as any[];
 
     const mailboxHealth = mailboxes.map(m => {
-      const sent = m.sent || 0;
-      // Mock score logic based on sent volume to ensure UI renders nicely since we don't have real bounce/spam tracking yet
+      const sent = Number(m.sent || 0);
       const score = 100 - (sent === 0 ? 0 : Math.min(20, Math.floor((sent % 20)))); 
       return {
         email: m.email,
@@ -1542,7 +1794,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     });
 
     // Campaign Comparison
-    const campaigns = db.prepare(`
+    const campaigns = await db.prepare(`
       SELECT 
         c.name,
         (SELECT count(*) FROM outreach_events e JOIN outreach_contacts con ON e.contact_id = con.id WHERE e.metadata LIKE '%"campaign_id":"' || c.id || '"%' AND e.type = 'sent') as sent,
@@ -1553,15 +1805,15 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     `).all(userId, project_id) as any[];
 
     const campaignComparison = campaigns
-      .filter(c => c.sent > 0)
+      .filter(c => Number(c.sent) > 0)
       .map(c => {
-        const sent = c.sent || 0;
-        const opens = c.opens || 0;
-        const replies = c.replies || 0;
+        const sent = Number(c.sent || 0);
+        const opens = Number(c.opens || 0);
+        const replies = Number(c.replies || 0);
         return {
           name: c.name,
-          open: sent > 0 ? ((opens / sent) * 100).toFixed(1) : 0,
-          reply: sent > 0 ? ((replies / sent) * 100).toFixed(1) : 0
+          open: sent > 0 ? ((opens / sent) * 100).toFixed(1) : "0.0",
+          reply: sent > 0 ? ((replies / sent) * 100).toFixed(1) : "0.0"
         };
       })
       .slice(0, 5); // top 5
@@ -1575,7 +1827,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         { name: 'Meeting Request',  value: 18, color: '#22C55E' },
         { name: 'Not Now',          value: 24, color: '#EAB308' },
         { name: 'Unsubscribe',      value: 8,  color: '#EF4444' }
-      ] // Keeping intent mock as we don't have intent AI classifier saved to DB yet
+      ]
     });
   } catch (error: any) {
     console.error("Analytics Error:", error);
@@ -1585,14 +1837,14 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
-app.get("/api/outreach/settings", (req: AuthRequest, res) => {
+app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-  const row = db.prepare("SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+  const row = await db.prepare("SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
   let hasHunterKey = false;
   if (row && row.hunter_api_key) {
     hasHunterKey = true;
@@ -1601,7 +1853,7 @@ app.get("/api/outreach/settings", (req: AuthRequest, res) => {
   res.json({ hasHunterKey });
 });
 
-app.post("/api/outreach/settings", (req: AuthRequest, res) => {
+app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, hunter_api_key } = req.body;
 
@@ -1610,7 +1862,7 @@ app.post("/api/outreach/settings", (req: AuthRequest, res) => {
 
   if (hunter_api_key !== undefined) {
     const encrypted = hunter_api_key ? encryptToken(hunter_api_key) : null;
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO outreach_settings (project_id, hunter_api_key, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(project_id) DO UPDATE SET
@@ -1630,7 +1882,7 @@ app.get("/api/outreach/icp", async (req: AuthRequest, res) => {
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
   try {
-    const icp = db.prepare("SELECT * FROM icp_profiles WHERE project_id = ?").get(project_id);
+    const icp = await db.prepare("SELECT * FROM icp_profiles WHERE project_id = ?").get(project_id) as any;
     if (!icp) return res.json(null);
     
     // Parse JSON fields
@@ -1666,7 +1918,7 @@ app.put("/api/outreach/icp", async (req: AuthRequest, res) => {
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
   try {
-    const existing = db.prepare("SELECT id FROM icp_profiles WHERE project_id = ?").get(project_id);
+    const existing = await db.prepare("SELECT id FROM icp_profiles WHERE project_id = ?").get(project_id) as any;
     const now = new Date().toISOString();
     
     const data = {
@@ -1683,7 +1935,7 @@ app.put("/api/outreach/icp", async (req: AuthRequest, res) => {
     };
 
     if (existing) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE icp_profiles SET 
           job_titles = ?, industries = ?, company_sizes = ?, countries = ?, 
           seniority = ?, technologies = ?, keywords = ?, updated_at = ?
@@ -1693,7 +1945,7 @@ app.put("/api/outreach/icp", async (req: AuthRequest, res) => {
         data.seniority, data.technologies, data.keywords, data.updated_at, project_id
       );
     } else {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO icp_profiles 
         (id, project_id, job_titles, industries, company_sizes, countries, seniority, technologies, keywords, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1716,7 +1968,7 @@ app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
   try {
-    db.prepare("DELETE FROM icp_profiles WHERE project_id = ?").run(project_id);
+    await db.prepare("DELETE FROM icp_profiles WHERE project_id = ?").run(project_id);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

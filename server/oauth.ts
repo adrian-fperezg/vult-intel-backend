@@ -106,7 +106,7 @@ export async function fetchGoogleUserInfo(accessToken: string) {
  * Handles token decryption, auto-refresh, and database persistence.
  */
 export async function getValidGmailClient(mailboxId: string) {
-  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) {
     console.error(`[OAuth] Mailbox ${mailboxId} not found in database`);
     throw new Error("MAILBOX_NOT_FOUND");
@@ -175,7 +175,7 @@ export async function getValidGmailClient(mailboxId: string) {
  * Convenience helper that just returns a valid access token string.
  */
 export async function getValidAccessToken(mailboxId: string): Promise<string> {
-  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) {
     console.error(`[OAuth] getValidAccessToken: Mailbox ${mailboxId} not found`);
     throw new Error("MAILBOX_NOT_FOUND");
@@ -218,15 +218,15 @@ export async function saveTokens(mailboxId: string, tokens: { access_token: stri
   const encryptedAccess = encryptToken(access_token);
   const encryptedRefresh = refresh_token ? encryptToken(refresh_token) : null;
 
-  // Save to SQLite
+  // Save to SQLite/PostgreSQL
   if (encryptedRefresh) {
-    db.prepare(`
+    await db.prepare(`
       UPDATE outreach_mailboxes 
       SET access_token = ?, refresh_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(encryptedAccess, encryptedRefresh, expiresAt, scope, mailboxId);
   } else {
-    db.prepare(`
+    await db.prepare(`
       UPDATE outreach_mailboxes 
       SET access_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -235,7 +235,7 @@ export async function saveTokens(mailboxId: string, tokens: { access_token: stri
 
   // Save to Redis for persistence across ephemeral Railway deployments
   try {
-    const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+    const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
     if (mailbox) {
       await redis.set(`mailbox:${mailboxId}`, JSON.stringify(mailbox), 'EX', 60 * 60 * 24 * 30); // 30 days
       console.log(`[Persistence] Mailbox ${mailboxId} synced to Redis`);
@@ -257,10 +257,10 @@ export async function syncMailboxesFromRedis() {
       if (!data) continue;
 
       const mailbox = JSON.parse(data);
-      const exists = db.prepare("SELECT id FROM outreach_mailboxes WHERE id = ?").get(mailbox.id);
+      const exists = await db.prepare("SELECT id FROM outreach_mailboxes WHERE id = ?").get(mailbox.id);
       
       if (!exists) {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO outreach_mailboxes (id, user_id, project_id, email, name, access_token, refresh_token, expires_at, scope, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(

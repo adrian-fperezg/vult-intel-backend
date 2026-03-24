@@ -15,14 +15,16 @@ import OutreachAnalytics from './outreach/OutreachAnalytics';
 import OutreachSettings from './outreach/OutreachSettings';
 import OutreachCompose from './outreach/OutreachCompose';
 import OutreachLeadFinder from './outreach/OutreachLeadFinder';
+import OutreachSavedContacts from './outreach/OutreachSavedContacts';
 import { PaperPlaneIcon } from './outreach/OutreachCommon';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
-type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings' | 'lead-finder';
+type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings' | 'lead-finder' | 'saved-contacts';
 
 const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
   { id: 'analytics',    label: 'Analytics' },
   { id: 'lead-finder',  label: 'Lead Finder' },
+  { id: 'saved-contacts', label: 'Saved Contacts' },
   { id: 'compose',      label: 'Compose', badge: true },
   { id: 'campaigns',    label: 'Campaigns' },
   { id: 'sequences',    label: 'Sequences' },
@@ -212,6 +214,7 @@ export default function OutreachLayout() {
               {activeTab === 'analytics'  && <OutreachAnalytics />}
               {activeTab === 'settings'   && <OutreachSettings />}
               {activeTab === 'lead-finder' && <OutreachLeadFinder />}
+              {activeTab === 'saved-contacts' && <OutreachSavedContacts />}
             </ErrorBoundary>
           </motion.div>
         </AnimatePresence>

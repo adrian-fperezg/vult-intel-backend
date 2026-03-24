@@ -104,6 +104,10 @@ export default function OutreachLeadFinder() {
   // Hunter Connection State
   const [isHunterConnected, setIsHunterConnected] = useState<boolean | null>(null);
 
+  // Selection State
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [isSavingSelected, setIsSavingSelected] = useState(false);
+
   useEffect(() => {
     const init = async () => {
       if (!projectId) return;
@@ -127,6 +131,7 @@ export default function OutreachLeadFinder() {
     if (!searchDomain) return;
     
     setIsSearching(true);
+    setSelectedEmails(new Set());
     try {
       // Pass options for more specific search if needed
       const options = {
@@ -224,6 +229,49 @@ export default function OutreachLeadFinder() {
       toast.success(`Saved ${lead.email} to contacts`);
     } catch (error: any) {
       toast.error("Failed to save contact");
+    }
+  };
+
+  const handleToggleSelect = (email: string) => {
+    const next = new Set(selectedEmails);
+    if (next.has(email)) next.delete(email);
+    else next.add(email);
+    setSelectedEmails(next);
+  };
+
+  const handleSelectAll = () => {
+    if (!results) return;
+    if (selectedEmails.size === results.emails.length) {
+      setSelectedEmails(new Set());
+    } else {
+      setSelectedEmails(new Set(results.emails.map(l => l.email)));
+    }
+  };
+
+  const handleSaveSelected = async () => {
+    if (selectedEmails.size === 0 || !results) return;
+    setIsSavingSelected(true);
+    try {
+      const selectedLeads = results.emails.filter(l => selectedEmails.has(l.email));
+      const payload = selectedLeads.map(l => ({
+        first_name: l.first_name || 'Lead',
+        last_name: l.last_name || '',
+        email: l.email,
+        title: l.position,
+        company: results.organization,
+        website: results.domain,
+        verification_status: l.verification_status,
+        confidence_score: l.confidence,
+        source_detail: 'Hunter Lead Finder'
+      }));
+
+      await api.createContactsBulk(projectId!, payload);
+      toast.success(`Successfully saved ${selectedLeads.length} leads to your project`);
+      setSelectedEmails(new Set());
+    } catch (error: any) {
+      toast.error(error.message || "Bulk save failed");
+    } finally {
+      setIsSavingSelected(false);
     }
   };
 
@@ -546,8 +594,33 @@ export default function OutreachLeadFinder() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <span className="px-3 py-1 bg-white/5 rounded-full text-xs font-medium text-slate-400 border border-white/10">
+              <div className="flex items-center gap-4">
+                {selectedEmails.size > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center gap-3"
+                  >
+                    <span className="text-xs font-bold text-teal-400 bg-teal-500/10 px-3 py-1.5 rounded-full border border-teal-500/20">
+                      {selectedEmails.size} selected
+                    </span>
+                    <button 
+                      onClick={handleSaveSelected}
+                      disabled={isSavingSelected}
+                      className="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-2"
+                    >
+                      {isSavingSelected ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                      Add to Project
+                    </button>
+                  </motion.div>
+                )}
+                <button 
+                  onClick={handleSelectAll}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-slate-400 border border-white/10 transition-colors"
+                >
+                  {selectedEmails.size === results.emails.length ? 'Deselect All' : 'Select All'}
+                </button>
+                <span className="px-3 py-1.5 bg-white/5 rounded-lg text-xs font-medium text-slate-400 border border-white/10">
                   {results.emails.length} Emails Found
                 </span>
               </div>
@@ -560,40 +633,52 @@ export default function OutreachLeadFinder() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: idx * 0.05 }}
-                  className="bg-surface-dark border border-white/5 hover:border-teal-500/30 rounded-2xl p-6 transition-all group"
+                  onClick={() => handleToggleSelect(lead.email)}
+                  className={cn(
+                    "bg-surface-dark border rounded-2xl p-6 transition-all group cursor-pointer relative overflow-hidden",
+                    selectedEmails.has(lead.email) ? "border-teal-500/50 bg-teal-500/5" : "border-white/5 hover:border-teal-500/30"
+                  )}
                 >
                   <div className="flex justify-between items-start mb-4">
-                    <div className="size-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-400">
-                      <User className="size-5" />
+                    <div className={cn(
+                      "size-5 rounded border transition-all flex items-center justify-center",
+                      selectedEmails.has(lead.email) ? "bg-teal-500 border-teal-500" : "border-white/20 bg-black/20"
+                    )}>
+                      {selectedEmails.has(lead.email) && <Check className="size-3 text-white" />}
                     </div>
-                    {lead.confidence >= 80 ? (
-                      <ShieldCheck className="size-5 text-emerald-500" />
-                    ) : (
-                      <div className="text-[10px] font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded uppercase tracking-wider">
-                        {lead.confidence}% Match
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {lead.confidence >= 80 ? (
+                        <ShieldCheck className="size-5 text-emerald-500" />
+                      ) : (
+                        <div className="text-[10px] font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded uppercase tracking-wider">
+                          {lead.confidence}% Match
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="space-y-1 mb-6">
-                    <h3 className="font-bold text-white group-hover:text-teal-400 transition-colors">
+                    <h3 className={cn(
+                      "font-bold transition-colors",
+                      selectedEmails.has(lead.email) ? "text-teal-400" : "text-white group-hover:text-teal-400"
+                    )}>
                       {lead.first_name} {lead.last_name}
                     </h3>
                     <p className="text-xs text-slate-500 font-medium">
                       {lead.position || 'Professional'}
                     </p>
                     <div className="flex items-center gap-2 pt-2">
-                      <Mail className="size-3 text-slate-600" />
+                    <Mail className="size-3 text-slate-600" />
                       <span className="text-xs text-slate-400">{lead.email}</span>
                     </div>
                   </div>
 
                   <button 
-                    onClick={() => saveContact(lead)}
+                    onClick={(e) => { e.stopPropagation(); saveContact(lead); }}
                     className="w-full py-2 bg-white/5 hover:bg-teal-500 hover:text-white text-slate-400 text-xs font-bold rounded-xl border border-white/10 hover:border-teal-500/50 transition-all flex items-center justify-center gap-2"
                   >
                     <Plus className="size-3" />
-                    Save to Contacts
+                    Save Contact
                   </button>
                 </motion.div>
               ))}
