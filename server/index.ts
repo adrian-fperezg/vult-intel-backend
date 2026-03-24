@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import cookieSession from "cookie-session";
 import db from "./db";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
@@ -1621,6 +1622,107 @@ app.post("/api/outreach/settings", (req: AuthRequest, res) => {
   res.json({ success: true });
 });
 
+// ─── ICP PROFILE ─────────────────────────────────────────────────────────────
+app.get("/api/outreach/icp", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "Project ID required" });
+
+  try {
+    const icp = db.prepare("SELECT * FROM icp_profiles WHERE project_id = ?").get(project_id);
+    if (!icp) return res.json(null);
+    
+    // Parse JSON fields
+    const parsed = {
+      ...icp,
+      job_titles: JSON.parse(icp.job_titles || '[]'),
+      industries: JSON.parse(icp.industries || '[]'),
+      company_sizes: JSON.parse(icp.company_sizes || '[]'),
+      countries: JSON.parse(icp.countries || '[]'),
+      seniority: JSON.parse(icp.seniority || '[]'),
+      technologies: JSON.parse(icp.technologies || '[]'),
+    };
+    res.json(parsed);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/outreach/icp", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { 
+    project_id, 
+    job_titles, 
+    industries, 
+    company_sizes, 
+    countries, 
+    seniority, 
+    technologies, 
+    keywords 
+  } = req.body;
+  
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "Project ID required" });
+
+  try {
+    const existing = db.prepare("SELECT id FROM icp_profiles WHERE project_id = ?").get(project_id);
+    const now = new Date().toISOString();
+    
+    const data = {
+      id: existing ? existing.id : uuidv4(),
+      project_id,
+      job_titles: JSON.stringify(job_titles || []),
+      industries: JSON.stringify(industries || []),
+      company_sizes: JSON.stringify(company_sizes || []),
+      countries: JSON.stringify(countries || []),
+      seniority: JSON.stringify(seniority || []),
+      technologies: JSON.stringify(technologies || []),
+      keywords: keywords || '',
+      updated_at: now
+    };
+
+    if (existing) {
+      db.prepare(`
+        UPDATE icp_profiles SET 
+          job_titles = ?, industries = ?, company_sizes = ?, countries = ?, 
+          seniority = ?, technologies = ?, keywords = ?, updated_at = ?
+        WHERE project_id = ?
+      `).run(
+        data.job_titles, data.industries, data.company_sizes, data.countries, 
+        data.seniority, data.technologies, data.keywords, data.updated_at, project_id
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO icp_profiles 
+        (id, project_id, job_titles, industries, company_sizes, countries, seniority, technologies, keywords, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        data.id, data.project_id, data.job_titles, data.industries, data.company_sizes, 
+        data.countries, data.seniority, data.technologies, data.keywords, data.updated_at
+      );
+    }
+
+    res.json({ success: true, id: data.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "Project ID required" });
+
+  try {
+    db.prepare("DELETE FROM icp_profiles WHERE project_id = ?").run(project_id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── HUNTER.IO INTEGRATION ────────────────────────────────────────────────────
 
 app.post("/api/outreach/hunter/domain-search", async (req: AuthRequest, res) => {
@@ -1675,43 +1777,84 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
   }
 });
 
-app.post("/api/outreach/hunter/ai-assist", async (req: AuthRequest, res) => {
+app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, prompt } = req.body;
+  const { project_id, prompt, icpContext } = req.body;
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY || "",
-    });
+    const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 500,
-      temperature: 0,
-      system: `You are a lead generation assistant. Your goal is to convert a user request into a domain search for Hunter.io. 
-      If the user provides a company name, try to guess their likely domain (e.g. Stripe -> stripe.com).
-      If the user provides a niche and location, try to identify 3-5 major domains in that niche.
-      Return ONLY a JSON object with a 'domains' array (max 5) and a 'query' string for display.
-      
-      Example Output:
-      {
-        "domains": ["stripe.com"],
-        "suggested_query": "Stripe"
-      }`,
-      messages: [{ role: "user", content: prompt }],
-    });
+    let text = "";
 
-    const text = (response.content[0] as any).text;
+    if (GEMINI_KEY) {
+      const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
+      // The @google/genai package from the test script uses this structure
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash', // Use a fast stable model
+        contents: `User Request: ${prompt}\n\nExisting ICP Context for this project:\n${JSON.stringify(icpContext || {})}`,
+        config: {
+          systemInstruction: `You are a Lead Generation Parameter Extractor. 
+          Your goal is to extract search parameters for the Hunter.io Domain Search API from a natural language request.
+          Use the provided ICP context to fill in gaps if the user request is vague.
+          
+          Return ONLY a RAW JSON object with:
+          - domains: string[] (max 5 major domains related to the company or niche)
+          - job_titles: string[] 
+          - seniority: string[] (senior, executive, director, manager)
+          - industries: string[]
+          - company_sizes: string[] (e.g. ["1-10", "11-50"])
+          - suggested_query: string (A 3-5 word summary of the search)
+          - confidence: number (0 to 100)
+          
+          If you cannot find specific domains, leave the 'domains' array empty.
+          DO NOT include any Markdown formatting or backticks.`
+        }
+      });
+      text = response.text || "";
+    } else if (ANTHROPIC_KEY) {
+      const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
+      const response = await anthropic.messages.create({
+        model: "claude-3-haiku-20240307",
+        max_tokens: 1000,
+        temperature: 0,
+        system: `You are a Lead Generation Parameter Extractor. Extract search parameters for Hunter.io.
+        Return ONLY a RAW JSON object with: domains (array), job_titles (array), seniority (array), industries (array), company_sizes (array), suggested_query (string), confidence (number).
+        Use this ICP Context if relevant: ${JSON.stringify(icpContext || {})}
+        DO NOT use markdown formatting.`,
+        messages: [{ role: "user", content: prompt }],
+      });
+      text = (response.content[0] as any).text;
+    } else {
+      throw new Error("No AI API keys configured (Gemini or Anthropic required)");
+    }
+
+    // Clean text in case AI added markdown block
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const data = jsonMatch ? JSON.parse(jsonMatch[0]) : { domains: [], suggested_query: prompt };
+    const data = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
     
     res.json(data);
   } catch (error: any) {
-    console.error("AI Assist Error:", error);
-    res.status(500).json({ error: "Failed to process AI request" });
+    console.error("AI Extract Error:", error);
+    res.status(500).json({ error: error.message || "Failed to extract parameters" });
   }
 });
+
+// ─── STARTUP CHECKS ───────────────────────────────────────────────────────────
+
+const aiKeysCheck = () => {
+  const gemini = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const anthropic = process.env.ANTHROPIC_API_KEY;
+  
+  if (!gemini && !anthropic) {
+    console.warn("⚠️  WARNING: No AI API keys found (GEMINI_API_KEY or ANTHROPIC_API_KEY). Lead Finder AI will not work.");
+  } else {
+    console.log(`✅ AI configured: ${gemini ? "Gemini " : ""}${anthropic ? "Anthropic" : ""}`);
+  }
+};
+
+aiKeysCheck();
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 

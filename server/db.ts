@@ -127,6 +127,20 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS icp_profiles (
+    id TEXT PRIMARY KEY,
+    project_id TEXT UNIQUE NOT NULL,
+    job_titles TEXT, -- JSON string array
+    industries TEXT, -- JSON string array
+    company_sizes TEXT, -- JSON string array (e.g. ["1-10", "11-50"])
+    countries TEXT, -- JSON string array
+    seniority TEXT, -- JSON string array
+    technologies TEXT, -- JSON string array
+    keywords TEXT, -- Free text
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS hunter_usage_log (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
