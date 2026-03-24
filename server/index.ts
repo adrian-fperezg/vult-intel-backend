@@ -41,7 +41,16 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+// Catch malformed JSON errors early
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof SyntaxError && 'status' in err && err.status === 400 && 'body' in err) {
+    console.error('[JSON PARSE ERROR]:', err.message);
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+  next();
+});
 
 // Initialize session handling for production/incognito stability
 app.use(
@@ -1618,6 +1627,19 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
 
 // Start sync
 syncMailboxesFromRedis();
+
+// ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
+
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('[GLOBAL CRASH CAUGHT]:', err.stack || err);
+  
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    error: "Internal Server Error",
+    message: err.message || "An unexpected error occurred",
+    ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+  });
+});
 
 app.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`🚀 Outreach API running at http://localhost:${PORT}`);
