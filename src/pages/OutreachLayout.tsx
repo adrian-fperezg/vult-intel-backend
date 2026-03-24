@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { useOutreachSubscription } from '@/hooks/useOutreachSubscription';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
@@ -18,21 +19,35 @@ import { PaperPlaneIcon } from './outreach/OutreachCommon';
 type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings';
 
 const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
+  { id: 'analytics',  label: 'Analytics' },
   { id: 'compose',    label: 'Compose', badge: true },
   { id: 'campaigns',  label: 'Campaigns' },
   { id: 'sequences',  label: 'Sequences' },
   { id: 'contacts',   label: 'Contacts' },
   { id: 'inbox',      label: 'Inbox' },
-  { id: 'analytics',  label: 'Analytics' },
   { id: 'settings',   label: 'Settings' },
 ];
 
 export default function OutreachLayout() {
   const { status, daysRemaining, isLoading } = useOutreachSubscription();
   const { fetchIndividualEmails } = useOutreachApi();
-  const [activeTab, setActiveTab] = useState<OutreachTab>('campaigns');
+  const [activeTab, setActiveTab] = useState<OutreachTab>('analytics');
   const [trialBannerDismissed, setTrialBannerDismissed] = useState(false);
   const [draftCount, setDraftCount] = useState(0);
+
+  // Check URL array on mount for OAuth redirect parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail_connected') === '1') {
+      toast.success('Gmail account connected successfully!');
+      setActiveTab('settings');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('error')) {
+      toast.error(params.get('error') || 'Error connecting Gmail');
+      setActiveTab('settings');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // Poll for draft count
   useEffect(() => {

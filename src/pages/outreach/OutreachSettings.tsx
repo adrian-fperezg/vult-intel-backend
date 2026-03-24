@@ -124,7 +124,7 @@ export default function OutreachSettings() {
 
         {/* ── MAILBOXES ── */}
         {activeTab === 'mailboxes' && (
-          <div className="space-y-6 max-w-3xl">
+          <div className="space-y-6 max-w-5xl">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">Connected Mailboxes</h2>
@@ -282,7 +282,7 @@ export default function OutreachSettings() {
 
         {/* ── WARMUP ── */}
         {activeTab === 'warmup' && (
-          <div className="space-y-6 max-w-2xl">
+          <div className="space-y-6 max-w-5xl">
             <div>
               <h2 className="text-xl font-bold text-white">Email Warmup</h2>
               <p className="text-sm text-slate-400 mt-0.5">Gradually increase sending volume to establish sender reputation</p>
@@ -337,7 +337,7 @@ export default function OutreachSettings() {
 
         {/* ── SNIPPETS ── */}
         {activeTab === 'snippets' && (
-          <div className="space-y-6 max-w-2xl">
+          <div className="space-y-6 max-w-5xl">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">Email Snippets</h2>
@@ -370,7 +370,7 @@ export default function OutreachSettings() {
 
         {/* ── API & WEBHOOKS ── */}
         {activeTab === 'api' && (
-          <div className="space-y-6 max-w-2xl">
+          <div className="space-y-6 max-w-5xl">
             <div>
               <h2 className="text-xl font-bold text-white">API & Webhooks</h2>
               <p className="text-sm text-slate-400 mt-0.5">Integrate Outreach into your own tools and workflows</p>
@@ -417,7 +417,7 @@ export default function OutreachSettings() {
 
         {/* ── NOTIFICATIONS ── */}
         {activeTab === 'notifications' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="space-y-6 max-w-5xl">
             <div>
               <h2 className="text-xl font-bold text-white">Notifications</h2>
               <p className="text-sm text-slate-400 mt-0.5">Control when and how you get alerted</p>
@@ -458,7 +458,7 @@ export default function OutreachSettings() {
 
         {/* ── INTEGRATIONS ── */}
         {activeTab === 'integrations' && (
-          <div className="space-y-6 max-w-2xl">
+          <div className="space-y-6 max-w-5xl">
             <div>
               <h2 className="text-xl font-bold text-white">Integrations</h2>
               <p className="text-sm text-slate-400 mt-0.5">Connect third-party tools to power Outreach</p>
@@ -493,7 +493,7 @@ export default function OutreachSettings() {
 
         {/* ── TEAM ── */}
         {activeTab === 'team' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="space-y-6 max-w-5xl">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">Team Access</h2>
