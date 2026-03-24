@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import db from './db.js';
 
 dotenv.config();
 
@@ -142,4 +143,35 @@ export async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUs
   }
 
   return response.json() as Promise<GoogleUserInfo>;
+}
+
+// Helper to get a valid access token, refreshing if necessary
+export async function getValidAccessToken(mailboxId: string): Promise<string> {
+  const mailbox = db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  if (!mailbox) throw new Error("Mailbox not found");
+
+  const now = new Date();
+  const expiresAt = new Date(mailbox.expires_at);
+
+  // If token is still valid (with 5 min buffer), return it
+  if (expiresAt.getTime() > now.getTime() + 5 * 60 * 1000) {
+    return decryptToken(mailbox.access_token);
+  }
+
+  // Otherwise, refresh it
+  if (!mailbox.refresh_token) throw new Error("No refresh token available");
+  
+  const refreshToken = decryptToken(mailbox.refresh_token);
+  const tokens = await refreshGoogleToken(refreshToken);
+
+  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+  const encryptedAccess = encryptToken(tokens.access_token);
+
+  db.prepare(`
+    UPDATE outreach_mailboxes 
+    SET access_token = ?, expires_at = ?
+    WHERE id = ?
+  `).run(encryptedAccess, newExpiresAt, mailboxId);
+
+  return tokens.access_token;
 }

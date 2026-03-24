@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db.js';
 import dotenv from 'dotenv';
+import { getValidAccessToken } from '../oauth.js';
 
 dotenv.config();
 
@@ -46,28 +47,70 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
   if (!email) throw new Error(`Email ${emailId} not found in DB`);
 
   try {
-    // TODO: Implement actual Gmail API sending here
-    // For now, we simulate success
-    const simulatedMessageId = `msg-${uuidv4()}@vultintel.com`;
-    const simulatedThreadId = `thread-${uuidv4()}`;
+    const mailboxId = email.mailbox_id;
+    const accessToken = await getValidAccessToken(mailboxId);
+
+    // 1. Build the RFC822 message
+    const subject = email.subject || "(No Subject)";
+    const body = email.body_html || "";
+    const to = email.to_email;
+
+    // We need to encode the message in base64url
+    // RFC 2822 format
+    const str = [
+      `Content-Type: text/html; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      `to: ${to}`,
+      `subject: ${subject}`,
+      ``,
+      `${body}`,
+    ].join("\r\n");
+
+    const encodedMessage = Buffer.from(str)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    // 2. Send via Gmail API
+    const response = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ raw: encodedMessage }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error(`Gmail API sending error for email ${emailId}:`, errorData);
+      throw new Error(`Gmail API error: ${response.status} - ${errorData}`);
+    }
+
+    const result = await response.json() as { id: string; threadId: string };
+    console.log(`Email ${emailId} sent successfully via Gmail. Message ID: ${result.id}`);
 
     db.prepare(`
       UPDATE outreach_individual_emails 
       SET status = 'sent', sent_at = CURRENT_TIMESTAMP, message_id = ?, thread_id = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `).run(simulatedMessageId, simulatedThreadId, emailId);
+    `).run(result.id, result.threadId, emailId);
 
     // Log event and update contact
     if (email.contact_id) {
       db.prepare(`
         INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
         VALUES (?, ?, ?, ?, ?)
-      `).run(uuidv4(), email.contact_id, email.project_id, 'email_sent', JSON.stringify({ email_id: emailId, subject: email.subject }));
+      `).run(uuidv4(), email.contact_id, email.project_id, 'email_sent', JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
       
       db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
     }
 
-    return { success: true, messageId: simulatedMessageId };
+    return { success: true, messageId: result.id };
   } catch (error: any) {
     console.error(`Failed to send email ${emailId}:`, error);
     db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
