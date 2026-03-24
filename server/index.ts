@@ -2048,7 +2048,7 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
       const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
       // The @google/genai package from the test script uses this structure
       const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', // Downgraded from 2.0 due to regional availability issues
+        model: 'gemini-pro', // Downgraded to gemini-pro for better compatibility with installed @google/generative-ai version
         contents: `User Request: ${prompt}\n\nExisting ICP Context for this project:\n${JSON.stringify(icpContext || {})}`,
         config: {
           systemInstruction: `You are a Lead Generation Parameter Extractor. 
