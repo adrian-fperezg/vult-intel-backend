@@ -10,7 +10,6 @@ import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } 
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import toast from 'react-hot-toast';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
-import LeadFinderPanel from './contacts/LeadFinderPanel';
 import BulkAddToListModal from './contacts/BulkAddToListModal';
 
 type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
@@ -97,18 +96,6 @@ export default function OutreachContacts() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [profileContactId, setProfileContactId] = useState<string | null>(null);
-  const [showLeadFinder, setShowLeadFinder] = useState(false);
-
-  const handleSaveContactFromFinder = async (contactPayload: any) => {
-    try {
-      await api.createContact(contactPayload);
-      await loadContacts();
-    } catch (e: any) {
-      console.error('Failed to save contact from Lead Finder', e);
-      throw e;
-    }
-  };
-
   // Lists & Suppression
   const [contactLists, setContactLists] = useState<any[]>([]);
   const [listFilter, setListFilter] = useState<string>('all');
@@ -320,11 +307,10 @@ export default function OutreachContacts() {
             {[
               { id: 'all', label: 'All Contacts', icon: <User className="size-4" /> },
               { id: 'unassigned', label: 'Unassigned', icon: <XCircle className="size-4" /> },
-              { id: 'lead-finder', label: 'Lead Finder', icon: <Search className="size-4" />, action: () => setShowLeadFinder(true) },
             ].map(item => (
               <button
                 key={item.id}
-                onClick={item.action ? item.action : () => setListFilter(item.id)}
+                onClick={() => setListFilter(item.id)}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
                   listFilter === item.id 
@@ -796,15 +782,6 @@ export default function OutreachContacts() {
         isOpen={!!profileContactId}
         onClose={() => setProfileContactId(null)}
       />
-
-      <AnimatePresence>
-        {showLeadFinder && (
-          <LeadFinderPanel 
-            onClose={() => setShowLeadFinder(false)}
-            onSaveContact={handleSaveContactFromFinder}
-          />
-        )}
-      </AnimatePresence>
 
       <BulkAddToListModal
         isOpen={isBulkAddOpen}
