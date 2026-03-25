@@ -11,6 +11,7 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import toast from 'react-hot-toast';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
 import LeadFinderPanel from './contacts/LeadFinderPanel';
+import BulkAddToListModal from './contacts/BulkAddToListModal';
 
 type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
 
@@ -112,6 +113,8 @@ export default function OutreachContacts() {
   const [contactLists, setContactLists] = useState<any[]>([]);
   const [listFilter, setListFilter] = useState<string>('all');
   const [listMemberIds, setListMemberIds] = useState<Set<string>>(new Set());
+  const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // List Management UI States
   const [isManageListsOpen, setIsManageListsOpen] = useState(false);
@@ -160,7 +163,7 @@ export default function OutreachContacts() {
   useEffect(() => {
     loadContacts();
     loadLists();
-  }, [api.activeProjectId]);
+  }, [api.activeProjectId, listFilter]);
 
   useEffect(() => {
     if (listFilter === 'all') {
@@ -184,7 +187,7 @@ export default function OutreachContacts() {
   const loadContacts = async () => {
     setIsLoading(true);
     try {
-      const data = await api.fetchContacts();
+      const data = await api.fetchContacts(listFilter);
       setContacts((data ?? []).map((c: any) => ({
         ...c,
         firstName: c.first_name || 'N/A',
@@ -226,7 +229,7 @@ export default function OutreachContacts() {
       );
     }
     if (statusFilter !== 'all') list = list.filter(c => c.status === statusFilter);
-    if (listFilter !== 'all') list = list.filter(c => listMemberIds.has(c.id));
+    // listFilter is now handled by backend in loadContacts
     list.sort((a, b) => {
       const va = a[sortKey] ?? '';
       const vb = b[sortKey] ?? '';
@@ -238,6 +241,22 @@ export default function OutreachContacts() {
   const toggleSort = (key: typeof sortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsDeleting(true);
+    try {
+      await api.deleteContactsBulk(Array.from(selectedIds));
+      toast.success(`Deleted ${selectedIds.size} contacts`);
+      setSelectedIds(new Set());
+      setDeleteDialog(false);
+      loadContacts();
+    } catch (error) {
+      toast.error('Failed to delete contacts');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const toggleSelect = (id: string) => {
@@ -253,15 +272,15 @@ export default function OutreachContacts() {
     else setSelectedIds(new Set(filtered.map(c => c.id)));
   };
 
-  const handleBulkDelete = async () => {
-    const idsToDelete = [...selectedIds];
-    setContacts(prev => prev.filter(c => !selectedIds.has(c.id)));
-    setSelectedIds(new Set());
-    setDeleteDialog(false);
+  const handleBulkAddToList = async (listId: string) => {
     try {
-      await Promise.all(idsToDelete.map(id => api.deleteContact(id)));
-    } catch {
+      await api.addContactsToList(listId, [...selectedIds]);
+      toast.success(`Added ${selectedIds.size} contacts to list`);
+      setSelectedIds(new Set());
+      setIsBulkAddOpen(false);
       await loadContacts();
+    } catch (err) {
+      toast.error('Failed to add contacts to list');
     }
   };
 
@@ -292,102 +311,176 @@ export default function OutreachContacts() {
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="px-8 py-5 border-b border-white/5 shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Contacts</h1>
-            <p className="text-sm text-slate-400 mt-0.5">{contacts.length} contacts · {contacts.filter(c => c.emailVerified).length} verified</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
-              <Upload className="size-4" /> Import CSV
-            </button>
-            <button className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
-              <Download className="size-4" /> Export
-            </button>
-            <button 
-              onClick={() => setShowLeadFinder(true)}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
-            >
-              <Search className="size-4" /> Find Leads
-            </button>
-            <TealButton size="sm" onClick={handleCreate} loading={isCreating}>
-              <Plus className="size-4" /> Add Contact
-            </TealButton>
-          </div>
-        </div>
-
-        {/* Search & Filters */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search contacts, companies, emails..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-colors"
-            />
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <select
-              value={listFilter}
-              onChange={e => setListFilter(e.target.value)}
-              className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none cursor-pointer hover:bg-white/10 transition-colors"
-            >
-              <option value="all">All Lists</option>
-              {contactLists.map(l => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => setIsManageListsOpen(true)}
-              className="h-[42px] px-3 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl text-white hover:bg-white/10 transition-colors"
-              title="Manage Lists"
-            >
-              <Settings2 className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
+    <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
+      {/* Sidebar Navigator */}
+      <div className="w-64 border-r border-white/5 flex flex-col shrink-0 bg-[#0D0D0E]">
+        <div className="p-6">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Navigation</h2>
+          <nav className="space-y-1">
+            {[
+              { id: 'all', label: 'All Contacts', icon: <User className="size-4" /> },
+              { id: 'unassigned', label: 'Unassigned', icon: <XCircle className="size-4" /> },
+              { id: 'lead-finder', label: 'Lead Finder', icon: <Search className="size-4" />, action: () => setShowLeadFinder(true) },
+            ].map(item => (
               <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
+                key={item.id}
+                onClick={item.action ? item.action : () => setListFilter(item.id)}
                 className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all',
-                  statusFilter === s
-                    ? 'bg-teal-500/15 text-teal-400 border border-teal-500/30'
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
+                  listFilter === item.id 
+                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" 
+                    : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
-                {s === 'all' ? 'All' : STATUS_CFG[s].label}
+                <span className={cn(
+                  "transition-colors",
+                  listFilter === item.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                )}>
+                  {item.icon}
+                </span>
+                {item.label}
               </button>
             ))}
+          </nav>
+
+          <div className="mt-8 mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">My Lists</h2>
+              <button 
+                onClick={() => setIsCreatingList(true)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_10px_rgba(20,184,166,0.1)]"
+              >
+                <Plus className="size-3" /> New
+              </button>
+            </div>
           </div>
+          <nav className="space-y-1">
+            {contactLists.map(list => (
+              <button
+                key={list.id}
+                onClick={() => setListFilter(list.id)}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
+                  listFilter === list.id 
+                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" 
+                    : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                )}
+              >
+                <FolderOpen className={cn(
+                  "size-4 transition-colors",
+                  listFilter === list.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                )} />
+                <span className="truncate">{list.name}</span>
+              </button>
+            ))}
+            {contactLists.length === 0 && (
+              <p className="px-3 py-2 text-[10px] text-slate-600 italic">No custom lists created</p>
+            )}
+          </nav>
         </div>
       </div>
 
-      {/* Bulk Actions */}
-      {selectedIds.size > 0 && (
-        <div className="px-8 py-3 bg-teal-500/5 border-b border-teal-500/20 flex items-center gap-4 shrink-0">
-          <span className="text-sm font-semibold text-teal-400">{selectedIds.size} selected</span>
-          <button className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">
-            Add to Campaign
-          </button>
-          <button className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">
-            Add Tag
-          </button>
-          <button
-            onClick={() => setDeleteDialog(true)}
-            className="text-xs font-semibold text-red-400 hover:text-red-300 transition-colors ml-auto"
-          >
-            Delete selected
-          </button>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="px-8 py-5 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-white">Contacts</h1>
+                <div className="px-2 py-0.5 bg-white/5 rounded-full border border-white/5">
+                  <span className="text-[10px] font-black text-slate-500 uppercase">{contacts.length} Total</span>
+                </div>
+              </div>
+              <p className="text-sm text-slate-400 mt-0.5">
+                {listFilter === 'all' ? 'All available contacts' : 
+                 listFilter === 'unassigned' ? 'Contacts not in any list' : 
+                 `Contacts in ${contactLists.find(l => l.id === listFilter)?.name || 'list'}`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+                <Upload className="size-4" /> Import CSV
+              </button>
+              <TealButton size="sm" onClick={handleCreate} loading={isCreating}>
+                <Plus className="size-4" /> Add Contact
+              </TealButton>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search within this view..."
+                className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-colors"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all',
+                    statusFilter === s
+                      ? 'bg-teal-500/15 text-teal-400 border border-teal-500/30'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
+                  )}
+                >
+                  {s === 'all' ? 'All Status' : STATUS_CFG[s].label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Floating Bulk Action Bar */}
+        <AnimatePresence>
+          {selectedIds.size > 0 && (
+            <motion.div 
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 100, opacity: 0 }}
+              className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-6 py-4 bg-[#161b22] border border-teal-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(20,184,166,0.1)] flex items-center gap-6 backdrop-blur-xl"
+            >
+              <div className="flex items-center gap-3 pr-6 border-r border-white/10">
+                <div className="size-6 bg-teal-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
+                  <span className="text-[10px] font-black text-white">{selectedIds.size}</span>
+                </div>
+                <span className="text-sm font-bold text-white whitespace-nowrap">Contacts Selected</span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setIsBulkAddOpen(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all"
+                >
+                  <FolderOpen className="size-4" /> Add to List
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all">
+                  <Mail className="size-4" /> Enroll in Sequence
+                </button>
+                <div className="h-6 w-px bg-white/5" />
+                <button
+                  onClick={() => setDeleteDialog(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-400 hover:text-white hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-all"
+                >
+                  <Trash2 className="size-4" /> Delete
+                </button>
+                <button 
+                  onClick={() => setSelectedIds(new Set())}
+                  className="p-2 text-slate-500 hover:text-white"
+                >
+                  <XCircle className="size-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20">
         {filtered.length === 0 ? (
@@ -402,23 +495,23 @@ export default function OutreachContacts() {
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-20 bg-gray-900 border-b border-white/10 shadow-sm">
                 <tr>
-                  <th className="p-4 w-10">
+                  <th className="p-3 w-10">
                     <input
                       type="checkbox"
                       checked={selectedIds.size === filtered.length && filtered.length > 0}
                       onChange={toggleSelectAll}
-                      className="accent-teal-500 size-4 cursor-pointer"
+                      className="accent-teal-500 size-3.5 cursor-pointer"
                     />
                   </th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>Contact <SortIcon col="firstName" /></th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title</th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>Company <SortIcon col="company" /></th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry</th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Size</th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Location</th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
-                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>Status & Added <SortIcon col="addedAt" /></th>
-                  <th className="p-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>Contact <SortIcon col="firstName" /></th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title</th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>Company <SortIcon col="company" /></th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry</th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Size</th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Location</th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>Status <SortIcon col="addedAt" /></th>
+                  <th className="p-3 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -438,91 +531,74 @@ export default function OutreachContacts() {
                         )}
                         onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
                       >
-                        <td className="p-4" onClick={e => e.stopPropagation()}>
+                        <td className="p-3" onClick={e => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={selectedIds.has(contact.id)}
                             onChange={() => toggleSelect(contact.id)}
-                            className="accent-teal-500 size-4 cursor-pointer"
+                            className="accent-teal-500 size-3.5 cursor-pointer"
                           />
                         </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="size-8 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-lg flex items-center justify-center border border-white/5">
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <div className="size-6 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-md flex items-center justify-center border border-white/5">
                               {contact.firstName ? (
-                                <span className="text-[10px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
+                                <span className="text-[9px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
                               ) : (
-                                <User className="size-4 text-teal-400" />
+                                <User className="size-3 text-teal-400" />
                               )}
                             </div>
-                            <span className="text-sm font-bold text-white whitespace-nowrap">
+                            <span className="text-xs font-bold text-white whitespace-nowrap">
                               {contact.firstName} {contact.lastName}
                             </span>
                           </div>
                         </td>
-                        <td className="p-4">
-                          {contact.title ? (
-                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.title}</span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
-                          )}
+                        <td className="p-3">
+                          <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
+                            {contact.title || '—'}
+                          </span>
                         </td>
-                        <td className="p-4">
-                          {contact.company ? (
-                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.company}</span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
-                          )}
+                        <td className="p-3">
+                          <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
+                            {contact.company || '—'}
+                          </span>
                         </td>
-                        <td className="p-4">
-                          {contact.industry ? (
-                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.industry}</span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
-                          )}
+                        <td className="p-3">
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
+                            {contact.industry || '—'}
+                          </span>
                         </td>
-                        <td className="p-4">
-                          {contact.size ? (
-                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.size}</span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
-                          )}
+                        <td className="p-3">
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
+                            {contact.size || '—'}
+                          </span>
                         </td>
-                        <td className="p-4">
-                          {contact.location ? (
-                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.location}</span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
-                          )}
+                        <td className="p-3">
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
+                            {contact.location || '—'}
+                          </span>
                         </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
-                            <Mail className="size-3 text-slate-600" />
-                            {contact.email}
-                            {contact.emailVerified && <CheckCircle2 className="size-3 text-emerald-500" />}
+                        <td className="p-3">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
+                            <Mail className="size-3 text-slate-600 shrink-0" />
+                            <span className="truncate">{contact.email}</span>
                           </div>
                         </td>
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1">
-                            <OutreachBadge variant={statusCfg.variant}>{statusCfg.label}</OutreachBadge>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Added {contact.addedAt}</span>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <OutreachBadge variant={statusCfg.variant} className="text-[9px] px-1.5 py-0">
+                              {statusCfg.label}
+                            </OutreachBadge>
                           </div>
                         </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
-                              className="p-2 bg-white/5 hover:bg-teal-500 text-slate-400 hover:text-white rounded-lg border border-white/10 transition-all"
+                              className="p-1.5 bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 rounded-lg border border-white/10 transition-all"
                               title="View Profile"
                             >
-                              <User className="size-4" />
-                            </button>
-                            <button
-                              onClick={e => { e.stopPropagation(); setSelectedIds(new Set([contact.id])); setDeleteDialog(true); }}
-                              className="p-2 bg-white/5 hover:bg-red-500 text-slate-400 hover:text-white rounded-lg border border-white/10 transition-all"
-                              title="Delete"
-                            >
-                              <Trash2 className="size-4" />
+                              <User className="size-3.5" />
                             </button>
                           </div>
                         </td>
@@ -594,10 +670,22 @@ export default function OutreachContacts() {
         )}
       </div>
 
+      </div>
+
+      <BulkAddToListModal
+        isOpen={isBulkAddOpen}
+        onClose={() => setIsBulkAddOpen(false)}
+        onConfirm={handleBulkAddToList}
+        contactLists={contactLists}
+        onReloadLists={loadLists}
+        api={api}
+        selectedCount={selectedIds.size}
+      />
+
       {/* Manage Lists Modal */}
       <AnimatePresence>
         {isManageListsOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -717,6 +805,16 @@ export default function OutreachContacts() {
           />
         )}
       </AnimatePresence>
+
+      <BulkAddToListModal
+        isOpen={isBulkAddOpen}
+        onClose={() => setIsBulkAddOpen(false)}
+        onConfirm={handleBulkAddToList}
+        contactLists={contactLists}
+        onReloadLists={loadLists}
+        api={api}
+        selectedCount={selectedIds.size}
+      />
     </div>
   );
 }

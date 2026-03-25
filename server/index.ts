@@ -788,15 +788,23 @@ app.get("/api/outreach/sequences/:id/delivery-estimate", async (req: AuthRequest
 // GET /api/outreach/contacts?project_id=xxx
 app.get("/api/outreach/contacts", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  const { project_id, list_id } = req.query as { project_id?: string; list_id?: string };
 
   if (!project_id) return res.json([]);
 
-  const contacts = await db
-    .prepare(
-      "SELECT * FROM outreach_contacts WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC",
-    )
-    .all(userId, project_id);
+  let query = "SELECT * FROM outreach_contacts WHERE user_id = ? AND project_id = ?";
+  const params: any[] = [userId, project_id];
+
+  if (list_id === 'unassigned') {
+    query += " AND id NOT IN (SELECT contact_id FROM contact_list_members)";
+  } else if (list_id && list_id !== 'all') {
+    query += " AND id IN (SELECT contact_id FROM contact_list_members WHERE list_id = ?)";
+    params.push(list_id);
+  }
+
+  query += " ORDER BY created_at DESC";
+
+  const contacts = await db.prepare(query).all(...params);
 
   res.json(
     contacts.map((c: any) => ({
@@ -996,6 +1004,35 @@ app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
     .prepare("SELECT * FROM outreach_contacts WHERE id = ?")
     .get(id);
   res.json(contact);
+});
+
+// POST /api/outreach/contacts/bulk-delete
+app.post("/api/outreach/contacts/bulk-delete", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, contact_ids } = req.body;
+
+  if (!userId || !project_id || !Array.isArray(contact_ids)) {
+    return res.status(400).json({ error: "Missing project_id or contact_ids array" });
+  }
+
+  try {
+    await db.transaction(async () => {
+      // Create placeholders for the IN clause
+      const placeholders = contact_ids.map(() => "?").join(",");
+      
+      // 1. Delete from outreach_contacts
+      await db.prepare(`DELETE FROM outreach_contacts WHERE project_id = ? AND id IN (${placeholders})`)
+        .run(project_id, ...contact_ids);
+        
+      // 2. Delete from list members
+      await db.prepare(`DELETE FROM contact_list_members WHERE contact_id IN (${placeholders})`)
+        .run(...contact_ids);
+    });
+
+    res.json({ success: true, count: contact_ids.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // DELETE /api/outreach/contacts/:id

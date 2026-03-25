@@ -180,7 +180,8 @@ export function useOutreachApi() {
 
   // ── Contacts ─────────────────────────────────────────────────────────────
 
-  const fetchContacts = useCallback(() => get<any[]>('/contacts'), [get]);
+  const fetchContacts = useCallback((listId?: string) => 
+    get<any[]>(listId ? `/contacts?list_id=${listId}` : '/contacts'), [get]);
 
   const createContact = useCallback(
     (contactData: Record<string, unknown>) => post<any>('/contacts', contactData),
@@ -206,6 +207,11 @@ export function useOutreachApi() {
   const deleteContact = useCallback(
     (id: string) => del(`/contacts/${id}`),
     [del],
+  );
+
+  const deleteContactsBulk = useCallback(
+    (contact_ids: string[]) => post<any>('/contacts/bulk-delete', { contact_ids }),
+    [post],
   );
 
   // ── Settings & Integrations ──────────────────────────────────────────────
@@ -386,6 +392,7 @@ export function useOutreachApi() {
     saveContactsToList,
     updateContact,
     deleteContact,
+    deleteContactsBulk,
     // Inbox
     fetchInbox,
     summarizeInbox,
