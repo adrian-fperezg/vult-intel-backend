@@ -41,19 +41,26 @@ async function executeRequestWithRetry(url: string, params: Record<string, strin
     const query = new URLSearchParams(params).toString();
     const fullUrl = `${url}?${query}`;
     
-    const res = await fetch(fullUrl);
+    console.log(`[Hunter Lib] Sending GET to: ${fullUrl.split('api_key=')[0]}api_key=***`);
+    
+    const res = await fetch(fullUrl, { method: 'GET' });
     
     if (res.status === 429) {
-       // Rate limit exceeded
        attempt++;
        const backoff = Math.pow(2, attempt) * 1000;
        await new Promise((resolve) => setTimeout(resolve, backoff));
        continue;
     }
     
+    const contentType = res.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await res.text();
+      throw new Error(`Hunter API returned non-JSON: ${res.status} ${text.substring(0, 100)}`);
+    }
+
     const data = await res.json();
     if (!res.ok) {
-       throw new Error(data.errors?.[0]?.details || "Hunter API Error");
+       throw new Error(data.errors?.[0]?.details || data.message || "Hunter API Error");
     }
     return data.data;
   }
@@ -123,9 +130,7 @@ export async function discoverCompanies(projectId: string, userId: string, filte
 
     const params = { ...cleanFilters, api_key: apiKey };
     
-    console.log(`[Hunter Lib] Calling /companies/search with params:`, JSON.stringify({ ...params, api_key: '***' }));
-    
-    const data = await executeRequestWithRetry(`${HUNTER_API_URL}/companies/search`, params);
+    const data = await executeRequestWithRetry(`${HUNTER_API_URL}/discover`, params);
     
     logUsage(projectId, userId, 'discover', 1, 'success');
     return data;
