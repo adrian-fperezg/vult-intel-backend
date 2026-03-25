@@ -2052,20 +2052,23 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
         model: 'gemini-2.5-flash', // Updated to currently active and supported model per user request
         contents: `User Request: ${prompt}\n\nExisting ICP Context for this project:\n${JSON.stringify(icpContext || {})}`,
         config: {
-          systemInstruction: `You are a Lead Generation Parameter Extractor. 
-          Your goal is to extract search parameters for the Hunter.io Domain Search API from a natural language request.
+          systemInstruction: `You are a Lead Generation Parameter Extractor for Hunter.io. 
+          Analyze the user request and extract specific search parameters. 
           Use the provided ICP context to fill in gaps if the user request is vague.
           
           Return ONLY a RAW JSON object with:
-          - domains: string[] (max 5 major domains related to the company or niche)
-          - job_titles: string[] 
-          - seniority: string[] (senior, executive, director, manager)
-          - industries: string[]
-          - company_sizes: string[] (e.g. ["1-10", "11-50"])
-          - suggested_query: string (A 3-5 word summary of the search)
-          - confidence: number (0 to 100)
+          - searchType: "company_discovery" (general search) or "domain_search" (specific domain/person)
+          - confidence: number (0-100)
+          - reasoning: string (brief explanation of why these parameters were chosen)
+          - params: {
+              keywords: string,
+              industry: string,
+              sizeRange: string (e.g. "11,50" or "501,1000"),
+              country: string,
+              department: string,
+              seniority: string
+            }
           
-          If you cannot find specific domains, leave the 'domains' array empty.
           DO NOT include any Markdown formatting or backticks.`
         }
       });
@@ -2076,8 +2079,21 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
         model: "claude-3-haiku-20240307",
         max_tokens: 1000,
         temperature: 0,
-        system: `You are a Lead Generation Parameter Extractor. Extract search parameters for Hunter.io.
-        Return ONLY a RAW JSON object with: domains (array), job_titles (array), seniority (array), industries (array), company_sizes (array), suggested_query (string), confidence (number).
+        system: `You are a Lead Generation Parameter Extractor for Hunter.io.
+        Return ONLY a RAW JSON object with: 
+        {
+          "searchType": "company_discovery" | "domain_search",
+          "confidence": number,
+          "reasoning": string,
+          "params": {
+            "keywords": string,
+            "industry": string,
+            "sizeRange": string,
+            "country": string,
+            "department": string,
+            "seniority": string
+          }
+        }
         Use this ICP Context if relevant: ${JSON.stringify(icpContext || {})}
         DO NOT use markdown formatting.`,
         messages: [{ role: "user", content: prompt }],

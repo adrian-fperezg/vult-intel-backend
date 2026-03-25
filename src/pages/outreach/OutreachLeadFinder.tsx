@@ -60,13 +60,17 @@ interface IcpProfile {
 }
 
 interface ExtractedParams {
-  domains: string[];
-  job_titles: string[];
-  seniority: string[];
-  industries: string[];
-  company_sizes: string[];
-  suggested_query: string;
+  searchType: 'company_discovery' | 'domain_search';
   confidence: number;
+  reasoning: string;
+  params: {
+    keywords: string;
+    industry: string;
+    sizeRange: string;
+    country: string;
+    department: string;
+    seniority: string;
+  };
 }
 
 const COMPANY_SIZE_OPTIONS = ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"];
@@ -246,9 +250,7 @@ export default function OutreachLeadFinder() {
 
     try {
       const data = await api.hunterAiExtract(aiPrompt, icp);
-      console.log("[OutreachLeadFinder] AI Extract raw data:", data);
       setExtractedParams(data);
-      console.log("[OutreachLeadFinder] State setExtractedParams called. Status -> success");
       setAiStatus('success');
     } catch (error: any) {
       setAiStatus('error');
@@ -260,9 +262,10 @@ export default function OutreachLeadFinder() {
     if (!extractedParams) return;
     
     // Apply extracted params to UI
-    if (extractedParams.domains.length > 0) setDomain(extractedParams.domains[0]);
-    if (extractedParams.job_titles.length > 0) setJobTitles(extractedParams.job_titles);
-    if (extractedParams.seniority.length > 0) setSelectedSeniority(extractedParams.seniority);
+    if (extractedParams.params.keywords) setDomain(extractedParams.params.keywords);
+    if (extractedParams.params.seniority) {
+       setSelectedSeniority([extractedParams.params.seniority.toLowerCase()]);
+    }
     
     // Reset AI panel
     setAiStatus('idle');
@@ -270,8 +273,8 @@ export default function OutreachLeadFinder() {
     setAiPrompt('');
     
     // Trigger search
-    if (extractedParams.domains.length > 0) {
-      handleSearch(extractedParams.domains[0]);
+    if (extractedParams.params.keywords) {
+      handleSearch(extractedParams.params.keywords);
     } else {
       toast.success("Ready! You can now refine the search locally.");
     }
@@ -609,17 +612,36 @@ export default function OutreachLeadFinder() {
                 >
                   <div className="bg-black/30 rounded-2xl p-4 space-y-4 border border-white/5">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Extracted Blueprint</h4>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        {extractedParams.searchType === 'domain_search' ? 'Domain Blueprint' : 'Discovery Blueprint'}
+                      </h4>
                       <div className="px-2 py-0.5 bg-emerald-500/20 rounded text-[10px] font-black text-emerald-400 uppercase">
                         {extractedParams.confidence}% Confidence
                       </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-y-4 gap-x-2">
-                      <ParamPreview label="Target Domains" values={extractedParams.domains} />
-                      <ParamPreview label="Job Titles" values={extractedParams.job_titles} />
-                      <ParamPreview label="Industries" values={extractedParams.industries} />
-                      <ParamPreview label="Seniority" values={extractedParams.seniority} />
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Keywords / Target</p>
+                        <p className="text-xs text-white font-medium truncate">{extractedParams.params.keywords || 'N/A'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Industry</p>
+                        <p className="text-xs text-white font-medium">{extractedParams.params.industry || 'any'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Seniority</p>
+                        <p className="text-xs text-white font-medium capitalize">{extractedParams.params.seniority || 'any'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Size Range</p>
+                        <p className="text-xs text-white font-medium">{extractedParams.params.sizeRange || 'any'}</p>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter mb-1">AI Reasoning</p>
+                      <p className="text-xs text-slate-400 italic leading-relaxed">"{extractedParams.reasoning}"</p>
                     </div>
                   </div>
 
