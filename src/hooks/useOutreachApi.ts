@@ -192,6 +192,12 @@ export function useOutreachApi() {
     [post],
   );
 
+  const saveContactsToList = useCallback(
+    (project_id: string, list_id: string, contacts: Record<string, unknown>[]) => 
+      post<any>('/lists/save', { project_id, list_id, contacts }),
+    [post]
+  );
+
   const updateContact = useCallback(
     (id: string, updates: Record<string, unknown>) => patch<any>(`/contacts/${id}`, updates),
     [patch],
@@ -245,6 +251,17 @@ export function useOutreachApi() {
   const createContactList = useCallback(
     (name: string) => post<any>('/contact-lists', { name }),
     [post]
+  );
+
+  const deleteContactList = useCallback(
+    (id: string) => del(`/contact-lists/${id}`),
+    [del]
+  );
+
+  const updateContactList = useCallback(
+    (id: string, updates: { name?: string; description?: string }) => 
+      patch<any>(`/contact-lists/${id}`, updates),
+    [patch]
   );
 
   const fetchContactListMembers = useCallback(
@@ -366,6 +383,7 @@ export function useOutreachApi() {
     fetchContacts,
     createContact,
     createContactsBulk,
+    saveContactsToList,
     updateContact,
     deleteContact,
     // Inbox
@@ -388,6 +406,8 @@ export function useOutreachApi() {
     // Contact Lists & Suppression
     fetchContactLists,
     createContactList,
+    deleteContactList,
+    updateContactList,
     fetchContactListMembers,
     addContactsToList,
     fetchSuppressionList,

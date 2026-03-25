@@ -877,18 +877,20 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
   res.status(201).json(contact);
 });
 
-// POST /api/outreach/contacts/bulk
-app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
+// POST /api/outreach/lists/save
+app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, contacts } = req.body;
+  const { project_id, list_id, contacts } = req.body;
 
   if (!project_id || !Array.isArray(contacts)) {
     return res.status(400).json({ error: "Missing project_id or contacts array" });
   }
 
   try {
+    const savedContactIds: string[] = [];
+
     await db.transaction(async () => {
-      const query = `
+      const upsertQuery = `
         INSERT INTO outreach_contacts (
           id, user_id, project_id, first_name, last_name, email, 
           title, company, website, phone, linkedin, status, tags,
@@ -907,11 +909,16 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           source_detail = EXCLUDED.source_detail,
           confidence_score = EXCLUDED.confidence_score,
           verification_status = EXCLUDED.verification_status
+        RETURNING id
       `;
+
+      const memberQuery = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
 
       for (const contact of contacts) {
         if (!contact.email) continue;
-        await db.prepare(query).run(
+        
+        // 1. Upsert contact
+        const res = await db.prepare(upsertQuery).get(
           uuidv4(),
           userId,
           project_id,
@@ -928,14 +935,22 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           contact.source_detail || null,
           contact.confidence_score || null,
           contact.verification_status || null,
-        );
+        ) as any;
+
+        const contactId = res.id;
+        savedContactIds.push(contactId);
+
+        // 2. Add to list if list_id provided
+        if (list_id && list_id !== 'all') {
+          await db.prepare(memberQuery).run(list_id, contactId);
+        }
       }
     });
 
-    res.json({ success: true, count: contacts.length });
+    res.json({ success: true, count: savedContactIds.length, contactIds: savedContactIds });
   } catch (error: any) {
-    console.error("Bulk contact save failed:", error);
-    res.status(500).json({ error: error.message || "Bulk save failed" });
+    console.error("Bulk list save failed:", error);
+    res.status(500).json({ error: error.message || "Bulk list save failed" });
   }
 });
 
@@ -1025,6 +1040,32 @@ app.post("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
     .run(id, project_id, name);
 
   res.json({ id, project_id, name });
+});
+// DELETE /api/outreach/contact-lists/:id
+app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  try {
+    await db.prepare("DELETE FROM contact_lists WHERE id = ?").run(req.params.id);
+    await db.prepare("DELETE FROM contact_list_members WHERE list_id = ?").run(req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/outreach/contact-lists/:id
+app.patch("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  try {
+    const { name, description } = req.body;
+    await db.prepare("UPDATE contact_lists SET name = ?, description = ? WHERE id = ?")
+      .run(name, description || '', req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // GET /api/outreach/contact-lists/:id/members

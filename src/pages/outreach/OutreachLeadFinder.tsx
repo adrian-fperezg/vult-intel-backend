@@ -117,11 +117,16 @@ export default function OutreachLeadFinder() {
   // Selection State
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [isSavingSelected, setIsSavingSelected] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+
+  // Timer State
+  const [searchTimer, setSearchTimer] = useState(0);
 
   // Search History State
   const [savedSearches, setSavedSearches] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [lists, setLists] = useState<any[]>([]);
   const [leadCount, setLeadCount] = useState<number>(10);
   const [hunterCredits, setHunterCredits] = useState<{ used: number; available: number } | null>(null);
 
@@ -138,6 +143,22 @@ export default function OutreachLeadFinder() {
       console.error("Failed to fetch Hunter account:", err);
     }
   };
+
+  const fetchLists = async () => {
+    try {
+      const data = await api.fetchContactLists();
+      setLists(data || []);
+    } catch (err) {
+      console.error("Failed to fetch lists:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (projectId) {
+      fetchHunterAccount();
+      fetchLists();
+    }
+  }, [projectId]);
 
   const handleExportToSheets = async () => {
     if (!results || results.emails.length === 0) {
@@ -166,6 +187,19 @@ export default function OutreachLeadFinder() {
     }
   };
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    let interval: any;
+    if (isSearching) {
+      setSearchTimer(0);
+      interval = setInterval(() => {
+        setSearchTimer(prev => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isSearching]);
 
   const fetchHistory = async () => {
     setIsLoadingHistory(true);
@@ -417,7 +451,7 @@ export default function OutreachLeadFinder() {
     }
   };
 
-  const handleSaveSelected = async () => {
+  const handleSaveSelected = async (listId: string = 'all') => {
     if (selectedEmails.size === 0 || !results) return;
     setIsSavingSelected(true);
     try {
@@ -434,9 +468,10 @@ export default function OutreachLeadFinder() {
         source_detail: 'Hunter Lead Finder'
       }));
 
-      await api.createContactsBulk(projectId!, payload);
-      toast.success(`Successfully saved ${selectedLeads.length} leads to your project`);
+      await api.saveContactsToList(projectId!, listId, payload);
+      toast.success(`Successfully saved ${selectedLeads.length} leads to ${listId === 'all' ? 'Contacts' : 'your list'}`);
       setSelectedEmails(new Set());
+      setIsSaveModalOpen(false);
     } catch (error: any) {
       toast.error(error.message || "Bulk save failed");
     } finally {
@@ -669,8 +704,17 @@ export default function OutreachLeadFinder() {
               disabled={isSearching || !domain}
               className="px-8 py-4 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center gap-2"
             >
-              {isSearching ? <Loader2 className="size-5 animate-spin" /> : <Search className="size-5" />}
-              Search
+              {isSearching ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="size-5 animate-spin" />
+                  <span>Searching... ({searchTimer}s)</span>
+                </div>
+              ) : (
+                <>
+                  <Search className="size-5" />
+                  Search
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -906,12 +950,12 @@ export default function OutreachLeadFinder() {
                       {selectedEmails.size} selected
                     </span>
                     <button 
-                      onClick={handleSaveSelected}
+                      onClick={() => setIsSaveModalOpen(true)}
                       disabled={isSavingSelected}
                       className="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-2"
                     >
-                      {isSavingSelected ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
-                      Add to Project
+                      {isSavingSelected ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                      Save to List
                     </button>
                   </motion.div>
                 )}
@@ -935,69 +979,122 @@ export default function OutreachLeadFinder() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {results.emails.map((lead, idx) => (
-                <motion.div 
-                  key={lead.email}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: idx * 0.05 }}
-                  onClick={() => handleToggleSelect(lead.email)}
-                  className={cn(
-                    "bg-surface-dark border rounded-2xl p-6 transition-all group cursor-pointer relative overflow-hidden",
-                    selectedEmails.has(lead.email) ? "border-teal-500/50 bg-teal-500/5" : "border-white/5 hover:border-teal-500/30"
-                  )}
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div className={cn(
-                      "size-5 rounded border transition-all flex items-center justify-center",
-                      selectedEmails.has(lead.email) ? "bg-teal-500 border-teal-500" : "border-white/20 bg-black/20"
-                    )}>
-                      {selectedEmails.has(lead.email) && <Check className="size-3 text-white" />}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); ignoreLead(lead.email); }}
-                        className="p-1 hover:bg-red-500/10 rounded text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Ignore Lead"
+            <div className="bg-surface-dark border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="max-h-[600px] overflow-y-auto relative custom-scrollbar">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-20 bg-gray-900 border-b border-white/10 shadow-sm">
+                    <tr>
+                      <th className="p-4 w-10">
+                        <button onClick={handleSelectAll} className="size-5 rounded border border-white/20 flex items-center justify-center hover:border-teal-500/50 transition-colors">
+                          {selectedEmails.size === results.emails.length && results.emails.length > 0 && <Check className="size-3 text-teal-400" />}
+                        </button>
+                      </th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Lead</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Size</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Location</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Confidence</th>
+                      <th className="p-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {results.emails.map((lead, idx) => (
+                      <motion.tr 
+                        key={lead.email}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: idx * 0.02 }}
+                        className={cn(
+                          "group hover:bg-white/5 transition-colors",
+                          selectedEmails.has(lead.email) && "bg-teal-500/5"
+                        )}
                       >
-                        <XCircle className="size-4" />
-                      </button>
-                      {lead.confidence >= 80 ? (
-                        <ShieldCheck className="size-5 text-emerald-500" />
-                      ) : (
-                        <div className="text-[10px] font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded uppercase tracking-wider">
-                          {lead.confidence}% Match
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1 mb-6">
-                    <h3 className={cn(
-                      "font-bold transition-colors",
-                      selectedEmails.has(lead.email) ? "text-teal-400" : "text-white group-hover:text-teal-400"
-                    )}>
-                      {lead.first_name} {lead.last_name}
-                    </h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      {lead.position || 'Professional'}
-                    </p>
-                    <div className="flex items-center gap-2 pt-2">
-                    <Mail className="size-3 text-slate-600" />
-                      <span className="text-xs text-slate-400">{lead.email}</span>
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); saveContact(lead); }}
-                    className="w-full py-2 bg-white/5 hover:bg-teal-500 hover:text-white text-slate-400 text-xs font-bold rounded-xl border border-white/10 hover:border-teal-500/50 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Plus className="size-3" />
-                    Save Contact
-                  </button>
-                </motion.div>
-              ))}
+                        <td className="p-4">
+                          <button 
+                            onClick={() => handleToggleSelect(lead.email)}
+                            className={cn(
+                              "size-5 rounded border transition-all flex items-center justify-center",
+                              selectedEmails.has(lead.email) ? "bg-teal-500 border-teal-500" : "border-white/20 bg-black/20 group-hover:border-teal-500/30"
+                            )}
+                          >
+                            {selectedEmails.has(lead.email) && <Check className="size-3 text-white" />}
+                          </button>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="size-8 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-lg flex items-center justify-center border border-white/5">
+                              <User className="size-4 text-teal-400" />
+                            </div>
+                            <span className="text-sm font-bold text-white whitespace-nowrap">
+                              {lead.first_name} {lead.last_name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          {lead.position ? (
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{lead.position}</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <span className="text-xs text-slate-400 whitespace-nowrap">{lead.organization || results.organization}</span>
+                        </td>
+                        <td className="p-4">
+                           <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                        </td>
+                        <td className="p-4">
+                           <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                        </td>
+                        <td className="p-4">
+                           <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                             <Mail className="size-3 text-slate-600" />
+                             {lead.email}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                              <div 
+                                className={cn(
+                                  "h-full rounded-full transition-all",
+                                  lead.confidence >= 80 ? "bg-emerald-500" : lead.confidence >= 60 ? "bg-yellow-500" : "bg-red-500"
+                                )} 
+                                style={{ width: `${lead.confidence}%` }} 
+                              />
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-500">{lead.confidence}%</span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => saveContact(lead)}
+                              className="p-2 bg-white/5 hover:bg-teal-500 text-slate-400 hover:text-white rounded-lg border border-white/10 transition-all"
+                              title="Save to Contacts"
+                            >
+                              <Plus className="size-4" />
+                            </button>
+                            <button 
+                              onClick={() => ignoreLead(lead.email)}
+                              className="p-2 bg-white/5 hover:bg-red-500 text-slate-400 hover:text-white rounded-lg border border-white/10 transition-all"
+                              title="Remove"
+                            >
+                              <X className="size-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </motion.div>
         ) : results && results.emails.length === 0 && !isSearching ? (
@@ -1116,6 +1213,14 @@ export default function OutreachLeadFinder() {
           </>
         )}
       </AnimatePresence>
+
+      <SaveToListModal 
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        onSave={handleSaveSelected}
+        lists={lists}
+        isLoading={isSavingSelected}
+      />
     </div>
   );
 }
@@ -1164,6 +1269,138 @@ function IcpField({ label, items, onChange, placeholder, icon }: {
           <Plus className="size-3" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function SaveToListModal({ isOpen, onClose, onSave, lists, isLoading }: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (listId: string) => void;
+  lists: any[];
+  isLoading: boolean;
+}) {
+  const [selectedListId, setSelectedListId] = useState<string>('all');
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [newListName, setNewListName] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleConfirm = () => {
+    onSave(selectedListId);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative w-full max-w-lg bg-surface-dark border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-8 border-b border-white/5">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="size-12 bg-teal-500/10 rounded-2xl flex items-center justify-center">
+                <Save className="size-6 text-teal-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Save to List</h3>
+                <p className="text-sm text-slate-500 font-medium">Select a destination for your leads</p>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="size-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-slate-400 transition-colors"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Choose destination list</label>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => setSelectedListId('all')}
+                  className={cn(
+                    "w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left",
+                    selectedListId === 'all' 
+                      ? "bg-teal-500/10 border-teal-500/30 text-teal-400 shadow-lg shadow-teal-500/5" 
+                      : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className="size-5" />
+                    <div>
+                      <p className="text-sm font-bold">General Contacts</p>
+                      <p className="text-[10px] uppercase font-black tracking-tighter opacity-50">Global project pool</p>
+                    </div>
+                  </div>
+                  {selectedListId === 'all' && <CheckCircle2 className="size-5" />}
+                </button>
+
+                {lists.map(list => (
+                  <button
+                    key={list.id}
+                    onClick={() => setSelectedListId(list.id)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left text-sm font-bold",
+                      selectedListId === list.id 
+                        ? "bg-teal-500/10 border-teal-500/30 text-teal-400 shadow-lg shadow-teal-500/5" 
+                        : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Tag className="size-5" />
+                      {list.name}
+                    </div>
+                    {selectedListId === list.id && <CheckCircle2 className="size-5" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center">
+              <div className="h-px bg-white/5 flex-1" />
+              <span className="px-4 text-[10px] font-black text-slate-600 uppercase tracking-widest">or</span>
+              <div className="h-px bg-white/5 flex-1" />
+            </div>
+
+            <button 
+              onClick={() => toast.error("List creation in Lead Finder coming soon. Use CRM for now.")}
+              className="w-full py-4 bg-white/5 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all flex items-center justify-center gap-2"
+            >
+              <Plus className="size-4" />
+              Create New List
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 bg-white/[0.02] flex items-center gap-4">
+          <button 
+            onClick={onClose}
+            className="flex-1 py-4 text-sm font-bold text-slate-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleConfirm}
+            disabled={isLoading}
+            className="flex-[2] py-4 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm font-bold rounded-2xl shadow-lg shadow-teal-900/40 transition-all flex items-center justify-center gap-2"
+          >
+            {isLoading ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+            Confirm Save
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }

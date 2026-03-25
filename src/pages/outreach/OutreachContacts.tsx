@@ -1,13 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Upload, Download, Filter, MoreHorizontal,
   Building2, Mail, Phone, Linkedin, ChevronDown, ChevronUp,
-  User, Tag, Trash2, CheckCircle2, XCircle, Globe, UserCheck, FolderOpen
+  User, Tag, Trash2, CheckCircle2, XCircle, Globe, UserCheck, FolderOpen, Settings2, Edit2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import toast from 'react-hot-toast';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
 import LeadFinderPanel from './contacts/LeadFinderPanel';
 
@@ -28,6 +29,9 @@ interface Contact {
   addedAt: string;
   lastActivity?: string;
   emailVerified?: boolean;
+  industry?: string;
+  size?: string;
+  location?: string;
 }
 
 const MOCK_CONTACTS: Contact[] = [
@@ -108,6 +112,50 @@ export default function OutreachContacts() {
   const [contactLists, setContactLists] = useState<any[]>([]);
   const [listFilter, setListFilter] = useState<string>('all');
   const [listMemberIds, setListMemberIds] = useState<Set<string>>(new Set());
+
+  // List Management UI States
+  const [isManageListsOpen, setIsManageListsOpen] = useState(false);
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [editingListId, setEditingListId] = useState<string | null>(null);
+  const [editListName, setEditListName] = useState('');
+
+  const handleCreateList = async () => {
+    if (!newListName.trim()) return;
+    try {
+      const newList = await api.createContactList(newListName.trim());
+      setContactLists(prev => [...prev, newList]);
+      setNewListName('');
+      setIsCreatingList(false);
+      toast.success('List created successfully');
+    } catch (err) {
+      toast.error('Failed to create list');
+    }
+  };
+
+  const handleDeleteList = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this list? Contacts will not be deleted.')) return;
+    try {
+      await api.deleteContactList(id);
+      setContactLists(prev => prev.filter(l => l.id !== id));
+      if (listFilter === id) setListFilter('all');
+      toast.success('List deleted');
+    } catch (err) {
+      toast.error('Failed to delete list');
+    }
+  };
+
+  const handleUpdateList = async (id: string) => {
+    if (!editListName.trim()) return;
+    try {
+      await api.updateContactList(id, { name: editListName.trim() });
+      setContactLists(prev => prev.map(l => l.id === id ? { ...l, name: editListName.trim() } : l));
+      setEditingListId(null);
+      toast.success('List updated');
+    } catch (err) {
+      toast.error('Failed to update list');
+    }
+  };
 
   useEffect(() => {
     loadContacts();
@@ -283,16 +331,25 @@ export default function OutreachContacts() {
             />
           </div>
           
-          <select
-            value={listFilter}
-            onChange={e => setListFilter(e.target.value)}
-            className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none cursor-pointer"
-          >
-            <option value="all">All Lists</option>
-            {contactLists.map(l => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={listFilter}
+              onChange={e => setListFilter(e.target.value)}
+              className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none cursor-pointer hover:bg-white/10 transition-colors"
+            >
+              <option value="all">All Lists</option>
+              {contactLists.map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setIsManageListsOpen(true)}
+              className="h-[42px] px-3 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl text-white hover:bg-white/10 transition-colors"
+              title="Manage Lists"
+            >
+              <Settings2 className="w-4 h-4" />
+            </button>
+          </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
             {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
@@ -332,8 +389,7 @@ export default function OutreachContacts() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20">
         {filtered.length === 0 ? (
           <OutreachEmptyState
             icon={<User />}
@@ -342,156 +398,300 @@ export default function OutreachContacts() {
             action={<TealButton onClick={handleCreate} loading={isCreating}><Plus className="size-4" /> Add Contact</TealButton>}
           />
         ) : (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-background-dark/95 backdrop-blur z-10 border-b border-white/5">
-              <tr>
-                <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.size === filtered.length && filtered.length > 0}
-                    onChange={toggleSelectAll}
-                    className="accent-teal-500 size-4 cursor-pointer"
-                  />
-                </th>
-                {[
-                  { label: 'Name', col: 'firstName' as const },
-                  { label: 'Company', col: 'company' as const },
-                  { label: 'Status', col: null },
-                  { label: 'Tags', col: null },
-                  { label: 'Added', col: 'addedAt' as const },
-                  { label: '', col: null },
-                ].map(({ label, col }) => (
-                  <th
-                    key={label}
-                    onClick={() => col && toggleSort(col)}
-                    className={cn(
-                      'text-left px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-slate-500',
-                      col && 'cursor-pointer hover:text-slate-300 transition-colors select-none'
-                    )}
-                  >
-                    <div className="flex items-center gap-1">
-                      {label} {col && <SortIcon col={col} />}
-                    </div>
+          <div className="relative">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-20 bg-gray-900 border-b border-white/10 shadow-sm">
+                <tr>
+                  <th className="p-4 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === filtered.length && filtered.length > 0}
+                      onChange={toggleSelectAll}
+                      className="accent-teal-500 size-4 cursor-pointer"
+                    />
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((contact, idx) => {
-                const statusCfg = STATUS_CFG[contact.status];
-                const isExpanded = expandedRow === contact.id;
-                return (
-                  <>
-                    <motion.tr
-                      key={contact.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.03 }}
-                      className={cn(
-                        'border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer group',
-                        selectedIds.has(contact.id) && 'bg-teal-500/5'
-                      )}
-                      onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
-                    >
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(contact.id)}
-                          onChange={() => toggleSelect(contact.id)}
-                          className="accent-teal-500 size-4 cursor-pointer"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="size-8 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-                            <span className="text-xs font-bold text-teal-400">{contact.firstName[0]}{contact.lastName[0]}</span>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-white text-xs">{contact.firstName} {contact.lastName}</p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <p className="text-slate-500 text-[11px]">{contact.email}</p>
-                              {contact.emailVerified === true && <CheckCircle2 className="size-3 text-green-400" />}
-                              {contact.emailVerified === false && <XCircle className="size-3 text-red-400" />}
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>Contact <SortIcon col="firstName" /></th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title</th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>Company <SortIcon col="company" /></th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry</th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Size</th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Location</th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+                  <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>Status & Added <SortIcon col="addedAt" /></th>
+                  <th className="p-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filtered.map((contact, idx) => {
+                  const statusCfg = STATUS_CFG[contact.status];
+                  const isExpanded = expandedRow === contact.id;
+                  return (
+                    <Fragment key={contact.id}>
+                      <motion.tr
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.01 }}
+                        className={cn(
+                          'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
+                          selectedIds.has(contact.id) && 'bg-teal-500/5',
+                          isExpanded && 'bg-teal-500/5'
+                        )}
+                        onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
+                      >
+                        <td className="p-4" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(contact.id)}
+                            onChange={() => toggleSelect(contact.id)}
+                            className="accent-teal-500 size-4 cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="size-8 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-lg flex items-center justify-center border border-white/5">
+                              {contact.firstName ? (
+                                <span className="text-[10px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
+                              ) : (
+                                <User className="size-4 text-teal-400" />
+                              )}
                             </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="text-xs font-semibold text-white">{contact.company}</p>
-                          <p className="text-[11px] text-slate-500">{contact.title}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <OutreachBadge variant={statusCfg.variant}>{statusCfg.label}</OutreachBadge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {contact.tags.map(tag => (
-                            <span key={tag} className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white/5 border border-white/10 text-slate-400">#{tag}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-[11px] text-slate-500">{contact.addedAt}</td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={e => e.stopPropagation()}
-                          className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </button>
-                      </td>
-                    </motion.tr>
-                    {isExpanded && (
-                      <tr key={`${contact.id}-expanded`} className="bg-teal-500/5 border-b border-white/5">
-                        <td colSpan={7} className="px-8 py-4">
-                          <div className="flex items-center gap-8 text-sm flex-wrap">
-                            {contact.phone && (
-                              <div className="flex items-center gap-2 text-slate-300">
-                                <Phone className="size-3.5 text-teal-400" /> {contact.phone}
-                              </div>
-                            )}
-                            {contact.linkedin && (
-                              <div className="flex items-center gap-2 text-slate-300">
-                                <Linkedin className="size-3.5 text-blue-400" /> {contact.linkedin}
-                              </div>
-                            )}
-                            {contact.website && (
-                              <div className="flex items-center gap-2 text-slate-300">
-                                <Globe className="size-3.5 text-slate-400" /> {contact.website}
-                              </div>
-                            )}
-                            {contact.lastActivity && (
-                              <div className="flex items-center gap-2 text-slate-500">
-                                <UserCheck className="size-3.5" /> Last activity: {contact.lastActivity}
-                              </div>
-                            )}
-                            <div className="ml-auto flex items-center gap-2">
-                              <button 
-                                onClick={() => handleSuppress(contact.email)}
-                                className="px-3 py-1.5 text-xs font-semibold text-red-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg transition-colors"
-                              >
-                                Suppress
-                              </button>
-                              <TealButton size="sm">Enroll in Sequence</TealButton>
-                              <button 
-                                onClick={() => setProfileContactId(contact.id)}
-                                className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                              >
-                                View Profile
-                              </button>
-                            </div>
+                            <span className="text-sm font-bold text-white whitespace-nowrap">
+                              {contact.firstName} {contact.lastName}
+                            </span>
                           </div>
                         </td>
-                      </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
+                        <td className="p-4">
+                          {contact.title ? (
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.title}</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          {contact.company ? (
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.company}</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          {contact.industry ? (
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.industry}</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          {contact.size ? (
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.size}</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          {contact.location ? (
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{contact.location}</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-600 rounded font-bold uppercase tracking-wider">No Data</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+                            <Mail className="size-3 text-slate-600" />
+                            {contact.email}
+                            {contact.emailVerified && <CheckCircle2 className="size-3 text-emerald-500" />}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col gap-1">
+                            <OutreachBadge variant={statusCfg.variant}>{statusCfg.label}</OutreachBadge>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Added {contact.addedAt}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
+                              className="p-2 bg-white/5 hover:bg-teal-500 text-slate-400 hover:text-white rounded-lg border border-white/10 transition-all"
+                              title="View Profile"
+                            >
+                              <User className="size-4" />
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); setSelectedIds(new Set([contact.id])); setDeleteDialog(true); }}
+                              className="p-2 bg-white/5 hover:bg-red-500 text-slate-400 hover:text-white rounded-lg border border-white/10 transition-all"
+                              title="Delete"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.tr
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="bg-teal-500/[0.03] border-b border-white/5"
+                          >
+                            <td colSpan={10} className="px-8 py-6">
+                              <div className="flex items-start gap-12">
+                                <div className="space-y-4 flex-1">
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Phone</p>
+                                      <p className="text-sm text-white font-medium">{contact.phone || 'N/A'}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">LinkedIn</p>
+                                      <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || 'N/A'}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Website</p>
+                                      <p className="text-sm text-slate-300 font-medium">{contact.website || 'N/A'}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Last Activity</p>
+                                      <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || 'No recent activity'}</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-4 flex items-center gap-2 flex-wrap">
+                                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">Tags:</p>
+                                    {contact.tags.length > 0 ? contact.tags.map(tag => (
+                                      <span key={tag} className="px-2 py-0.5 bg-white/5 border border-white/5 rounded text-[10px] font-bold text-slate-400">#{tag}</span>
+                                    )) : <span className="text-[10px] text-slate-600 italic">No tags</span>}
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-col gap-2 min-w-[180px]">
+                                  <TealButton size="sm" className="w-full">Enroll in Sequence</TealButton>
+                                  <button 
+                                    onClick={() => handleSuppress(contact.email)}
+                                    className="w-full py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold transition-all"
+                                  >
+                                    Suppress Email
+                                  </button>
+                                  <button 
+                                    onClick={() => setProfileContactId(contact.id)}
+                                    className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold border border-white/5 transition-all"
+                                  >
+                                    Full Details
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </motion.tr>
+                        )}
+                      </AnimatePresence>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      {/* Manage Lists Modal */}
+      <AnimatePresence>
+        {isManageListsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-gray-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">Manage Contact Lists</h3>
+                <button
+                  onClick={() => setIsManageListsOpen(false)}
+                  className="p-2 text-gray-400 hover:text-white transition-colors"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Create New List */}
+                {isCreatingList ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newListName}
+                      onChange={e => setNewListName(e.target.value)}
+                      placeholder="List name..."
+                      className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white outline-none focus:border-teal-500/50"
+                      autoFocus
+                    />
+                    <TealButton onClick={handleCreateList} className="py-2">Create</TealButton>
+                    <button
+                      onClick={() => setIsCreatingList(false)}
+                      className="px-3 py-2 text-gray-400 hover:text-white text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setIsCreatingList(true)}
+                    className="w-full py-2 flex items-center justify-center gap-2 bg-teal-500/10 border border-teal-500/20 rounded-lg text-teal-400 text-sm font-medium hover:bg-teal-500/20 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create New List
+                  </button>
+                )}
+
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {contactLists.map(list => (
+                    <div key={list.id} className="group flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
+                      {editingListId === list.id ? (
+                        <div className="flex-1 flex gap-2">
+                          <input
+                            type="text"
+                            value={editListName}
+                            onChange={e => setEditListName(e.target.value)}
+                            className="flex-1 px-2 py-1 bg-gray-800 border border-white/10 rounded text-sm text-white outline-none"
+                            autoFocus
+                          />
+                          <button onClick={() => handleUpdateList(list.id)} className="text-teal-400 text-xs font-medium">Save</button>
+                          <button onClick={() => setEditingListId(null)} className="text-gray-500 text-xs">Cancel</button>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-sm font-medium text-white">{list.name}</p>
+                            <p className="text-[10px] text-gray-500">System ID: {list.id}</p>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setEditingListId(list.id);
+                                setEditListName(list.name);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-teal-400 transition-colors"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteList(list.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <OutreachConfirmDialog
         isOpen={deleteDialog}
