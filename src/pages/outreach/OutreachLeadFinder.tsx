@@ -201,23 +201,28 @@ export default function OutreachLeadFinder() {
           verification_status: e.verification_status
         })) || [];
 
+        // If no leads found, we still want to show an empty state, not a query-as-result
         setResults({
-          domain: data.domain,
-          organization: data.organization || searchDomain,
+          domain: data.domain || searchDomain,
+          organization: data.organization || (normalizedLeads.length > 0 ? searchDomain : ''),
           emails: normalizedLeads
         });
 
-        // Auto-save search result
-        api.saveHunterSearch({
-          query: `Search: ${searchDomain}`,
-          extracted_params: { domain: searchDomain, ...options },
-          leads: normalizedLeads
-        }).then(() => fetchHistory());
-
-        toast.success(`Found ${normalizedLeads.length} leads for ${searchDomain}`);
+        // Auto-save search result only if leads were found
+        if (normalizedLeads.length > 0) {
+          api.saveHunterSearch({
+            query: `Search: ${searchDomain}`,
+            extracted_params: { domain: searchDomain, ...options },
+            leads: normalizedLeads
+          }).then(() => fetchHistory());
+          toast.success(`Found ${normalizedLeads.length} leads for ${searchDomain}`);
+        } else {
+          toast.error(`No leads found for ${searchDomain}`);
+        }
       }
     } catch (error: any) {
       toast.error(error.message || "Domain search failed");
+      setResults({ domain: searchDomain, organization: '', emails: [] });
     } finally {
       setIsSearching(false);
     }
@@ -523,6 +528,7 @@ export default function OutreachLeadFinder() {
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch(domain)}
+                maxLength={500}
                 className="w-full bg-surface-dark border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white focus:outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 shadow-inner"
               />
             </div>
@@ -691,7 +697,7 @@ export default function OutreachLeadFinder() {
 
       {/* Results Section */}
       <AnimatePresence mode="wait">
-        {results ? (
+        {results && results.emails.length > 0 ? (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -807,6 +813,20 @@ export default function OutreachLeadFinder() {
                 </motion.div>
               ))}
             </div>
+          </motion.div>
+        ) : results && results.emails.length === 0 && !isSearching ? (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-20 bg-surface-dark/50 border border-dashed border-white/10 rounded-[3rem] text-center"
+          >
+            <div className="size-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+              <AlertCircle className="size-8 text-red-400" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">No leads found</h3>
+            <p className="text-slate-500 max-w-sm px-6">
+              No leads found for this search. Try broadening your parameters or checking the domain spelling.
+            </p>
           </motion.div>
         ) : !isSearching && (
           <div className="flex flex-col items-center justify-center py-20 bg-surface-dark/50 border border-dashed border-white/10 rounded-[3rem]">
