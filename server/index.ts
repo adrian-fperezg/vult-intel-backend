@@ -226,164 +226,9 @@ app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {
   res.json(sub);
 });
 
-// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+// ─── REDUNDANT SETTINGS & CONTACTS BLOCKS REMOVED ──────────────────────────────
+// Consolidated versions with encryption and better project context are implemented below.
 
-// GET /api/outreach/settings
-app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
-  const { project_id } = req.query as { project_id?: string };
-  if (!project_id) return res.status(400).json({ error: "project_id is required" });
-
-  try {
-    const settings = await db.prepare("SELECT * FROM outreach_settings WHERE project_id = ?").get(project_id);
-    res.json(settings || { project_id, hunter_api_key: null });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch settings", message: err.message });
-  }
-});
-
-// POST /api/outreach/settings
-app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
-  const { project_id, hunter_api_key } = req.body;
-  if (!project_id) return res.status(400).json({ error: "project_id is required" });
-
-  try {
-    const existing = await db.prepare("SELECT project_id FROM outreach_settings WHERE project_id = ?").get(project_id);
-    if (existing) {
-      await db.prepare("UPDATE outreach_settings SET hunter_api_key = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
-        .run(hunter_api_key, project_id);
-    } else {
-      await db.prepare("INSERT INTO outreach_settings (project_id, hunter_api_key) VALUES (?, ?)")
-        .run(project_id, hunter_api_key);
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to save settings", message: err.message });
-  }
-});
-
-// ─── CONTACTS ─────────────────────────────────────────────────────────────────
-
-// GET /api/outreach/contacts
-app.get("/api/outreach/contacts", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!project_id) return res.status(400).json({ error: "project_id is required" });
-
-  try {
-    const contacts = await db.prepare(
-      "SELECT * FROM outreach_contacts WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC"
-    ).all(userId, project_id);
-    res.json(contacts);
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch contacts", message: err.message });
-  }
-});
-
-// POST /api/outreach/contacts
-// Upsert contact by email within a project
-app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-
-  const {
-    id,
-    project_id,
-    email,
-    first_name,
-    last_name,
-    title,
-    company,
-    website,
-    phone,
-    linkedin,
-    status,
-    tags,
-    intent,
-    source_detail,
-    confidence_score,
-    verification_status
-  } = req.body;
-
-  if (!project_id || !email) {
-    return res.status(400).json({ error: "project_id and email are required" });
-  }
-
-  try {
-    const existing = await db.prepare(
-      "SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ? AND user_id = ?"
-    ).get(email, project_id, userId) as any;
-
-    if (existing) {
-      await db.prepare(`
-        UPDATE outreach_contacts SET
-          first_name = COALESCE(?, first_name),
-          last_name = COALESCE(?, last_name),
-          title = COALESCE(?, title),
-          company = COALESCE(?, company),
-          website = COALESCE(?, website),
-          phone = COALESCE(?, phone),
-          linkedin = COALESCE(?, linkedin),
-          status = COALESCE(?, status),
-          tags = COALESCE(?, tags),
-          intent = COALESCE(?, intent),
-          source_detail = COALESCE(?, source_detail),
-          confidence_score = COALESCE(?, confidence_score),
-          verification_status = COALESCE(?, verification_status)
-        WHERE id = ?
-      `).run(
-        first_name, last_name, title, company, website, phone, linkedin,
-        status, tags, intent, source_detail, confidence_score, verification_status,
-        existing.id
-      );
-      const updated = await db.prepare("SELECT * FROM outreach_contacts WHERE id = ?").get(existing.id);
-      res.json(updated);
-    } else {
-      const { v4: uuidv4 } = await import('uuid');
-      const newId = id || uuidv4();
-      await db.prepare(`
-        INSERT INTO outreach_contacts (
-          id, user_id, project_id, email, first_name, last_name, title, company, 
-          website, phone, linkedin, status, tags, intent, source_detail, 
-          confidence_score, verification_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        newId, userId, project_id, email, first_name, last_name, title, company,
-        website, phone, linkedin, status || 'not_enrolled', tags, intent, source_detail,
-        confidence_score, verification_status
-      );
-      const inserted = await db.prepare("SELECT * FROM outreach_contacts WHERE id = ?").get(newId);
-      res.json(inserted);
-    }
-  } catch (err: any) {
-    console.error("[POST /contacts] Error:", err);
-    res.status(500).json({ error: "Failed to save contact", message: err.message });
-  }
-});
-
-// DELETE /api/outreach/contacts/:id
-app.delete("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { id } = req.params;
-  const { project_id } = req.query as { project_id?: string };
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!project_id) return res.status(400).json({ error: "project_id is required" });
-
-  try {
-    const result = await db.prepare(
-      "DELETE FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?"
-    ).run(id, userId, project_id);
-
-    if (result.changes === 0) {
-      return res.status(404).json({ error: "Contact not found" });
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to delete contact", message: err.message });
-  }
-});
 
 // ─── MAILBOXES ────────────────────────────────────────────────────────────────
 
@@ -1334,6 +1179,35 @@ app.post("/api/outreach/inbox/:id/summarize", async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error("Error summarizing thread:", error);
     res.status(500).json({ error: error.message || "Failed to generate summary" });
+  }
+});
+
+// POST /api/outreach/projects/:projectId/sync-inbox
+app.post("/api/outreach/projects/:projectId/sync-inbox", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { projectId } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    // Find all active mailboxes for this project
+    const mailboxes = await db.prepare(
+      "SELECT id FROM outreach_mailboxes WHERE project_id = ? AND user_id = ? AND status = 'active'"
+    ).all(projectId, userId) as any[];
+
+    if (mailboxes.length === 0) {
+      return res.json({ success: true, message: "No active mailboxes to sync." });
+    }
+
+    // Trigger sync for each mailbox
+    for (const mailbox of mailboxes) {
+      await syncMailbox(mailbox.id, getValidAccessToken);
+    }
+
+    res.json({ success: true, count: mailboxes.length });
+  } catch (error: any) {
+    console.error("Failed to sync project inbox:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
