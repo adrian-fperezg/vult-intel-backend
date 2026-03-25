@@ -48,6 +48,29 @@ export default function OutreachLeadFinder() {
   // ICP State
   const [icpData, setIcpData] = useState<any | null>(null);
   const [isLoadingIcp, setIsLoadingIcp] = useState(false);
+  const [icpProfile, setIcpProfile] = useState<{
+    jobTitles: string[];
+    industries: string[];
+    countries: string[];
+    companySize: string;
+  }>({
+    jobTitles: [],
+    industries: [],
+    countries: [],
+    companySize: ''
+  });
+
+  // Sync icpProfile with icpData when loaded
+  useEffect(() => {
+    if (icpData) {
+      setIcpProfile({
+        jobTitles: icpData.jobTitles || [],
+        industries: icpData.industries || [],
+        countries: icpData.countries || [],
+        companySize: icpData.companySize || ''
+      });
+    }
+  }, [icpData]);
 
   // Search Controls
   const [limit, setLimit] = useState(25);
@@ -115,7 +138,8 @@ export default function OutreachLeadFinder() {
     setIsExtracting(true);
     setErrorMsg(null);
     try {
-      const data = await api.hunterAiExtract(prompt, icpData);
+      // Pass the current icpProfile as context
+      const data = await api.hunterAiExtract(prompt, icpProfile);
       if (data.error) throw new Error(data.error);
       setAiResult(data);
     } catch (err: any) {
@@ -143,26 +167,23 @@ export default function OutreachLeadFinder() {
     setTimeout(() => setSearchProgress(0), 500);
   };
 
-  const handleSearch = async () => {
-    if (!aiResult) return;
+  const executeSearch = async (params: any, searchPrompt?: string) => {
     setIsSearching(true);
     setErrorMsg(null);
     setSelectedIds(new Set());
     startLoadingTimer();
     try {
-      const data = await api.hunterDiscover(prompt, {
-        ...aiResult.params,
+      const data = await api.hunterDiscover(searchPrompt || 'Search Query', {
+        ...params,
         limit,
         excludeExisting,
         exclusionListIds
       });
       if (data.error) throw new Error(data.error);
       
-      // Map company results to a more "contact-like" structure if needed
-      // Hunter Discover returns companies. We'll store them as-is for now.
       const mapped = (data.companies || []).map((c: any) => ({
         ...c,
-        id: c.domain || Math.random().toString(36).substr(2, 9), // Use domain as stable ID
+        id: c.domain || Math.random().toString(36).substr(2, 9),
         display_name: c.name || c.domain,
         type: 'company'
       }));
@@ -176,6 +197,28 @@ export default function OutreachLeadFinder() {
       setIsSearching(false);
       stopLoadingTimer();
     }
+  };
+
+  const handleICPSearch = async () => {
+    if (!icpProfile || (icpProfile.jobTitles.length === 0 && icpProfile.industries.length === 0)) {
+      toast.error('Please configure your ICP filters first.');
+      return;
+    }
+
+    const searchParams = {
+      searchType: 'company_discovery',
+      keywords: icpProfile.jobTitles?.join(', ') || '',
+      industry: icpProfile.industries?.join(', ') || '',
+      sizeRange: icpProfile.companySize || '',
+      country: icpProfile.countries?.join(', ') || ''
+    };
+
+    await executeSearch(searchParams, 'ICP Search Results');
+  };
+
+  const handleBlueprintSearch = async () => {
+    if (!aiResult) return;
+    await executeSearch(aiResult.params, prompt);
   };
 
   const toggleSelectAll = () => {
@@ -304,22 +347,92 @@ export default function OutreachLeadFinder() {
               </div>
             </div>
 
-            {/* ICP Selection Dropdown (Mock) */}
-            <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl flex items-center justify-between group cursor-pointer hover:bg-white/[0.05] transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="size-10 bg-black/40 rounded-xl flex items-center justify-center border border-white/10 group-hover:border-teal-500/30 transition-colors">
-                  <Filter className="size-5 text-slate-500 group-hover:text-teal-400" />
+            {/* ICP Selection & Filter Block */}
+            <div className="bg-[#111111] border border-white/10 rounded-2xl overflow-hidden shadow-2xl relative">
+              {/* Header */}
+              <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="size-8 bg-teal-500/10 rounded-lg flex items-center justify-center border border-teal-500/20">
+                    <Filter className="size-4 text-teal-400" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Global Baseline</p>
+                    <p className="text-xs font-bold text-white uppercase tracking-tight">{icpData?.name || 'Ideal Customer Profile'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    {isLoadingIcp ? 'Loading...' : icpData ? 'Active Profile' : 'No Profile Set'}
-                  </p>
-                  <p className="text-sm font-bold text-white">
-                    {icpData?.name || 'Ideal Customer Profile (ICP)'}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <OutreachBadge variant={isLoadingIcp ? 'gray' : 'teal'}>{isLoadingIcp ? 'Loading' : 'Active'}</OutreachBadge>
                 </div>
               </div>
-              <ChevronDown className="size-5 text-slate-600 group-hover:text-white transition-colors" />
+
+              {/* Filter Grids */}
+              <div className="p-5 space-y-5">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+                  {/* Job Titles */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Job Titles</label>
+                    <textarea 
+                      value={icpProfile.jobTitles.join(', ')}
+                      onChange={(e) => setIcpProfile({ ...icpProfile, jobTitles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                      placeholder="e.g. CEO, Founder, VP Sales"
+                      className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-teal-500/50 min-h-[60px] resize-none transition-all"
+                    />
+                  </div>
+
+                  {/* Industries */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Industries</label>
+                    <textarea 
+                      value={icpProfile.industries.join(', ')}
+                      onChange={(e) => setIcpProfile({ ...icpProfile, industries: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                      placeholder="e.g. SaaS, Fintech, Crypto"
+                      className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-teal-500/50 min-h-[60px] resize-none transition-all"
+                    />
+                  </div>
+
+                  {/* Company Size */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Company Size</label>
+                    <select 
+                      value={icpProfile.companySize}
+                      onChange={(e) => setIcpProfile({ ...icpProfile, companySize: e.target.value })}
+                      className="w-full bg-black/40 border border-white/5 rounded-xl px-3 h-10 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 transition-all appearance-none"
+                    >
+                      <option value="">Any Size</option>
+                      <option value="1-10">1-10</option>
+                      <option value="11-50">11-50</option>
+                      <option value="51-200">51-200</option>
+                      <option value="201-500">201-500</option>
+                      <option value="501-1000">501-1000</option>
+                      <option value="1001-5000">1001-5000</option>
+                      <option value="10000+">10000+</option>
+                    </select>
+                  </div>
+
+                  {/* Countries */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Countries</label>
+                    <input 
+                      type="text"
+                      value={icpProfile.countries.join(', ')}
+                      onChange={(e) => setIcpProfile({ ...icpProfile, countries: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                      placeholder="e.g. US, UK, DE"
+                      className="w-full bg-black/40 border border-white/5 rounded-xl px-3 h-10 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-teal-500/50 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* ICP Search Button */}
+                <TealButton 
+                  onClick={handleICPSearch}
+                  variant="outline"
+                  disabled={isLoadingIcp || isSearching || (icpProfile.jobTitles.length === 0 && icpProfile.industries.length === 0)}
+                  className="w-full bg-[#161b22] hover:bg-[#1f242c] border border-white/10 text-slate-300 hover:text-white py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 group"
+                >
+                  <Search className="size-3.5 text-slate-500 group-hover:text-teal-400 transition-colors" />
+                  Apply ICP & Search Results
+                </TealButton>
+              </div>
             </div>
 
             {/* Search Input Box */}
@@ -454,7 +567,7 @@ export default function OutreachLeadFinder() {
                       Refine Prompt
                     </button>
                     <TealButton 
-                      onClick={handleSearch}
+                      onClick={handleBlueprintSearch}
                       loading={isSearching}
                       className="flex-[1.5] py-3 rounded-xl font-bold shadow-lg shadow-teal-500/20"
                     >
