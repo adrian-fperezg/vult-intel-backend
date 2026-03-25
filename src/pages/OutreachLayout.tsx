@@ -12,19 +12,21 @@ import OutreachSequences from './outreach/OutreachSequences';
 import OutreachContacts from './outreach/OutreachContacts';
 import OutreachInbox from './outreach/OutreachInbox';
 import OutreachAnalytics from './outreach/OutreachAnalytics';
+import OutreachLeadFinder from './outreach/OutreachLeadFinder';
 import OutreachSettings from './outreach/OutreachSettings';
 import OutreachCompose from './outreach/OutreachCompose';
 import { PaperPlaneIcon } from './outreach/OutreachCommon';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
-type OutreachTab = 'compose' | 'campaigns' | 'sequences' | 'contacts' | 'inbox' | 'analytics' | 'settings';
+type OutreachTab = 'analytics' | 'lead-finder' | 'contacts' | 'compose' | 'campaigns' | 'sequences' | 'inbox' | 'settings';
 
 const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
   { id: 'analytics',    label: 'Analytics' },
+  { id: 'lead-finder',   label: 'Lead Finder' },
+  { id: 'contacts',     label: 'Contacts' },
   { id: 'compose',      label: 'Compose', badge: true },
   { id: 'campaigns',    label: 'Campaigns' },
   { id: 'sequences',    label: 'Sequences' },
-  { id: 'contacts',     label: 'Contacts' },
   { id: 'inbox',        label: 'Inbox' },
   { id: 'settings',     label: 'Settings' },
 ];
@@ -202,13 +204,14 @@ export default function OutreachLayout() {
             className="h-full"
           >
             <ErrorBoundary name={`Outreach:${activeTab}`}>
-              {activeTab === 'compose'    && <OutreachCompose />}
-              {activeTab === 'campaigns'  && <OutreachCampaigns />}
-              {activeTab === 'sequences'  && <OutreachSequences />}
-              {activeTab === 'contacts'   && <OutreachContacts />}
-              {activeTab === 'inbox'      && <OutreachInbox />}
-              {activeTab === 'analytics'  && <OutreachAnalytics />}
-              {activeTab === 'settings'   && <OutreachSettings />}
+              {activeTab === 'analytics'    && <OutreachAnalytics />}
+              {activeTab === 'lead-finder'  && <OutreachLeadFinder />}
+              {activeTab === 'contacts'     && <OutreachContacts />}
+              {activeTab === 'compose'      && <OutreachCompose />}
+              {activeTab === 'campaigns'    && <OutreachCampaigns />}
+              {activeTab === 'sequences'    && <OutreachSequences />}
+              {activeTab === 'inbox'        && <OutreachInbox />}
+              {activeTab === 'settings'     && <OutreachSettings />}
             </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
