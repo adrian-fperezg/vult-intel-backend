@@ -10,7 +10,7 @@ dotenv.config();
 // ─── QUEUES ──────────────────────────────────────────────────────────────────
 
 export const emailQueue = new Queue('email-queue', { 
-  connection: redis,
+  connection: redis as any,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -22,7 +22,7 @@ export const emailQueue = new Queue('email-queue', {
 });
 
 export const campaignQueue = new Queue('campaign-queue', { 
-  connection: redis,
+  connection: redis as any,
   defaultJobOptions: {
     removeOnComplete: true,
   }

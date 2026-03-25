@@ -58,7 +58,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // Initialize session handling with Redis for persistence across deployments
 const redisStore = new RedisStore({
-  client: redis,
+  client: redis as any,
   prefix: "vult-session:",
 });
 

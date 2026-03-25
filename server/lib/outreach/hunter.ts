@@ -33,14 +33,12 @@ async function getApiKey(projectId?: string): Promise<string> {
   throw new Error("No Hunter.io API key configured. Please add one in Settings or contact an administrator.");
 }
 
-async function executeRequestWithRetry(url: string, params: Record<string, string>, retries = 3): Promise<any> {
+async function executeRequestWithRetry(url: string, params: URLSearchParams, retries = 3): Promise<any> {
   let attempt = 0;
   while (attempt < retries) {
     await throttle();
     
-    const query = new URLSearchParams(params).toString();
-    const fullUrl = `${url}?${query}`;
-    
+    const fullUrl = `${url}?${params.toString()}`;
     console.log(`[Hunter Lib] Sending GET to: ${fullUrl.split('api_key=')[0]}api_key=***`);
     
     const res = await fetch(fullUrl, { method: 'GET' });
@@ -62,7 +60,7 @@ async function executeRequestWithRetry(url: string, params: Record<string, strin
     if (!res.ok) {
        throw new Error(data.errors?.[0]?.details || data.message || "Hunter API Error");
     }
-    return data.data;
+    return data.data || data;
   }
   throw new Error("Hunter API rate limit exceeded after retries.");
 }
@@ -77,9 +75,13 @@ function logUsage(projectId: string, userId: string, endpoint: string, credits: 
 export async function domainSearch(projectId: string, userId: string, domain: string, options: any = {}) {
   try {
     const apiKey = await getApiKey(projectId);
-    // Remove undefined values
-    const cleanOptions = Object.fromEntries(Object.entries(options).filter(([_, v]) => v != null)) as Record<string, string>;
-    const params = { domain, api_key: apiKey, ...cleanOptions };
+    const params = new URLSearchParams();
+    params.append('domain', domain);
+    params.append('api_key', apiKey);
+    Object.entries(options).forEach(([k, v]) => {
+      if (v != null) params.append(k, String(v));
+    });
+
     const data = await executeRequestWithRetry(`${HUNTER_API_URL}/domain-search`, params);
     
     logUsage(projectId, userId, 'domain-search', 1, 'success');
@@ -93,7 +95,11 @@ export async function domainSearch(projectId: string, userId: string, domain: st
 export async function emailFinder(projectId: string, userId: string, domain: string, firstName: string, lastName: string) {
   try {
     const apiKey = await getApiKey(projectId);
-    const params = { domain, first_name: firstName, last_name: lastName, api_key: apiKey };
+    const params = new URLSearchParams();
+    params.append('domain', domain);
+    params.append('first_name', firstName);
+    params.append('last_name', lastName);
+    params.append('api_key', apiKey);
     const data = await executeRequestWithRetry(`${HUNTER_API_URL}/email-finder`, params);
     
     logUsage(projectId, userId, 'email-finder', 1, 'success');
@@ -107,7 +113,9 @@ export async function emailFinder(projectId: string, userId: string, domain: str
 export async function emailVerifier(projectId: string, userId: string, email: string) {
   try {
     const apiKey = await getApiKey(projectId);
-    const params = { email, api_key: apiKey };
+    const params = new URLSearchParams();
+    params.append('email', email);
+    params.append('api_key', apiKey);
     const data = await executeRequestWithRetry(`${HUNTER_API_URL}/email-verifier`, params);
     
     logUsage(projectId, userId, 'email-verifier', 1, 'success');
@@ -123,12 +131,26 @@ export async function discoverCompanies(projectId: string, userId: string, filte
     const apiKey = await getApiKey(projectId);
     if (!apiKey) throw new Error("Hunter API key is missing or invalid");
 
-    // Remove undefined/null values
-    const cleanFilters = Object.fromEntries(
-      Object.entries(filters).filter(([_, v]) => v != null && v !== '')
-    ) as Record<string, string>;
+    // Map frontend filters to Hunter v2 parameters
+    const params = new URLSearchParams();
+    params.append('api_key', apiKey);
 
-    const params = { ...cleanFilters, api_key: apiKey };
+    if (filters.query || filters.keywords) {
+      params.append('query', filters.query || filters.keywords);
+    }
+    if (filters.industry) params.append('industry', filters.industry);
+    
+    // Hunter v2 headcount (ranges: "1-10", "11-50", etc)
+    const rawHeadcount = filters.headcount || filters.sizeRange || filters.size_range;
+    if (rawHeadcount) {
+      const formatted = typeof rawHeadcount === 'string' ? rawHeadcount.replace(',', '-') : rawHeadcount;
+      params.append('headcount', formatted);
+    }
+    
+    if (filters.country) params.append('country', filters.country);
+    if (filters.city) params.append('city', filters.city);
+    if (filters.technology) params.append('technology', filters.technology);
+    if (filters.limit) params.append('limit', filters.limit.toString());
     
     const data = await executeRequestWithRetry(`${HUNTER_API_URL}/discover`, params);
     
@@ -143,6 +165,8 @@ export async function discoverCompanies(projectId: string, userId: string, filte
 
 export async function getAccountInformation(projectId: string) {
   const apiKey = await getApiKey(projectId);
-  const data = await executeRequestWithRetry(`${HUNTER_API_URL}/account`, { api_key: apiKey });
+  const params = new URLSearchParams();
+  params.append('api_key', apiKey);
+  const data = await executeRequestWithRetry(`${HUNTER_API_URL}/account`, params);
   return data;
 }
