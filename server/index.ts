@@ -1949,14 +1949,15 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
           - confidence: number (0-100)
           - reasoning: string (brief explanation of why these parameters were chosen)
           - params: {
-              keywords: string,
-              industry: string,
+              jobTitles: string[] (array of specific roles, e.g. ["CEO", "Founder"]),
+              industries: string[] (array of industries, e.g. ["SaaS", "Real Estate"]),
+              seniority: string[] (array of levels: "junior", "senior", "manager", "director", "executive"),
+              keywords: string (fallback query),
               sizeRange: string (e.g. "11,50" or "501,1000"),
-              country: string,
-              department: string,
-              seniority: string
+              country: string
             }
           
+          ALWAYS return arrays for jobTitles, industries, and seniority, even if there is only one item.
           DO NOT include any Markdown formatting or backticks.`
         }
       });
@@ -1974,14 +1975,15 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
           "confidence": number,
           "reasoning": string,
           "params": {
+            "jobTitles": string[],
+            "industries": string[],
+            "seniority": string[],
             "keywords": string,
-            "industry": string,
             "sizeRange": string,
-            "country": string,
-            "department": string,
-            "seniority": string
+            "country": string
           }
         }
+        ALWAYS return arrays for jobTitles, industries, and seniority, even if there is only one item.
         Use this ICP Context if relevant: ${JSON.stringify(icpContext || {})}
         DO NOT use markdown formatting.`,
         messages: [{ role: "user", content: prompt }],

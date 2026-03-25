@@ -64,12 +64,12 @@ interface ExtractedParams {
   confidence: number;
   reasoning: string;
   params: {
+    jobTitles: string[];
+    industries: string[];
+    seniority: string[];
     keywords: string;
-    industry: string;
     sizeRange: string;
     country: string;
-    department: string;
-    seniority: string;
   };
 }
 
@@ -263,13 +263,21 @@ export default function OutreachLeadFinder() {
     }
   };
 
+  const removePill = (type: 'jobTitles' | 'industries' | 'seniority', index: number) => {
+    if (!extractedParams) return;
+    const newParams = { ...extractedParams };
+    newParams.params[type] = newParams.params[type].filter((_, i) => i !== index);
+    setExtractedParams(newParams);
+  };
+
   const confirmAiParams = () => {
     if (!extractedParams) return;
     
     // Apply extracted params to UI
     if (extractedParams.params.keywords) setDomain(extractedParams.params.keywords);
-    if (extractedParams.params.seniority) {
-       setSelectedSeniority([extractedParams.params.seniority.toLowerCase()]);
+    if (extractedParams.params.jobTitles.length > 0) setJobTitles(extractedParams.params.jobTitles);
+    if (extractedParams.params.seniority.length > 0) {
+       setSelectedSeniority(extractedParams.params.seniority.map(s => s.toLowerCase()));
     }
     
     // Reset AI panel
@@ -614,49 +622,96 @@ export default function OutreachLeadFinder() {
                 <motion.div 
                   key="success"
                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="space-y-6 flex-1"
+                  className="space-y-6 flex-1 flex flex-col"
                 >
-                  <div className="bg-black/30 rounded-2xl p-4 space-y-4 border border-white/5">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                        {extractedParams.searchType === 'domain_search' ? 'Domain Blueprint' : 'Discovery Blueprint'}
-                      </h4>
-                      <div className="px-2 py-0.5 bg-emerald-500/20 rounded text-[10px] font-black text-emerald-400 uppercase">
+                  <div className="bg-black/30 rounded-2xl p-5 border border-white/5 flex-1 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="size-2 rounded-full bg-teal-500 animate-pulse" />
+                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                          Extracted Blueprint
+                        </h4>
+                      </div>
+                      <div className="px-2 py-0.5 bg-teal-500/20 rounded text-[10px] font-black text-teal-400 uppercase border border-teal-500/30">
                         {extractedParams.confidence}% Confidence
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-y-4 gap-x-2">
-                      <div className="space-y-1">
-                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Keywords / Target</p>
-                        <p className="text-xs text-white font-medium truncate">{extractedParams.params.keywords || 'N/A'}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Industry</p>
-                        <p className="text-xs text-white font-medium">{extractedParams.params.industry || 'any'}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Seniority</p>
-                        <p className="text-xs text-white font-medium capitalize">{extractedParams.params.seniority || 'any'}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Size Range</p>
-                        <p className="text-xs text-white font-medium">{extractedParams.params.sizeRange || 'any'}</p>
-                      </div>
-                    </div>
+                    <div className="space-y-4">
+                      {/* Job Titles */}
+                      {extractedParams.params.jobTitles.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Target Job Titles</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {extractedParams.params.jobTitles.map((title, idx) => (
+                              <span 
+                                key={idx}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-900/20 border border-teal-800 text-teal-400 text-[10px] font-bold rounded-full group/pill hover:border-teal-600 transition-colors"
+                              >
+                                {title}
+                                <button onClick={() => removePill('jobTitles', idx)} className="hover:text-white">
+                                  <X className="size-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="pt-3 border-t border-white/5">
-                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter mb-1">AI Reasoning</p>
-                      <p className="text-xs text-slate-400 italic leading-relaxed">"{extractedParams.reasoning}"</p>
+                      {/* Industries */}
+                      {extractedParams.params.industries.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Industries</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {extractedParams.params.industries.map((industry, idx) => (
+                              <span 
+                                key={idx}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-900/20 border border-blue-800 text-blue-400 text-[10px] font-bold rounded-full group/pill hover:border-blue-600 transition-colors"
+                              >
+                                {industry}
+                                <button onClick={() => removePill('industries', idx)} className="hover:text-white">
+                                  <X className="size-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Seniority */}
+                      {extractedParams.params.seniority.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Seniority Levels</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {extractedParams.params.seniority.map((level, idx) => (
+                              <span 
+                                key={idx}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-900/20 border border-purple-800 text-purple-400 text-[10px] font-bold rounded-full group/pill hover:border-purple-600 transition-colors"
+                              >
+                                {level}
+                                <button onClick={() => removePill('seniority', idx)} className="hover:text-white">
+                                  <X className="size-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* AI Reasoning */}
+                      <div className="pt-3 border-t border-white/5">
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-tighter mb-1">AI Reasoning</p>
+                        <p className="text-[11px] text-slate-400 italic leading-snug">"{extractedParams.reasoning}"</p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 mt-auto pt-2">
                     <button 
                       onClick={() => setAiStatus('idle')}
                       className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-400 text-sm font-bold rounded-xl border border-white/10 transition-all"
                     >
-                      Refine Prompt
+                      Refine
                     </button>
                     <button 
                       onClick={confirmAiParams}
