@@ -1858,59 +1858,73 @@ app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
 
 app.post("/api/outreach/hunter/domain-search", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, domain, options } = req.body;
+  const { project_id, projectId, domain, options } = req.body;
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const data = await domainSearch(project_id, userId, domain, options || {});
+    const data = await domainSearch(pId, userId, domain, options || {});
     res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error('[HUNTER_API_ERROR]:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.post("/api/outreach/hunter/email-finder", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, domain, first_name, last_name } = req.body;
+  const { project_id, projectId, domain, first_name, last_name } = req.body;
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const data = await emailFinder(project_id, userId, domain, first_name, last_name);
+    const data = await emailFinder(pId, userId, domain, first_name, last_name);
     res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error('[HUNTER_API_ERROR]:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.post("/api/outreach/hunter/email-verifier", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, email } = req.body;
+  const { project_id, projectId, email } = req.body;
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const data = await emailVerifier(project_id, userId, email);
+    const data = await emailVerifier(pId, userId, email);
     res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error('[HUNTER_API_ERROR]:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  const { project_id, projectId } = req.query as { project_id?: string, projectId?: string };
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const data = await getAccountInformation(project_id!);
+    const data = await getAccountInformation(pId);
     res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error('[HUNTER_API_ERROR]:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, prompt, icpContext } = req.body;
+  const { project_id, projectId, prompt, icpContext } = req.body;
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
@@ -1983,14 +1997,16 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
     
     res.json(data);
   } catch (error: any) {
-    console.error("AI Extract Error:", error);
+    console.error("[HUNTER_AI_EXTRACT_ERROR]:", error.message);
     res.status(500).json({ error: error.message || "Failed to extract parameters" });
   }
 });
 
 app.get("/api/outreach/hunter/saved-searches", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  const { project_id, projectId } = req.query as { project_id?: string, projectId?: string };
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
@@ -1998,10 +2014,11 @@ app.get("/api/outreach/hunter/saved-searches", async (req: AuthRequest, res) => 
       SELECT * FROM outreach_saved_searches 
       WHERE project_id = ? 
       ORDER BY created_at DESC
-    `, project_id);
+    `, pId);
     res.json(searches);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error('[HUNTER_SAVED_SEARCHES_ERROR]:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -2100,7 +2117,9 @@ app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => 
 
 app.post("/api/outreach/hunter/save-search", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, query, extracted_params, leads } = req.body;
+  const { project_id, projectId, query, extracted_params, leads } = req.body;
+  const pId = project_id || projectId;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   const searchId = uuidv4();
@@ -2109,7 +2128,7 @@ app.post("/api/outreach/hunter/save-search", async (req: AuthRequest, res) => {
       await db.run(`
         INSERT INTO outreach_saved_searches (id, project_id, user_id, query, extracted_params, results_count)
         VALUES (?, ?, ?, ?, ?, ?)
-      `, searchId, project_id, userId, query || 'Manual Search', JSON.stringify(extracted_params || {}), leads?.length || 0);
+      `, searchId, pId, userId, query || 'Manual Search', JSON.stringify(extracted_params || {}), leads?.length || 0);
 
       if (leads && leads.length > 0) {
         // Bulk insert would be better but db wrapper transaction is safer for now
@@ -2123,9 +2142,9 @@ app.post("/api/outreach/hunter/save-search", async (req: AuthRequest, res) => {
     });
 
     res.json({ success: true, searchId });
-  } catch (err: any) {
-    console.error("Save Search Error:", err);
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error("[HUNTER_SAVE_SEARCH_ERROR]:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 

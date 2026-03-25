@@ -17,15 +17,20 @@ async function throttle() {
   lastRequestTime = Date.now();
 }
 
-async function getApiKey(projectId: string): Promise<string> {
-  const row = db.prepare("SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?").get(projectId) as any;
-  if (row && row.hunter_api_key) {
-    return decryptToken(row.hunter_api_key);
+async function getApiKey(projectId?: string): Promise<string> {
+  if (projectId) {
+    const row = await db.prepare("SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?").get(projectId) as any;
+    if (row && row.hunter_api_key) {
+      return decryptToken(row.hunter_api_key);
+    }
   }
-  if (process.env.HUNTER_API_KEY_MASTER) {
-    return process.env.HUNTER_API_KEY_MASTER;
+  
+  const envKey = process.env.HUNTER_API_KEY || process.env.HUNTER_API_KEY_MASTER;
+  if (envKey) {
+    return envKey;
   }
-  throw new Error("No Hunter.io API key configured for this project.");
+  
+  throw new Error("No Hunter.io API key configured. Please add one in Settings or contact an administrator.");
 }
 
 async function executeRequestWithRetry(url: string, params: Record<string, string>, retries = 3): Promise<any> {
