@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { GoogleGenAI } from "@google/genai";
 import db from "../../db.js";
 import { decryptToken } from "../../oauth.js";
 
@@ -128,37 +129,69 @@ export async function emailVerifier(projectId: string, userId: string, email: st
 
 export async function discoverCompanies(projectId: string, userId: string, filters: any = {}) {
   try {
-    const apiKey = await getApiKey(projectId);
-    if (!apiKey) throw new Error("Hunter API key is missing or invalid");
+    const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (!GEMINI_KEY) throw new Error("Gemini API key is missing. Please check server environment.");
 
-    // Map frontend filters to Hunter v2 parameters
-    const params = new URLSearchParams();
-    params.append('api_key', apiKey);
+    const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
+    
+    // Construct search criteria string
+    const criteria = [
+      filters.query || filters.keywords ? `Keywords: ${filters.query || filters.keywords}` : null,
+      filters.industry ? `Industry: ${filters.industry}` : null,
+      filters.size_range || filters.sizeRange || filters.headcount ? `Size: ${filters.size_range || filters.sizeRange || filters.headcount}` : null,
+      filters.country ? `Country: ${filters.country}` : null,
+      filters.city ? `City: ${filters.city}` : null
+    ].filter(Boolean).join(", ");
 
-    if (filters.query || filters.keywords) {
-      params.append('query', filters.query || filters.keywords);
+    console.log(`[AI Discover] Generating companies for: ${criteria}`);
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `You are a B2B data researcher. Return a JSON array of real companies that match these filters: ${criteria || 'General search'}. 
+      
+      Return strictly a JSON object with a 'companies' array. 
+      Each company must have: 
+      - id (string, uuid)
+      - name (string)
+      - domain (string, lowercase, example.com)
+      - industry (string)
+      - size (string, e.g. "11-50")
+      - country (string)
+      - description (string, 1-2 sentences about what they do)
+
+      Only return real, existing companies. Limit to 20 results.`,
+      config: {
+        systemInstruction: "Return ONLY a RAW JSON object. DO NOT include any Markdown formatting or backticks. Ensure valid JSON syntax."
+      }
+    });
+
+    const text = response.text || "";
+    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    
+    let data;
+    try {
+      data = JSON.parse(cleanJson);
+    } catch (parseErr) {
+      console.error("[AI Discover] JSON Parse Error. Raw text:", text);
+      throw new Error("Failed to parse AI response. The results might be malformed.");
     }
-    if (filters.industry) params.append('industry', filters.industry);
-    
-    // Hunter v2 headcount (ranges: "1-10", "11-50", etc)
-    const rawHeadcount = filters.headcount || filters.sizeRange || filters.size_range;
-    if (rawHeadcount) {
-      const formatted = typeof rawHeadcount === 'string' ? rawHeadcount.replace(',', '-') : rawHeadcount;
-      params.append('headcount', formatted);
+
+    // Normalize and add logos
+    if (data.companies && Array.isArray(data.companies)) {
+      data.companies = data.companies.map((c: any) => ({
+        ...c,
+        id: c.id || uuidv4(),
+        logo: `https://logo.clearbit.com/${c.domain}`
+      }));
+    } else {
+      data.companies = [];
     }
-    
-    if (filters.country) params.append('country', filters.country);
-    if (filters.city) params.append('city', filters.city);
-    if (filters.technology) params.append('technology', filters.technology);
-    if (filters.limit) params.append('limit', filters.limit.toString());
-    
-    const data = await executeRequestWithRetry(`${HUNTER_API_URL}/discover`, params);
-    
-    logUsage(projectId, userId, 'discover', 1, 'success');
+
+    logUsage(projectId, userId, 'discover-ai', 0, 'success');
     return data;
   } catch (err: any) {
-    console.error(`[Hunter Lib] Discover Error:`, err.message);
-    logUsage(projectId, userId, 'discover', 0, 'error');
+    console.error(`[Hunter Lib] AI Discover Error:`, err.message);
+    logUsage(projectId, userId, 'discover-ai', 0, 'error');
     throw err;
   }
 }
