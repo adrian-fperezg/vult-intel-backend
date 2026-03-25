@@ -226,6 +226,9 @@ export function useOutreachApi() {
   const hunterDiscover = useCallback((query: string, filters?: any) => 
     post<any>('/hunter/discover', { query, filters }), [post]
   );
+  const hunterSearchPeople = useCallback((filters?: any, limit?: number) => 
+    post<any>('/hunter/search-people', { filters, limit }), [post]
+  );
   const hunterEmailFinder = useCallback((domain: string, first_name: string, last_name: string) => 
     post<any>('/hunter/email-finder', { domain, first_name, last_name }), [post]
   );
@@ -426,6 +429,7 @@ export function useOutreachApi() {
     fetchHunterAccount,
     hunterDomainSearch,
     hunterDiscover,
+    hunterSearchPeople,
     hunterEmailFinder,
     hunterEmailVerifier,
     hunterAiExtract,

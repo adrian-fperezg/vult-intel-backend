@@ -11,6 +11,51 @@ import {
   getAccountInformation, 
   discoverCompanies 
 } from '../../lib/outreach/hunter.js';
+import { searchPDL } from '../../lib/outreach/pdl.js';
+import crypto from 'crypto';
+
+interface PersonLead {
+  id: string;
+  type: 'person';
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  title: string;
+  department: string;
+  seniority: string;
+  confidence: number;
+  company: string;
+  domain: string;
+  industry: string;
+  companySize: string;
+  country: string;
+  city: string;
+  linkedinUrl: string;
+  twitter: string;
+  phone: string;
+  technologies: string[];
+  source: 'pdl' | 'hunter';
+  selected: boolean;
+  status: 'new' | 'saved' | 'enrolled';
+}
+
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  const batches = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    batches.push(items.slice(i, i + concurrency));
+  }
+  for (const batch of batches) {
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
 
 const router = express.Router();
 
@@ -52,6 +97,115 @@ router.post("/discover", async (req: AuthRequest, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+router.post("/search-people", async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.uid;
+    const { project_id, projectId, filters, limit = 10 } = req.body;
+    const pId = project_id || projectId;
+
+    if (!userId) return res.status(401).json({ error: "Auth required" });
+
+    console.log('[Search People] Starting pipeline for project:', pId);
+
+    // Step 1: Discover Businesses (Hunter Discover)
+    const discoveryResult = await discoverCompanies(pId, userId, filters);
+    const companies = discoveryResult?.companies || [];
+    
+    if (companies.length === 0) {
+      return res.json({ people: [], companies: 0, status: 'no_companies_found' });
+    }
+
+    console.log(`[Search People] Step 1 Complete: Found ${companies.length} companies.`);
+
+    // Step 2: Search People at each Domain
+    // We run this with controlled concurrency to avoid hitting rate limits
+    const allPeople: PersonLead[] = [];
+    const domains = companies.map((c: any) => c.domain).filter(Boolean);
+
+    const personResults = await runWithConcurrency(domains, 3, async (domain) => {
+      const f = filters as any;
+      return await searchPeopleAtDomain(pId as string, userId as string, domain, {
+        department: f?.department,
+        seniority: f?.seniority?.[0], // Hunter/PDL take string seniority
+      });
+    });
+
+    personResults.forEach(people => allPeople.push(...people));
+
+    console.log(`[Search People] Pipeline complete: ${allPeople.length} unique people found across ${companies.length} companies.`);
+
+    res.json({
+      people: allPeople,
+      metadata: {
+        companiesProcessed: companies.length,
+        totalFound: allPeople.length,
+        sourceBreakdown: {
+          pdl: allPeople.filter(p => p.source === 'pdl').length,
+          hunter: allPeople.filter(p => p.source === 'hunter').length,
+        }
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[Search People] Pipeline ERROR:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+async function searchPeopleAtDomain(projectId: string, userId: string, domain: string, options: any): Promise<PersonLead[]> {
+  try {
+    // Try PDL first (if API key exists)
+    const pdlResults = await searchPDL(projectId, {
+      domain,
+      department: options.department,
+      seniority: options.seniority,
+      limit: 5
+    });
+
+    if (pdlResults.length > 0) return pdlResults;
+
+    // Fallback to Hunter Domain Search
+    const hunterData = await domainSearch(projectId, userId, domain, {
+      type: 'personal',
+      seniority: options.seniority,
+      department: options.department,
+      limit: 10
+    });
+
+    if (!hunterData?.emails || hunterData.emails.length === 0) return [];
+
+    return hunterData.emails.map((e: any) => ({
+      id: crypto.randomUUID(),
+      type: 'person' as const,
+      firstName: e.first_name || '',
+      lastName: e.last_name || '',
+      fullName: [e.first_name, e.last_name].filter(Boolean).join(' ') || 'Unknown',
+      email: e.value || '',
+      title: e.position || '',
+      department: e.department || '',
+      seniority: e.seniority || '',
+      confidence: e.confidence || 0,
+      company: hunterData.organization || '',
+      domain: domain,
+      industry: '',
+      companySize: '',
+      country: '',
+      city: '',
+      linkedinUrl: e.linkedin || '',
+      twitter: e.twitter || '',
+      phone: e.phone_number || '',
+      technologies: [],
+      source: 'hunter' as const,
+      selected: true,
+      status: 'new' as const,
+    }));
+
+  } catch (err: any) {
+    console.error(`[Search People @ ${domain}] Error:`, err.message);
+    return [];
+  }
+}
 
 router.post("/domain-search", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
@@ -131,7 +285,7 @@ router.post("/ai-extract", async (req: AuthRequest, res) => {
     let text = "";
 
     if (GEMINI_KEY) {
-      const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
+      const ai = new GoogleGenAI({ apiKey: GEMINI_KEY as string });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `User Request: ${prompt}\n\nExisting ICP Context for this project:\n${JSON.stringify(icpContext || {})}`,

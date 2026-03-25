@@ -171,25 +171,29 @@ export default function OutreachLeadFinder() {
     setIsSearching(true);
     setErrorMsg(null);
     setSelectedIds(new Set());
+    setSearchProgress(0);
     startLoadingTimer();
     try {
-      const data = await api.hunterDiscover(searchPrompt || 'Search Query', {
+      // Step 1: Initial discovery
+      setSearchProgress(25);
+      
+      const data = await api.hunterSearchPeople({
         ...params,
-        limit,
         excludeExisting,
         exclusionListIds
-      });
+      }, limit);
+
       if (data.error) throw new Error(data.error);
       
-      const mapped = (data.companies || []).map((c: any) => ({
-        ...c,
-        id: c.domain || Math.random().toString(36).substr(2, 9),
-        display_name: c.name || c.domain,
-        type: 'company'
+      const people = data.people || [];
+      const mapped = people.map((p: any) => ({
+        ...p,
+        display_name: p.fullName || p.email,
+        type: 'person'
       }));
 
       setResults(mapped);
-      toast.success(`Found ${mapped.length} matching results`);
+      toast.success(`Found ${mapped.length} matching leads across ${data.metadata?.companiesProcessed || 0} companies`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Discovery engine failed');
       toast.error(err.message || 'Discovery engine failed');
@@ -238,17 +242,18 @@ export default function OutreachLeadFinder() {
 
   const handleBulkSave = async (listId?: string) => {
     const toSave = results.filter(r => selectedIds.has(r.id)).map(r => ({
-      first_name: 'Lead',
-      last_name: 'Contact',
-      email: `info@${r.domain}`, // Enriched later or generic
-      company: r.name || r.domain,
+      first_name: r.firstName || '',
+      last_name: r.lastName || '',
+      email: r.email,
+      company: r.company || r.domain,
       website: r.domain,
       industry: r.industry,
-      size: r.size_range,
-      location: r.location,
+      size: r.companySize,
+      location: r.country,
+      position: r.title,
       company_domain: r.domain,
       status: 'not_enrolled',
-      tags: ['lead-finder']
+      tags: ['lead-finder', `source-${r.source}`]
     }));
 
     setIsSavingSelected(true);
@@ -269,20 +274,21 @@ export default function OutreachLeadFinder() {
     }
   };
 
-  const handleSaveContact = async (company: any) => {
+  const handleSaveContact = async (lead: any) => {
     try {
       await api.createContact({
-        first_name: 'Lead', // Hunter Discovery returns companies, usually we find people later
-        last_name: 'Contact',
-        email: `info@${company.domain}`, // Placeholder or generic
-        company: company.name || company.domain,
-        website: company.domain,
-        industry: company.industry,
-        size: company.size_range,
+        first_name: lead.firstName || '',
+        last_name: lead.lastName || '',
+        email: lead.email,
+        company: lead.company || lead.domain,
+        website: lead.domain,
+        industry: lead.industry,
+        size: lead.companySize,
+        position: lead.title,
         status: 'not_enrolled',
-        tags: ['lead-finder']
+        tags: ['lead-finder', `source-${lead.source}`]
       });
-      toast.success(`Saved ${company.name || company.domain} to CRM`);
+      toast.success(`Saved ${lead.fullName || lead.email} to CRM`);
     } catch (err: any) {
       toast.error(err.message || 'Failed to save');
     }
@@ -595,8 +601,14 @@ export default function OutreachLeadFinder() {
                     <Loader2 className="size-5 text-teal-400 animate-spin" />
                   </div>
                   <div>
-                    <h4 className="text-white font-bold leading-none mb-1">Scanning Global Databases...</h4>
-                    <p className="text-[11px] text-slate-500 font-mono tracking-widest uppercase">Crunching {aiResult?.params.industries[0]} Leads • Searching Job Titles</p>
+                    <h4 className="text-white font-bold leading-none mb-1">
+                      {searchProgress < 25 ? 'Finding relevant companies...' : 
+                       searchProgress < 75 ? 'Researching key decision makers...' : 
+                       'Verifying high-intent contacts...'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-mono tracking-widest uppercase">
+                      Targeting {aiResult?.params.industries[0] || 'Selected Industries'} • Finding {aiResult?.params.seniority?.[0] || 'Execs'}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -727,10 +739,10 @@ export default function OutreachLeadFinder() {
                           {selectedIds.size === results.length && <Check className="size-3 stroke-[4]" />}
                         </button>
                       </th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company Info</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry & Size</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Match %</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">AI Persona</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Lead Contact</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title & Dept</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Source</th>
                       <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
                     </tr>
                   </thead>
@@ -763,45 +775,45 @@ export default function OutreachLeadFinder() {
                           </td>
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
                             <div className="flex items-center gap-3">
-                              <div className="size-10 bg-black/40 rounded-xl overflow-hidden border border-white/10 group-hover:border-teal-500/30 transition-colors">
-                                <img src={item.logo} alt={item.name} className="size-full object-contain p-1" onError={(e) => (e.currentTarget.src = 'https://api.dicebear.com/7.x/initials/svg?seed=' + item.domain)} />
+                              <div className="size-10 bg-teal-500/10 rounded-xl flex items-center justify-center border border-teal-500/20 group-hover:border-teal-500/50 transition-colors">
+                                <User className="size-5 text-teal-400" />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate">{item.name}</p>
+                                <p className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate">{item.fullName}</p>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] text-slate-500 font-medium">{item.domain}</span>
-                                  {item.description && <span className="text-[10px] text-slate-600 line-clamp-1 italic">— {item.description}</span>}
+                                  <Mail className="size-3 text-slate-600" />
+                                  <span className="text-[10px] text-slate-500 font-medium truncate">{item.email}</span>
                                 </div>
                               </div>
                             </div>
                           </td>
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
-                            <div className="flex flex-col gap-1.5">
+                            <div className="flex flex-col gap-1">
+                              <p className="text-xs font-bold text-slate-300 truncate max-w-[150px]">{item.title || 'Role Unknown'}</p>
                               <div className="flex items-center gap-2">
-                                <Briefcase className="size-3 text-slate-600" />
-                                <span className="text-xs text-slate-400 truncate max-w-[120px]">{item.industry || 'Technology'}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Users className="size-3 text-slate-600" />
-                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">{item.size || 'Unknown'}</span>
+                                <OutreachBadge variant="gray">{item.seniority || 'Professional'}</OutreachBadge>
+                                {item.department && <span className="text-[9px] text-slate-600 uppercase font-black">{item.department}</span>}
                               </div>
                             </div>
                           </td>
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
-                            <div className="flex items-center gap-1.5 px-2 py-1 bg-teal-500/10 border border-teal-500/20 rounded-md w-fit">
-                              <span className="text-[10px] font-black text-teal-400">{item.match_score}%</span>
+                            <div className="flex flex-col gap-1">
+                              <p className="text-xs font-bold text-white group-hover:text-teal-400 transition-colors">{item.company}</p>
+                              <div className="flex items-center gap-1.5">
+                                <Globe className="size-3 text-slate-600" />
+                                <span className="text-[10px] text-slate-500 font-medium">{item.domain}</span>
+                              </div>
                             </div>
                           </td>
                           <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
-                            <div className="flex flex-wrap gap-1 max-w-[150px]">
-                              {(item.target_personas || []).slice(0, 2).map((p: string, i: number) => (
-                                <span key={i} className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                  {p}
-                                </span>
-                              ))}
-                              {(item.target_personas || []).length > 2 && (
-                                <span className="text-[9px] text-slate-600 font-bold">+{item.target_personas.length - 2}</span>
-                              )}
+                            <div className={cn(
+                              "flex items-center gap-1.5 px-2 py-1 rounded-md w-fit border",
+                              item.source === 'pdl' 
+                                ? "bg-blue-500/10 border-blue-500/30 text-blue-400" 
+                                : "bg-teal-500/10 border-teal-500/30 text-teal-400"
+                            )}>
+                              <Database className="size-3" />
+                              <span className="text-[9px] font-black uppercase tracking-widest">{item.source}</span>
                             </div>
                           </td>
                           <td className="p-4 text-right">
@@ -914,14 +926,14 @@ export default function OutreachLeadFinder() {
                 {/* Sidebar Header */}
                 <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
                   <div className="flex items-center gap-4">
-                    <div className="size-12 bg-black rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden p-1.5 shadow-xl">
-                      <img src={selectedLead.logo} alt={selectedLead.name} className="size-full object-contain" onError={(e) => (e.currentTarget.src = 'https://api.dicebear.com/7.x/initials/svg?seed=' + selectedLead.domain)} />
+                    <div className="size-12 bg-teal-500/10 rounded-2xl border border-teal-500/20 flex items-center justify-center shadow-xl">
+                      <User className="size-6 text-teal-400" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-white leading-tight">{selectedLead.name}</h2>
+                      <h2 className="text-xl font-bold text-white leading-tight">{selectedLead.fullName}</h2>
                       <div className="flex items-center gap-2 mt-1">
-                        <Globe className="size-3 text-teal-400" />
-                        <span className="text-xs text-slate-500">{selectedLead.domain}</span>
+                        <Mail className="size-3 text-teal-400" />
+                        <span className="text-xs text-slate-500">{selectedLead.email}</span>
                       </div>
                     </div>
                   </div>
@@ -936,47 +948,73 @@ export default function OutreachLeadFinder() {
                 {/* Sidebar Content */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
                   <div className="space-y-3">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500/80">Description</h3>
-                    <p className="text-sm text-slate-400 leading-relaxed bg-white/[0.02] p-4 rounded-2xl border border-white/5">
-                      {selectedLead.description || 'No description available for this lead.'}
-                    </p>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500/80">Position Details</h3>
+                    <div className="bg-white/[0.02] p-4 rounded-2xl border border-white/5 space-y-4">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Job Title</p>
+                        <p className="text-sm font-bold text-white">{selectedLead.title || 'Professional'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Seniority</p>
+                          <OutreachBadge variant="teal">{selectedLead.seniority || 'Professional'}</OutreachBadge>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Department</p>
+                          <p className="text-sm font-bold text-white truncate">{selectedLead.department || 'General'}</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Industry</p>
-                      <p className="text-sm font-bold text-white truncate">{selectedLead.industry || 'Unknown'}</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Company</p>
+                      <p className="text-sm font-bold text-white truncate">{selectedLead.company}</p>
                     </div>
                     <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Company Size</p>
-                      <p className="text-sm font-bold text-white">{selectedLead.size || 'Unknown'}</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Domain</p>
+                      <p className="text-sm font-bold text-white truncate">{selectedLead.domain}</p>
                     </div>
                     <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Match Score</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Source Confidence</p>
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="size-4 text-teal-400" />
-                        <p className="text-sm font-bold text-white">{selectedLead.match_score}%</p>
+                        <p className="text-sm font-bold text-white">{selectedLead.confidence}%</p>
                       </div>
                     </div>
                     <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Location</p>
                       <div className="flex items-center gap-2">
                         <MapPin className="size-3 text-slate-500" />
-                        <p className="text-sm font-bold text-white truncate">{selectedLead.country || 'Global'}</p>
+                        <p className="text-sm font-bold text-white truncate">{selectedLead.city || selectedLead.country || 'Global'}</p>
                       </div>
                     </div>
-                    {selectedLead.linkedin && (
-                      <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1 col-span-2">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">LinkedIn Profile</p>
-                        <a 
-                          href={selectedLead.linkedin} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="text-sm font-bold text-teal-400 flex items-center gap-2 hover:underline"
-                        >
-                          View Official Company Page
-                          <ExternalLink className="size-3" />
-                        </a>
+                    {(selectedLead.linkedinUrl || selectedLead.twitter) && (
+                      <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-3 col-span-2">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Social Profiles</p>
+                        <div className="flex gap-4">
+                          {selectedLead.linkedinUrl && (
+                            <a 
+                              href={selectedLead.linkedinUrl} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs font-bold text-teal-400 flex items-center gap-2 hover:underline"
+                            >
+                              LinkedIn <ExternalLink className="size-3" />
+                            </a>
+                          )}
+                          {selectedLead.twitter && (
+                            <a 
+                              href={selectedLead.twitter} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs font-bold text-teal-400 flex items-center gap-2 hover:underline"
+                            >
+                              Twitter <ExternalLink className="size-3" />
+                            </a>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

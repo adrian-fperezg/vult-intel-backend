@@ -42,6 +42,7 @@
     "ioredis": "^5.10.1",
     "lucide-react": "^0.546.0",
     "papaparse": "^5.5.3",
+    "peopledatalabs": "^14.1.1",
     "pg": "^8.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
