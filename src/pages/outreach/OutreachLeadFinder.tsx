@@ -209,15 +209,16 @@ export default function OutreachLeadFinder() {
         });
 
         // Auto-save search result only if leads were found
+        const displayQuery = searchDomain.length > 40 ? searchDomain.substring(0, 40) + '...' : searchDomain;
         if (normalizedLeads.length > 0) {
           api.saveHunterSearch({
             query: `Search: ${searchDomain}`,
             extracted_params: { domain: searchDomain, ...options },
             leads: normalizedLeads
           }).then(() => fetchHistory());
-          toast.success(`Found ${normalizedLeads.length} leads for ${searchDomain}`);
+          toast.success(`Found ${normalizedLeads.length} leads for ${displayQuery}`);
         } else {
-          toast.error(`No leads found for ${searchDomain}`);
+          toast.error(`No leads found for "${displayQuery}"`);
         }
       }
     } catch (error: any) {
@@ -880,7 +881,10 @@ export default function OutreachLeadFinder() {
             </div>
             <h3 className="text-xl font-bold text-white mb-2">No leads found</h3>
             <p className="text-slate-500 max-w-sm px-6">
-              No leads found for this search. Try broadening your parameters or checking the domain spelling.
+              {results.domain.length > 60 
+                ? "No leads found for this search query. Try broadening your parameters or checking the domain spelling."
+                : `No leads found for "${results.domain}". Try broadening your parameters or checking the domain spelling.`
+              }
             </p>
           </motion.div>
         ) : !isSearching && (
