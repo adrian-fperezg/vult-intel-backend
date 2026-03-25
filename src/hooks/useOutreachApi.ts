@@ -219,6 +219,16 @@ export function useOutreachApi() {
   const hunterAiExtract = useCallback((prompt: string, icpContext?: any) => 
     post<any>('/hunter/ai-extract', { prompt, icpContext }), [post]
   );
+  
+  const fetchSavedSearches = useCallback(() => get<any[]>('/hunter/saved-searches'), [get]);
+  const fetchSavedSearchLeads = useCallback((id: string) => get<any[]>(`/hunter/saved-searches/${id}`), [get]);
+  const saveHunterSearch = useCallback((data: { query: string; extracted_params: any; leads: any[] }) => 
+    post<any>('/hunter/save-search', data), [post]
+  );
+
+  const exportToGoogleSheets = useCallback((contacts: any[]) => 
+    post<any>('/export/google-sheets', { contacts }), [post]
+  );
 
   const fetchIcp = useCallback(() => get<any>('/icp'), [get]);
   const updateIcp = useCallback((data: any) => post<any>('/icp', data), [post]);
@@ -387,6 +397,10 @@ export function useOutreachApi() {
     hunterEmailFinder,
     hunterEmailVerifier,
     hunterAiExtract,
+    fetchSavedSearches,
+    fetchSavedSearchLeads,
+    saveHunterSearch,
+    exportToGoogleSheets,
     fetchIcp,
     updateIcp,
     deleteIcp,

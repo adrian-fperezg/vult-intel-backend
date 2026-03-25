@@ -8,6 +8,7 @@ import session from "express-session";
 import { RedisStore } from "connect-redis";
 import redis from "./redis";
 import db, { initDb } from "./db";
+import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs } from "./queues/emailQueue.js";
 import {
@@ -2094,6 +2095,147 @@ app.post("/api/outreach/hunter/ai-extract", async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error("AI Extract Error:", error);
     res.status(500).json({ error: error.message || "Failed to extract parameters" });
+  }
+});
+
+app.get("/api/outreach/hunter/saved-searches", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query as { project_id?: string };
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const searches = await db.all(`
+      SELECT * FROM outreach_saved_searches 
+      WHERE project_id = ? 
+      ORDER BY created_at DESC
+    `, project_id);
+    res.json(searches);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/outreach/hunter/saved-searches/:id", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const leads = await db.all(`
+      SELECT * FROM outreach_saved_search_leads 
+      WHERE search_id = ?
+    `, req.params.id);
+    res.json(leads);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, contacts } = req.body;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    // 1. Get the primary mailbox for this project
+    const mailbox = await db.get(`
+      SELECT * FROM outreach_mailboxes 
+      WHERE project_id = ? AND status = 'active'
+      ORDER BY created_at ASC
+      LIMIT 1
+    `, project_id);
+
+    if (!mailbox) {
+      return res.status(400).json({ error: "No active Google mailbox found for this project. Please connect a Gmail account in Settings first." });
+    }
+
+    // 2. Setup Google Auth
+    const auth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+
+    // Tokens are encrypted in DB
+    const accessToken = decryptToken((mailbox as any).access_token);
+    const refreshToken = decryptToken((mailbox as any).refresh_token);
+
+    auth.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // 3. Create a new Spreadsheet
+    const title = `Vult Intel Export - ${new Date().toLocaleDateString()}`;
+    const spreadsheet = await sheets.spreadsheets.create({
+      requestBody: {
+        properties: { title },
+      },
+    });
+
+    const spreadsheetId = spreadsheet.data.spreadsheetId;
+
+    // 4. Prepare data
+    const values = [
+      ['First Name', 'Last Name', 'Email', 'Position/Title', 'Company', 'Website', 'LinkedIn', 'Verification'],
+      ...contacts.map((c: any) => [
+        c.first_name || '',
+        c.last_name || '',
+        c.email || '',
+        c.title || c.position || '',
+        c.company || '',
+        c.website || '',
+        c.linkedin || '',
+        c.verification_status || ''
+      ])
+    ];
+
+    // 5. Write data
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: spreadsheetId!,
+      range: 'Sheet1!A1',
+      valueInputOption: 'RAW',
+      requestBody: {
+        values,
+      },
+    });
+
+    res.json({ success: true, spreadsheetId, url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}` });
+  } catch (err: any) {
+    console.error("Google Sheets Export Error:", err);
+    res.status(500).json({ error: err.message || "Failed to export to Google Sheets" });
+  }
+});
+
+app.post("/api/outreach/hunter/save-search", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, query, extracted_params, leads } = req.body;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  const searchId = uuidv4();
+  try {
+    await db.transaction(async () => {
+      await db.run(`
+        INSERT INTO outreach_saved_searches (id, project_id, user_id, query, extracted_params, results_count)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, searchId, project_id, userId, query || 'Manual Search', JSON.stringify(extracted_params || {}), leads?.length || 0);
+
+      if (leads && leads.length > 0) {
+        // Bulk insert would be better but db wrapper transaction is safer for now
+        for (const lead of leads) {
+          await db.run(`
+            INSERT INTO outreach_saved_search_leads (id, search_id, email, first_name, last_name, position, confidence, verification_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, uuidv4(), searchId, lead.email, lead.first_name || '', lead.last_name || '', lead.position || '', lead.confidence || 0, lead.verification_status || '');
+        }
+      }
+    });
+
+    res.json({ success: true, searchId });
+  } catch (err: any) {
+    console.error("Save Search Error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

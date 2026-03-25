@@ -25,7 +25,8 @@ import {
   Target,
   X,
   Check,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -108,6 +109,51 @@ export default function OutreachLeadFinder() {
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [isSavingSelected, setIsSavingSelected] = useState(false);
 
+  // Search History State
+  const [savedSearches, setSavedSearches] = useState<any[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportToSheets = async () => {
+    if (!results || results.emails.length === 0) {
+      toast.error("No leads to export");
+      return;
+    }
+
+    const leadsToExport = results.emails.map(email => ({
+      ...email,
+      domain: results.domain,
+      organization: results.organization
+    }));
+
+    setIsExporting(true);
+    const loadingToast = toast.loading("Exporting results to Google Sheets...");
+    try {
+      const res = await api.exportToGoogleSheets(leadsToExport);
+      toast.success("Successfully exported to Google Sheets!", { id: loadingToast });
+      if (res.url) {
+        window.open(res.url, '_blank');
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Export failed", { id: loadingToast });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const fetchHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const data = await api.fetchSavedSearches();
+      if (data) setSavedSearches(data);
+    } catch (err) {
+      console.error("Failed to fetch history:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       if (!projectId) return;
@@ -118,6 +164,7 @@ export default function OutreachLeadFinder() {
         ]);
         setIsHunterConnected(settings.hasHunterKey);
         if (icpData) setIcp(icpData);
+        fetchHistory();
       } catch (error) {
         console.error("Initialization failed:", error);
         setIsHunterConnected(false);
@@ -141,22 +188,51 @@ export default function OutreachLeadFinder() {
 
       const data = await api.hunterDomainSearch(searchDomain, options);
       if (data) {
+        const normalizedLeads = data.emails?.map((e: any) => ({
+          first_name: e.first_name,
+          last_name: e.last_name,
+          email: e.value,
+          position: e.position,
+          confidence: e.confidence,
+          verification_status: e.verification_status
+        })) || [];
+
         setResults({
           domain: data.domain,
           organization: data.organization || searchDomain,
-          emails: data.emails?.map((e: any) => ({
-            first_name: e.first_name,
-            last_name: e.last_name,
-            email: e.value,
-            position: e.position,
-            confidence: e.confidence,
-            verification_status: e.verification_status
-          })) || []
+          emails: normalizedLeads
         });
-        toast.success(`Found ${data.emails?.length || 0} leads for ${searchDomain}`);
+
+        // Auto-save search result
+        api.saveHunterSearch({
+          query: `Search: ${searchDomain}`,
+          extracted_params: { domain: searchDomain, ...options },
+          leads: normalizedLeads
+        }).then(() => fetchHistory());
+
+        toast.success(`Found ${normalizedLeads.length} leads for ${searchDomain}`);
       }
     } catch (error: any) {
       toast.error(error.message || "Domain search failed");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const loadSavedSearch = async (search: any) => {
+    setIsSearching(true);
+    setResults(null);
+    setDomain(search.query.replace('Search: ', ''));
+    try {
+      const leads = await api.fetchSavedSearchLeads(search.id);
+      setResults({
+        domain: search.query.replace('Search: ', ''),
+        organization: search.query.replace('Search: ', ''), // fallback
+        emails: leads
+      });
+      setIsHistoryOpen(false);
+    } catch (err) {
+      toast.error("Failed to load search results");
     } finally {
       setIsSearching(false);
     }
@@ -300,6 +376,11 @@ export default function OutreachLeadFinder() {
       {/* Header & Search */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         <div className="space-y-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col md:flex-row md:items-center justify-between gap-6"
+        >
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
               <Zap className="size-8 text-teal-400" />
@@ -309,6 +390,17 @@ export default function OutreachLeadFinder() {
               Search domains or use AI to discover new leads and their verified contact information.
             </p>
           </div>
+          <button 
+            onClick={() => {
+              setIsHistoryOpen(true);
+              fetchHistory();
+            }}
+            className="flex items-center gap-2 px-6 py-3 bg-white/5 border border-white/5 hover:border-white/10 hover:bg-white/10 rounded-2xl text-sm font-bold text-slate-300 transition-all group"
+          >
+            <History className="size-4 text-slate-500 group-hover:text-teal-400 transition-colors" />
+            Search Library
+          </button>
+        </motion.div>
 
           {/* ICP PROFILE SECTION */}
           <div className="bg-surface-dark border border-white/5 rounded-3xl overflow-hidden">
@@ -615,6 +707,14 @@ export default function OutreachLeadFinder() {
                   </motion.div>
                 )}
                 <button 
+                  onClick={handleExportToSheets}
+                  disabled={isExporting}
+                  className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg text-xs font-bold text-emerald-400 border border-emerald-500/20 transition-all flex items-center gap-2"
+                >
+                  {isExporting ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+                  Export
+                </button>
+                <button 
                   onClick={handleSelectAll}
                   className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-slate-400 border border-white/10 transition-colors"
                 >
@@ -694,6 +794,93 @@ export default function OutreachLeadFinder() {
               Search for a company domain or use the AI Assistant to get started.
             </p>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* SEARCH HISTORY DRAWER */}
+      <AnimatePresence>
+        {isHistoryOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsHistoryOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+            />
+            {/* Drawer */}
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-surface-dark border-l border-white/10 z-[101] flex flex-col shadow-2xl"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <History className="size-5 text-teal-400" />
+                    Search Library
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Your recent lead searches</p>
+                </div>
+                <button 
+                  onClick={() => setIsHistoryOpen(false)}
+                  className="size-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-slate-400 transition-colors"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                {isLoadingHistory ? (
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="size-8 text-teal-500 animate-spin mb-4" />
+                    <p className="text-sm text-slate-500 font-medium">Loading history...</p>
+                  </div>
+                ) : savedSearches.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center px-10">
+                    <div className="size-20 bg-white/5 rounded-full flex items-center justify-center mb-6 mx-auto">
+                      <Search className="size-10 text-slate-700" />
+                    </div>
+                    <p className="text-slate-500 text-sm font-medium">No saved searches yet. Run your first search to see it here.</p>
+                  </div>
+                ) : (
+                  savedSearches.map((search) => (
+                    <button
+                      key={search.id}
+                      onClick={() => loadSavedSearch(search)}
+                      className="w-full p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-2xl transition-all text-left group"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Globe className="size-4 text-slate-400" />
+                          <h4 className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate max-w-[200px]">
+                            {search.query.replace('Search: ', '')}
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-600 bg-white/5 px-2 py-0.5 rounded uppercase">
+                           {search.results_count} Leads
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mt-4">
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium">
+                          <span>{new Date(search.created_at || Date.now()).toLocaleDateString()}</span>
+                          <span>•</span>
+                          <span>{new Date(search.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div className="size-6 bg-teal-500/10 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ArrowRight className="size-3 text-teal-400" />
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>

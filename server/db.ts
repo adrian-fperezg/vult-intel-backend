@@ -347,6 +347,47 @@ export const initDb = async () => {
       )
     `);
 
+    // 14. Hunter Usage Log
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS hunter_usage_log (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        endpoint TEXT,
+        credits_used INTEGER,
+        status TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 15. Saved Searches
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_saved_searches (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        query TEXT NOT NULL,
+        extracted_params TEXT, -- JSON string
+        results_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 16. Saved Search Leads (Results cache)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_saved_search_leads (
+        id TEXT PRIMARY KEY,
+        search_id TEXT NOT NULL REFERENCES outreach_saved_searches(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        first_name TEXT,
+        last_name TEXT,
+        position TEXT,
+        confidence INTEGER,
+        verification_status TEXT,
+        UNIQUE(search_id, email)
+      )
+    `);
+
     console.log("✅ Database initialized successfully");
   } catch (err) {
     console.error("❌ Database initialization failed:", err);

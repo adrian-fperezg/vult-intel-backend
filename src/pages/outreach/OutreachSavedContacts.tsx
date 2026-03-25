@@ -97,6 +97,33 @@ export default function OutreachSavedContacts() {
     }
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportToSheets = async () => {
+    const contactsToExport = selectedIds.size > 0 
+      ? filteredContacts.filter(c => selectedIds.has(c.id))
+      : filteredContacts;
+
+    if (contactsToExport.length === 0) {
+      toast.error("No contacts to export");
+      return;
+    }
+
+    setIsExporting(true);
+    const loadingToast = toast.loading("Exporting to Google Sheets...");
+    try {
+      const res = await api.exportToGoogleSheets(contactsToExport);
+      toast.success("Successfully exported to Google Sheets!", { id: loadingToast });
+      if (res.url) {
+        window.open(res.url, '_blank');
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Export failed. Make sure you have connected a Gmail mailbox with sufficient permissions.", { id: loadingToast });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
@@ -155,6 +182,14 @@ export default function OutreachSavedContacts() {
               className="pl-10 pr-4 py-2 bg-black/40 border border-white/5 rounded-xl text-sm text-white focus:outline-none focus:border-teal-500/30 transition-all w-64"
             />
           </div>
+          <button 
+            onClick={handleExportToSheets}
+            disabled={isExporting || filteredContacts.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs font-bold text-emerald-400 hover:bg-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            Export to Sheets
+          </button>
           <TealButton size="sm">
             <Plus className="size-4" /> Add Contact
           </TealButton>
@@ -180,6 +215,15 @@ export default function OutreachSavedContacts() {
               </button>
               <button className="text-xs font-bold text-slate-400 hover:text-white transition-colors flex items-center gap-2">
                 <Tag className="size-3.5" /> Bulk Tag
+              </button>
+              <div className="h-4 w-px bg-teal-500/20" />
+              <button 
+                onClick={handleExportToSheets}
+                disabled={isExporting}
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-2"
+              >
+                {isExporting ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3.5" />}
+                Export to Sheets
               </button>
             </div>
             <button 
