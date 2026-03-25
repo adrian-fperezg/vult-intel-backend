@@ -111,16 +111,26 @@ export async function emailVerifier(projectId: string, userId: string, email: st
   }
 }
 
-export async function discoverCompanies(projectId: string, userId: string, query: string, filters: any = {}) {
+export async function discoverCompanies(projectId: string, userId: string, filters: any = {}) {
   try {
     const apiKey = await getApiKey(projectId);
-    const params = { query, ...filters, api_key: apiKey };
-    // Assuming /companies is the discovery endpoint based on latest Hunter v2 info
-    const data = await executeRequestWithRetry(`${HUNTER_API_URL}/companies`, params);
+    if (!apiKey) throw new Error("Hunter API key is missing or invalid");
+
+    // Remove undefined/null values
+    const cleanFilters = Object.fromEntries(
+      Object.entries(filters).filter(([_, v]) => v != null && v !== '')
+    ) as Record<string, string>;
+
+    const params = { ...cleanFilters, api_key: apiKey };
+    
+    console.log(`[Hunter Lib] Calling /companies/search with params:`, JSON.stringify({ ...params, api_key: '***' }));
+    
+    const data = await executeRequestWithRetry(`${HUNTER_API_URL}/companies/search`, params);
     
     logUsage(projectId, userId, 'discover', 1, 'success');
     return data;
   } catch (err: any) {
+    console.error(`[Hunter Lib] Discover Error:`, err.message);
     logUsage(projectId, userId, 'discover', 0, 'error');
     throw err;
   }

@@ -22,17 +22,33 @@ router.get("/test", (req, res) => {
 // ─── CORE HUNTER ROUTES ───────────────────────────────────────────────────────
 
 router.post("/discover", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { project_id, projectId, query, filters } = req.body;
-  const pId = project_id || projectId;
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-
   try {
-    const data = await discoverCompanies(pId, userId, query, filters || {});
-    res.json(data);
+    const userId = req.user?.uid;
+    const { project_id, projectId, query, keywords, industry, sizeRange, country, city, technology, limit, filters } = req.body;
+    const pId = project_id || projectId;
+
+    if (!userId) return res.status(401).json({ error: "Auth required" });
+
+    console.log('[Hunter Discover] Request body:', JSON.stringify(req.body));
+    console.log('[Hunter Discover] projectId:', pId);
+
+    // Merge everything into a filters object for the library call
+    const combinedFilters = {
+      ...(filters || {}),
+      query: query || keywords,
+      industry,
+      size_range: sizeRange,
+      country,
+      city,
+      technology,
+      limit
+    };
+
+    const result = await discoverCompanies(pId, userId, combinedFilters);
+    console.log('[Hunter Discover] Result count:', result?.companies?.length);
+    res.json(result);
   } catch (error: any) {
-    console.error('[HUNTER_API_ERROR]:', error.response?.data || error.message);
+    console.error('[Hunter Discover] ERROR:', error.message, error.stack);
     res.status(500).json({ error: error.message });
   }
 });

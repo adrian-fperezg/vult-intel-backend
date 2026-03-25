@@ -1967,14 +1967,12 @@ app.use((req, res) => {
   });
 });
 
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('[GLOBAL CRASH CAUGHT]:', err.stack || err);
-  
-  const status = err.status || err.statusCode || 500;
-  res.status(status).json({
-    error: "Internal Server Error",
-    message: err.message || "An unexpected error occurred",
-    ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error('[Express Error]', err.message, err.stack);
+  res.status(500).json({
+    error: err.message || 'Internal server error',
+    path: req.path,
+    method: req.method,
   });
 });
 
