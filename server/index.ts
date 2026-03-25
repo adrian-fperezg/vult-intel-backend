@@ -22,7 +22,7 @@ import {
   saveTokens,
   syncMailboxesFromRedis,
 } from "./oauth.js";
-import { domainSearch, emailFinder, emailVerifier, getAccountInformation } from "./lib/outreach/hunter.js";
+import { domainSearch, emailFinder, emailVerifier, getAccountInformation, discoverCompanies } from "./lib/outreach/hunter.js";
 import { syncMailbox } from "./lib/outreach/gmailSync.js";
 
 const app = express();
@@ -1855,6 +1855,22 @@ app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
 });
 
 // ─── HUNTER.IO INTEGRATION ────────────────────────────────────────────────────
+
+app.post("/api/outreach/hunter/discover", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, projectId, query, filters } = req.body;
+  const pId = project_id || projectId;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const data = await discoverCompanies(pId, userId, query, filters || {});
+    res.json(data);
+  } catch (error: any) {
+    console.error('[HUNTER_API_ERROR]:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.post("/api/outreach/hunter/domain-search", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

@@ -111,6 +111,21 @@ export async function emailVerifier(projectId: string, userId: string, email: st
   }
 }
 
+export async function discoverCompanies(projectId: string, userId: string, query: string, filters: any = {}) {
+  try {
+    const apiKey = await getApiKey(projectId);
+    const params = { query, ...filters, api_key: apiKey };
+    // Assuming /companies is the discovery endpoint based on latest Hunter v2 info
+    const data = await executeRequestWithRetry(`${HUNTER_API_URL}/companies`, params);
+    
+    logUsage(projectId, userId, 'discover', 1, 'success');
+    return data;
+  } catch (err: any) {
+    logUsage(projectId, userId, 'discover', 0, 'error');
+    throw err;
+  }
+}
+
 export async function getAccountInformation(projectId: string) {
   const apiKey = await getApiKey(projectId);
   const data = await executeRequestWithRetry(`${HUNTER_API_URL}/account`, { api_key: apiKey });

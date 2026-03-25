@@ -26,7 +26,10 @@ import {
   X,
   Check,
   ArrowRight,
-  Download
+  Download,
+  XCircle,
+  Save,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -35,12 +38,14 @@ import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 interface HunterLead {
+  email: string;
   first_name: string;
   last_name: string;
-  email: string;
   position: string;
   confidence: number;
-  verification_status?: string;
+  verification_status: string;
+  organization?: string;
+  domain?: string;
 }
 
 interface DomainResult {
@@ -117,6 +122,22 @@ export default function OutreachLeadFinder() {
   const [savedSearches, setSavedSearches] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [leadCount, setLeadCount] = useState<number>(10);
+  const [hunterCredits, setHunterCredits] = useState<{ used: number; available: number } | null>(null);
+
+  const fetchHunterAccount = async () => {
+    try {
+      const data = await api.fetchHunterAccount();
+      if (data && data.calls) {
+        setHunterCredits({
+          used: data.calls.used,
+          available: data.calls.available
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch Hunter account:", err);
+    }
+  };
 
   const handleExportToSheets = async () => {
     if (!results || results.emails.length === 0) {
@@ -169,6 +190,7 @@ export default function OutreachLeadFinder() {
         setIsHunterConnected(settings.hasHunterKey);
         if (icpData) setIcp(icpData);
         fetchHistory();
+        fetchHunterAccount();
       } catch (error) {
         console.error("Initialization failed:", error);
         setIsHunterConnected(false);
@@ -177,60 +199,113 @@ export default function OutreachLeadFinder() {
     init();
   }, [projectId, api]);
 
-  const handleSearch = async (targetDomain?: string, overrideOptions?: { seniority?: string[] }) => {
-    const searchDomain = targetDomain || domain;
-    if (!searchDomain) return;
+  const executeSearch = async (params: { 
+    type: 'domain' | 'discovery', 
+    value: string, 
+    options?: { seniority?: string[], jobTitles?: string[], industries?: string[] } 
+  }) => {
+    const { type, value, options } = params;
+    if (!value && type === 'domain') return;
     
     setIsSearching(true);
     setSelectedEmails(new Set());
+    setResults(null);
+
     try {
-      // Pass options for more specific search if needed
-      // Use overrideOptions if provided (e.g. from AI extraction), otherwise use global state
-      const options = {
-        seniority: overrideOptions?.seniority 
-          ? overrideOptions.seniority.join(',') 
-          : (selectedSeniority.length > 0 ? selectedSeniority.join(',') : undefined),
-        department: 'sales,marketing,engineering' // Example preference
+      const searchOptions = {
+        limit: leadCount,
+        seniority: options?.seniority?.join(',') || (selectedSeniority.length > 0 ? selectedSeniority.join(',') : undefined),
+        job_title: options?.jobTitles?.join(',') || (jobTitles.length > 0 ? jobTitles.join(',') : undefined),
+        department: 'sales,marketing,engineering'
       };
 
-      const data = await api.hunterDomainSearch(searchDomain, options);
-      if (data) {
-        const normalizedLeads = data.emails?.map((e: any) => ({
-          first_name: e.first_name,
-          last_name: e.last_name,
-          email: e.value,
-          position: e.position,
-          confidence: e.confidence,
-          verification_status: e.verification_status
-        })) || [];
+      let normalizedLeads: HunterLead[] = [];
+      let displayDomain = value;
+      let displayOrg = '';
 
-        // If no leads found, we still want to show an empty state, not a query-as-result
-        setResults({
-          domain: data.domain || searchDomain,
-          organization: data.organization || (normalizedLeads.length > 0 ? searchDomain : ''),
-          emails: normalizedLeads
-        });
-
-        // Auto-save search result only if leads were found
-        const displayQuery = searchDomain.length > 40 ? searchDomain.substring(0, 40) + '...' : searchDomain;
-        if (normalizedLeads.length > 0) {
-          api.saveHunterSearch({
-            query: `Search: ${searchDomain}`,
-            extracted_params: { domain: searchDomain, ...options },
-            leads: normalizedLeads
-          }).then(() => fetchHistory());
-          toast.success(`Found ${normalizedLeads.length} leads for ${displayQuery}`);
-        } else {
-          toast.error(`No leads found for "${displayQuery}"`);
+      if (type === 'domain') {
+        const data = await api.hunterDomainSearch(value, searchOptions);
+        if (data) {
+          displayDomain = data.domain || value;
+          displayOrg = data.organization || '';
+          normalizedLeads = data.emails?.map((e: any) => ({
+            first_name: e.first_name,
+            last_name: e.last_name,
+            email: e.value,
+            position: e.position,
+            confidence: e.confidence,
+            verification_status: e.verification_status,
+            organization: data.organization,
+            domain: data.domain
+          })) || [];
+        }
+      } else {
+        // Discovery mode
+        const filters = {
+          industry: options?.industries?.join(',') || (icp.industries.length > 0 ? icp.industries.join(',') : undefined),
+          limit: Math.min(leadCount, 20) // Discover API limit per request
+        };
+        const discoData = await api.hunterDiscover(value, filters);
+        
+        if (discoData && discoData.companies && discoData.companies.length > 0) {
+          // For discovery, we might get multiple companies. 
+          // To keep it simple, let's take the first few and do a domain search for them if needed,
+          // OR just show the companies. But the user wants "leads".
+          // Let's search the top companies for leads matching the job titles.
+          const topCompanies = discoData.companies.slice(0, 3);
+          const leadPromises = topCompanies.map((c: any) => 
+            api.hunterDomainSearch(c.domain, searchOptions).catch(() => null)
+          );
+          
+          const results = await Promise.all(leadPromises);
+          results.forEach((data: any) => {
+            if (data && data.emails) {
+              const leads = data.emails.map((e: any) => ({
+                first_name: e.first_name,
+                last_name: e.last_name,
+                email: e.value,
+                position: e.position,
+                confidence: e.confidence,
+                verification_status: e.verification_status,
+                organization: data.organization,
+                domain: data.domain
+              }));
+              normalizedLeads = [...normalizedLeads, ...leads];
+            }
+          });
+          displayOrg = `Discovery: ${value}`;
         }
       }
+
+      setResults({
+        domain: displayDomain,
+        organization: displayOrg,
+        emails: normalizedLeads
+      });
+
+      if (normalizedLeads.length > 0) {
+        api.saveHunterSearch({
+          query: `${type === 'domain' ? 'Domain' : 'Discovery'}: ${value}`,
+          extracted_params: { value, ...searchOptions, type },
+          leads: normalizedLeads
+        }).then(() => fetchHistory());
+        
+        const displayVal = value.length > 40 ? value.substring(0, 40) + '...' : value;
+        toast.success(`Found ${normalizedLeads.length} leads for ${displayVal}`);
+        fetchHunterAccount(); // Refresh credits
+      } else {
+        const displayVal = value.length > 40 ? value.substring(0, 40) + '...' : value;
+        toast.error(`No leads found for "${displayVal}"`);
+      }
     } catch (error: any) {
-      toast.error(error.message || "Domain search failed");
-      setResults({ domain: searchDomain, organization: '', emails: [] });
+      toast.error(error.message || "Search failed");
+      setResults({ domain: value, organization: '', emails: [] });
     } finally {
       setIsSearching(false);
     }
   };
+
+  const handleSearch = () => executeSearch({ type: 'domain', value: domain });
 
   const loadSavedSearch = async (search: any) => {
     setIsSearching(true);
@@ -277,14 +352,15 @@ export default function OutreachLeadFinder() {
   const confirmAiParams = () => {
     if (!extractedParams) return;
     
-    const { keywords, seniority } = extractedParams.params;
+    const { searchType } = extractedParams;
+    const { keywords, seniority, jobTitles, industries } = extractedParams.params;
     
-    // Trigger search directly using extracted params, NOT updating the manual search 'domain' state
-    if (keywords) {
-      handleSearch(keywords, { seniority });
-    } else {
-      toast.success("Ready! Parameters extracted successfully.");
-    }
+    // Trigger search directly using extracted params
+    executeSearch({ 
+      type: searchType === 'company_discovery' ? 'discovery' : 'domain', 
+      value: keywords || '', 
+      options: { seniority, jobTitles, industries }
+    });
     
     // Reset AI panel
     setAiStatus('idle');
@@ -351,8 +427,8 @@ export default function OutreachLeadFinder() {
         last_name: l.last_name || '',
         email: l.email,
         title: l.position,
-        company: results.organization,
-        website: results.domain,
+        company: l.organization || results.organization,
+        website: l.domain || results.domain,
         verification_status: l.verification_status,
         confidence_score: l.confidence,
         source_detail: 'Hunter Lead Finder'
@@ -366,6 +442,17 @@ export default function OutreachLeadFinder() {
     } finally {
       setIsSavingSelected(false);
     }
+  };
+
+  const ignoreLead = (email: string) => {
+    if (!results) return;
+    setResults({
+      ...results,
+      emails: results.emails.filter(e => e.email !== email)
+    });
+    const next = new Set(selectedEmails);
+    next.delete(email);
+    setSelectedEmails(next);
   };
 
   if (isHunterConnected === false) {
@@ -407,16 +494,46 @@ export default function OutreachLeadFinder() {
               Search domains or use AI to discover new leads and their verified contact information.
             </p>
           </div>
-          <button 
-            onClick={() => {
-              setIsHistoryOpen(true);
-              fetchHistory();
-            }}
-            className="flex items-center gap-2 px-6 py-3 bg-white/5 border border-white/5 hover:border-white/10 hover:bg-white/10 rounded-2xl text-sm font-bold text-slate-300 transition-all group"
-          >
-            <History className="size-4 text-slate-500 group-hover:text-teal-400 transition-colors" />
-            Search Library
-          </button>
+          
+          <div className="flex items-center gap-4">
+            {hunterCredits && (
+              <div className="px-4 py-2 bg-white/5 border border-white/5 rounded-2xl flex items-center gap-3">
+                <div className="size-8 bg-amber-500/10 rounded-lg flex items-center justify-center">
+                  <Zap className="size-4 text-amber-400" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Credits</span>
+                  <span className="text-xs font-black text-white">{hunterCredits.available}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 bg-white/5 border border-white/5 rounded-2xl px-4 py-2.5">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Leads:</span>
+              <select 
+                value={leadCount}
+                onChange={(e) => setLeadCount(Number(e.target.value))}
+                className="bg-transparent text-xs font-bold text-teal-400 focus:outline-none cursor-pointer appearance-none min-w-[30px]"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <ChevronDown className="size-3 text-slate-500" />
+            </div>
+
+            <button 
+              onClick={() => {
+                setIsHistoryOpen(true);
+                fetchHistory();
+              }}
+              className="flex items-center gap-2 px-6 py-3 bg-white/5 border border-white/5 hover:border-white/10 hover:bg-white/10 rounded-2xl text-sm font-bold text-slate-300 transition-all group"
+            >
+              <History className="size-4 text-slate-500 group-hover:text-teal-400 transition-colors" />
+              Search Library
+            </button>
+          </div>
         </motion.div>
 
           {/* ICP PROFILE SECTION */}
@@ -469,13 +586,6 @@ export default function OutreachLeadFinder() {
                       onChange={(items) => setIcp({ ...icp, countries: items })} 
                       placeholder="e.g. USA, Germany"
                     />
-                    <IcpField 
-                      icon={<Cpu className="size-3" />}
-                      label="Technologies" 
-                      items={icp.technologies} 
-                      onChange={(items) => setIcp({ ...icp, technologies: items })} 
-                      placeholder="e.g. React, Salesforce"
-                    />
                   </div>
 
                   <div className="space-y-3">
@@ -483,7 +593,7 @@ export default function OutreachLeadFinder() {
                        <Users className="size-3" /> Company Size
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {COMPANY_SIZE_OPTIONS.map(size => (
+                      {["1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10000+"].map(size => (
                         <button
                           key={size}
                           onClick={() => {
@@ -513,6 +623,21 @@ export default function OutreachLeadFinder() {
                       Cancel
                     </button>
                     <button 
+                      onClick={() => executeSearch({ 
+                        type: 'discovery', 
+                        value: icp.keywords || 'prospective leads',
+                        options: { 
+                          seniority: icp.seniority, 
+                          jobTitles: icp.job_titles, 
+                          industries: icp.industries 
+                        }
+                      })}
+                      className="px-6 py-2 bg-teal-600/20 hover:bg-teal-600/40 text-teal-400 text-xs font-bold rounded-xl border border-teal-500/30 transition-all flex items-center gap-2"
+                    >
+                      <Target className="size-3" />
+                      Search with ICP
+                    </button>
+                    <button 
                       onClick={saveIcp}
                       disabled={isIcpSaving}
                       className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2"
@@ -534,13 +659,13 @@ export default function OutreachLeadFinder() {
                 placeholder="Enter domain (e.g. stripe.com)"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch(domain)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 maxLength={500}
                 className="w-full bg-surface-dark border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white focus:outline-none focus:border-teal-500/50 transition-all placeholder:text-slate-600 shadow-inner"
               />
             </div>
             <button 
-              onClick={() => handleSearch(domain)}
+              onClick={() => handleSearch()}
               disabled={isSearching || !domain}
               className="px-8 py-4 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center gap-2"
             >
@@ -831,6 +956,13 @@ export default function OutreachLeadFinder() {
                       {selectedEmails.has(lead.email) && <Check className="size-3 text-white" />}
                     </div>
                     <div className="flex items-center gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); ignoreLead(lead.email); }}
+                        className="p-1 hover:bg-red-500/10 rounded text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Ignore Lead"
+                      >
+                        <XCircle className="size-4" />
+                      </button>
                       {lead.confidence >= 80 ? (
                         <ShieldCheck className="size-5 text-emerald-500" />
                       ) : (
