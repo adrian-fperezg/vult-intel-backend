@@ -177,7 +177,7 @@ export default function OutreachLeadFinder() {
     init();
   }, [projectId, api]);
 
-  const handleSearch = async (targetDomain?: string) => {
+  const handleSearch = async (targetDomain?: string, overrideOptions?: { seniority?: string[] }) => {
     const searchDomain = targetDomain || domain;
     if (!searchDomain) return;
     
@@ -185,8 +185,11 @@ export default function OutreachLeadFinder() {
     setSelectedEmails(new Set());
     try {
       // Pass options for more specific search if needed
+      // Use overrideOptions if provided (e.g. from AI extraction), otherwise use global state
       const options = {
-        seniority: selectedSeniority.length > 0 ? selectedSeniority.join(',') : undefined,
+        seniority: overrideOptions?.seniority 
+          ? overrideOptions.seniority.join(',') 
+          : (selectedSeniority.length > 0 ? selectedSeniority.join(',') : undefined),
         department: 'sales,marketing,engineering' // Example preference
       };
 
@@ -274,24 +277,19 @@ export default function OutreachLeadFinder() {
   const confirmAiParams = () => {
     if (!extractedParams) return;
     
-    // Apply extracted params to UI
-    if (extractedParams.params.keywords) setDomain(extractedParams.params.keywords);
-    if (extractedParams.params.jobTitles.length > 0) setJobTitles(extractedParams.params.jobTitles);
-    if (extractedParams.params.seniority.length > 0) {
-       setSelectedSeniority(extractedParams.params.seniority.map(s => s.toLowerCase()));
+    const { keywords, seniority } = extractedParams.params;
+    
+    // Trigger search directly using extracted params, NOT updating the manual search 'domain' state
+    if (keywords) {
+      handleSearch(keywords, { seniority });
+    } else {
+      toast.success("Ready! Parameters extracted successfully.");
     }
     
     // Reset AI panel
     setAiStatus('idle');
     setExtractedParams(null);
     setAiPrompt('');
-    
-    // Trigger search
-    if (extractedParams.params.keywords) {
-      handleSearch(extractedParams.params.keywords);
-    } else {
-      toast.success("Ready! You can now refine the search locally.");
-    }
   };
 
   const saveIcp = async () => {
