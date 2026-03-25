@@ -1856,6 +1856,10 @@ app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
 
 // ─── HUNTER.IO INTEGRATION ────────────────────────────────────────────────────
 
+app.get("/api/outreach/hunter/test", (req, res) => {
+  res.json({ ok: true, message: 'Hunter router is mounted and reachable' });
+});
+
 app.post("/api/outreach/hunter/discover", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, projectId, query, filters } = req.body;
@@ -2187,6 +2191,16 @@ aiKeysCheck();
 syncMailboxesFromRedis();
 
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
+
+// Catch-all 404 handler (must be last)
+app.use((req, res) => {
+  console.warn(`[404 NOT FOUND]: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: "Not Found",
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+    path: req.originalUrl
+  });
+});
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('[GLOBAL CRASH CAUGHT]:', err.stack || err);
