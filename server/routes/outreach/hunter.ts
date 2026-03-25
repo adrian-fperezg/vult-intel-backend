@@ -150,7 +150,8 @@ router.post("/ai-extract", async (req: AuthRequest, res) => {
               seniority: string[] (array of levels: "junior", "senior", "manager", "director", "executive"),
               keywords: string (fallback query),
               sizeRange: string (e.g. "11,50" or "501,1000"),
-              country: string
+              country: string,
+              revenue: string (e.g. "$1M-$10M" or "Targeting high revenue")
             }
           
           ALWAYS return arrays for jobTitles, industries, and seniority, even if there is only one item.

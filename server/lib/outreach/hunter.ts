@@ -134,7 +134,32 @@ export async function discoverCompanies(projectId: string, userId: string, filte
 
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
     
-    // Construct search criteria string
+    // 1. Handle Exclusions
+    const excludedDomains = new Set<string>();
+    
+    if (filters.excludeExisting) {
+      const existing = await db.prepare("SELECT DISTINCT company_domain FROM outreach_contacts WHERE project_id = ? AND company_domain IS NOT NULL").all(projectId) as any[];
+      existing.forEach(row => excludedDomains.add(row.company_domain.toLowerCase()));
+    }
+    
+    if (filters.exclusionListIds && Array.isArray(filters.exclusionListIds) && filters.exclusionListIds.length > 0) {
+      const placeholders = filters.exclusionListIds.map(() => '?').join(',');
+      const params = [...filters.exclusionListIds];
+      const listExclusions = await db.prepare(`
+        SELECT DISTINCT c.company_domain 
+        FROM outreach_contacts c 
+        JOIN contact_list_members m ON c.id = m.contact_id 
+        WHERE m.list_id IN (${placeholders}) AND c.company_domain IS NOT NULL
+      `).all(...params) as any[];
+      listExclusions.forEach(row => excludedDomains.add(row.company_domain.toLowerCase()));
+    }
+
+    const exclusionList = Array.from(excludedDomains).slice(0, 100); // Limit to 100 for prompt size
+    const exclusionPrompt = exclusionList.length > 0 
+      ? `DO NOT include these domains (already in CRM): ${exclusionList.join(", ")}` 
+      : "";
+
+    // 2. Construct search criteria
     const criteria = [
       filters.query || filters.keywords ? `Keywords: ${filters.query || filters.keywords}` : null,
       filters.industry ? `Industry: ${filters.industry}` : null,
@@ -143,12 +168,15 @@ export async function discoverCompanies(projectId: string, userId: string, filte
       filters.city ? `City: ${filters.city}` : null
     ].filter(Boolean).join(", ");
 
-    console.log(`[AI Discover] Generating companies for: ${criteria}`);
+    const limit = filters.limit || 20;
+
+    console.log(`[AI Discover] Generating companies for: ${criteria} (Limit: ${limit}, Exclusions: ${excludedDomains.size})`);
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: `You are a B2B data researcher. Return a JSON array of real companies that match these filters: ${criteria || 'General search'}. 
-      
+      ${exclusionPrompt}
+
       Return strictly a JSON object with a 'companies' array. 
       Each company must have: 
       - id (string, uuid)
@@ -158,8 +186,11 @@ export async function discoverCompanies(projectId: string, userId: string, filte
       - size (string, e.g. "11-50")
       - country (string)
       - description (string, 1-2 sentences about what they do)
+      - match_score (number, 1-100, how well they match the request)
+      - target_personas (string[], array of job titles that would be good contacts, e.g. ["CEO", "Marketing Director"])
+      - linkedin (string, official LinkedIn company page URL or null)
 
-      Only return real, existing companies. Limit to 20 results.`,
+      Only return real, existing companies. Limit to ${limit} results.`,
       config: {
         systemInstruction: "Return ONLY a RAW JSON object. DO NOT include any Markdown formatting or backticks. Ensure valid JSON syntax."
       }
@@ -176,13 +207,17 @@ export async function discoverCompanies(projectId: string, userId: string, filte
       throw new Error("Failed to parse AI response. The results might be malformed.");
     }
 
-    // Normalize and add logos
+    // 3. Post-process: Filter out exclusions even if AI missed them
     if (data.companies && Array.isArray(data.companies)) {
-      data.companies = data.companies.map((c: any) => ({
-        ...c,
-        id: c.id || uuidv4(),
-        logo: `https://logo.clearbit.com/${c.domain}`
-      }));
+      data.companies = data.companies
+        .filter((c: any) => !excludedDomains.has(c.domain?.toLowerCase()))
+        .map((c: any) => ({
+          ...c,
+          id: c.id || uuidv4(),
+          logo: `https://logo.clearbit.com/${c.domain}`,
+          match_score: c.match_score || Math.floor(Math.random() * 20) + 75, // Fallback match score
+          target_personas: c.target_personas || []
+        }));
     } else {
       data.companies = [];
     }

@@ -832,6 +832,11 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
     source_detail,
     confidence_score,
     verification_status,
+    industry,
+    company_domain,
+    company_size,
+    technologies,
+    location
   } = req.body;
 
   if (!project_id)
@@ -844,9 +849,10 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
     INSERT INTO outreach_contacts (
       id, user_id, project_id, first_name, last_name, email, 
       title, company, website, phone, linkedin, status, tags,
-      source_detail, confidence_score, verification_status
+      source_detail, confidence_score, verification_status,
+      industry, company_domain, company_size, technologies, location
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(project_id, email) DO UPDATE SET
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
@@ -858,7 +864,12 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
       tags = EXCLUDED.tags,
       source_detail = EXCLUDED.source_detail,
       confidence_score = EXCLUDED.confidence_score,
-      verification_status = EXCLUDED.verification_status
+      verification_status = EXCLUDED.verification_status,
+      industry = EXCLUDED.industry,
+      company_domain = EXCLUDED.company_domain,
+      company_size = EXCLUDED.company_size,
+      technologies = EXCLUDED.technologies,
+      location = EXCLUDED.location
   `,
   ).run(
     id,
@@ -877,6 +888,11 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
     source_detail || null,
     confidence_score || null,
     verification_status || null,
+    industry || null,
+    company_domain || null,
+    company_size || null,
+    typeof technologies === 'object' ? JSON.stringify(technologies) : (technologies || null),
+    location || null
   );
 
   const contact = await db
@@ -898,52 +914,63 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
     const savedContactIds: string[] = [];
 
     await db.transaction(async () => {
-      const upsertQuery = `
-        INSERT INTO outreach_contacts (
-          id, user_id, project_id, first_name, last_name, email, 
-          title, company, website, phone, linkedin, status, tags,
-          source_detail, confidence_score, verification_status
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(project_id, email) DO UPDATE SET
-          first_name = EXCLUDED.first_name,
-          last_name = EXCLUDED.last_name,
-          title = EXCLUDED.title,
-          company = EXCLUDED.company,
-          website = EXCLUDED.website,
-          phone = EXCLUDED.phone,
-          linkedin = EXCLUDED.linkedin,
-          tags = EXCLUDED.tags,
-          source_detail = EXCLUDED.source_detail,
-          confidence_score = EXCLUDED.confidence_score,
-          verification_status = EXCLUDED.verification_status
-        RETURNING id
-      `;
+        const upsertQuery = `
+          INSERT INTO outreach_contacts (
+            id, user_id, project_id, first_name, last_name, email, 
+            title, company, website, phone, linkedin, status, tags,
+            source_detail, confidence_score, verification_status,
+            industry, company_domain, company_size, technologies, location
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(project_id, email) DO UPDATE SET
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            title = EXCLUDED.title,
+            company = EXCLUDED.company,
+            website = EXCLUDED.website,
+            phone = EXCLUDED.phone,
+            linkedin = EXCLUDED.linkedin,
+            tags = EXCLUDED.tags,
+            source_detail = EXCLUDED.source_detail,
+            confidence_score = EXCLUDED.confidence_score,
+            verification_status = EXCLUDED.verification_status,
+            industry = EXCLUDED.industry,
+            company_domain = EXCLUDED.company_domain,
+            company_size = EXCLUDED.company_size,
+            technologies = EXCLUDED.technologies,
+            location = EXCLUDED.location
+          RETURNING id
+        `;
 
-      const memberQuery = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
+        const memberQuery = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
 
-      for (const contact of contacts) {
-        if (!contact.email) continue;
-        
-        // 1. Upsert contact
-        const res = await db.prepare(upsertQuery).get(
-          uuidv4(),
-          userId,
-          project_id,
-          contact.first_name || "",
-          contact.last_name || "",
-          contact.email,
-          contact.title || "",
-          contact.company || "",
-          contact.website || "",
-          contact.phone || "",
-          contact.linkedin || "",
-          contact.status || "not_enrolled",
-          JSON.stringify(contact.tags || []),
-          contact.source_detail || null,
-          contact.confidence_score || null,
-          contact.verification_status || null,
-        ) as any;
+        for (const contact of contacts) {
+          if (!contact.email) continue;
+          
+          // 1. Upsert contact
+          const res = await db.prepare(upsertQuery).get(
+            uuidv4(),
+            userId,
+            project_id,
+            contact.first_name || "",
+            contact.last_name || "",
+            contact.email,
+            contact.title || "",
+            contact.company || "",
+            contact.website || "",
+            contact.phone || "",
+            contact.linkedin || "",
+            contact.status || "not_enrolled",
+            JSON.stringify(contact.tags || []),
+            contact.source_detail || null,
+            contact.confidence_score || null,
+            contact.verification_status || null,
+            contact.industry || null,
+            contact.company_domain || null,
+            contact.company_size || null,
+            typeof contact.technologies === 'object' ? JSON.stringify(contact.technologies) : (contact.technologies || null),
+            contact.location || null
+          ) as any;
 
         const contactId = res.id;
         savedContactIds.push(contactId);

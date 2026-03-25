@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Building2, User, ShieldCheck, Loader2, Save, 
   CheckCircle2, AlertCircle, Globe, PlugZap, Settings as SettingsIcon,
-  Search, Zap, Plus, Filter, Info, ChevronDown
+  Search, Zap, Plus, Filter, Info, ChevronDown, Check, Database, Users, 
+  Trash2, Mail, ExternalLink, MapPin, Briefcase, ListFilter, X as CloseIcon
 } from 'lucide-react';
+import BulkAddToListModal from './contacts/BulkAddToListModal';
 import { TealButton, OutreachBadge, OutreachSectionHeader } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { toast } from 'react-hot-toast';
@@ -17,6 +19,7 @@ interface ExtractedParams {
   keywords?: string;
   sizeRange?: string;
   country?: string;
+  revenue?: string;
 }
 
 interface AIResult {
@@ -45,6 +48,20 @@ export default function OutreachLeadFinder() {
   // ICP State
   const [icpData, setIcpData] = useState<any | null>(null);
   const [isLoadingIcp, setIsLoadingIcp] = useState(false);
+
+  // Search Controls
+  const [limit, setLimit] = useState(25);
+  const [excludeExisting, setExcludeExisting] = useState(true);
+  const [exclusionListIds, setExclusionListIds] = useState<string[]>([]);
+  const [contactLists, setContactLists] = useState<any[]>([]);
+
+  // Selection & Actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSavingSelected, setIsSavingSelected] = useState(false);
+  const [bulkAddModalOpen, setBulkAddModalOpen] = useState(false);
+  
+  const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [showExclusionDropdown, setShowExclusionDropdown] = useState(false);
   
   // Progress Timer Ref
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -52,10 +69,20 @@ export default function OutreachLeadFinder() {
   useEffect(() => {
     checkConnection();
     loadIcp();
+    loadLists();
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [api.activeProjectId]);
+
+  const loadLists = async () => {
+    try {
+      const data = await api.fetchContactLists();
+      if (data) setContactLists(data);
+    } catch (err) {
+      console.error('Failed to load lists:', err);
+    }
+  };
 
   const checkConnection = async () => {
     try {
@@ -120,18 +147,82 @@ export default function OutreachLeadFinder() {
     if (!aiResult) return;
     setIsSearching(true);
     setErrorMsg(null);
+    setSelectedIds(new Set());
     startLoadingTimer();
     try {
-      const data = await api.hunterDiscover(prompt, aiResult.params);
+      const data = await api.hunterDiscover(prompt, {
+        ...aiResult.params,
+        limit,
+        excludeExisting,
+        exclusionListIds
+      });
       if (data.error) throw new Error(data.error);
-      setResults(data.companies || []);
-      toast.success(`Found ${data.companies?.length || 0} matching companies`);
+      
+      // Map company results to a more "contact-like" structure if needed
+      // Hunter Discover returns companies. We'll store them as-is for now.
+      const mapped = (data.companies || []).map((c: any) => ({
+        ...c,
+        id: c.domain || Math.random().toString(36).substr(2, 9), // Use domain as stable ID
+        display_name: c.name || c.domain,
+        type: 'company'
+      }));
+
+      setResults(mapped);
+      toast.success(`Found ${mapped.length} matching results`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Discovery engine failed');
       toast.error(err.message || 'Discovery engine failed');
     } finally {
       setIsSearching(false);
       stopLoadingTimer();
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === results.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(results.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkSave = async (listId?: string) => {
+    const toSave = results.filter(r => selectedIds.has(r.id)).map(r => ({
+      first_name: 'Lead',
+      last_name: 'Contact',
+      email: `info@${r.domain}`, // Enriched later or generic
+      company: r.name || r.domain,
+      website: r.domain,
+      industry: r.industry,
+      size: r.size_range,
+      location: r.location,
+      company_domain: r.domain,
+      status: 'not_enrolled',
+      tags: ['lead-finder']
+    }));
+
+    setIsSavingSelected(true);
+    try {
+      if (listId) {
+        await api.saveContactsToList(api.activeProjectId!, listId, toSave);
+        toast.success(`Saved ${toSave.length} leads to list`);
+      } else {
+        await api.createContactsBulk(api.activeProjectId!, toSave);
+        toast.success(`Saved ${toSave.length} leads to CRM`);
+      }
+      setSelectedIds(new Set());
+      setBulkAddModalOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save leads');
+    } finally {
+      setIsSavingSelected(false);
     }
   };
 
@@ -156,6 +247,14 @@ export default function OutreachLeadFinder() {
 
   const goToSettings = () => {
     window.dispatchEvent(new CustomEvent('outreach-tab-change', { detail: 'settings' }));
+  };
+
+  const toggleExclusionList = (listId: string) => {
+    const next = [...exclusionListIds];
+    const idx = next.indexOf(listId);
+    if (idx > -1) next.splice(idx, 1);
+    else next.push(listId);
+    setExclusionListIds(next);
   };
 
   if (isCheckingConnection) {
@@ -326,6 +425,25 @@ export default function OutreachLeadFinder() {
                         ))}
                       </div>
                     </div>
+                    {/* Keywords & Revenue */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {aiResult.params.keywords && (
+                        <div className="space-y-2.5">
+                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Keywords</p>
+                          <span className="px-3 py-1 text-xs bg-white/5 border border-white/10 text-slate-400 rounded-md font-medium">
+                            {aiResult.params.keywords}
+                          </span>
+                        </div>
+                      )}
+                      {aiResult.params.revenue && (
+                        <div className="space-y-2.5">
+                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Revenue Target</p>
+                          <span className="px-3 py-1 text-xs bg-white/5 border border-white/10 text-slate-400 rounded-md font-medium">
+                            {aiResult.params.revenue}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="pt-6 border-t border-white/5 flex items-center gap-3">
@@ -389,8 +507,9 @@ export default function OutreachLeadFinder() {
         </AnimatePresence>
 
         {/* RESULTS SECTION */}
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
+        <div className="space-y-6 pb-32">
+          {/* List Settings / Filters */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-4 border-b border-white/5">
             <h3 className="text-xl font-bold text-white flex items-center gap-3">
               Matched Opportunities
               {results.length > 0 && (
@@ -399,66 +518,414 @@ export default function OutreachLeadFinder() {
                 </span>
               )}
             </h3>
+
+            <div className="flex items-center gap-4">
+              {/* Limit Selector */}
+              <div className="flex items-center gap-2 bg-white/5 rounded-lg p-1 border border-white/10">
+                {[10, 25, 50, 100].map(val => (
+                  <button
+                    key={val}
+                    onClick={() => setLimit(val)}
+                    className={cn(
+                      "px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all",
+                      limit === val ? "bg-teal-500 text-white shadow-lg" : "text-slate-500 hover:text-slate-300"
+                    )}
+                  >
+                    {val}
+                  </button>
+                ))}
+              </div>
+
+              {/* Exclusion Toggles */}
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowExclusionDropdown(!showExclusionDropdown)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:border-teal-500/30 transition-all text-[10px] font-bold text-slate-400 uppercase tracking-wider"
+                  >
+                    <ListFilter className="size-4 text-slate-500" />
+                    Exclusion Lists ({exclusionListIds.length})
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showExclusionDropdown && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute top-full mt-2 right-0 w-64 bg-[#1a1f26] border border-white/10 rounded-xl shadow-2xl z-50 p-2 space-y-1"
+                      >
+                        <p className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 mb-1">Select Lists to Exclude</p>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {contactLists.length === 0 ? (
+                            <p className="p-4 text-[10px] text-slate-600 text-center italic">No lists found</p>
+                          ) : contactLists.map(list => (
+                            <button
+                              key={list.id}
+                              onClick={() => toggleExclusionList(list.id)}
+                              className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group"
+                            >
+                              <span className="text-xs text-slate-400 group-hover:text-white truncate">{list.name}</span>
+                              {exclusionListIds.includes(list.id) && <Check className="size-3 text-teal-400" />}
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg">
+                  <ShieldCheck className={cn("size-4", excludeExisting ? "text-teal-400" : "text-slate-600")} />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CRM Exclude</span>
+                  <button 
+                    onClick={() => setExcludeExisting(!excludeExisting)}
+                    className={cn(
+                      "w-8 h-4 rounded-full relative transition-colors",
+                      excludeExisting ? "bg-teal-500" : "bg-slate-700"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-0.5 size-3 bg-white rounded-full transition-all",
+                      excludeExisting ? "left-4.5" : "left-0.5"
+                    )} />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <AnimatePresence mode="popLayout">
             {results.length > 0 ? (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {results.map((item, idx) => (
-                  <motion.div 
-                    key={idx}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="p-5 bg-white/[0.02] border border-white/5 hover:border-teal-500/30 rounded-2xl group transition-all hover:bg-white/[0.04] relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => handleSaveContact(item)}
-                        className="p-2 bg-teal-500 text-white rounded-lg shadow-lg shadow-teal-900/40 hover:scale-110 active:scale-90 transition-all font-bold"
-                      >
-                        <Plus className="size-4" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="size-12 bg-white/5 rounded-xl flex items-center justify-center border border-white/10 group-hover:border-teal-500/30 transition-colors shrink-0">
-                          {item.logo ? <img src={item.logo} className="size-8 object-contain" /> : <Building2 className="size-6 text-slate-600" />}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-white truncate group-hover:text-teal-400 transition-colors uppercase tracking-tight">{item.name || item.domain}</h4>
-                          <p className="text-xs text-slate-500 truncate font-medium">{item.industry || 'Technology'}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-2">
-                        {item.size_range && (
-                          <OutreachBadge variant="gray" className="text-[10px] font-black border-transparent bg-white/5 text-slate-400">
-                            {item.size_range} Employees
-                          </OutreachBadge>
-                        )}
-                        <OutreachBadge variant="teal" className="text-[10px] font-black">
-                          {Math.floor(Math.random() * 20) + 70}% Match
-                        </OutreachBadge>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
+              <div className="bg-[#111111]/50 border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/5 bg-white/[0.02]">
+                      <th className="p-4 w-10">
+                        <button 
+                          onClick={toggleSelectAll}
+                          className={cn(
+                            "size-5 rounded border flex items-center justify-center transition-colors",
+                            selectedIds.size === results.length 
+                              ? "bg-teal-500 border-teal-500 text-white" 
+                              : "border-white/20 hover:border-teal-500/50"
+                          )}
+                        >
+                          {selectedIds.size === results.length && <Check className="size-3 stroke-[4]" />}
+                        </button>
+                      </th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company Info</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry & Size</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Match %</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">AI Persona</th>
+                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((item, idx) => {
+                      const isSelected = selectedIds.has(item.id);
+                      return (
+                        <motion.tr 
+                          key={item.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.02 }}
+                          className={cn(
+                            "group border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors",
+                            isSelected && "bg-teal-500/[0.03]"
+                          )}
+                        >
+                          <td className="p-4">
+                            <button 
+                              onClick={() => toggleSelect(item.id)}
+                              className={cn(
+                                "size-5 rounded border flex items-center justify-center transition-colors",
+                                isSelected 
+                                  ? "bg-teal-500 border-teal-500 text-white" 
+                                  : "border-white/10 group-hover:border-teal-500/30"
+                              )}
+                            >
+                              {isSelected && <Check className="size-3 stroke-[4]" />}
+                            </button>
+                          </td>
+                          <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
+                            <div className="flex items-center gap-3">
+                              <div className="size-10 bg-black/40 rounded-xl overflow-hidden border border-white/10 group-hover:border-teal-500/30 transition-colors">
+                                <img src={item.logo} alt={item.name} className="size-full object-contain p-1" onError={(e) => (e.currentTarget.src = 'https://api.dicebear.com/7.x/initials/svg?seed=' + item.domain)} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate">{item.name}</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-500 font-medium">{item.domain}</span>
+                                  {item.description && <span className="text-[10px] text-slate-600 line-clamp-1 italic">— {item.description}</span>}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center gap-2">
+                                <Briefcase className="size-3 text-slate-600" />
+                                <span className="text-xs text-slate-400 truncate max-w-[120px]">{item.industry || 'Technology'}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Users className="size-3 text-slate-600" />
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">{item.size || 'Unknown'}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-teal-500/10 border border-teal-500/20 rounded-md w-fit">
+                              <span className="text-[10px] font-black text-teal-400">{item.match_score}%</span>
+                            </div>
+                          </td>
+                          <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
+                            <div className="flex flex-wrap gap-1 max-w-[150px]">
+                              {(item.target_personas || []).slice(0, 2).map((p: string, i: number) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] text-slate-500 font-medium whitespace-nowrap">
+                                  {p}
+                                </span>
+                              ))}
+                              {(item.target_personas || []).length > 2 && (
+                                <span className="text-[9px] text-slate-600 font-bold">+{item.target_personas.length - 2}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 text-right">
+                            <button 
+                              onClick={() => handleSaveContact(item)}
+                              className="p-2 text-slate-600 hover:text-teal-400 hover:bg-teal-500/10 rounded-lg transition-all"
+                              title="Save to CRM"
+                            >
+                              <Plus className="size-5" />
+                            </button>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             ) : !isSearching && (
               <div className="py-20 border-2 border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center text-center space-y-4">
                 <div className="size-16 bg-white/[0.02] rounded-full flex items-center justify-center border border-white/5">
                   <Search className="size-8 text-slate-700" />
                 </div>
                 <div>
-                  <h4 className="text-slate-400 font-bold">No results captured yet</h4>
-                  <p className="text-slate-600 text-sm">Enter a search prompt or use the blueprint to discover leads</p>
+                  <h4 className="text-slate-400 font-bold">No leads discovered yet</h4>
+                  <p className="text-slate-600 text-sm max-w-sm mx-auto">
+                    Use the AI Extracter to define your blueprint, then hit "Apply & Search" to populate this list.
+                  </p>
                 </div>
               </div>
             )}
           </AnimatePresence>
         </div>
+
+        {/* PERSISTENT ACTION BAR */}
+        <AnimatePresence>
+          {selectedIds.size > 0 && (
+            <motion.div 
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 100, opacity: 0 }}
+              className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4"
+            >
+              <div className="bg-[#1a1f26] border border-teal-500/30 rounded-2xl p-4 shadow-[0_0_50px_rgba(0,0,0,0.8),0_0_20px_rgba(20,184,166,0.1)] flex items-center justify-between gap-6 backdrop-blur-xl">
+                <div className="flex items-center gap-4">
+                  <div className="size-10 bg-teal-500 text-white rounded-xl flex items-center justify-center font-black shadow-lg shadow-teal-500/20">
+                    {selectedIds.size}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white uppercase tracking-tight">Leads Selected</p>
+                    <p className="text-[10px] text-slate-400 font-medium">Ready for bulk import</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => setSelectedIds(new Set())}
+                    className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
+                  >
+                    Clear All
+                  </button>
+                  <div className="h-4 w-px bg-white/10" />
+                  <button 
+                    onClick={() => setBulkAddModalOpen(true)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    <Save className="size-4 text-teal-400" />
+                    Save as List
+                  </button>
+                  <TealButton 
+                    onClick={() => handleBulkSave()}
+                    loading={isSavingSelected}
+                    className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-teal-500/20"
+                  >
+                    Add to CRM
+                  </TealButton>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <BulkAddToListModal 
+          isOpen={bulkAddModalOpen}
+          onClose={() => setBulkAddModalOpen(false)}
+          onConfirm={handleBulkSave}
+          contactLists={contactLists}
+          onReloadLists={loadLists}
+          api={api}
+          selectedCount={selectedIds.size}
+        />
+
+        {/* DETAILS SIDEBAR */}
+        <AnimatePresence>
+          {selectedLead && (
+            <>
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedLead(null)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
+              />
+              <motion.div 
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed top-0 right-0 h-full w-full max-w-md bg-[#0d1117] border-l border-white/10 shadow-2xl z-[70] flex flex-col"
+              >
+                {/* Sidebar Header */}
+                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                  <div className="flex items-center gap-4">
+                    <div className="size-12 bg-black rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden p-1.5 shadow-xl">
+                      <img src={selectedLead.logo} alt={selectedLead.name} className="size-full object-contain" onError={(e) => (e.currentTarget.src = 'https://api.dicebear.com/7.x/initials/svg?seed=' + selectedLead.domain)} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-white leading-tight">{selectedLead.name}</h2>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Globe className="size-3 text-teal-400" />
+                        <span className="text-xs text-slate-500">{selectedLead.domain}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedLead(null)}
+                    className="p-2 hover:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-white"
+                  >
+                    <CloseIcon className="size-5" />
+                  </button>
+                </div>
+
+                {/* Sidebar Content */}
+                <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+                  <div className="space-y-3">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500/80">Description</h3>
+                    <p className="text-sm text-slate-400 leading-relaxed bg-white/[0.02] p-4 rounded-2xl border border-white/5">
+                      {selectedLead.description || 'No description available for this lead.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Industry</p>
+                      <p className="text-sm font-bold text-white truncate">{selectedLead.industry || 'Unknown'}</p>
+                    </div>
+                    <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Company Size</p>
+                      <p className="text-sm font-bold text-white">{selectedLead.size || 'Unknown'}</p>
+                    </div>
+                    <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Match Score</p>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="size-4 text-teal-400" />
+                        <p className="text-sm font-bold text-white">{selectedLead.match_score}%</p>
+                      </div>
+                    </div>
+                    <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Location</p>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="size-3 text-slate-500" />
+                        <p className="text-sm font-bold text-white truncate">{selectedLead.country || 'Global'}</p>
+                      </div>
+                    </div>
+                    {selectedLead.linkedin && (
+                      <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl space-y-1 col-span-2">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">LinkedIn Profile</p>
+                        <a 
+                          href={selectedLead.linkedin} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-sm font-bold text-teal-400 flex items-center gap-2 hover:underline"
+                        >
+                          View Official Company Page
+                          <ExternalLink className="size-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500/80">AI Persona Targets</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {(selectedLead.target_personas || []).map((p: string, i: number) => (
+                        <span key={i} className="px-3 py-1.5 bg-[#0a2724] border border-[#114a43] text-teal-400 rounded-lg text-xs font-medium">
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="px-8 py-4 border-t border-white/5 bg-teal-500/5 rounded-2xl">
+                    <button 
+                      onClick={() => {
+                        setSelectedIds(new Set([selectedLead.id]));
+                        setBulkAddModalOpen(true);
+                      }}
+                      className="w-full py-2.5 rounded-xl text-teal-400 text-xs font-bold border border-teal-500/20 hover:bg-teal-500/10 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Save className="size-4" />
+                      Add to Specific List
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sidebar Footer */}
+                <div className="p-6 border-t border-white/5 bg-white/[0.02] flex items-center gap-3">
+                  <button 
+                    onClick={() => {
+                      const next = new Set(selectedIds);
+                      if (next.has(selectedLead.id)) next.delete(selectedLead.id);
+                      else next.add(selectedLead.id);
+                      setSelectedIds(next);
+                    }}
+                    className={cn(
+                      "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2",
+                      selectedIds.has(selectedLead.id) 
+                        ? "bg-teal-500 text-white shadow-lg shadow-teal-500/20" 
+                        : "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10"
+                    )}
+                  >
+                    {selectedIds.has(selectedLead.id) ? (
+                      <><Check className="size-4 stroke-[3]" /> Selected</>
+                    ) : (
+                      <><Plus className="size-4" /> Select for Import</>
+                    )}
+                  </button>
+                  <TealButton 
+                    onClick={() => handleSaveContact(selectedLead)}
+                    className="flex-1 py-3 rounded-xl font-bold text-xs"
+                  >
+                    Quick Add to CRM
+                  </TealButton>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -210,6 +210,11 @@ export const initDb = async () => {
         last_name TEXT,
         title TEXT,
         company TEXT,
+        company_domain TEXT,
+        company_size TEXT,
+        industry TEXT,
+        location TEXT,
+        technologies TEXT, -- JSON string
         website TEXT,
         phone TEXT,
         linkedin TEXT,
@@ -225,6 +230,25 @@ export const initDb = async () => {
         UNIQUE(project_id, email)
       )
     `);
+
+    // Migration for existing contacts table
+    const columns = await db.pragma('table_info(outreach_contacts)');
+    const columnNames = columns.map((c: any) => c.name);
+    
+    const newCols = [
+      { name: 'company_domain', type: 'TEXT' },
+      { name: 'company_size', type: 'TEXT' },
+      { name: 'industry', type: 'TEXT' },
+      { name: 'location', type: 'TEXT' },
+      { name: 'technologies', type: 'TEXT' }
+    ];
+
+    for (const col of newCols) {
+      if (!columnNames.includes(col.name)) {
+        console.log(`[DB] Adding missing column ${col.name} to outreach_contacts`);
+        await db.run(`ALTER TABLE outreach_contacts ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
 
     // 5. Events
     await db.run(`
