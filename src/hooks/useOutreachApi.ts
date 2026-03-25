@@ -74,7 +74,11 @@ export function useOutreachApi() {
         }
         throw new Error(errorMsg);
       }
-      return res.json() as Promise<T>;
+      const data = await res.json();
+      if (path.includes('ai-extract')) {
+        console.log(`[OutreachAPI] POST ${path} response:`, data);
+      }
+      return data as T;
     },
     [activeProjectId, authHeaders],
   );

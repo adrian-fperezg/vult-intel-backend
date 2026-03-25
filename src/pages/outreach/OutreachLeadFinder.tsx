@@ -246,7 +246,9 @@ export default function OutreachLeadFinder() {
 
     try {
       const data = await api.hunterAiExtract(aiPrompt, icp);
+      console.log("[OutreachLeadFinder] AI Extract raw data:", data);
       setExtractedParams(data);
+      console.log("[OutreachLeadFinder] State setExtractedParams called. Status -> success");
       setAiStatus('success');
     } catch (error: any) {
       setAiStatus('error');
