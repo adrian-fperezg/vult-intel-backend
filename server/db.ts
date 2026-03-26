@@ -193,10 +193,15 @@ export const initDb = async () => {
       { name: 'from_name', type: 'TEXT' }
     ];
 
-    for (const col of newCampCols) {
-      if (!campColNames.includes(col.name)) {
-        await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN ${col.name} ${col.type}`);
+    try {
+      for (const col of newCampCols) {
+        if (!campColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_campaigns`);
+          await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
+    } catch (e) {
+      console.error('[DB] Migration failed for outreach_campaigns:', e);
     }
 
     // 3. Sequences
@@ -254,11 +259,15 @@ export const initDb = async () => {
       { name: 'from_name', type: 'TEXT' }
     ];
 
-    for (const col of newSeqCols) {
-      if (!seqColumnNames.includes(col.name)) {
-        console.log(`[DB] Adding missing column ${col.name} to outreach_sequences`);
-        await db.run(`ALTER TABLE outreach_sequences ADD COLUMN ${col.name} ${col.type}`);
+    try {
+      for (const col of newSeqCols) {
+        if (!seqColumnNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_sequences`);
+          await db.run(`ALTER TABLE outreach_sequences ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
+    } catch (e) {
+      console.error('[DB] Migration failed for outreach_sequences:', e);
     }
 
     // 4. Contacts
@@ -309,10 +318,15 @@ export const initDb = async () => {
       { name: 'job_title', type: 'TEXT' }
     ];
 
-    for (const col of newContactCols) {
-      if (!contactColNames.includes(col.name)) {
-        await db.run(`ALTER TABLE outreach_contacts ADD COLUMN ${col.name} ${col.type}`);
+    try {
+      for (const col of newContactCols) {
+        if (!contactColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_contacts`);
+          await db.run(`ALTER TABLE outreach_contacts ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
+    } catch (e) {
+      console.error('[DB] Migration failed for outreach_contacts:', e);
     }
 
     // 5. Events
@@ -394,11 +408,15 @@ export const initDb = async () => {
       { name: 'provider', type: 'TEXT' }
     ];
 
-    for (const col of newMailboxCols) {
-      if (!mailboxColNames.includes(col.name)) {
-        console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
-        await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
+    try {
+      for (const col of newMailboxCols) {
+        if (!mailboxColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
+          await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
+    } catch (e) {
+      console.error('[DB] Migration failed for outreach_mailboxes:', e);
     }
 
     // 7. Individual Emails
@@ -432,11 +450,15 @@ export const initDb = async () => {
       { name: 'from_name', type: 'TEXT' }
     ];
 
-    for (const col of newEmailCols) {
-      if (!emailColNames.includes(col.name)) {
-        console.log(`[DB] Adding missing column ${col.name} to outreach_individual_emails`);
-        await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN ${col.name} ${col.type}`);
+    try {
+      for (const col of newEmailCols) {
+        if (!emailColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_individual_emails`);
+          await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
+    } catch (e) {
+      console.error('[DB] Migration failed for outreach_individual_emails:', e);
     }
 
     // 8. Settings
