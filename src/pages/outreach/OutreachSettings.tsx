@@ -111,13 +111,17 @@ export default function OutreachSettings() {
       setFetchingPdl(true);
 
       const settings = await api.fetchSettings();
-      setHasHunter(settings?.has_hunter || false);
-      setHasZb(settings?.has_zerobounce || false);
-      setHasPdl(settings?.has_pdl || false);
+      
+      // Update Hunter
+      setHasHunter(settings?.hunter?.connected || false);
+      setHunterAccount(settings?.hunter?.connected ? settings.hunter : null);
 
-      if (settings?.has_hunter) await loadHunterStatus();
-      if (settings?.has_zerobounce) await loadZbStatus();
-      if (settings?.has_pdl) await loadPdlStatus();
+      // Update ZeroBounce
+      setHasZb(settings?.zerobounce?.connected || false);
+      setZbCredits(settings?.zerobounce?.connected ? settings.zerobounce.credits : null);
+
+      // Update PDL
+      setHasPdl(settings?.pdl?.connected || false);
 
     } catch (err) {
       console.error('Failed to load integration status:', err);
@@ -723,19 +727,19 @@ export default function OutreachSettings() {
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-400 font-medium">Search Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.used?.toLocaleString() || 0} / {hunterAccount.available?.toLocaleString() || 0}
+                          {hunterAccount.used?.toLocaleString() || 0} used / {hunterAccount.available?.toLocaleString() || 0} left
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${((hunterAccount.used || 0) / (hunterAccount.available || 1)) * 100}%` 
+                            width: `${Math.min(100, ((hunterAccount.used || 0) / (hunterAccount.available || 1)) * 100)}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>{hunterAccount.used?.toLocaleString() || 0} / {hunterAccount.available?.toLocaleString() || 0} credits used</span>
+                        <span>{hunterAccount.used?.toLocaleString() || 0} / {hunterAccount.available?.toLocaleString() || 0} credits</span>
                         {hunterAccount.reset_date && <span>Renews on: {hunterAccount.reset_date}</span>}
                       </div>
                     </div>
@@ -836,7 +840,7 @@ export default function OutreachSettings() {
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Total Credits</span>
                       <span className="font-semibold text-white">
-                        {typeof zbCredits === 'object' ? zbCredits.credits?.toLocaleString() : zbCredits?.toLocaleString() || 0}
+                        {zbCredits?.toLocaleString() || 0}
                       </span>
                     </div>
                     <div className="p-3 bg-teal-500/5 border border-teal-500/10 rounded-xl">

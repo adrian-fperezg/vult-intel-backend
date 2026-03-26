@@ -2224,11 +2224,55 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
     if (!project_id) return res.status(400).json({ error: "project_id required" });
 
     const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
-    const has_hunter = !!(row && row.hunter_api_key);
-    const has_zerobounce = !!(row && row.zerobounce_api_key);
-    const has_pdl = !!(row && row.pdl_api_key);
+    
+    // Default response structure
+    const response: any = {
+      hunter: { connected: false },
+      zerobounce: { connected: false },
+      pdl: { connected: false }
+    };
 
-    res.json({ has_hunter, has_zerobounce, has_pdl });
+    if (row) {
+      // 1. Hunter.io Live Fetch
+      if (row.hunter_api_key) {
+        try {
+          const key = decryptToken(row.hunter_api_key);
+          const account = await getAccountInformation(key);
+          response.hunter = {
+            connected: true,
+            used: account.calls?.used || 0,
+            available: account.calls?.available || 0,
+            reset_date: account.reset_date || null,
+            plan_name: account.plan_name || 'Free'
+          };
+        } catch (err: any) {
+          console.error("[Settings] Hunter Fetch Error:", err.message);
+          response.hunter = { connected: true, error: true };
+        }
+      }
+
+      // 2. ZeroBounce Live Fetch
+      if (row.zerobounce_api_key) {
+        try {
+          const key = decryptToken(row.zerobounce_api_key);
+          const credits = await getZeroBounceCredits(key);
+          response.zerobounce = {
+            connected: true,
+            credits: credits || 0
+          };
+        } catch (err: any) {
+          console.error("[Settings] ZeroBounce Fetch Error:", err.message);
+          response.zerobounce = { connected: true, error: true };
+        }
+      }
+
+      // 3. PDL (Simple Connection Check for now)
+      if (row.pdl_api_key) {
+        response.pdl = { connected: true };
+      }
+    }
+
+    res.json(response);
   } catch (error: any) {
     console.error("GET /api/outreach/settings Error:", error);
     res.status(500).json({ error: error.message || "Failed to fetch settings" });
