@@ -2238,12 +2238,25 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
         try {
           const key = decryptToken(row.hunter_api_key);
           const account = await getAccountInformation(key);
+          
+          // Extraction based on real Hunter API structure (requests object)
+          const searches = account.requests?.searches || { used: 0, available: 0 };
+          const verifications = account.requests?.verifications || { used: 0, available: 0 };
+
           response.hunter = {
             connected: true,
-            used: account.calls?.used || 0,
-            available: account.calls?.available || 0,
             reset_date: account.reset_date || null,
-            plan_name: account.plan_name || 'Free'
+            plan_name: account.plan_name || 'Free',
+            searches: {
+              used: searches.used || 0,
+              total: searches.available || 0,
+              remaining: (searches.available || 0) - (searches.used || 0)
+            },
+            verifications: {
+              used: verifications.used || 0,
+              total: verifications.available || 0,
+              remaining: (verifications.available || 0) - (verifications.used || 0)
+            }
           };
         } catch (err: any) {
           console.error("[Settings] Hunter Fetch Error:", err.message);

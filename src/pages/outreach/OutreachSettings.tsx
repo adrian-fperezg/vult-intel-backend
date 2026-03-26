@@ -727,19 +727,19 @@ export default function OutreachSettings() {
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-400 font-medium">Search Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.used?.toLocaleString() || 0} used / {hunterAccount.available?.toLocaleString() || 0} left
+                          {hunterAccount.searches?.used?.toLocaleString() || 0} used / {hunterAccount.searches?.total?.toLocaleString() || 0} limit
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${Math.min(100, ((hunterAccount.used || 0) / (hunterAccount.available || 1)) * 100)}%` 
+                            width: `${Math.min(100, ((hunterAccount.searches?.used || 0) / (hunterAccount.searches?.total || 1)) * 100)}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>{hunterAccount.used?.toLocaleString() || 0} / {hunterAccount.available?.toLocaleString() || 0} credits</span>
+                        <span>{hunterAccount.searches?.remaining?.toLocaleString() || 0} credits remaining</span>
                         {hunterAccount.reset_date && <span>Renews on: {hunterAccount.reset_date}</span>}
                       </div>
                     </div>
@@ -749,19 +749,19 @@ export default function OutreachSettings() {
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-400 font-medium">Verification Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.verify_used?.toLocaleString() || 0} / {hunterAccount.verify_available?.toLocaleString() || 0}
+                          {hunterAccount.verifications?.used?.toLocaleString() || 0} used / {hunterAccount.verifications?.total?.toLocaleString() || 0} limit
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${((hunterAccount.verify_used || 0) / (hunterAccount.verify_available || 1)) * 100}%` 
+                            width: `${Math.min(100, ((hunterAccount.verifications?.used || 0) / (hunterAccount.verifications?.total || 1)) * 100)}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>{hunterAccount.verify_used?.toLocaleString() || 0} / {hunterAccount.verify_available?.toLocaleString() || 0} credits used</span>
+                        <span>{hunterAccount.verifications?.remaining?.toLocaleString() || 0} credits remaining</span>
                       </div>
                     </div>
                   </div>
