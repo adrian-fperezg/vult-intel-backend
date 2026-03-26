@@ -336,11 +336,21 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         email TEXT NOT NULL,
         name TEXT,
-        connection_type TEXT DEFAULT 'gmail',
+        connection_type TEXT DEFAULT 'gmail_oauth',
         access_token TEXT,
         refresh_token TEXT,
-        smtp_config TEXT,
-        imap_config TEXT,
+        smtp_host TEXT,
+        smtp_port INTEGER,
+        smtp_secure BOOLEAN DEFAULT TRUE,
+        smtp_user TEXT,
+        smtp_pass TEXT,
+        imap_host TEXT,
+        imap_port INTEGER,
+        imap_secure BOOLEAN DEFAULT TRUE,
+        imap_user TEXT,
+        imap_pass TEXT,
+        display_name TEXT,
+        provider TEXT,
         expires_at TIMESTAMP,
         scope TEXT,
         status TEXT DEFAULT 'active',
@@ -369,9 +379,19 @@ export const initDb = async () => {
     const mailboxCols = await db.pragma('table_info(outreach_mailboxes)');
     const mailboxColNames = mailboxCols.map((c: any) => c.name);
     const newMailboxCols = [
-      { name: 'connection_type', type: 'TEXT DEFAULT "gmail"' },
-      { name: 'smtp_config', type: 'TEXT' },
-      { name: 'imap_config', type: 'TEXT' }
+      { name: 'connection_type', type: 'TEXT DEFAULT "gmail_oauth"' },
+      { name: 'smtp_host', type: 'TEXT' },
+      { name: 'smtp_port', type: 'INTEGER' },
+      { name: 'smtp_secure', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'smtp_user', type: 'TEXT' },
+      { name: 'smtp_pass', type: 'TEXT' },
+      { name: 'imap_host', type: 'TEXT' },
+      { name: 'imap_port', type: 'INTEGER' },
+      { name: 'imap_secure', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'imap_user', type: 'TEXT' },
+      { name: 'imap_pass', type: 'TEXT' },
+      { name: 'display_name', type: 'TEXT' },
+      { name: 'provider', type: 'TEXT' }
     ];
 
     for (const col of newMailboxCols) {

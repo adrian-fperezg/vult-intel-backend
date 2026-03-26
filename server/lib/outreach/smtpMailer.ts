@@ -18,17 +18,16 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
   
   if (!mailbox) throw new Error("Mailbox not found");
   if (mailbox.connection_type !== 'smtp') throw new Error("Mailbox is not configured for SMTP");
-  if (!mailbox.smtp_config) throw new Error("SMTP configuration missing");
+  if (!mailbox.smtp_host) throw new Error("SMTP host configuration missing");
 
-  const config: SmtpConfig = JSON.parse(mailbox.smtp_config);
-  const password = decryptToken(config.enc_pass);
+  const password = decryptToken(mailbox.smtp_pass);
 
   const transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure, // true for 465, false for other ports
+    host: mailbox.smtp_host,
+    port: mailbox.smtp_port,
+    secure: mailbox.smtp_secure === 1 || mailbox.smtp_secure === true, // handle sqlite 0/1 or boolean
     auth: {
-      user: config.user,
+      user: mailbox.smtp_user || mailbox.email,
       pass: password,
     },
   });

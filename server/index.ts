@@ -321,7 +321,7 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
 // POST /api/outreach/mailboxes/smtp
 app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, email, name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, imap_host, imap_port, imap_secure } = req.body;
+  const { project_id, email, name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body;
 
   if (!userId || !project_id || !email || !smtp_host || !smtp_pass) {
     return res.status(400).json({ error: "Missing required SMTP/IMAP fields" });
@@ -330,26 +330,21 @@ app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
   try {
     const mailboxId = uuidv4();
     const encryptedSmtpPass = encryptToken(smtp_pass);
-    const smtpConfig = JSON.stringify({
-      host: smtp_host,
-      port: Number(smtp_port),
-      secure: smtp_secure,
-      user: smtp_user || email,
-      enc_pass: encryptedSmtpPass
-    });
-
-    const imapConfig = imap_host ? JSON.stringify({
-      host: imap_host,
-      port: Number(imap_port),
-      secure: imap_secure,
-      user: smtp_user || email,
-      enc_pass: encryptedSmtpPass
-    }) : null;
+    const encryptedImapPass = imap_pass ? encryptToken(imap_pass) : encryptedSmtpPass;
 
     await db.prepare(`
-      INSERT INTO outreach_mailboxes (id, user_id, project_id, email, name, connection_type, smtp_config, imap_config, status)
-      VALUES (?, ?, ?, ?, ?, 'smtp', ?, ?, 'active')
-    `).run(mailboxId, userId, project_id, email, name || email, smtpConfig, imapConfig);
+      INSERT INTO outreach_mailboxes (
+        id, user_id, project_id, email, name, connection_type, 
+        smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass,
+        imap_host, imap_port, imap_secure, imap_user, imap_pass,
+        status
+      )
+      VALUES (?, ?, ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+    `).run(
+      mailboxId, userId, project_id, email, name || email, 
+      smtp_host, Number(smtp_port), smtp_secure ? 1 : 0, smtp_user || email, encryptedSmtpPass,
+      imap_host || null, imap_port ? Number(imap_port) : null, imap_secure ? 1 : 0, imap_user || smtp_user || email, encryptedImapPass,
+    );
 
     res.status(201).json({ id: mailboxId, email, name });
   } catch (err: any) {

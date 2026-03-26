@@ -16,23 +16,22 @@ export interface ImapConfig {
  */
 export async function pollImap(mailboxId: string) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
-  if (!mailbox || mailbox.connection_type !== 'smtp' || !mailbox.imap_config) return;
+  if (!mailbox || mailbox.connection_type !== 'smtp' || !mailbox.imap_host) return;
 
-  const config: ImapConfig = JSON.parse(mailbox.imap_config);
-  const password = decryptToken(config.enc_pass);
+  const password = decryptToken(mailbox.imap_pass || mailbox.smtp_pass);
 
   const imapConfig = {
     imap: {
-      user: config.user,
+      user: mailbox.imap_user || mailbox.smtp_user || mailbox.email,
       password: password,
-      host: config.host,
-      port: config.port,
-      tls: config.secure,
-      authTimeout: 5000
+      host: mailbox.imap_host,
+      port: mailbox.imap_port,
+      tls: mailbox.imap_secure === 1 || mailbox.imap_secure === true,
+      authTimeout: 10000
     }
   };
 
-  console.log(`[IMAP] Connecting to ${config.host} for ${mailbox.email}...`);
+  console.log(`[IMAP] Connecting to ${mailbox.imap_host} for ${mailbox.email}...`);
 
   try {
     const connection = await imap.connect(imapConfig);
