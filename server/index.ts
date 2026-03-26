@@ -1633,27 +1633,32 @@ app.post("/api/outreach/projects/:projectId/sync-inbox", async (req: AuthRequest
 // ─── COMPOSE ──────────────────────────────────────────────────────────────────
 // GET /api/outreach/compose?project_id=xxx&status=draft
 app.get("/api/outreach/compose", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { project_id, status } = req.query as {
-    project_id?: string;
-    status?: string;
-  };
+  try {
+    const userId = req.user?.uid;
+    const { project_id, status } = req.query as {
+      project_id?: string;
+      status?: string;
+    };
 
-  if (!userId || !project_id) return res.json([]);
+    if (!userId || !project_id) return res.json([]);
 
-  let query =
-    "SELECT * FROM outreach_individual_emails WHERE user_id = ? AND project_id = ?";
-  const params: any[] = [userId, project_id];
+    let query =
+      "SELECT * FROM outreach_individual_emails WHERE user_id = ? AND project_id = ?";
+    const params: any[] = [userId, project_id];
 
-  if (status) {
-    query += " AND status = ?";
-    params.push(status);
+    if (status) {
+      query += " AND status = ?";
+      params.push(status);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    const emails = await db.prepare(query).all(...params);
+    res.json(emails);
+  } catch (error: any) {
+    console.error("GET /api/outreach/compose Error:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch compose emails" });
   }
-
-  query += " ORDER BY created_at DESC";
-
-  const emails = await db.prepare(query).all(...params);
-  res.json(emails);
 });
 
 // GET /api/outreach/compose/:id
@@ -2181,49 +2186,71 @@ app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
 app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  try {
+    const userId = req.user?.uid;
+    const { project_id } = req.query as { project_id?: string };
 
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!project_id) return res.status(400).json({ error: "project_id required" });
+    if (!userId) return res.status(401).json({ error: "Auth required" });
+    if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-  const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
-  const hasHunterKey = !!(row && row.hunter_api_key);
-  const hasZeroBounceKey = !!(row && row.zerobounce_api_key);
+    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+    const hasHunterKey = !!(row && row.hunter_api_key);
+    const hasZeroBounceKey = !!(row && row.zerobounce_api_key);
+    const hasPdlKey = !!(row && row.pdl_api_key);
 
-  res.json({ hasHunterKey, hasZeroBounceKey });
+    res.json({ hasHunterKey, hasZeroBounceKey, hasPdlKey });
+  } catch (error: any) {
+    console.error("GET /api/outreach/settings Error:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch settings" });
+  }
 });
 
 app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { project_id, hunter_api_key, zerobounce_api_key } = req.body;
+  try {
+    const userId = req.user?.uid;
+    const { project_id, hunter_api_key, zerobounce_api_key, pdl_api_key } = req.body;
 
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!project_id) return res.status(400).json({ error: "project_id required" });
+    if (!userId) return res.status(401).json({ error: "Auth required" });
+    if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-  if (hunter_api_key !== undefined) {
-    const encrypted = hunter_api_key ? encryptToken(hunter_api_key) : null;
-    await db.prepare(`
-      INSERT INTO outreach_settings (project_id, hunter_api_key, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(project_id) DO UPDATE SET
-        hunter_api_key = excluded.hunter_api_key,
-        updated_at = CURRENT_TIMESTAMP
-    `).run(project_id, encrypted);
+    if (hunter_api_key !== undefined) {
+      const encrypted = hunter_api_key ? encryptToken(hunter_api_key) : null;
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, hunter_api_key, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          hunter_api_key = excluded.hunter_api_key,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, encrypted);
+    }
+
+    if (zerobounce_api_key !== undefined) {
+      const encrypted = zerobounce_api_key ? encryptToken(zerobounce_api_key) : null;
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, zerobounce_api_key, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          zerobounce_api_key = excluded.zerobounce_api_key,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, encrypted);
+    }
+
+    if (pdl_api_key !== undefined) {
+      const encrypted = pdl_api_key ? encryptToken(pdl_api_key) : null;
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, pdl_api_key, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          pdl_api_key = excluded.pdl_api_key,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, encrypted);
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("POST /api/outreach/settings Error:", error);
+    res.status(500).json({ error: error.message || "Failed to update settings" });
   }
-
-  if (zerobounce_api_key !== undefined) {
-    const encrypted = zerobounce_api_key ? encryptToken(zerobounce_api_key) : null;
-    await db.prepare(`
-      INSERT INTO outreach_settings (project_id, zerobounce_api_key, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(project_id) DO UPDATE SET
-        zerobounce_api_key = excluded.zerobounce_api_key,
-        updated_at = CURRENT_TIMESTAMP
-    `).run(project_id, encrypted);
-  }
-
-  res.json({ success: true });
 });
 
 // ─── ICP PROFILE ─────────────────────────────────────────────────────────────

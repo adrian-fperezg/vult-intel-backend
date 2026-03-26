@@ -481,9 +481,29 @@ export const initDb = async () => {
         project_id TEXT PRIMARY KEY,
         hunter_api_key TEXT,
         zerobounce_api_key TEXT,
+        pdl_api_key TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    const settingsCols = await db.pragma('table_info(outreach_settings)');
+    const settingsColNames = settingsCols.map((c: any) => c.name);
+    const newSettingsCols = [
+      { name: 'hunter_api_key', type: 'TEXT' },
+      { name: 'zerobounce_api_key', type: 'TEXT' },
+      { name: 'pdl_api_key', type: 'TEXT' }
+    ];
+
+    try {
+      for (const col of newSettingsCols) {
+        if (!settingsColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_settings`);
+          await db.run(`ALTER TABLE outreach_settings ADD COLUMN ${col.name} ${col.type}`);
+        }
+      }
+    } catch (e) {
+      console.error('[DB] Migration failed for outreach_settings:', e);
+    }
 
     // 9. ICP Profiles
     await db.run(`
