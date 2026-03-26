@@ -1,6 +1,10 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+
+// TASK: Dependency check for critical modules
+try { require('nodemailer'); console.log('[STARTUP] Nodemailer loaded'); } catch(e) { console.error('[STARTUP] Nodemailer MISSING'); }
+try { require('imap-simple'); console.log('[STARTUP] imap-simple loaded'); } catch(e) { console.error('[STARTUP] imap-simple MISSING'); }
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
@@ -28,15 +32,14 @@ import hunterRoutes from "./routes/outreach/hunter.js";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://vultintel.com')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['*'];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('CORS blocked'));
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked: ${origin}`));
   },
   credentials: true
 }));
@@ -76,16 +79,25 @@ app.use(
 );
 
 // Initialize DB schema on startup
-initDb().then(() => {
-  console.log('[DB] Initialization complete. Scheduling background jobs...');
-  // Schedule recurring tasks
-  emailQueue.add('poll-mailboxes', {}, { 
-    repeat: { pattern: '*/10 * * * *' }, // Every 10 minutes
-    removeOnComplete: true
-  }).catch(err => console.error('[QUEUE] Failed to schedule poll-mailboxes:', err));
-}).catch(err => {
-  console.error('[DB] Initialization failed:', err);
-});
+const startServices = async () => {
+  try {
+    console.log('[STARTUP] Initializing database...');
+    await initDb();
+    console.log('[DB] Initialization complete. Scheduling background jobs...');
+    
+    // Schedule recurring tasks
+    await emailQueue.add('poll-mailboxes', {}, { 
+      repeat: { pattern: '*/10 * * * *' }, // Every 10 minutes
+      removeOnComplete: true
+    });
+    console.log('[QUEUE] Background jobs scheduled.');
+  } catch (err) {
+    console.error('[CRITICAL STARTUP ERROR] Initialization failed, but proceeding anyway:', err);
+    // DO NOT process.exit(1) - we want the health check to be available
+  }
+};
+
+startServices();
 
 // ─── Public health check ──────────────────────────────────────────────────────
 
@@ -317,36 +329,48 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
 // POST /api/outreach/mailboxes/smtp
 app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, projectId, email, name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body;
+  const { 
+    project_id, projectId, email, name, 
+    smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password, 
+    imap_host, imap_port, imap_secure, imap_username, imap_password,
+    // Support old field names just in case frontend hasn't updated yet
+    smtp_user, smtp_pass, imap_user, imap_pass
+  } = req.body;
   const pId = project_id || projectId;
 
-  if (!userId || !project_id || !email || !smtp_host || !smtp_pass) {
-    return res.status(400).json({ error: "Missing required SMTP/IMAP fields" });
+  // Map fields to correct names
+  const sUser = smtp_username || smtp_user || email;
+  const sPass = smtp_password || smtp_pass;
+  const iUser = imap_username || imap_user || sUser;
+  const iPass = imap_password || imap_pass || sPass;
+
+  if (!userId || !pId || !email || !smtp_host || !sPass) {
+    return res.status(400).json({ error: "Missing required SMTP/IMAP fields (email, host, password)" });
   }
 
   try {
     const mailboxId = uuidv4();
-    const encryptedSmtpPass = encryptToken(smtp_pass);
-    const encryptedImapPass = imap_pass ? encryptToken(imap_pass) : encryptedSmtpPass;
+    const encryptedSmtpPass = encryptToken(sPass);
+    const encryptedImapPass = iPass ? encryptToken(iPass) : encryptedSmtpPass;
 
     await db.prepare(`
       INSERT INTO outreach_mailboxes (
         id, user_id, project_id, email, name, connection_type, 
-        smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass,
-        imap_host, imap_port, imap_secure, imap_user, imap_pass,
+        smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password,
+        imap_host, imap_port, imap_secure, imap_username, imap_password,
         status
       )
       VALUES (?, ?, ?, ?, ?, 'smtp_imap', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `).run(
       mailboxId, userId, pId, email, name || email, 
-      smtp_host, Number(smtp_port), smtp_secure ? 1 : 0, smtp_user || email, encryptedSmtpPass,
-      imap_host || null, imap_port ? Number(imap_port) : null, imap_secure ? 1 : 0, imap_user || smtp_user || email, encryptedImapPass,
+      smtp_host, Number(smtp_port), smtp_secure ? 1 : 0, sUser, encryptedSmtpPass,
+      imap_host || null, imap_port ? Number(imap_port) : null, imap_secure ? 1 : 0, iUser, encryptedImapPass,
     );
 
     res.status(201).json({ id: mailboxId, email, name });
   } catch (err: any) {
-    console.error("[POST /mailboxes/smtp] Error:", err);
-    res.status(500).json({ error: "Failed to connect SMTP mailbox" });
+    console.error("[POST /mailboxes/smtp] CRITICAL ERROR:", err.message, err.stack);
+    res.status(500).json({ error: err.message || "Failed to connect SMTP mailbox" });
   }
 });
 

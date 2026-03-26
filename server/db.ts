@@ -356,13 +356,13 @@ export const initDb = async () => {
         smtp_host TEXT,
         smtp_port INTEGER,
         smtp_secure BOOLEAN DEFAULT TRUE,
-        smtp_user TEXT,
-        smtp_pass TEXT,
+        smtp_username TEXT,
+        smtp_password TEXT,
         imap_host TEXT,
         imap_port INTEGER,
         imap_secure BOOLEAN DEFAULT TRUE,
-        imap_user TEXT,
-        imap_pass TEXT,
+        imap_username TEXT,
+        imap_password TEXT,
         display_name TEXT,
         provider TEXT,
         expires_at TIMESTAMP,
@@ -397,26 +397,27 @@ export const initDb = async () => {
       { name: 'smtp_host', type: 'TEXT' },
       { name: 'smtp_port', type: 'INTEGER' },
       { name: 'smtp_secure', type: 'BOOLEAN DEFAULT TRUE' },
-      { name: 'smtp_user', type: 'TEXT' },
-      { name: 'smtp_pass', type: 'TEXT' },
+      { name: 'smtp_username', type: 'TEXT' },
+      { name: 'smtp_password', type: 'TEXT' },
       { name: 'imap_host', type: 'TEXT' },
       { name: 'imap_port', type: 'INTEGER' },
       { name: 'imap_secure', type: 'BOOLEAN DEFAULT TRUE' },
-      { name: 'imap_user', type: 'TEXT' },
-      { name: 'imap_pass', type: 'TEXT' },
+      { name: 'imap_username', type: 'TEXT' },
+      { name: 'imap_password', type: 'TEXT' },
       { name: 'display_name', type: 'TEXT' },
       { name: 'provider', type: 'TEXT' }
     ];
 
-    try {
-      for (const col of newMailboxCols) {
+    for (const col of newMailboxCols) {
+      try {
         if (!mailboxColNames.includes(col.name)) {
           console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
           await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
         }
+      } catch (err) {
+        // Individual column migration might fail if it already exists or on other errors, but we continue
+        console.warn(`[DB] Migration for column ${col.name} in outreach_mailboxes was skipped or failed:`, (err as Error).message);
       }
-    } catch (e) {
-      console.error('[DB] Migration failed for outreach_mailboxes:', e);
     }
 
     // 7. Individual Emails

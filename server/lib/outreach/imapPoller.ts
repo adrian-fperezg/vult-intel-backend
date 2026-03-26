@@ -18,11 +18,11 @@ export async function pollImap(mailboxId: string) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox || mailbox.connection_type !== 'smtp' || !mailbox.imap_host) return;
 
-  const password = decryptToken(mailbox.imap_pass || mailbox.smtp_pass);
+  const password = decryptToken(mailbox.imap_password || mailbox.smtp_password);
 
   const imapConfig = {
     imap: {
-      user: mailbox.imap_user || mailbox.smtp_user || mailbox.email,
+      user: mailbox.imap_username || mailbox.smtp_username || mailbox.email,
       password: password,
       host: mailbox.imap_host,
       port: mailbox.imap_port,
