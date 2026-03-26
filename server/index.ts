@@ -318,6 +318,74 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
   }
 });
 
+// POST /api/outreach/mailboxes/smtp
+app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, email, name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, imap_host, imap_port, imap_secure } = req.body;
+
+  if (!userId || !project_id || !email || !smtp_host || !smtp_pass) {
+    return res.status(400).json({ error: "Missing required SMTP/IMAP fields" });
+  }
+
+  try {
+    const mailboxId = uuidv4();
+    const encryptedSmtpPass = encryptToken(smtp_pass);
+    const smtpConfig = JSON.stringify({
+      host: smtp_host,
+      port: Number(smtp_port),
+      secure: smtp_secure,
+      user: smtp_user || email,
+      enc_pass: encryptedSmtpPass
+    });
+
+    const imapConfig = imap_host ? JSON.stringify({
+      host: imap_host,
+      port: Number(imap_port),
+      secure: imap_secure,
+      user: smtp_user || email,
+      enc_pass: encryptedSmtpPass
+    }) : null;
+
+    await db.prepare(`
+      INSERT INTO outreach_mailboxes (id, user_id, project_id, email, name, connection_type, smtp_config, imap_config, status)
+      VALUES (?, ?, ?, ?, ?, 'smtp', ?, ?, 'active')
+    `).run(mailboxId, userId, project_id, email, name || email, smtpConfig, imapConfig);
+
+    res.status(201).json({ id: mailboxId, email, name });
+  } catch (err: any) {
+    console.error("[POST /mailboxes/smtp] Error:", err);
+    res.status(500).json({ error: "Failed to connect SMTP mailbox" });
+  }
+});
+
+// POST /api/outreach/mailboxes/:id/aliases/sync
+app.post("/api/outreach/mailboxes/:id/aliases/sync", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    await fetchGmailAliases(id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/outreach/mailboxes/:id/aliases
+// Manually add an alias (useful for SMTP mailboxes that might have aliases)
+app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const { email, name } = req.body;
+  try {
+    const aliasId = uuidv4();
+    await db.prepare(`
+      INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_verified)
+      VALUES (?, ?, ?, ?, 1)
+    `).run(aliasId, id, email, name);
+    res.json({ id: aliasId, email, name });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/outreach/mailboxes/:id/sync
 app.post("/api/outreach/mailboxes/:id/sync", async (req: AuthRequest, res) => {
   const mailboxId = req.params.id;
@@ -2265,6 +2333,12 @@ aiKeysCheck();
 
 // Start sync
 syncMailboxesFromRedis();
+
+// Start recurring IMAP poll every 10 minutes
+emailQueue.add('poll-mailboxes', {}, { 
+  repeat: { every: 600000 },
+  jobId: 'poll-mailboxes-repeat' 
+}).catch(console.error);
 
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
 
