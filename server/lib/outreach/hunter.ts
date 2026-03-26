@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { GoogleGenAI } from "@google/genai";
 import db from "../../db.js";
-import { decryptToken } from "../../oauth.js";
+import { decryptToken } from "./encrypt.js";
 
 const HUNTER_API_URL = "https://api.hunter.io/v2";
 

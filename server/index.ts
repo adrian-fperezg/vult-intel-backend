@@ -15,39 +15,29 @@ import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
   fetchGoogleUserInfo,
-  encryptToken,
-  decryptToken,
   getValidAccessToken,
   getValidGmailClient,
   saveTokens,
   syncMailboxesFromRedis,
   fetchGmailAliases,
 } from "./oauth.js";
+import { encryptToken, decryptToken } from "./lib/outreach/encrypt.js";
 import { syncMailbox } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
+  : ['https://vultintel.com', 'http://localhost:5173'];
 
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) return callback(null, true);
-
-    if (ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`CORS blocked: ${origin}`));
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS blocked'));
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-project-id'],
+  credentials: true
 }));
 
 app.options('*', cors());
@@ -139,7 +129,7 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
     error?: string;
   };
 
-  const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? ALLOWED_ORIGINS[0] : "http://localhost:3000");
+  const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? allowedOrigins[0] : "http://localhost:3000");
 
   if (error || !code || !state) {
     return res.redirect(
@@ -326,7 +316,8 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
 // POST /api/outreach/mailboxes/smtp
 app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, email, name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body;
+  const { project_id, projectId, email, name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body;
+  const pId = project_id || projectId;
 
   if (!userId || !project_id || !email || !smtp_host || !smtp_pass) {
     return res.status(400).json({ error: "Missing required SMTP/IMAP fields" });
@@ -344,9 +335,9 @@ app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
         imap_host, imap_port, imap_secure, imap_user, imap_pass,
         status
       )
-      VALUES (?, ?, ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      VALUES (?, ?, ?, ?, ?, 'smtp_imap', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `).run(
-      mailboxId, userId, project_id, email, name || email, 
+      mailboxId, userId, pId, email, name || email, 
       smtp_host, Number(smtp_port), smtp_secure ? 1 : 0, smtp_user || email, encryptedSmtpPass,
       imap_host || null, imap_port ? Number(imap_port) : null, imap_secure ? 1 : 0, imap_user || smtp_user || email, encryptedImapPass,
     );

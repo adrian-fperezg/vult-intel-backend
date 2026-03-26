@@ -8,49 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
 
-const ALGORITHM = 'aes-256-cbc';
-
-function getKey(): Buffer {
-  const raw = process.env.OUTREACH_TOKEN_ENCRYPTION_KEY || '';
-  if (raw) {
-    const hash = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 8);
-    console.log(`[OAuth] Using encryption key hash (first 8 chars): ${hash}`);
-  } else {
-    console.warn('[OAuth] NO ENCRYPTION KEY FOUND in environment!');
-  }
-  // Pad / trim to exactly 32 bytes
-  return Buffer.from(raw.padEnd(32, '0').slice(0, 32), 'utf8');
-}
-
-export function encryptToken(plain: string): string {
-  if (!plain) return '';
-  try {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
-    const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
-    return iv.toString('hex') + ':' + encrypted.toString('hex');
-  } catch (err) {
-    console.error('[ENCRYPT ERROR]:', err);
-    return '';
-  }
-}
-
-export function decryptToken(cipherText: string): string {
-  if (!cipherText || !cipherText.includes(':')) return '';
-  try {
-    const [ivHex, encHex] = cipherText.split(':');
-    if (!ivHex || !encHex) return '';
-    const iv = Buffer.from(ivHex, 'hex');
-    const enc = Buffer.from(encHex, 'hex');
-    const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
-    const decrypted = Buffer.concat([decipher.update(enc), decipher.final()]);
-    return decrypted.toString('utf8');
-  } catch (err) {
-    // This is a common crash point if OUTREACH_TOKEN_ENCRYPTION_KEY changes
-    console.error('[DECRYPT ERROR] Possible key mismatch or malformed token:', err.message);
-    return '';
-  }
-}
+import { encryptToken, decryptToken } from './lib/outreach/encrypt.js';
 
 // ─── Google OAuth constants ──────────────────────────────────────────────────
 

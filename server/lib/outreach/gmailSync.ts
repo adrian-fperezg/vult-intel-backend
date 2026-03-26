@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
-import { decryptToken } from "../../oauth.js";
+import { decryptToken } from "./encrypt.js";
 
 interface GmailMessage {
   id: string;

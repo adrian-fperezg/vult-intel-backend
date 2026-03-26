@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import db from '../../db.js';
-import { decryptToken } from '../../oauth.js';
+import { decryptToken } from "./encrypt.js";
 
 export interface SmtpConfig {
   host: string;

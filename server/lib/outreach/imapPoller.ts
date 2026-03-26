@@ -1,6 +1,6 @@
 import imap from 'imap-simple';
 import db from '../../db.js';
-import { decryptToken } from '../../oauth.js';
+import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ImapConfig {

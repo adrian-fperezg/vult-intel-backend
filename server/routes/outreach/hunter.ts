@@ -123,7 +123,7 @@ router.post("/search-people", async (req: AuthRequest, res) => {
     const allPeople: PersonLead[] = [];
     const domains = companies.map((c: any) => c.domain).filter(Boolean);
 
-    const personResults = await runWithConcurrency(domains, 3, async (domain) => {
+    const personResults = await runWithConcurrency(domains, 3, async (domain: string) => {
       const f = filters as any;
       return await searchPeopleAtDomain(pId as string, userId as string, domain, {
         department: f?.department,
