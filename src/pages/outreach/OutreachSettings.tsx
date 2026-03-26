@@ -62,21 +62,33 @@ export default function OutreachSettings() {
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
-  // Hunter Integration States
+  // Integration States
   const [hunterKeyInput, setHunterKeyInput] = useState('');
-  const [savingHunter, setSavingHunter] = useState(false);
-  const [hunterData, setHunterData] = useState<any>(null);
-  const [hunterConnected, setHunterConnected] = useState(false);
-  const [showHunterSetup, setShowHunterSetup] = useState(false);
-  const [fetchingHunter, setFetchingHunter] = useState(false);
-
-  // ZeroBounce Integration States
   const [zbKeyInput, setZbKeyInput] = useState('');
+  const [pdlKeyInput, setPdlKeyInput] = useState('');
+  
+  const [has_hunter, setHasHunter] = useState(false);
+  const [has_zerobounce, setHasZb] = useState(false);
+  const [has_pdl, setHasPdl] = useState(false);
+
+  const [savingHunter, setSavingHunter] = useState(false);
   const [savingZb, setSavingZb] = useState(false);
-  const [zbData, setZbData] = useState<any>(null);
-  const [zbConnected, setZbConnected] = useState(false);
+  const [savingPdl, setSavingPdl] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [hunterAccount, setHunterAccount] = useState<any>(null);
+  const [zbCredits, setZbCredits] = useState<any>(null);
+  const [pdlUsage, setPdlUsage] = useState<any>(null);
+
+  const [showHunterSetup, setShowHunterSetup] = useState(false);
   const [showZbSetup, setShowZbSetup] = useState(false);
+  const [showPdlSetup, setShowPdlSetup] = useState(false);
+
+  const [fetchingHunter, setFetchingHunter] = useState(false);
   const [fetchingZb, setFetchingZb] = useState(false);
+  const [fetchingPdl, setFetchingPdl] = useState(false);
+
+
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectMode, setConnectMode] = useState<'picker' | 'smtp'>('picker');
   const [smtpConfig, setSmtpConfig] = useState({
@@ -87,73 +99,116 @@ export default function OutreachSettings() {
   useEffect(() => {
     if (activeTab === 'mailboxes') loadMailboxes();
     if (activeTab === 'integrations' && api.activeProjectId) {
-      loadHunterStatus();
-      loadZbStatus();
+      loadIntegrationStatus();
     }
   }, [activeTab, api.activeProjectId]);
 
-  const loadHunterStatus = async () => {
+  const loadIntegrationStatus = async () => {
+    if (!api.activeProjectId) return;
     try {
       setFetchingHunter(true);
+      setFetchingZb(true);
+      setFetchingPdl(true);
+
       const settings = await api.fetchSettings();
-      setHunterConnected(settings?.hasHunterKey || false);
-      if (settings?.hasHunterKey) {
-        const account = await api.fetchHunterAccount();
-        setHunterData(account);
-      }
-    } catch {
-      // silently fail
+      setHasHunter(settings?.has_hunter || false);
+      setHasZb(settings?.has_zerobounce || false);
+      setHasPdl(settings?.has_pdl || false);
+
+      if (settings?.has_hunter) await loadHunterStatus();
+      if (settings?.has_zerobounce) await loadZbStatus();
+      if (settings?.has_pdl) await loadPdlStatus();
+
+    } catch (err) {
+      console.error('Failed to load integration status:', err);
+      toast.error('Failed to load integration status.');
     } finally {
       setFetchingHunter(false);
+      setFetchingZb(false);
+      setFetchingPdl(false);
+    }
+  };
+
+  const loadHunterStatus = async () => {
+    try {
+      const account = await api.fetchHunterAccount();
+      setHunterAccount(account);
+    } catch (err) {
+      console.error('Failed to load Hunter status:', err);
+      setHunterAccount(null);
     }
   };
 
   const loadZbStatus = async () => {
     try {
-      setFetchingZb(true);
-      const settings = await api.fetchSettings();
-      setZbConnected(settings?.hasZerobounceKey || false);
-      if (settings?.hasZerobounceKey) {
-        const data = await api.fetchZeroBounceCredits();
-        setZbData(data);
-      }
-    } catch {
-      // silently fail
+      const data = await api.fetchZeroBounceCredits();
+      setZbCredits(data);
+    } catch (err) {
+      console.error('Failed to load ZeroBounce credits:', err);
+      setZbCredits(null);
+    }
+  };
+
+  const loadPdlStatus = async () => {
+    if (!api.activeProjectId) return;
+    try {
+      // Assuming api.fetchPdlUsage exists or implementing a direct fetch
+      // If api.fetchPdlUsage is not implemented, you might need to add it to useOutreachApi
+      const data = await api.fetchPdlUsage(); // Assuming this returns usage data
+      setPdlUsage(data);
+    } catch (err) {
+      console.error('Failed to load PDL usage:', err);
+      setPdlUsage(null);
+    }
+  };
+
+  const handleSaveIntegrationKeys = async (
+    hunterKey: string | undefined,
+    zbKey: string | undefined,
+    pdlKey: string | undefined
+  ) => {
+    if (!api.activeProjectId) {
+      toast.error('No project selected.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await api.updateSettings({
+        hunter_api_key: hunterKey,
+        zerobounce_api_key: zbKey,
+        pdl_api_key: pdlKey
+      });
+      toast.success('Integration settings updated successfully');
+      setHunterKeyInput('');
+      setZbKeyInput('');
+      setPdlKeyInput('');
+      setShowHunterSetup(false);
+      setShowZbSetup(false);
+      setShowPdlSetup(false);
+      await loadIntegrationStatus();
+    } catch (err: any) {
+      toast.error('Failed to save integration keys: ' + (err.message || 'Unknown error'));
     } finally {
-      setFetchingZb(false);
+      setIsSaving(false);
     }
   };
 
   const handleSaveHunterKey = async () => {
-    if (!hunterKeyInput.trim()) return;
-    try {
-      setSavingHunter(true);
-      await api.updateSettings({ hunter_api_key: hunterKeyInput.trim() });
-      toast.success('Hunter.io API Key saved successfully');
-      setHunterKeyInput('');
-      setShowHunterSetup(false);
-      await loadHunterStatus();
-    } catch (err: any) {
-      toast.error('Failed to save Hunter key: ' + err.message);
-    } finally {
-      setSavingHunter(false);
-    }
+    setSavingHunter(true);
+    await handleSaveIntegrationKeys(hunterKeyInput.trim() || undefined, undefined, undefined);
+    setSavingHunter(false);
   };
 
   const handleSaveZbKey = async () => {
-    if (!zbKeyInput.trim()) return;
-    try {
-      setSavingZb(true);
-      await api.updateSettings({ zerobounce_api_key: zbKeyInput.trim() });
-      toast.success('ZeroBounce API Key saved successfully');
-      setZbKeyInput('');
-      setShowZbSetup(false);
-      await loadZbStatus();
-    } catch (err: any) {
-      toast.error('Failed to save ZeroBounce key: ' + err.message);
-    } finally {
-      setSavingZb(false);
-    }
+    setSavingZb(true);
+    await handleSaveIntegrationKeys(undefined, zbKeyInput.trim() || undefined, undefined);
+    setSavingZb(false);
+  };
+
+  const handleSavePdlKey = async () => {
+    setSavingPdl(true);
+    await handleSaveIntegrationKeys(undefined, undefined, pdlKeyInput.trim() || undefined);
+    setSavingPdl(false);
   };
 
   const loadMailboxes = async () => {
@@ -597,7 +652,7 @@ export default function OutreachSettings() {
                   </div>
                   {fetchingHunter ? (
                     <Loader2 className="size-4 animate-spin text-slate-400" />
-                  ) : hunterConnected ? (
+                  ) : has_hunter ? (
                     <OutreachBadge variant="teal" dot>Connected</OutreachBadge>
                   ) : (
                     <TealButton size="sm" variant="outline" onClick={() => setShowHunterSetup(!showHunterSetup)}>
@@ -607,7 +662,7 @@ export default function OutreachSettings() {
                 </div>
                 <div className="flex items-center justify-between mb-0.5">
                   <p className="font-semibold text-white text-sm">Hunter.io</p>
-                  {hunterConnected && (
+                  {has_hunter && (
                     <button onClick={() => setShowHunterSetup(!showHunterSetup)} className="text-[10px] text-slate-500 hover:text-white uppercase tracking-wider font-bold">
                       Config
                     </button>
@@ -631,15 +686,21 @@ export default function OutreachSettings() {
                           />
                         </div>
                         <div className="flex items-center gap-2">
-                          <TealButton size="sm" className="w-full" disabled={!hunterKeyInput.trim() || savingHunter} onClick={handleSaveHunterKey}>
-                            {savingHunter ? 'Saving...' : 'Save API Key'}
+                          <TealButton 
+                            size="sm" 
+                            className="w-full" 
+                            disabled={!hunterKeyInput.trim()} 
+                            onClick={handleSaveHunterKey}
+                            loading={savingHunter}
+                          >
+                            Save API Key
                           </TealButton>
-                          {hunterConnected && (
+                          {has_hunter && (
                             <button className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-white hover:bg-red-500/20 rounded-xl transition-all border border-red-500/10"
                              onClick={async () => {
                                await api.updateSettings({ hunter_api_key: '' });
-                               setHunterConnected(false);
-                               setHunterData(null);
+                               setHasHunter(false);
+                               setHunterAccount(null);
                                toast.success('Hunter.io disconnected');
                              }}
                             >Disconnect</button>
@@ -650,28 +711,28 @@ export default function OutreachSettings() {
                   )}
                 </AnimatePresence>
 
-                {hunterConnected && hunterData && !showHunterSetup && (
+                {has_hunter && hunterAccount && !showHunterSetup && (
                   <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Current Plan</span>
-                      <span className="font-semibold text-white">{hunterData.plan_name}</span>
+                      <span className="font-semibold text-white">{hunterAccount.plan_name}</span>
                     </div>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-slate-500">Searches Used</span>
-                        <span className="text-teal-400 font-bold">{hunterData.calls?.search?.used} / {hunterData.calls?.search?.available}</span>
+                        <span className="text-teal-400 font-bold">{hunterAccount.calls?.search?.used} / {hunterAccount.calls?.search?.available}</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.calls?.search?.used / hunterData.calls?.search?.available) * 100}%` }} />
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterAccount.calls?.search?.used / (hunterAccount.calls?.search?.available || 1)) * 100}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-slate-500">Verifications Used</span>
-                        <span className="text-teal-400 font-bold">{hunterData.calls?.verify?.used} / {hunterData.calls?.verify?.available}</span>
+                        <span className="text-teal-400 font-bold">{hunterAccount.calls?.verify?.used} / {hunterAccount.calls?.verify?.available}</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.calls?.verify?.used / hunterData.calls?.verify?.available) * 100}%` }} />
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterAccount.calls?.verify?.used / (hunterAccount.calls?.verify?.available || 1)) * 100}%` }} />
                       </div>
                     </div>
                   </div>
@@ -686,7 +747,7 @@ export default function OutreachSettings() {
                   </div>
                   {fetchingZb ? (
                     <Loader2 className="size-4 animate-spin text-slate-400" />
-                  ) : zbConnected ? (
+                  ) : has_zerobounce ? (
                     <OutreachBadge variant="teal" dot>Connected</OutreachBadge>
                   ) : (
                     <TealButton size="sm" variant="outline" onClick={() => setShowZbSetup(!showZbSetup)}>
@@ -696,7 +757,7 @@ export default function OutreachSettings() {
                 </div>
                 <div className="flex items-center justify-between mb-0.5">
                   <p className="font-semibold text-white text-sm">ZeroBounce</p>
-                  {zbConnected && (
+                  {has_zerobounce && (
                     <button onClick={() => setShowZbSetup(!showZbSetup)} className="text-[10px] text-slate-500 hover:text-white uppercase tracking-wider font-bold">
                       Config
                     </button>
@@ -720,15 +781,21 @@ export default function OutreachSettings() {
                           />
                         </div>
                         <div className="flex items-center gap-2">
-                          <TealButton size="sm" className="w-full" disabled={!zbKeyInput.trim() || savingZb} onClick={handleSaveZbKey}>
-                            {savingZb ? 'Saving...' : 'Save API Key'}
+                          <TealButton 
+                            size="sm" 
+                            className="w-full" 
+                            disabled={!zbKeyInput.trim()} 
+                            onClick={handleSaveZbKey}
+                            loading={savingZb}
+                          >
+                            Save API Key
                           </TealButton>
-                          {zbConnected && (
+                          {has_zerobounce && (
                             <button className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-white hover:bg-red-500/20 rounded-xl transition-all border border-red-500/10"
                              onClick={async () => {
                                await api.updateSettings({ zerobounce_api_key: '' });
-                               setZbConnected(false);
-                               setZbData(null);
+                               setHasZb(false);
+                               setZbCredits(null);
                                toast.success('ZeroBounce disconnected');
                              }}
                             >Disconnect</button>
@@ -739,15 +806,101 @@ export default function OutreachSettings() {
                   )}
                 </AnimatePresence>
 
-                {zbConnected && zbData && !showZbSetup && (
+                {has_zerobounce && zbCredits && !showZbSetup && (
                   <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Total Credits</span>
-                      <span className="font-semibold text-white">{zbData.credits?.toLocaleString()}</span>
+                      <span className="font-semibold text-white">{zbCredits.credits?.toLocaleString() || zbCredits.toLocaleString()}</span>
                     </div>
                     <div className="p-3 bg-teal-500/5 border border-teal-500/10 rounded-xl">
                       <p className="text-[10px] text-teal-400 font-bold uppercase tracking-wider mb-1">Waterfall Mode</p>
                       <p className="text-xs text-teal-400/80">Primary verification provider. Falls back to Hunter if out of credits.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* PDL Custom Card */}
+              <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 hover:border-white/15 transition-all">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="size-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                    <span className="text-lg font-bold text-teal-400">P</span>
+                  </div>
+                  {fetchingPdl ? (
+                    <Loader2 className="size-4 animate-spin text-slate-400" />
+                  ) : has_pdl ? (
+                    <OutreachBadge variant="teal" dot>Connected</OutreachBadge>
+                  ) : (
+                    <TealButton size="sm" variant="outline" onClick={() => setShowPdlSetup(!showPdlSetup)}>
+                      Connect
+                    </TealButton>
+                  )}
+                </div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <p className="font-semibold text-white text-sm">PeopleDataLabs</p>
+                  {has_pdl && (
+                    <button onClick={() => setShowPdlSetup(!showPdlSetup)} className="text-[10px] text-slate-500 hover:text-white uppercase tracking-wider font-bold">
+                      Config
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-teal-400/60 mb-1">Contact Enrichment</p>
+                <p className="text-xs text-slate-500 mb-4">Enrich leads with B2B data & socials</p>
+
+                <AnimatePresence>
+                  {showPdlSetup && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <div className="p-4 bg-black/20 rounded-xl border border-white/5 space-y-3 mt-2">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-400 mb-1.5 block">PDL API Key</label>
+                          <input 
+                            type="password" 
+                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50" 
+                            placeholder="Data is encrypted at rest"
+                            value={pdlKeyInput}
+                            onChange={(e) => setPdlKeyInput(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <TealButton 
+                            size="sm" 
+                            className="w-full" 
+                            disabled={!pdlKeyInput.trim()} 
+                            onClick={handleSavePdlKey}
+                            loading={savingPdl}
+                          >
+                            Save API Key
+                          </TealButton>
+                          {has_pdl && (
+                            <button className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-white hover:bg-red-500/20 rounded-xl transition-all border border-red-500/10"
+                             onClick={async () => {
+                               await api.updateSettings({ pdl_api_key: '' });
+                               setHasPdl(false);
+                               setPdlUsage(null);
+                               toast.success('PDL disconnected');
+                             }}
+                            >Disconnect</button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {has_pdl && pdlUsage && !showPdlSetup && (
+                  <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Remaining</span>
+                      <span className="font-semibold text-white">{pdlUsage?.remaining?.toLocaleString() ?? 0}</span>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-500">Usage</span>
+                        <span className="text-teal-400 font-bold">{pdlUsage?.used?.toLocaleString() ?? 0} / {pdlUsage?.available?.toLocaleString() ?? 0}</span>
+                      </div>
+                      <div className="h-1.5 bg-white/10 rounded-full">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${((pdlUsage?.used || 0) / (pdlUsage?.available || 1)) * 100}%` }} />
+                      </div>
                     </div>
                   </div>
                 )}

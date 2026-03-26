@@ -2183,6 +2183,22 @@ app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
   }
 });
 
+app.get("/api/outreach/pdl/usage", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const project_id = req.query.project_id as string;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+  try {
+    const settings = await db.prepare('SELECT pdl_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
+    if (!settings?.pdl_api_key) return res.status(404).json({ error: "PDL API key not configured" });
+    const usage = await getPDLUsage(); // Note: PDL service might need the key passed if it doesn't use env
+    res.json(usage);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
 app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
@@ -2194,11 +2210,11 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
     if (!project_id) return res.status(400).json({ error: "project_id required" });
 
     const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
-    const hasHunterKey = !!(row && row.hunter_api_key);
-    const hasZeroBounceKey = !!(row && row.zerobounce_api_key);
-    const hasPdlKey = !!(row && row.pdl_api_key);
+    const has_hunter = !!(row && row.hunter_api_key);
+    const has_zerobounce = !!(row && row.zerobounce_api_key);
+    const has_pdl = !!(row && row.pdl_api_key);
 
-    res.json({ hasHunterKey, hasZeroBounceKey, hasPdlKey });
+    res.json({ has_hunter, has_zerobounce, has_pdl });
   } catch (error: any) {
     console.error("GET /api/outreach/settings Error:", error);
     res.status(500).json({ error: error.message || "Failed to fetch settings" });

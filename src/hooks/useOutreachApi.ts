@@ -262,6 +262,7 @@ export function useOutreachApi() {
   const updateSettings = useCallback((settings: any) => post<any>('/settings', settings), [post]);
   const fetchHunterAccount = useCallback(() => get<any>('/hunter/account'), [get]);
   const fetchZeroBounceCredits = useCallback(() => get<any>('/zerobounce/credits'), [get]);
+  const fetchPdlUsage = useCallback(() => get<any>('/pdl/usage'), [get]);
   const fetchIntegrationStatus = useCallback(() => get<any>('/integrations/status'), [get]);
 
   const hunterDomainSearch = useCallback((domain: string, options?: any) => 
@@ -497,6 +498,7 @@ export function useOutreachApi() {
     updateIcp,
     deleteIcp,
     fetchZeroBounceCredits,
+    fetchPdlUsage,
     fetchIntegrationStatus,
     verifyEmailsBulk,
     connectSmtp,
