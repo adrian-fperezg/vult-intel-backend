@@ -173,6 +173,34 @@ export function useOutreachApi() {
     [patch],
   );
 
+  const getSequence = useCallback(
+    (id: string) => get<any>(`/sequences/${id}`),
+    [get]
+  );
+
+  const updateSequenceSteps = useCallback(
+    (id: string, steps: any[], project_id: string) => 
+      post<any>(`/sequences/${id}/steps`, { steps, project_id }),
+    [post]
+  );
+
+  const activateSequence = useCallback(
+    (id: string, project_id: string) => 
+      post<any>(`/sequences/${id}/activate`, { project_id }),
+    [post]
+  );
+
+  const addSequenceRecipients = useCallback(
+    (id: string, contact_ids: string[], project_id: string) => 
+      post<any>(`/sequences/${id}/recipients`, { contact_ids, project_id }),
+    [post]
+  );
+
+  const getGlobalLimitStatus = useCallback(
+    (project_id: string) => get<any>(`/projects/${project_id}/send-limit-status`),
+    [get]
+  );
+
   const deleteSequence = useCallback(
     (id: string) => del(`/sequences/${id}`),
     [del],
@@ -385,9 +413,14 @@ export function useOutreachApi() {
     getDeliveryEstimate,
     // Sequences
     fetchSequences,
+    getSequence,
     createSequence,
     updateSequence,
+    updateSequenceSteps,
     deleteSequence,
+    activateSequence,
+    addSequenceRecipients,
+    getGlobalLimitStatus,
     // Contacts
     fetchContacts,
     createContact,

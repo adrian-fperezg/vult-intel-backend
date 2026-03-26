@@ -104,15 +104,15 @@ interface OutreachEmptyStateProps {
 
 export function OutreachEmptyState({ icon, title, description, action }: OutreachEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 px-8 text-center max-w-sm mx-auto space-y-5">
-      <div className="size-16 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.15)]">
-        <span className="text-teal-400 [&>svg]:size-8">{icon}</span>
+    <div className="flex flex-col items-center justify-center p-20 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.01] text-center max-w-3xl mx-auto">
+      <div className="size-20 rounded-3xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-6 text-teal-400">
+        <span className="[&>svg]:size-8">{icon}</span>
       </div>
-      <div className="space-y-2">
-        <h3 className="text-lg font-bold text-white">{title}</h3>
-        <p className="text-sm text-slate-400 leading-relaxed">{description}</p>
-      </div>
-      {action}
+      <h2 className="text-2xl font-bold text-white mb-2">{title}</h2>
+      <p className="text-sm text-slate-500 max-w-sm mb-8 leading-relaxed">
+        {description}
+      </p>
+      {action && action}
     </div>
   );
 }

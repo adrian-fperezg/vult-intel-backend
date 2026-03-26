@@ -188,16 +188,56 @@ export const initDb = async () => {
         user_id TEXT NOT NULL,
         project_id TEXT NOT NULL DEFAULT '',
         name TEXT NOT NULL,
-        steps TEXT,
+        steps TEXT, -- Deprecated in favor of outreach_sequence_steps
         status TEXT DEFAULT 'draft',
         daily_limit INTEGER DEFAULT 50,
+        daily_send_limit INTEGER DEFAULT 20,
         min_delay INTEGER DEFAULT 2,
         max_delay INTEGER DEFAULT 5,
+        smart_send_min_delay INTEGER DEFAULT 45,
+        smart_send_max_delay INTEGER DEFAULT 120,
         send_weekends BOOLEAN DEFAULT FALSE,
+        send_window_start TEXT DEFAULT '08:00',
+        send_window_end TEXT DEFAULT '18:00',
+        send_timezone TEXT DEFAULT 'UTC',
+        send_on_weekdays TEXT DEFAULT '{"true","true","true","true","true","false","false"}',
+        stop_on_reply BOOLEAN DEFAULT TRUE,
+        stop_on_unsubscribe BOOLEAN DEFAULT TRUE,
+        stop_on_bounce BOOLEAN DEFAULT TRUE,
+        allow_reenrollment BOOLEAN DEFAULT FALSE,
+        start_at TIMESTAMP,
+        mailbox_id TEXT REFERENCES outreach_mailboxes(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for outreach_sequences
+    const seqColumns = await db.pragma('table_info(outreach_sequences)');
+    const seqColumnNames = seqColumns.map((c: any) => c.name);
+    
+    const newSeqCols = [
+      { name: 'daily_send_limit', type: 'INTEGER DEFAULT 20' },
+      { name: 'send_window_start', type: 'TEXT DEFAULT "08:00"' },
+      { name: 'send_window_end', type: 'TEXT DEFAULT "18:00"' },
+      { name: 'send_timezone', type: 'TEXT DEFAULT "UTC"' },
+      { name: 'send_on_weekdays', type: 'TEXT DEFAULT "{\"true\",\"true\",\"true\",\"true\",\"true\",\"false\",\"false\"}"' },
+      { name: 'smart_send_min_delay', type: 'INTEGER DEFAULT 45' },
+      { name: 'smart_send_max_delay', type: 'INTEGER DEFAULT 120' },
+      { name: 'stop_on_reply', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'stop_on_unsubscribe', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'stop_on_bounce', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'allow_reenrollment', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'start_at', type: 'TIMESTAMP' },
+      { name: 'mailbox_id', type: 'TEXT' }
+    ];
+
+    for (const col of newSeqCols) {
+      if (!seqColumnNames.includes(col.name)) {
+        console.log(`[DB] Adding missing column ${col.name} to outreach_sequences`);
+        await db.run(`ALTER TABLE outreach_sequences ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
 
     // 4. Contacts
     await db.run(`
@@ -234,11 +274,9 @@ export const initDb = async () => {
       )
     `);
 
-    // Migration for existing contacts table
-    const columns = await db.pragma('table_info(outreach_contacts)');
-    const columnNames = columns.map((c: any) => c.name);
-    
-    const newCols = [
+    const contactCols = await db.pragma('table_info(outreach_contacts)');
+    const contactColNames = contactCols.map((c: any) => c.name);
+    const newContactCols = [
       { name: 'company_domain', type: 'TEXT' },
       { name: 'company_size', type: 'TEXT' },
       { name: 'industry', type: 'TEXT' },
@@ -249,9 +287,8 @@ export const initDb = async () => {
       { name: 'job_title', type: 'TEXT' }
     ];
 
-    for (const col of newCols) {
-      if (!columnNames.includes(col.name)) {
-        console.log(`[DB] Adding missing column ${col.name} to outreach_contacts`);
+    for (const col of newContactCols) {
+      if (!contactColNames.includes(col.name)) {
         await db.run(`ALTER TABLE outreach_contacts ADD COLUMN ${col.name} ${col.type}`);
       }
     }
@@ -415,6 +452,59 @@ export const initDb = async () => {
         confidence INTEGER,
         verification_status TEXT,
         UNIQUE(search_id, email)
+      )
+    `);
+
+    // 17. Sequence Steps
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_sequence_steps (
+        id TEXT PRIMARY KEY,
+        sequence_id TEXT NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        step_number INTEGER NOT NULL,
+        step_type TEXT NOT NULL,
+        config TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 18. Sequence Recipients
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_sequence_recipients (
+        id TEXT PRIMARY KEY,
+        sequence_id TEXT NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        contact_id TEXT REFERENCES outreach_contacts(id),
+        contact_list_id TEXT REFERENCES contact_lists(id),
+        type TEXT NOT NULL,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 19. Global Send Counters
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_global_send_counters (
+        project_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        sends_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (project_id, date)
+      )
+    `);
+
+    // 20. Sequence Enrollments
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_sequence_enrollments (
+        id TEXT PRIMARY KEY,
+        sequence_id TEXT NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES outreach_contacts(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        current_step_number INTEGER DEFAULT 1,
+        enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        paused_at TIMESTAMP,
+        UNIQUE(sequence_id, contact_id)
       )
     `);
 

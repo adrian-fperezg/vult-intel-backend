@@ -28,14 +28,106 @@ export const campaignQueue = new Queue('campaign-queue', {
   }
 });
 
+import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
+import { scheduleNextStep } from '../lib/outreach/sequenceEngine.js';
+
 // ─── WORKERS ─────────────────────────────────────────────────────────────────
 
-// 1. Worker for individual emails (Compose)
+// 1. Worker for individual emails (Compose & Sequences)
 export const emailWorker = new Worker('email-queue', async (job: Job) => {
-  const { emailId } = job.data;
-  console.log(`Processing email job for ID: ${emailId}`);
+  const { name, data } = job;
+  console.log(`Processing job ${job.id}: ${name}`);
 
-  // Create an AbortController for the entire job timeout (e.g. 30 seconds)
+  if (name === 'execute-sequence-step') {
+    const { projectId, sequenceId, contactId, stepId, stepNumber } = data;
+    
+    try {
+      // 1. Check for stop conditions (reply, unsubscribe, bounce)
+      const enrollment = await db.prepare(
+        'SELECT * FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?'
+      ).get(sequenceId, contactId) as any;
+
+      if (!enrollment || enrollment.status !== 'active') {
+        console.log(`[Sequence] Skipping step ${stepNumber} for contact ${contactId}: Enrollment status is ${enrollment?.status || 'missing'}`);
+        return;
+      }
+
+      // 2. Check Global Send Limit
+      const canSend = await checkAndIncrementGlobalLimit(projectId);
+      if (!canSend) {
+        console.log(`[Sequence] Global limit reached. Delaying job 1 hour.`);
+        // Re-queue with 1 hour delay
+        await emailQueue.add(name, data, { delay: 60 * 60 * 1000 });
+        return;
+      }
+
+      // 3. Process the step
+      const step = await db.prepare('SELECT * FROM outreach_sequence_steps WHERE id = ?').get(stepId) as any;
+      if (!step) throw new Error('Step not found');
+
+      if (step.step_type === 'email') {
+        const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
+        const contact = await db.prepare('SELECT * FROM outreach_contacts WHERE id = ?').get(contactId) as any;
+        const config = typeof step.config === 'string' ? JSON.parse(step.config) : step.config;
+
+        // Resolve variables
+        let subject = config.subject || "";
+        let bodyHtml = config.body_html || "";
+        const variables = {
+          first_name: contact.first_name || "",
+          last_name: contact.last_name || "",
+          company: contact.company || "",
+          email: contact.email || ""
+        };
+
+        Object.entries(variables).forEach(([key, value]) => {
+          const regex = new RegExp(`{{${key}}}`, 'g');
+          subject = subject.replace(regex, value);
+          bodyHtml = bodyHtml.replace(regex, value);
+        });
+
+        // Create individual email record
+        const emailId = uuidv4();
+        await db.prepare(`
+          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+        `).run(
+          emailId,
+          sequence.user_id,
+          projectId,
+          sequence.mailbox_id,
+          contactId,
+          contact.email,
+          subject,
+          bodyHtml
+        );
+
+        // Send via processEmail
+        await processEmail(emailId);
+      }
+
+      // 4. Record event
+      await db.prepare(`
+        INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(uuidv4(), contactId, projectId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+
+      // 5. Schedule next step
+      await db.prepare(
+        'UPDATE outreach_sequence_enrollments SET current_step_number = ? WHERE sequence_id = ? AND contact_id = ?'
+      ).run(stepNumber + 1, sequenceId, contactId);
+
+      await scheduleNextStep(projectId, sequenceId, contactId, stepNumber + 1);
+
+    } catch (error) {
+      console.error(`[Sequence] Error executing step ${stepNumber} for sequence ${sequenceId}:`, error);
+      throw error;
+    }
+    return;
+  }
+
+  // Handle standard individual emails (Compose)
+  const { emailId } = data;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -43,15 +135,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
     const result = await processEmail(emailId, controller.signal);
     return result;
   } catch (error: any) {
-    console.error(`ERROR: Email job failed for ID: ${emailId}`, {
-      message: error.message,
-      stack: error.stack,
-      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
-    });
-    
-    // Mark as failed in DB
     await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
-    
     throw error;
   } finally {
     clearTimeout(timeoutId);

@@ -564,93 +564,228 @@ app.get("/api/outreach/campaigns/:id/delivery-estimate", async (req: AuthRequest
   res.json({ estimate });
 });
 
-// ─── SEQUENCES ────────────────────────────────────────────────────────────────
+import { enrollContactInSequence } from './lib/outreach/sequenceEngine.js';
+import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
 
-// GET /api/outreach/sequences?project_id=xxx
+// GET /api/outreach/sequences
 app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
-  if (!project_id) return res.json([]);
+  if (!userId || !project_id) return res.json([]);
 
-  const sequences = await db
-    .prepare(
-      "SELECT * FROM outreach_sequences WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC",
-    )
-    .all(userId, project_id);
-
-  res.json(
-    sequences.map((s: any) => ({
-      ...s,
-      steps: JSON.parse(s.steps || "[]"),
-    })),
-  );
+  try {
+    const sequences = await db.all(`
+      SELECT s.*, 
+             (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id) as step_count,
+             (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id) as contact_count
+      FROM outreach_sequences s
+      WHERE s.user_id = ? AND s.project_id = ?
+      ORDER BY s.created_at DESC
+    `, userId, project_id);
+    
+    res.json(sequences);
+  } catch (error) {
+    console.error("Failed to fetch sequences:", error);
+    res.status(500).json({ error: "Failed to fetch sequences" });
+  }
 });
 
 // POST /api/outreach/sequences
 app.post("/api/outreach/sequences", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { name, steps, project_id } = req.body;
+  const { project_id, name } = req.body;
 
-  if (!project_id)
-    return res.status(400).json({ error: "project_id is required" });
+  if (!userId || !project_id) return res.status(401).json({ error: "Auth required" });
 
   const id = uuidv4();
-  await db.prepare(
-    `
-    INSERT INTO outreach_sequences (id, user_id, project_id, name, steps, status)
-    VALUES (?, ?, ?, ?, ?, 'draft')
-  `,
-  ).run(
-    id,
-    userId,
-    project_id,
-    name || "New Sequence",
-    JSON.stringify(steps || []),
-  );
+  try {
+    await db.run(`
+      INSERT INTO outreach_sequences (id, user_id, project_id, name, status)
+      VALUES (?, ?, ?, ?, 'draft')
+    `, id, userId, project_id, name || 'New Sequence');
+    
+    // Create initial step
+    const stepId = uuidv4();
+    await db.run(`
+      INSERT INTO outreach_sequence_steps (id, sequence_id, project_id, step_number, step_type, config)
+      VALUES (?, ?, ?, 1, 'email', ?)
+    `, stepId, id, project_id, JSON.stringify({ subject: 'Hello!', body_html: '<p>Hi {{first_name}},</p>' }));
 
-  const sequence = await db
-    .prepare("SELECT * FROM outreach_sequences WHERE id = ?")
-    .get(id);
-  res.status(201).json(sequence);
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
+    res.status(201).json(sequence);
+  } catch (error) {
+    console.error("Failed to create sequence:", error);
+    res.status(500).json({ error: "Failed to create sequence" });
+  }
+});
+
+// GET /api/outreach/sequences/:id
+app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    const steps = await db.all(
+      "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? ORDER BY step_number ASC", 
+      id
+    );
+
+    const recipients = await db.all(`
+      SELECT r.*, c.email, c.first_name, c.last_name, c.company, e.status as enrollment_status, e.current_step_number
+      FROM outreach_sequence_recipients r
+      LEFT JOIN outreach_contacts c ON r.contact_id = c.id
+      LEFT JOIN outreach_sequence_enrollments e ON r.sequence_id = e.sequence_id AND r.contact_id = e.contact_id
+      WHERE r.sequence_id = ?
+    `, id);
+
+    res.json({ ...sequence, steps: steps.map((s: any) => ({ ...s, config: JSON.parse(s.config || '{}') })), recipients });
+  } catch (error) {
+    console.error("Failed to fetch sequence details:", error);
+    res.status(500).json({ error: "Failed to fetch sequence" });
+  }
 });
 
 // PATCH /api/outreach/sequences/:id
 app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
-  const { name, status, steps } = req.body;
+  const updates = req.body;
 
-  const fields: string[] = [];
-  const values: any[] = [];
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  
+  const allowedFields = [
+    'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end', 
+    'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
+    'stop_on_reply', 'mailbox_id'
+  ];
 
-  if (name !== undefined) {
-    fields.push("name = ?");
-    values.push(name);
+  const filteredUpdates = Object.keys(updates)
+    .filter(key => allowedFields.includes(key))
+    .reduce((obj, key) => {
+      obj[key] = updates[key];
+      return obj;
+    }, {} as any);
+
+  if (Object.keys(filteredUpdates).length === 0) return res.status(400).json({ error: "No valid fields to update" });
+
+  const sets = Object.keys(filteredUpdates).map(key => `${key} = ?`).join(', ');
+  const values = Object.values(filteredUpdates).map(val => typeof val === 'object' ? JSON.stringify(val) : val);
+
+  try {
+    await db.run(`UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`, ...values, id, userId);
+    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
+    res.json(updated);
+  } catch (error) {
+    console.error("Failed to update sequence:", error);
+    res.status(500).json({ error: "Failed to update sequence" });
   }
-  if (status !== undefined) {
-    fields.push("status = ?");
-    values.push(status);
+});
+
+// PUT /api/outreach/sequences/:id/steps
+app.put("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+  const { steps, project_id } = req.body;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    await db.transaction(async () => {
+      // Clear existing steps
+      await db.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ?", id);
+
+      // Insert new steps
+      for (const [index, step] of steps.entries()) {
+        await db.run(`
+          INSERT INTO outreach_sequence_steps (id, sequence_id, project_id, step_number, step_type, config)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, step.id || uuidv4(), id, project_id, index + 1, step.step_type, JSON.stringify(step.config));
+      }
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to bulk update steps:", error);
+    res.status(500).json({ error: "Failed to update steps" });
   }
-  if (steps !== undefined) {
-    fields.push("steps = ?");
-    values.push(JSON.stringify(steps));
+});
+
+// POST /api/outreach/sequences/:id/activate
+app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+  const { project_id } = req.body;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+    if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
+
+    await db.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ?", id);
+    
+    // Enroll existing recipients who are not already enrolled
+    const recipients = await db.all(`
+      SELECT contact_id FROM outreach_sequence_recipients 
+      WHERE sequence_id = ? AND contact_id IS NOT NULL
+      AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ?)
+    `, id, id) as any[];
+
+    for (const r of recipients) {
+      await enrollContactInSequence(project_id, id, r.contact_id);
+    }
+
+    res.json({ success: true, enrolledCount: recipients.length });
+  } catch (error) {
+    console.error("Failed to activate sequence:", error);
+    res.status(500).json({ error: "Failed to activate sequence" });
   }
+});
 
-  if (fields.length === 0)
-    return res.status(400).json({ error: "Nothing to update" });
+// POST /api/outreach/sequences/:id/recipients
+app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+  const { contact_ids, project_id, type } = req.body;
 
-  fields.push("updated_at = CURRENT_TIMESTAMP");
-  values.push(id, userId);
+  if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  await db.prepare(
-    `UPDATE outreach_sequences SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
-  ).run(...values);
+  try {
+    for (const contact_id of contact_ids) {
+      await db.run(`
+        INSERT OR IGNORE INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+        VALUES (?, ?, ?, ?, ?)
+      `, uuidv4(), id, project_id, contact_id, type || 'individual');
 
-  const sequence = await db
-    .prepare("SELECT * FROM outreach_sequences WHERE id = ?")
-    .get(id);
-  res.status(200).json(sequence);
+      // If active, enroll immediately
+      const seq = await db.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
+      if (seq?.status === 'active') {
+        await enrollContactInSequence(project_id, id, contact_id);
+      }
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to add recipients:", error);
+    res.status(500).json({ error: "Failed to add recipients" });
+  }
+});
+
+// GET /api/outreach/projects/:projectId/send-limit-status
+app.get("/api/outreach/projects/:projectId/send-limit-status", async (req: AuthRequest, res) => {
+  const { projectId } = req.params;
+  try {
+    const status = await getGlobalLimitStatus(projectId);
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch limit status" });
+  }
 });
 
 // DELETE /api/outreach/sequences/:id
@@ -658,128 +793,15 @@ app.delete("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
 
-  const result = await db
-    .prepare("DELETE FROM outreach_sequences WHERE id = ? AND user_id = ?")
-    .run(id, userId);
-
-  if (result.changes === 0)
-    return res.status(404).json({ error: "Sequence not found" });
-  res.json({ success: true });
-});
-
-// POST /api/outreach/sequences/:id/launch
-app.post("/api/outreach/sequences/:id/launch", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { id: sequenceId } = req.params;
-  const { 
-    name,
-    steps,
-    contacts, 
-    columnMapping,
-    scheduling
-  } = req.body;
-
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const sequence = await db.prepare("SELECT project_id FROM outreach_sequences WHERE id = ?").get(sequenceId) as any;
-    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
-
-    await db.transaction(async () => {
-      // 1. Update Sequence Settings & Scheduling
-      await db.prepare(`
-        UPDATE outreach_sequences 
-        SET status = 'active', 
-            name = ?,
-            steps = ?,
-            daily_limit = ?,
-            min_delay = ?,
-            max_delay = ?,
-            send_weekends = ?,
-            updated_at = CURRENT_TIMESTAMP 
-        WHERE id = ?
-      `).run(
-        name,
-        JSON.stringify(steps),
-        scheduling?.daily_limit || 50,
-        scheduling?.min_delay || 2,
-        scheduling?.max_delay || 5,
-        scheduling?.send_weekends ? 1 : 0,
-        sequenceId
-      );
-
-      // 2. Upsert Contacts and Enroll them
-      const insertContactQuery = `
-        INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'enrolled')
-        ON CONFLICT(email, project_id) DO UPDATE SET
-          first_name = COALESCE(excluded.first_name, outreach_contacts.first_name),
-          last_name = COALESCE(excluded.last_name, outreach_contacts.last_name),
-          company = COALESCE(excluded.company, outreach_contacts.company),
-          status = 'enrolled'
-      `;
-
-      const enrollQuery = `
-        INSERT INTO outreach_sequence_enrollments (id, sequence_id, contact_id, status)
-        VALUES (?, ?, ?, 'pending')
-        ON CONFLICT(sequence_id, contact_id) DO NOTHING
-      `;
-
-      for (const contactData of contacts) {
-        const email = contactData[columnMapping.email];
-        if (!email) continue;
-
-        const existingContact = await db.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, sequence.project_id) as any;
-        
-        let contactId;
-        if (existingContact) {
-          contactId = existingContact.id;
-          await db.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
-        } else {
-          contactId = uuidv4();
-          await db.prepare(insertContactQuery).run(
-            contactId,
-            userId,
-            sequence.project_id,
-            contactData[columnMapping.first_name] || "",
-            contactData[columnMapping.last_name] || "",
-            email,
-            contactData[columnMapping.company] || "",
-          );
-        }
-
-        await db.prepare(enrollQuery).run(
-          uuidv4(),
-          sequenceId,
-          contactId,
-        );
-      }
-    });
-
-    // 4. Trigger Sequence Processing
-    campaignQueue.add(`sequence-launch-${sequenceId}`, { sequenceId });
-
+    const result = await db.run("DELETE FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId);
+    if (result.changes === 0) return res.status(404).json({ error: "Sequence not found" });
     res.json({ success: true });
   } catch (error) {
-    console.error("Failed to launch sequence:", error);
-    res.status(500).json({ error: "Failed to launch sequence" });
+    res.status(500).json({ error: "Failed to delete sequence" });
   }
-});
-
-// GET /api/outreach/sequences/:id/delivery-estimate
-app.get("/api/outreach/sequences/:id/delivery-estimate", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { id } = req.params;
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-
-  const enrollmentCount = await db.prepare("SELECT COUNT(*) as count FROM outreach_sequence_enrollments WHERE sequence_id = ?").get(id) as any;
-  
-  // Basic math: 200 emails per day limit
-  const days = Math.ceil((enrollmentCount?.count || 0) / 200);
-  const estimate = days <= 1 ? "within 24 hours" : `approximately ${days} days`;
-
-  res.json({ estimate });
 });
 
 

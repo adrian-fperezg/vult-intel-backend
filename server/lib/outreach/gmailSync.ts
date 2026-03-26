@@ -86,6 +86,14 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       // Update contact status
       await db.prepare("UPDATE outreach_contacts SET status = 'replied' WHERE id = ?").run(contact.id);
       
+      // Stop active sequences if they have stop_on_reply enabled
+      await db.prepare(`
+        UPDATE outreach_sequence_enrollments 
+        SET status = 'replied', completed_at = CURRENT_TIMESTAMP 
+        WHERE contact_id = ? AND status = 'active'
+        AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = 1)
+      `).run(contact.id);
+      
       newCount++;
     }
   }
