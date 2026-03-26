@@ -242,11 +242,17 @@ export function useOutreachApi() {
     [post],
   );
 
+  const verifyEmailsBulk = useCallback(
+    (contact_ids: string[]) => post<any>('/verify-emails', { contact_ids }),
+    [post],
+  );
+
   // ── Settings & Integrations ──────────────────────────────────────────────
 
   const fetchSettings = useCallback(() => get<any>('/settings'), [get]);
   const updateSettings = useCallback((settings: any) => post<any>('/settings', settings), [post]);
   const fetchHunterAccount = useCallback(() => get<any>('/hunter/account'), [get]);
+  const fetchZeroBounceCredits = useCallback(() => get<any>('/zerobounce/credits'), [get]);
 
   const hunterDomainSearch = useCallback((domain: string, options?: any) => 
     post<any>('/hunter/domain-search', { domain, options }), [post]
@@ -480,6 +486,8 @@ export function useOutreachApi() {
     fetchIcp,
     updateIcp,
     deleteIcp,
+    fetchZeroBounceCredits,
+    verifyEmailsBulk,
     connectSmtp,
     fetchIdentities,
     addAlias: (mailboxId: string, email: string, name?: string) => 

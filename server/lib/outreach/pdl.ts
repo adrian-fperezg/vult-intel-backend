@@ -96,3 +96,29 @@ export async function searchPDL(projectId: string, params: {
     return [];
   }
 }
+
+/**
+ * Fetches real-time usage (credits) from Peopledatalabs V5 API.
+ */
+export async function getPDLUsage() {
+  const apiKey = process.env.PDL_API_KEY;
+  if (!apiKey) return { error: 'PDL_API_KEY not configured' };
+
+  try {
+    const res = await fetch(`https://api.peopledatalabs.com/v5/usage?api_key=${apiKey}`);
+    const data = await res.json();
+    
+    // PDL /usage returns { "available": ..., "used": ..., "remaining": ... }
+    if (res.ok) {
+      return {
+        available: data.available || 0,
+        used: data.used || 0,
+        remaining: data.remaining || 0
+      };
+    }
+    return { error: data.message || 'PDL Usage API error' };
+  } catch (err: any) {
+    console.error('[PDL Service] Usage Error:', err.message);
+    return { error: 'Failed to connect to PDL Usage API' };
+  }
+}

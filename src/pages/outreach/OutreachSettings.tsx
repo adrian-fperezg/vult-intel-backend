@@ -12,7 +12,7 @@ import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { AliasManager } from './components/AliasManager';
 
-type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications' | 'team';
+type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications';
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<any> }> = [
   { id: 'mailboxes',     label: 'Mailboxes',     icon: Mail },
@@ -21,7 +21,6 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: React.Compone
   { id: 'integrations', label: 'Integrations',   icon: Zap },
   { id: 'api',          label: 'API & Webhooks', icon: Webhook },
   { id: 'notifications',label: 'Notifications',  icon: Bell },
-  { id: 'team',         label: 'Team',           icon: Users2 },
 ];
 
 interface Mailbox {
@@ -70,6 +69,14 @@ export default function OutreachSettings() {
   const [hunterConnected, setHunterConnected] = useState(false);
   const [showHunterSetup, setShowHunterSetup] = useState(false);
   const [fetchingHunter, setFetchingHunter] = useState(false);
+
+  // ZeroBounce Integration States
+  const [zbKeyInput, setZbKeyInput] = useState('');
+  const [savingZb, setSavingZb] = useState(false);
+  const [zbData, setZbData] = useState<any>(null);
+  const [zbConnected, setZbConnected] = useState(false);
+  const [showZbSetup, setShowZbSetup] = useState(false);
+  const [fetchingZb, setFetchingZb] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectMode, setConnectMode] = useState<'picker' | 'smtp'>('picker');
   const [smtpConfig, setSmtpConfig] = useState({
@@ -79,7 +86,10 @@ export default function OutreachSettings() {
 
   useEffect(() => {
     if (activeTab === 'mailboxes') loadMailboxes();
-    if (activeTab === 'integrations' && api.activeProjectId) loadHunterStatus();
+    if (activeTab === 'integrations' && api.activeProjectId) {
+      loadHunterStatus();
+      loadZbStatus();
+    }
   }, [activeTab, api.activeProjectId]);
 
   const loadHunterStatus = async () => {
@@ -98,6 +108,22 @@ export default function OutreachSettings() {
     }
   };
 
+  const loadZbStatus = async () => {
+    try {
+      setFetchingZb(true);
+      const settings = await api.fetchSettings();
+      setZbConnected(settings?.hasZerobounceKey || false);
+      if (settings?.hasZerobounceKey) {
+        const data = await api.fetchZeroBounceCredits();
+        setZbData(data);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setFetchingZb(false);
+    }
+  };
+
   const handleSaveHunterKey = async () => {
     if (!hunterKeyInput.trim()) return;
     try {
@@ -111,6 +137,22 @@ export default function OutreachSettings() {
       toast.error('Failed to save Hunter key: ' + err.message);
     } finally {
       setSavingHunter(false);
+    }
+  };
+
+  const handleSaveZbKey = async () => {
+    if (!zbKeyInput.trim()) return;
+    try {
+      setSavingZb(true);
+      await api.updateSettings({ zerobounce_api_key: zbKeyInput.trim() });
+      toast.success('ZeroBounce API Key saved successfully');
+      setZbKeyInput('');
+      setShowZbSetup(false);
+      await loadZbStatus();
+    } catch (err: any) {
+      toast.error('Failed to save ZeroBounce key: ' + err.message);
+    } finally {
+      setSavingZb(false);
     }
   };
 
@@ -636,9 +678,83 @@ export default function OutreachSettings() {
                 )}
               </div>
 
+              {/* ZeroBounce Custom Card */}
+              <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 hover:border-white/15 transition-all">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="size-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                    <span className="text-lg font-bold text-teal-400">Z</span>
+                  </div>
+                  {fetchingZb ? (
+                    <Loader2 className="size-4 animate-spin text-slate-400" />
+                  ) : zbConnected ? (
+                    <OutreachBadge variant="teal" dot>Connected</OutreachBadge>
+                  ) : (
+                    <TealButton size="sm" variant="outline" onClick={() => setShowZbSetup(!showZbSetup)}>
+                      Connect
+                    </TealButton>
+                  )}
+                </div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <p className="font-semibold text-white text-sm">ZeroBounce</p>
+                  {zbConnected && (
+                    <button onClick={() => setShowZbSetup(!showZbSetup)} className="text-[10px] text-slate-500 hover:text-white uppercase tracking-wider font-bold">
+                      Config
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-teal-400/60 mb-1">Email Validation</p>
+                <p className="text-xs text-slate-500 mb-4">Validate and clean email lists</p>
+
+                <AnimatePresence>
+                  {showZbSetup && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <div className="p-4 bg-black/20 rounded-xl border border-white/5 space-y-3 mt-2">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-400 mb-1.5 block">ZeroBounce API Key</label>
+                          <input 
+                            type="password" 
+                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50" 
+                            placeholder="Data is encrypted at rest"
+                            value={zbKeyInput}
+                            onChange={(e) => setZbKeyInput(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <TealButton size="sm" className="w-full" disabled={!zbKeyInput.trim() || savingZb} onClick={handleSaveZbKey}>
+                            {savingZb ? 'Saving...' : 'Save API Key'}
+                          </TealButton>
+                          {zbConnected && (
+                            <button className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-white hover:bg-red-500/20 rounded-xl transition-all border border-red-500/10"
+                             onClick={async () => {
+                               await api.updateSettings({ zerobounce_api_key: '' });
+                               setZbConnected(false);
+                               setZbData(null);
+                               toast.success('ZeroBounce disconnected');
+                             }}
+                            >Disconnect</button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {zbConnected && zbData && !showZbSetup && (
+                  <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Total Credits</span>
+                      <span className="font-semibold text-white">{zbData.credits?.toLocaleString()}</span>
+                    </div>
+                    <div className="p-3 bg-teal-500/5 border border-teal-500/10 rounded-xl">
+                      <p className="text-[10px] text-teal-400 font-bold uppercase tracking-wider mb-1">Waterfall Mode</p>
+                      <p className="text-xs text-teal-400/80">Primary verification provider. Falls back to Hunter if out of credits.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Other Built-in Integrations (Mocked) */}
               {[
-                { name: 'ZeroBounce',   cat: 'Email Verification',  status: 'connect',  desc: 'Validate and clean email lists' },
                 { name: 'Mail-Tester',  cat: 'Spam Testing',        status: 'connect',  desc: 'Score your spam rating' },
                 { name: 'MXToolbox',    cat: 'Blocklist Monitor',   status: 'connected', desc: 'Monitor IP/domain blocklists' },
                 { name: 'SendGrid',     cat: 'SMTP Relay',          status: 'connect',  desc: 'Dedicated sending infrastructure' },
@@ -662,35 +778,6 @@ export default function OutreachSettings() {
           </div>
         )}
 
-        {/* ── TEAM ── */}
-        {activeTab === 'team' && (
-          <div className="space-y-6 w-full">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Team Access</h2>
-                <p className="text-sm text-slate-400 mt-0.5">Grant team members access to Outreach</p>
-              </div>
-              <TealButton size="sm"><Plus className="size-4" /> Invite Member</TealButton>
-            </div>
-            <div className="space-y-3">
-              {[
-                { name: 'You (Alex Rivera)', email: 'alex@company.com', role: 'Owner',   initials: 'AR' },
-                { name: 'Jordan Kim',        email: 'jordan@company.com', role: 'Editor', initials: 'JK' },
-              ].map(({ name, email, role, initials }) => (
-                <div key={email} className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/8 rounded-2xl">
-                  <div className="size-9 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-                    <span className="text-xs font-bold text-teal-400">{initials}</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-white text-sm">{name}</p>
-                    <p className="text-xs text-slate-500">{email}</p>
-                  </div>
-                  <OutreachBadge variant={role === 'Owner' ? 'teal' : 'gray'}>{role}</OutreachBadge>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── CONNECTION MODAL ── */}

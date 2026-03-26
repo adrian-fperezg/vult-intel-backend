@@ -480,6 +480,7 @@ export const initDb = async () => {
       CREATE TABLE IF NOT EXISTS outreach_settings (
         project_id TEXT PRIMARY KEY,
         hunter_api_key TEXT,
+        zerobounce_api_key TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);

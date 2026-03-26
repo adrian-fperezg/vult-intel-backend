@@ -30,6 +30,7 @@ interface Contact {
   addedAt: string;
   lastActivity?: string;
   emailVerified?: boolean;
+  verification_status?: 'valid' | 'invalid' | 'catch_all' | 'unknown' | 'unverified';
   industry?: string;
   size?: string;
   companySize?: string;
@@ -87,6 +88,14 @@ const STATUS_CFG: Record<ContactStatus, { label: string; variant: 'teal' | 'gree
   not_enrolled: { label: 'Not Enrolled',   variant: 'gray' },
 };
 
+const VERIFICATION_CFG: Record<string, { label: string; variant: any }> = {
+  valid:      { label: 'Valid',      variant: 'green' },
+  invalid:    { label: 'Invalid',    variant: 'red' },
+  catch_all:  { label: 'Catch-all',  variant: 'yellow' },
+  unknown:    { label: 'Unknown',    variant: 'gray' },
+  unverified: { label: 'Unverified', variant: 'gray' },
+};
+
 export default function OutreachContacts() {
   const api = useOutreachApi();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -106,6 +115,7 @@ export default function OutreachContacts() {
   const [listMemberIds, setListMemberIds] = useState<Set<string>>(new Set());
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // List Management UI States
   const [isManageListsOpen, setIsManageListsOpen] = useState(false);
@@ -276,6 +286,22 @@ export default function OutreachContacts() {
       await loadContacts();
     } catch (err) {
       toast.error('Failed to add contacts to list');
+    }
+  };
+
+  const handleBulkVerify = async () => {
+    if (selectedIds.size === 0) return;
+    setIsVerifying(true);
+    const loadingToast = toast.loading(`Verifying ${selectedIds.size} emails...`);
+    try {
+      const results = await api.verifyEmailsBulk(Array.from(selectedIds));
+      toast.success(`Verification complete: ${results.length} processed`, { id: loadingToast });
+      setSelectedIds(new Set());
+      await loadContacts();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to verify emails', { id: loadingToast });
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -458,6 +484,14 @@ export default function OutreachContacts() {
                 <button className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all">
                   <Mail className="size-4" /> Enroll in Sequence
                 </button>
+                <button 
+                  onClick={handleBulkVerify}
+                  disabled={isVerifying}
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50"
+                >
+                  <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} /> 
+                  {isVerifying ? 'Verifying...' : 'Verify Emails'}
+                </button>
                 <div className="h-6 w-px bg-white/5" />
                 <button
                   onClick={() => setDeleteDialog(true)}
@@ -581,6 +615,14 @@ export default function OutreachContacts() {
                           <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
                             <Mail className="size-3 text-slate-600 shrink-0" />
                             <span className="truncate">{contact.email}</span>
+                            {contact.verification_status && contact.verification_status !== 'unverified' && (
+                              <OutreachBadge 
+                                variant={VERIFICATION_CFG[contact.verification_status].variant} 
+                                className="text-[8px] px-1 py-0 scale-90 origin-left"
+                              >
+                                {VERIFICATION_CFG[contact.verification_status].label}
+                              </OutreachBadge>
+                            )}
                           </div>
                         </td>
                         <td className="p-3">

@@ -28,6 +28,11 @@ import {
 import { encryptToken, decryptToken } from "./lib/outreach/encrypt.js";
 import { syncMailbox } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
+import { getAccountInformation } from "./lib/outreach/hunter.js";
+import { getZeroBounceCredits } from "./lib/outreach/zerobounce.js";
+import { getPDLUsage } from "./lib/outreach/pdl.js";
+import { verifyEmailWaterfall } from "./lib/outreach/verifier.js";
+
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -1924,58 +1929,12 @@ app.post("/api/outreach/individual-emails/:id/schedule", async (req: AuthRequest
   }
 });
 
-// ─── TRACKING ─────────────────────────────────────────────────────────────────
-
-// GET /api/outreach/track/:emailId/open.gif
-app.get("/api/outreach/track/:emailId/open.gif", async (req, res) => {
-  const { emailId } = req.params;
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  const userAgent = req.headers["user-agent"];
-
-  try {
-    const email = await db
-      .prepare(
-        "SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?",
-      )
-      .get(emailId) as any;
-
-    if (email) {
-      await db.prepare(
-        `
-        INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
-        VALUES (?, ?, 'open', ?, ?)
-      `,
-      ).run(uuidv4(), emailId, String(ip), String(userAgent));
-
-      if (email.contact_id) {
-        await db.prepare(
-          `
-          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-          VALUES (?, ?, ?, 'open', ?)
-        `,
-        ).run(
-          uuidv4(),
-          email.contact_id,
-          email.project_id,
-          JSON.stringify({ email_id: emailId }),
-        );
-      }
-    }
-  } catch (err) {
-    console.error("Tracking open error:", err);
-  }
-
-  // 1x1 transparent pixel
-  const buf = Buffer.from(
-    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
-    "base64",
-  );
-  res.writeHead(200, {
+    res.writeHead(200, {
     "Content-Type": "image/gif",
     "Content-Length": buf.length,
     "Cache-Control": "no-store, no-cache, must-revalidate, private",
-    Pragma: "no-cache",
-    Expires: "0",
+    "Pragma": "no-cache",
+    "Expires": "0",
   });
   res.end(buf);
 });
@@ -2029,83 +1988,111 @@ app.get("/api/outreach/track/:emailId/click", async (req, res) => {
 
 app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, daysStr } = req.query as { project_id?: string, daysStr?: string };
-  const days = parseInt(daysStr || '7');
+  const { project_id } = req.query as { project_id?: string };
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
   try {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    const cutoffIso = cutoffDate.toISOString();
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Daily Engagement
-    const dateExpr = db.isPostgres 
-      ? "to_char(e.created_at, 'YYYY-MM-DD')" 
-      : "substr(e.created_at, 1, 10)";
-
-    const dailyEvents = await db.prepare(`
+    // 1. Core Metrics (Current 30d)
+    const currentMetrics = await db.prepare(`
       SELECT 
-        ${dateExpr} as "dayStr",
-        e.type,
-        count(*) as count
-      FROM outreach_events e
-      JOIN outreach_contacts c ON e.contact_id = c.id
-      WHERE c.user_id = ? AND c.project_id = ? AND e.created_at >= ?
-      GROUP BY "dayStr", e.type
-    `).all(userId, project_id, cutoffIso) as any[];
+        count(CASE WHEN type = 'sent' THEN 1 END) as sent,
+        count(CASE WHEN type = 'opened' THEN 1 END) as opens,
+        count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
+      FROM outreach_events 
+      WHERE project_id = ? AND created_at >= ?
+    `).get(project_id, thirtyDaysAgo) as any;
 
-    // Construct the DAILY_DATA array for the last N days
-    const dailyMap: Record<string, any> = {};
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const iso = d.toISOString().split('T')[0];
-      const month = d.toLocaleString('en-US', { month: 'short' });
-      const day = d.getDate();
-      dailyMap[iso] = { day: `${month} ${day}`, sent: 0, opens: 0, replies: 0, clicks: 0, _iso: iso };
-    }
+    // 2. Previous 30d Metrics (for comparisons)
+    const prevMetrics = await db.prepare(`
+      SELECT 
+        count(CASE WHEN type = 'sent' THEN 1 END) as sent,
+        count(CASE WHEN type = 'opened' THEN 1 END) as opens,
+        count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
+      FROM outreach_events 
+      WHERE project_id = ? AND created_at >= ? AND created_at < ?
+    `).get(project_id, sixtyDaysAgo, thirtyDaysAgo) as any;
 
-    dailyEvents.forEach(e => {
-      const iso = e.dayStr;
-      if (dailyMap[iso]) {
-        if (e.type === 'sent') dailyMap[iso].sent += Number(e.count);
-        if (e.type === 'opened') dailyMap[iso].opens += Number(e.count);
-        if (e.type === 'replied' || e.type === 'reply') dailyMap[iso].replies += Number(e.count);
-        if (e.type === 'clicked') dailyMap[iso].clicks += Number(e.count);
-      }
-    });
+    // 3. Today's Performance
+    const todaySent = await db.prepare(`
+      SELECT count(*) as count 
+      FROM outreach_individual_emails 
+      WHERE project_id = ? AND created_at >= ? AND status = 'sent'
+    `).get(project_id, dayStart) as any;
 
-    // Mailbox Health
+    // 4. Counts
+    const activeSequences = await db.prepare(`
+      SELECT count(*) as count FROM outreach_sequences WHERE project_id = ? AND status = 'active'
+    `).get(project_id) as any;
+
+    const totalRecipients = await db.prepare(`
+      SELECT count(*) as count FROM outreach_contacts WHERE project_id = ?
+    `).get(project_id) as any;
+
+    const pendingTasks = await db.prepare(`
+      SELECT count(*) as count FROM outreach_individual_emails WHERE project_id = ? AND status = 'scheduled'
+    `).get(project_id) as any;
+
+    // 5. Intent Breakdown (from contact statuses or intent field)
+    const intents = await db.prepare(`
+      SELECT status as name, count(*) as value 
+      FROM outreach_contacts 
+      WHERE project_id = ? AND status IN ('replied', 'interested', 'not_interested', 'meeting_booked')
+      GROUP BY status
+    `).all(project_id) as any[];
+
+    // 6. Mailbox Health
     const mailboxes = await db.prepare(`
-      SELECT m.email,
-        (SELECT count(*) FROM outreach_events e 
-         JOIN outreach_contacts c ON e.contact_id = c.id
-         WHERE e.type = 'sent' AND e.created_at >= ? AND c.user_id = ? AND c.project_id = ?) as sent
-      FROM outreach_mailboxes m
-      WHERE m.user_id = ? AND m.project_id = ? AND m.status != 'disconnected'
-    `).all(cutoffIso, userId, project_id, userId, project_id) as any[];
+      SELECT email, status 
+      FROM outreach_mailboxes 
+      WHERE project_id = ? AND user_id = ?
+    `).all(project_id, userId) as any[];
 
-    const mailboxHealth = mailboxes.map(m => {
-      const sent = Number(m.sent || 0);
-      const score = 100 - (sent === 0 ? 0 : Math.min(20, Math.floor((sent % 20)))); 
-      return {
-        email: m.email,
-        score,
-        status: score >= 85 ? 'excellent' : score >= 70 ? 'good' : 'fair',
-        sent,
-        bounceRate: 0,
-        spamRate: 0
-      };
+    const mailboxHealth = mailboxes.map(m => ({
+      email: m.email,
+      score: m.status === 'active' ? 98 : 0,
+      status: m.status === 'active' ? 'excellent' : 'offline',
+      sent: 0,
+    }));
+
+    // Formatting for Frontend
+    const sent = Number(currentMetrics.sent || 0);
+    const prevSent = Number(prevMetrics.sent || 0);
+    
+    const calcRate = (part: number, total: number) => total > 0 ? ((part / total) * 100).toFixed(1) : "0.0";
+    const calcChange = (curr: number, prev: number) => prev > 0 ? (((curr - prev) / prev) * 100).toFixed(1) : "0.0";
+
+    res.json({
+      total_sent: sent,
+      sent_change: calcChange(sent, prevSent),
+      open_rate: calcRate(currentMetrics.opens, sent),
+      open_rate_prev: calcRate(prevMetrics.opens, prevSent),
+      reply_rate: calcRate(currentMetrics.replies, sent),
+      reply_rate_prev: calcRate(prevMetrics.replies, prevSent),
+      active_sequences: activeSequences?.count || 0,
+      total_recipients: totalRecipients?.count || 0,
+      pending_tasks: pendingTasks?.count || 0,
+      emails_sent_today: todaySent?.count || 0,
+      health_score: mailboxHealth.length > 0 ? Math.round(mailboxHealth.reduce((a, b) => a + b.score, 0) / mailboxHealth.length) : 0,
+      mailbox_health: mailboxHealth,
+      intent_data: intents.map(i => ({
+        name: i.name.charAt(0).toUpperCase() + i.name.slice(1).replace('_', ' '),
+        value: i.value,
+        color: i.name === 'interested' || i.name === 'meeting_booked' ? '#14B8A6' : '#94A3B8'
+      }))
     });
-
-    // Campaign Comparison
-    const campaigns = await db.prepare(`
-      SELECT 
-        c.name,
-        (SELECT count(*) FROM outreach_events e JOIN outreach_contacts con ON e.contact_id = con.id WHERE e.metadata LIKE '%"campaign_id":"' || c.id || '"%' AND e.type = 'sent') as sent,
-        (SELECT count(*) FROM outreach_events e JOIN outreach_contacts con ON e.contact_id = con.id WHERE e.metadata LIKE '%"campaign_id":"' || c.id || '"%' AND e.type = 'opened') as opens,
+  } catch (error: any) {
+    console.error("Analytics Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+"campaign_id":"' || c.id || '"%' AND e.type = 'opened') as opens,
         (SELECT count(*) FROM outreach_events e JOIN outreach_contacts con ON e.contact_id = con.id WHERE e.metadata LIKE '%"campaign_id":"' || c.id || '"%' AND (e.type = 'replied' OR e.type = 'reply')) as replies
       FROM outreach_campaigns c
       WHERE c.user_id = ? AND c.project_id = ?
@@ -2151,18 +2138,16 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-  const row = await db.prepare("SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
-  let hasHunterKey = false;
-  if (row && row.hunter_api_key) {
-    hasHunterKey = true;
-  }
+  const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+  const hasHunterKey = !!(row && row.hunter_api_key);
+  const hasZeroBounceKey = !!(row && row.zerobounce_api_key);
 
-  res.json({ hasHunterKey });
+  res.json({ hasHunterKey, hasZeroBounceKey });
 });
 
 app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, hunter_api_key } = req.body;
+  const { project_id, hunter_api_key, zerobounce_api_key } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -2174,6 +2159,17 @@ app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
       VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(project_id) DO UPDATE SET
         hunter_api_key = excluded.hunter_api_key,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(project_id, encrypted);
+  }
+
+  if (zerobounce_api_key !== undefined) {
+    const encrypted = zerobounce_api_key ? encryptToken(zerobounce_api_key) : null;
+    await db.prepare(`
+      INSERT INTO outreach_settings (project_id, zerobounce_api_key, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(project_id) DO UPDATE SET
+        zerobounce_api_key = excluded.zerobounce_api_key,
         updated_at = CURRENT_TIMESTAMP
     `).run(project_id, encrypted);
   }
