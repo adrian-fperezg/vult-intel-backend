@@ -1894,7 +1894,12 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
     if (error.stack) console.error(error.stack);
 
     res.status(500).json({ 
-      error: error.message || "An unexpected server error occurred // GET /api/outreach/track/:emailId/pixel
+      error: error.message || "An unexpected server error occurred"
+    });
+  }
+});
+
+// GET /api/outreach/track/:emailId/pixel
 app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
   const { emailId } = req.params;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -2105,7 +2110,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
 // Integration status and quotas
 app.get("/api/outreach/integrations/status", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const project_id = (req as any).query.project_id as string;
+  const project_id = req.query.project_id as string;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
@@ -2143,7 +2148,7 @@ app.get("/api/outreach/integrations/status", async (req: AuthRequest, res) => {
 
 app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const project_id = (req as any).query.project_id as string;
+  const project_id = req.query.project_id as string;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
@@ -2159,7 +2164,7 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
 
 app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const project_id = (req as any).query.project_id as string;
+  const project_id = req.query.project_id as string;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
@@ -2177,7 +2182,7 @@ app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
 
 app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = (req as any).query as { project_id?: string };
+  const { project_id } = req.query as { project_id?: string };
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -2191,7 +2196,7 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
 
 app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, hunter_api_key, zerobounce_api_key } = (req as any).body;
+  const { project_id, hunter_api_key, zerobounce_api_key } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -2224,7 +2229,7 @@ app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
 // ─── ICP PROFILE ─────────────────────────────────────────────────────────────
 app.get("/api/outreach/icp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = (req as any).query;
+  const { project_id } = req.query;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
@@ -2310,7 +2315,7 @@ app.put("/api/outreach/icp", async (req: AuthRequest, res) => {
 
 app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = (req as any).query;
+  const { project_id } = req.query;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
@@ -2327,7 +2332,7 @@ app.use("/api/outreach/hunter", hunterRoutes);
 
 app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, contacts } = (req as any).body;
+  const { project_id, contacts } = req.body;
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {

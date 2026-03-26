@@ -13,6 +13,9 @@ if (!admin.apps.length) {
 
 export interface AuthRequest extends Request {
   user?: admin.auth.DecodedIdToken;
+  body: any;
+  query: any;
+  params: any;
 }
 
 export const verifyFirebaseToken = async (req: AuthRequest, res: Response, next: NextFunction) => {
