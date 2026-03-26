@@ -370,6 +370,13 @@ export function useOutreachApi() {
     window.location.href = url;
   }, [currentUser, activeProjectId, authHeaders]);
 
+  const connectSmtp = useCallback(
+    (config: any) => post<any>('/mailboxes/smtp', config),
+    [post]
+  );
+
+  const fetchIdentities = useCallback(() => get<any[]>('/mailboxes/identities'), [get]);
+
   // ── Compose ──────────────────────────────────────────────────────────────
 
   const fetchIndividualEmails = useCallback(
@@ -473,5 +480,7 @@ export function useOutreachApi() {
     fetchIcp,
     updateIcp,
     deleteIcp,
+    connectSmtp,
+    fetchIdentities,
   };
 }

@@ -4,6 +4,8 @@ import db from '../db.js';
 import dotenv from 'dotenv';
 import { getValidGmailClient } from '../oauth.js';
 import redis from '../redis.js';
+import { sendSmtpMessage } from '../lib/outreach/smtpMailer.js';
+import { pollImap } from '../lib/outreach/imapPoller.js';
 
 dotenv.config();
 
@@ -28,6 +30,18 @@ export const campaignQueue = new Queue('campaign-queue', {
   }
 });
 
+export async function pollMailboxes() {
+  console.log('[IMAP] Starting scheduled mailbox poll...');
+  const mailboxes = await db.prepare("SELECT id FROM outreach_mailboxes WHERE connection_type = 'smtp'").all() as any[];
+  for (const mailbox of mailboxes) {
+    try {
+      await pollImap(mailbox.id);
+    } catch (err) {
+      console.error(`[IMAP] Failed to poll mailbox ${mailbox.id}:`, err);
+    }
+  }
+}
+
 import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
 import { scheduleNextStep } from '../lib/outreach/sequenceEngine.js';
 
@@ -37,6 +51,11 @@ import { scheduleNextStep } from '../lib/outreach/sequenceEngine.js';
 export const emailWorker = new Worker('email-queue', async (job: Job) => {
   const { name, data } = job;
   console.log(`Processing job ${job.id}: ${name}`);
+
+  if (name === 'poll-mailboxes') {
+    await pollMailboxes();
+    return;
+  }
 
   if (name === 'execute-sequence-step') {
     const { projectId, sequenceId, contactId, stepId, stepNumber } = data;
@@ -89,14 +108,16 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         // Create individual email record
         const emailId = uuidv4();
         await db.prepare(`
-          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
         `).run(
           emailId,
           sequence.user_id,
           projectId,
           sequence.mailbox_id,
           contactId,
+          sequence.from_email,
+          sequence.from_name,
           contact.email,
           subject,
           bodyHtml
@@ -157,22 +178,48 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     throw new Error("MAILBOX_MISSING");
   }
 
-  console.log(`[processEmail] Found email record. mailboxId: ${mailboxId}. Fetching Gmail client...`);
+  console.log(`[processEmail] Found email record. mailboxId: ${mailboxId}. Fetching mailbox details...`);
   
-  // This will handle refresh if needed
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
+
+  if (mailbox.connection_type === 'smtp') {
+    const result = await sendSmtpMessage(mailboxId, {
+      to: email.to_email,
+      subject: email.subject || "(No Subject)",
+      bodyHtml: email.body_html || "",
+      fromEmail: email.from_email,
+      fromName: email.from_name
+    });
+
+    console.log(`[processEmail] SMTP email sent. messageId: ${result.messageId}`);
+    
+    await db.prepare(`
+      UPDATE outreach_individual_emails 
+      SET status = 'sent', sent_at = CURRENT_TIMESTAMP, message_id = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(result.messageId, emailId);
+
+    // Skip tracking for now or implement SMTP specific tracking
+    return { success: true, messageId: result.messageId };
+  }
+
+  // Gmail logic
   const gmail = await getValidGmailClient(mailboxId);
   
-  // 1. Build the RFC822 message accurately
   const subject = email.subject || "(No Subject)";
   const body = email.body_html || "";
   const to = email.to_email;
+  const fromEmail = email.from_email || mailbox.email;
+  const fromName = email.from_name || mailbox.name;
+  const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
-  // Gmail API requires a properly formatted MIME message
   const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
   const str = [
     `Content-Type: text/html; charset="UTF-8"`,
     `MIME-Version: 1.0`,
     `To: ${to}`,
+    `From: ${fromHeader}`,
     `Subject: ${utf8Subject}`,
     ``,
     `${body}`,
@@ -184,9 +231,6 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-  // 2. Send via Gmail SDK
-  console.log(`[processEmail] Sending via Gmail SDK for emailId: ${emailId}`);
-  
   try {
     const res = await gmail.users.messages.send({
       userId: 'me',
@@ -196,7 +240,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     });
 
     const result = res.data;
-    console.log(`[processEmail] Email ${emailId} sent successfully. Gmail ID: ${result.id}`);
+    console.log(`[processEmail] Email ${emailId} sent successfully via Gmail. Gmail ID: ${result.id}`);
 
     await db.prepare(`
       UPDATE outreach_individual_emails 
@@ -204,7 +248,6 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       WHERE id = ?
     `).run(result.id, result.threadId, emailId);
 
-    // Log event and update contact
     if (email.contact_id) {
       await db.prepare(`
         INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
@@ -217,12 +260,9 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     return { success: true, messageId: result.id };
   } catch (err: any) {
     console.error(`[processEmail] Gmail SDK error for emailId ${emailId}:`, err.message);
-    
-    // Check for specific auth errors
     if (err.code === 401 || err.code === 403 || err.message?.includes('invalid_grant')) {
       throw new Error("GMAIL_AUTH_FAILED");
     }
-    
     throw new Error(`GMAIL_API_ERROR: ${err.message}`);
   }
 }
@@ -287,14 +327,16 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         });
 
         await db.prepare(`
-          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
         `).run(
           emailId,
           campaign.user_id,
           campaign.project_id,
           campaign.mailbox_id,
           enrollment.contact_id,
+          campaign.from_email,
+          campaign.from_name,
           enrollment.contact_email,
           subject,
           bodyHtml

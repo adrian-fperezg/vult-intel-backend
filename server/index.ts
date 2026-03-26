@@ -10,7 +10,7 @@ import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
-import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs } from "./queues/emailQueue.js";
+import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes } from "./queues/emailQueue.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -21,6 +21,7 @@ import {
   getValidGmailClient,
   saveTokens,
   syncMailboxesFromRedis,
+  fetchGmailAliases,
 } from "./oauth.js";
 import { syncMailbox } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
@@ -79,7 +80,14 @@ app.use(
 );
 
 // Initialize DB schema on startup
-initDb().catch(err => {
+initDb().then(() => {
+  console.log('[DB] Initialization complete. Scheduling background jobs...');
+  // Schedule recurring tasks
+  emailQueue.add('poll-mailboxes', {}, { 
+    repeat: { pattern: '*/10 * * * *' }, // Every 10 minutes
+    removeOnComplete: true
+  }).catch(err => console.error('[QUEUE] Failed to schedule poll-mailboxes:', err));
+}).catch(err => {
   console.error('[DB] Initialization failed:', err);
 });
 
@@ -181,6 +189,8 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
 
     // Initial sync
     syncMailbox(mailboxId, getValidAccessToken).catch(console.error);
+    // Fetch aliases
+    fetchGmailAliases(mailboxId).catch(console.error);
 
     return res.redirect(
       `${frontendBase}/outreach?gmail_connected=1&email=${encodeURIComponent(userInfo.email)}`,
@@ -253,6 +263,58 @@ app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
   } catch (err: any) {
     console.error("[GET /mailboxes] Error:", err);
     res.status(500).json({ error: "Failed to fetch mailboxes", details: err.message });
+  }
+});
+
+// GET /api/outreach/mailboxes/identities
+// Returns a unified list of primary accounts and verified aliases
+app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query as { project_id?: string };
+
+  if (!userId || !project_id) return res.status(400).json({ error: "userId and project_id are required" });
+
+  try {
+    const mailboxes = await db.all(`
+      SELECT id, email, name, connection_type, status 
+      FROM outreach_mailboxes 
+      WHERE user_id = ? AND project_id = ? AND status = 'active'
+    `, userId, project_id);
+
+    const identities: any[] = [];
+
+    for (const mb of mailboxes as any[]) {
+      // Add primary mailbox as an identity
+      identities.push({
+        mailbox_id: mb.id,
+        email: mb.email,
+        name: mb.name,
+        connection_type: mb.connection_type,
+        is_alias: false
+      });
+
+      // Add aliases
+      const aliases = await db.all(`
+        SELECT email, name 
+        FROM outreach_mailbox_aliases 
+        WHERE mailbox_id = ? AND is_verified = 1
+      `, mb.id);
+
+      for (const alias of aliases as any[]) {
+        identities.push({
+          mailbox_id: mb.id,
+          email: alias.email,
+          name: alias.name,
+          connection_type: mb.connection_type,
+          is_alias: true
+        });
+      }
+    }
+
+    res.json(identities);
+  } catch (err: any) {
+    console.error("[GET /mailboxes/identities] Error:", err);
+    res.status(500).json({ error: "Failed to fetch identities" });
   }
 });
 
@@ -455,6 +517,8 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
             min_delay = ?,
             max_delay = ?,
             send_weekends = ?,
+            from_email = ?,
+            from_name = ?,
             updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
       `).run(
@@ -463,6 +527,8 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
         scheduling?.min_delay || 2,
         scheduling?.max_delay || 5,
         scheduling?.send_weekends ? 1 : 0,
+        settings.from_email || null,
+        settings.from_name || null,
         campaignId
       );
 
@@ -662,7 +728,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const allowedFields = [
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end', 
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
-    'stop_on_reply', 'mailbox_id'
+    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name'
   ];
 
   const filteredUpdates = Object.keys(updates)
@@ -1497,6 +1563,8 @@ app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
     body_html,
     status,
     scheduled_at,
+    from_email,
+    from_name,
   } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
@@ -1509,8 +1577,8 @@ app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
   const id = uuidv4();
   await db.prepare(
     `
-    INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status, scheduled_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status, scheduled_at, from_email, from_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -1523,6 +1591,8 @@ app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
     body_html || "",
     status || "draft",
     scheduled_at || null,
+    from_email || null,
+    from_name || null,
   );
 
   const email = await db
@@ -1543,6 +1613,8 @@ app.patch("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
     body_html,
     status,
     scheduled_at,
+    from_email,
+    from_name,
   } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
@@ -1577,6 +1649,14 @@ app.patch("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
   if (scheduled_at !== undefined) {
     fields.push("scheduled_at = ?");
     values.push(scheduled_at);
+  }
+  if (from_email !== undefined) {
+    fields.push("from_email = ?");
+    values.push(from_email);
+  }
+  if (from_name !== undefined) {
+    fields.push("from_name = ?");
+    values.push(from_name);
   }
 
   if (fields.length === 0)

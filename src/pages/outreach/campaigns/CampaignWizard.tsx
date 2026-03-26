@@ -22,6 +22,7 @@ type WizardStep = 'settings' | 'content' | 'contacts' | 'scheduling' | 'review';
 export default function CampaignWizard({ isOpen, onClose, onComplete }: CampaignWizardProps) {
   const { 
     fetchMailboxes, 
+    fetchIdentities,
     createCampaign, 
     launchCampaign,
     activeProjectId 
@@ -29,11 +30,14 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
   const [step, setStep] = useState<WizardStep>('settings');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mailboxes, setMailboxes] = useState<any[]>([]);
+  const [identities, setIdentities] = useState<any[]>([]);
 
   // Wizard State
   const [settings, setSettings] = useState({
     name: '',
     mailbox_id: '',
+    from_email: '',
+    from_name: '',
     track_opens: true,
     track_clicks: true,
   });
@@ -52,17 +56,24 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
     max_delay: 5,
     send_weekends: false,
   });
+  const [isMailboxOpen, setIsMailboxOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      fetchMailboxes().then(m => {
+      Promise.all([fetchMailboxes(), fetchIdentities()]).then(([m, idents]) => {
         setMailboxes(m || []);
-        if (m?.length > 0 && !settings.mailbox_id) {
-          setSettings(s => ({ ...s, mailbox_id: m[0].id }));
+        setIdentities(idents || []);
+        if (idents?.length > 0 && !settings.mailbox_id) {
+          setSettings(s => ({ 
+            ...s, 
+            mailbox_id: idents[0].mailbox_id,
+            from_email: idents[0].email,
+            from_name: idents[0].name
+          }));
         }
       });
     }
-  }, [isOpen, fetchMailboxes]);
+  }, [isOpen, fetchMailboxes, fetchIdentities]);
 
   if (!isOpen) return null;
 
@@ -210,17 +221,63 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                         className="w-full px-4 py-3 bg-[#161b22] border border-[#30363d] rounded-xl text-white focus:outline-none focus:border-teal-500/50 transition-colors"
                       />
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 relative">
                       <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Sender Mailbox</label>
-                      <select 
-                        value={settings.mailbox_id}
-                        onChange={e => setSettings({...settings, mailbox_id: e.target.value})}
-                        className="w-full px-4 py-3 bg-[#161b22] border border-[#30363d] rounded-xl text-white focus:outline-none focus:border-teal-500/50 transition-colors appearance-none"
+                      <button
+                        type="button"
+                        onClick={() => setIsMailboxOpen(!isMailboxOpen)}
+                        className="w-full h-[46px] flex items-center justify-between px-4 bg-[#161b22] border border-[#30363d] focus-within:border-teal-500/50 hover:border-teal-500/50 rounded-xl text-sm text-white focus:outline-none transition-all"
                       >
-                        {mailboxes.map(mb => (
-                          <option key={mb.id} value={mb.id}>{mb.email}</option>
-                        ))}
-                      </select>
+                        <div className="flex items-center gap-2 truncate">
+                          {(() => {
+                            const selected = identities.find(i => i.email === settings.from_email) || identities.find(i => i.mailbox_id === settings.mailbox_id);
+                            if (!selected) return <span className="text-slate-500">Select a sender...</span>;
+                            return (
+                              <div className="flex items-center gap-2">
+                                <Mail className="size-4 text-slate-400 shrink-0" />
+                                <span className="truncate">{selected.name ? `${selected.name} <${selected.email}>` : selected.email}</span>
+                                {selected.is_alias && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 shrink-0">Alias</span>}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        <ChevronRight className={cn("size-4 text-slate-500 transition-transform shrink-0", isMailboxOpen && "rotate-90")} />
+                      </button>
+
+                      {isMailboxOpen && (
+                        <div className="absolute z-50 top-full left-0 right-0 mt-2 max-h-64 overflow-y-auto bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl py-1">
+                          {identities.map((ident, idx) => (
+                            <button
+                              key={`${ident.mailbox_id}-${ident.email}-${idx}`}
+                              type="button"
+                              onClick={() => {
+                                setSettings({ 
+                                  ...settings, 
+                                  mailbox_id: ident.mailbox_id,
+                                  from_email: ident.email,
+                                  from_name: ident.name
+                                });
+                                setIsMailboxOpen(false);
+                              }}
+                              className={cn(
+                                 "w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition-colors hover:bg-white/5",
+                                 settings.from_email === ident.email ? "bg-teal-500/10 text-teal-400" : "text-slate-300"
+                              )}
+                            >
+                              <Mail className="size-4 text-slate-400 shrink-0" />
+                              <div className="flex flex-col min-w-0">
+                                <span className="truncate font-medium">{ident.name || 'Primary'}</span>
+                                <span className="truncate text-[10px] opacity-60">{ident.email}</span>
+                              </div>
+                              {ident.is_alias ? (
+                                 <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 ml-auto shrink-0">Alias</span>
+                              ) : (
+                                 <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 ml-auto shrink-0">Primary</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -175,11 +175,29 @@ export const initDb = async () => {
         name TEXT NOT NULL,
         subject TEXT,
         body TEXT,
+        mailbox_id TEXT REFERENCES outreach_mailboxes(id),
+        from_email TEXT,
+        from_name TEXT,
         status TEXT DEFAULT 'draft',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for outreach_campaigns
+    const campCols = await db.pragma('table_info(outreach_campaigns)');
+    const campColNames = campCols.map((c: any) => c.name);
+    const newCampCols = [
+      { name: 'mailbox_id', type: 'TEXT' },
+      { name: 'from_email', type: 'TEXT' },
+      { name: 'from_name', type: 'TEXT' }
+    ];
+
+    for (const col of newCampCols) {
+      if (!campColNames.includes(col.name)) {
+        await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
 
     // 3. Sequences
     await db.run(`
@@ -207,6 +225,8 @@ export const initDb = async () => {
         allow_reenrollment BOOLEAN DEFAULT FALSE,
         start_at TIMESTAMP,
         mailbox_id TEXT REFERENCES outreach_mailboxes(id),
+        from_email TEXT,
+        from_name TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -229,7 +249,9 @@ export const initDb = async () => {
       { name: 'stop_on_bounce', type: 'BOOLEAN DEFAULT TRUE' },
       { name: 'allow_reenrollment', type: 'BOOLEAN DEFAULT FALSE' },
       { name: 'start_at', type: 'TIMESTAMP' },
-      { name: 'mailbox_id', type: 'TEXT' }
+      { name: 'mailbox_id', type: 'TEXT' },
+      { name: 'from_email', type: 'TEXT' },
+      { name: 'from_name', type: 'TEXT' }
     ];
 
     for (const col of newSeqCols) {
@@ -314,8 +336,11 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         email TEXT NOT NULL,
         name TEXT,
-        access_token TEXT NOT NULL,
-        refresh_token TEXT NOT NULL,
+        connection_type TEXT DEFAULT 'gmail',
+        access_token TEXT,
+        refresh_token TEXT,
+        smtp_config TEXT,
+        imap_config TEXT,
         expires_at TIMESTAMP,
         scope TEXT,
         status TEXT DEFAULT 'active',
@@ -325,6 +350,37 @@ export const initDb = async () => {
       )
     `);
 
+    // 6.1 Mailbox Aliases
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_mailbox_aliases (
+        id TEXT PRIMARY KEY,
+        mailbox_id TEXT NOT NULL REFERENCES outreach_mailboxes(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        name TEXT,
+        is_default BOOLEAN DEFAULT FALSE,
+        is_verified BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(mailbox_id, email)
+      )
+    `);
+
+    // Migration for outreach_mailboxes
+    const mailboxCols = await db.pragma('table_info(outreach_mailboxes)');
+    const mailboxColNames = mailboxCols.map((c: any) => c.name);
+    const newMailboxCols = [
+      { name: 'connection_type', type: 'TEXT DEFAULT "gmail"' },
+      { name: 'smtp_config', type: 'TEXT' },
+      { name: 'imap_config', type: 'TEXT' }
+    ];
+
+    for (const col of newMailboxCols) {
+      if (!mailboxColNames.includes(col.name)) {
+        console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
+        await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
+
     // 7. Individual Emails
     await db.run(`
       CREATE TABLE IF NOT EXISTS outreach_individual_emails (
@@ -333,6 +389,8 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         mailbox_id TEXT NOT NULL REFERENCES outreach_mailboxes(id),
         contact_id TEXT REFERENCES outreach_contacts(id),
+        from_email TEXT,
+        from_name TEXT,
         to_email TEXT NOT NULL,
         subject TEXT,
         body_html TEXT,
@@ -345,6 +403,21 @@ export const initDb = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for outreach_individual_emails
+    const emailCols = await db.pragma('table_info(outreach_individual_emails)');
+    const emailColNames = emailCols.map((c: any) => c.name);
+    const newEmailCols = [
+      { name: 'from_email', type: 'TEXT' },
+      { name: 'from_name', type: 'TEXT' }
+    ];
+
+    for (const col of newEmailCols) {
+      if (!emailColNames.includes(col.name)) {
+        console.log(`[DB] Adding missing column ${col.name} to outreach_individual_emails`);
+        await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
 
     // 8. Settings
     await db.run(`

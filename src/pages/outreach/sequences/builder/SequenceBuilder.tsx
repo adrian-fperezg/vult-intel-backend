@@ -36,6 +36,8 @@ interface Sequence {
   send_window_start?: string;
   send_window_end?: string;
   send_on_weekdays?: boolean;
+  from_email?: string;
+  from_name?: string;
 }
 
 interface SequenceBuilderProps {
@@ -48,6 +50,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [sequence, setSequence] = useState<Sequence | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [mailboxes, setMailboxes] = useState<any[]>([]);
+  const [identities, setIdentities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
@@ -60,9 +63,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const loadData = async () => {
     setLoading(true);
     try {
-      const [seqData, mailboxData] = await Promise.all([
+      const [seqData, mailboxData, identityData] = await Promise.all([
         api.getSequence(sequenceId),
-        api.fetchMailboxes()
+        api.fetchMailboxes(),
+        api.fetchIdentities()
       ]);
       if (seqData) {
         setSequence(seqData);
@@ -70,6 +74,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         if (seqData.steps?.length > 0) setActiveStepId(seqData.steps[0].id);
       }
       setMailboxes(mailboxData || []);
+      setIdentities(identityData || []);
     } catch (error) {
       toast.error("Failed to load sequence");
     } finally {
@@ -87,7 +92,9 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         daily_send_limit: sequence?.daily_send_limit,
         stop_on_reply: sequence?.stop_on_reply,
         smart_send_min_delay: sequence?.smart_send_min_delay,
-        smart_send_max_delay: sequence?.smart_send_max_delay
+        smart_send_max_delay: sequence?.smart_send_max_delay,
+        from_email: sequence?.from_email,
+        from_name: sequence?.from_name
       });
       toast.success("Sequence saved");
     } catch (error) {
@@ -380,35 +387,51 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                 </div>
                 
                 <div className="grid grid-cols-1 gap-3">
-                  {mailboxes.map(mb => (
+                  {identities.map((ident, idx) => (
                     <button
-                      key={mb.id}
-                      onClick={() => setSequence(prev => prev ? { ...prev, mailbox_id: mb.id } : null)}
+                      key={`${ident.mailbox_id}-${ident.email}-${idx}`}
+                      onClick={() => setSequence(prev => prev ? { 
+                        ...prev, 
+                        mailbox_id: ident.mailbox_id,
+                        from_email: ident.email,
+                        from_name: ident.name
+                      } : null)}
                       className={cn(
                         "flex items-center justify-between p-4 rounded-2xl border transition-all text-left",
-                        sequence?.mailbox_id === mb.id 
+                        sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id
                           ? "bg-teal-500/10 border-teal-500/30" 
                           : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/10"
                       )}
                     >
                       <div className="flex items-center gap-3">
                         <div className="size-10 rounded-xl bg-black/20 flex items-center justify-center border border-white/5">
-                          <Globe className="size-4 text-slate-500" />
+                          {mailboxes.find(m => m.id === ident.mailbox_id)?.connection_type === 'smtp' ? (
+                            <Mail className="size-4 text-slate-500" />
+                          ) : (
+                            <Globe className="size-4 text-slate-500" />
+                          )}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-white">{mb.email}</p>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Gmail Integration</p>
+                          <p className="text-sm font-bold text-white">{ident.name || 'Primary'}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{ident.email}</p>
                         </div>
                       </div>
-                      <div className={cn(
-                        "size-5 rounded-full border-2 flex items-center justify-center transition-all",
-                        sequence?.mailbox_id === mb.id ? "border-teal-500 bg-teal-500/20" : "border-white/10"
-                      )}>
-                        {sequence?.mailbox_id === mb.id && <div className="size-2 rounded-full bg-teal-400" />}
+                      <div className="flex items-center gap-3">
+                        {ident.is_alias ? (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400">Alias</span>
+                        ) : (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Primary</span>
+                        )}
+                        <div className={cn(
+                          "size-5 rounded-full border-2 flex items-center justify-center transition-all",
+                          sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id ? "border-teal-500 bg-teal-500/20" : "border-white/10"
+                        )}>
+                          {sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id && <div className="size-2 rounded-full bg-teal-400" />}
+                        </div>
                       </div>
                     </button>
                   ))}
-                  {mailboxes.length === 0 && (
+                  {identities.length === 0 && (
                      <div className="p-8 rounded-2xl border-2 border-dashed border-white/5 text-center bg-white/[0.02]">
                         <p className="text-sm text-slate-500 mb-4">No mailboxes connected to this project.</p>
                         <TealButton variant="outline" size="sm" onClick={() => (window as any).location.href = '/outreach/mailboxes'}>Connect Mailbox</TealButton>

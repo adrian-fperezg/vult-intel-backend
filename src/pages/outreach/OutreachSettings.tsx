@@ -34,6 +34,8 @@ interface Mailbox {
   dkim?: boolean;
   dmarc?: boolean;
   warmupActive?: boolean;
+  connection_type?: 'gmail' | 'smtp';
+  aliases?: Array<{ email: string; name: string }>;
 }
 
 const SNIPPETS = [
@@ -65,6 +67,12 @@ export default function OutreachSettings() {
   const [hunterConnected, setHunterConnected] = useState(false);
   const [showHunterSetup, setShowHunterSetup] = useState(false);
   const [fetchingHunter, setFetchingHunter] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [connectMode, setConnectMode] = useState<'picker' | 'smtp'>('picker');
+  const [smtpConfig, setSmtpConfig] = useState({
+    email: '', name: '', smtp_host: '', smtp_port: 587, smtp_secure: false, smtp_user: '', smtp_pass: '',
+    imap_host: '', imap_port: 993, imap_secure: true,
+  });
 
   useEffect(() => {
     if (activeTab === 'mailboxes') loadMailboxes();
@@ -128,6 +136,20 @@ export default function OutreachSettings() {
     }
   };
 
+  const handleConnectSmtp = async () => {
+    try {
+      setConnectingGmail(true);
+      await api.connectSmtp(smtpConfig);
+      toast.success('Mailbox connected via SMTP/IMAP');
+      setShowConnectModal(false);
+      loadMailboxes();
+    } catch (err: any) {
+      toast.error(err.message || 'SMTP connection failed');
+    } finally {
+      setConnectingGmail(false);
+    }
+  };
+
   const handleDisconnect = async (id: string) => {
     setDisconnectingId(id);
     try {
@@ -174,11 +196,10 @@ export default function OutreachSettings() {
               </div>
               <TealButton
                 size="sm"
-                onClick={handleConnectGmail}
-                loading={connectingGmail}
+                onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}
                 disabled={!api.activeProjectId}
               >
-                <Plus className="size-4" /> Connect Gmail
+                <Plus className="size-4" /> Add Mailbox
               </TealButton>
             </div>
 
@@ -204,8 +225,8 @@ export default function OutreachSettings() {
               <OutreachEmptyState
                 icon={<Mail />}
                 title="No mailboxes connected"
-                description="Connect your Gmail account to start sending outreach emails from this project."
-                action={<TealButton onClick={handleConnectGmail} loading={connectingGmail}><Plus className="size-4" /> Connect Gmail</TealButton>}
+                description="Connect your Gmail account or custom SMTP to start sending outreach emails."
+                action={<TealButton onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}><Plus className="size-4" /> Add Mailbox</TealButton>}
               />
             ) : (
               <div className="space-y-4">
@@ -236,10 +257,16 @@ export default function OutreachSettings() {
                             {mb.warmupActive && <OutreachBadge variant="purple" dot>Warming Up</OutreachBadge>}
                           </div>
                           <div className="flex items-center gap-4 text-xs text-slate-500">
-                            <span>{mb.name || 'Gmail'}</span>
-                            <span className="flex items-center gap-1">
-                              <Mail className="size-3" /> {mb.sent ?? 0}/{mb.dailyLimit ?? 200} today
+                            <span className="flex items-center gap-1.5 capitalize">
+                              {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
+                              {mb.connection_type || 'gmail'}
                             </span>
+                            <span className="flex items-center gap-1">
+                              <Zap className="size-3" /> {mb.sent ?? 0}/{mb.dailyLimit ?? 200} today
+                            </span>
+                            {mb.aliases && mb.aliases.length > 0 && (
+                              <span className="text-teal-400 font-medium">+{mb.aliases.length} aliases</span>
+                            )}
                           </div>
                         </div>
 
@@ -260,17 +287,35 @@ export default function OutreachSettings() {
                             <div className="p-5 space-y-5">
                               {/* Quota Bar */}
                               <div>
-                                <div className="flex justify-between text-xs text-slate-400 mb-2">
-                                  <span>Daily sending quota</span>
-                                  <span className="font-bold text-white">{mb.sent ?? 0}/{mb.dailyLimit ?? 200} emails</span>
+                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+                                  <span>Daily Sending Quota</span>
+                                  <span className="text-teal-400">{mb.sent ?? 0} / {mb.dailyLimit ?? 200} used</span>
                                 </div>
-                                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-teal-500 rounded-full transition-all"
-                                    style={{ width: `${((mb.sent ?? 0) / (mb.dailyLimit ?? 200)) * 100}%` }}
+                                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-teal-500 rounded-full" 
+                                    style={{ width: `${Math.min(100, ((mb.sent ?? 0) / (mb.dailyLimit ?? 200)) * 100)}%` }} 
                                   />
                                 </div>
                               </div>
+
+                              {/* Aliases */}
+                              {mb.aliases && mb.aliases.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Verified Aliases</p>
+                                  <div className="space-y-2">
+                                    {mb.aliases.map(alias => (
+                                      <div key={alias.email} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                                        <div>
+                                          <p className="text-sm font-semibold text-white">{alias.name}</p>
+                                          <p className="text-xs text-slate-400">{alias.email}</p>
+                                        </div>
+                                        <OutreachBadge variant="teal">Verified</OutreachBadge>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
 
                               {/* DNS Checks */}
                               <div>
@@ -652,6 +697,165 @@ export default function OutreachSettings() {
           </div>
         )}
       </div>
+
+      {/* ── CONNECTION MODAL ── */}
+      <AnimatePresence>
+        {showConnectModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowConnectModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg bg-surface-dark border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-8">
+                {connectMode === 'picker' ? (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-2xl font-bold text-white">Connect Mailbox</h3>
+                      <p className="text-slate-400 mt-2">Choose your preferred email provider</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      <button
+                        onClick={handleConnectGmail}
+                        disabled={connectingGmail}
+                        className="flex items-center gap-4 p-5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-teal-500/30 transition-all group"
+                      >
+                        <div className="size-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg" className="size-6" alt="Gmail" />
+                        </div>
+                        <div className="text-left">
+                          <p className="font-bold text-white">Google Gmail / GSuite</p>
+                          <p className="text-xs text-slate-500">Connect via secure OAuth consent</p>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => setConnectMode('smtp')}
+                        className="flex items-center gap-4 p-5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-teal-500/30 transition-all group"
+                      >
+                        <div className="size-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform text-white">
+                          <Wifi className="size-6" />
+                        </div>
+                        <div className="text-left">
+                          <p className="font-bold text-white">Custom SMTP / IMAP</p>
+                          <p className="text-xs text-slate-500">Outlook, Zoho, or private servers</p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-white">SMTP Configuration</h3>
+                      <button onClick={() => setConnectMode('picker')} className="text-xs text-slate-500 hover:text-white font-bold uppercase tracking-wider">Back</button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2 block">Settings</label>
+                        <div className="space-y-3">
+                          <input 
+                            type="email" 
+                            placeholder="Email Address" 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                            value={smtpConfig.email}
+                            onChange={e => setSmtpConfig({...smtpConfig, email: e.target.value})}
+                          />
+                          <input 
+                            type="text" 
+                            placeholder="Sender Name (e.g. John Doe)" 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                            value={smtpConfig.name}
+                            onChange={e => setSmtpConfig({...smtpConfig, name: e.target.value})}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2 block">SMTP Host</label>
+                        <input 
+                          type="text" 
+                          placeholder="smtp.example.com"
+                          className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                          value={smtpConfig.smtp_host}
+                          onChange={e => setSmtpConfig({...smtpConfig, smtp_host: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2 block">SMTP Port</label>
+                        <input 
+                          type="number" 
+                          placeholder="587"
+                          className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                          value={smtpConfig.smtp_port}
+                          onChange={e => setSmtpConfig({...smtpConfig, smtp_port: parseInt(e.target.value)})}
+                        />
+                      </div>
+
+                      <div className="col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2 block">SMTP Auth</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input 
+                            type="text" 
+                            placeholder="Username" 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                            value={smtpConfig.smtp_user}
+                            onChange={e => setSmtpConfig({...smtpConfig, smtp_user: e.target.value})}
+                          />
+                          <input 
+                            type="password" 
+                            placeholder="Password" 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                            value={smtpConfig.smtp_pass}
+                            onChange={e => setSmtpConfig({...smtpConfig, smtp_pass: e.target.value})}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="col-span-2 border-t border-white/5 pt-4">
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2 block">IMAP (for reply detection)</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input 
+                            type="text" 
+                            placeholder="imap.example.com" 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                            value={smtpConfig.imap_host}
+                            onChange={e => setSmtpConfig({...smtpConfig, imap_host: e.target.value})}
+                          />
+                          <input 
+                            type="number" 
+                            placeholder="993" 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                            value={smtpConfig.imap_port}
+                            onChange={e => setSmtpConfig({...smtpConfig, imap_port: parseInt(e.target.value)})}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <TealButton 
+                      className="w-full py-4 text-md" 
+                      onClick={handleConnectSmtp}
+                      loading={connectingGmail}
+                    >
+                      Verify & Connect
+                    </TealButton>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

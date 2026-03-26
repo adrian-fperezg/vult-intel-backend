@@ -4,6 +4,7 @@ import db from './db.js';
 import redis from './redis.js';
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
+import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
 
@@ -277,5 +278,49 @@ export async function syncMailboxesFromRedis() {
     }
   } catch (err) {
     console.error("[Persistence] Sync from Redis failed:", err.message);
+  }
+}
+
+/**
+ * Fetches "Send mail as" aliases from Gmail and stores them in outreach_mailbox_aliases.
+ */
+export async function fetchGmailAliases(mailboxId: string) {
+  console.log(`[OAuth] Fetching aliases for mailbox ${mailboxId}`);
+  
+  try {
+    const gmail = await getValidGmailClient(mailboxId);
+    const res = await gmail.users.settings.sendAs.list({
+      userId: 'me'
+    });
+    
+    const aliases = res.data.sendAs || [];
+    console.log(`[OAuth] Found ${aliases.length} aliases for ${mailboxId}`);
+    
+    await db.transaction(async () => {
+      for (const alias of aliases) {
+        // Ensure email and sendAsEmail are present
+        const aliasEmail = alias.sendAsEmail;
+        if (!aliasEmail) continue;
+
+        await db.prepare(`
+          INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_default, is_verified)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(mailbox_id, email) DO UPDATE SET
+            name = excluded.name,
+            is_default = excluded.is_default,
+            is_verified = excluded.is_verified,
+            updated_at = CURRENT_TIMESTAMP
+        `).run(
+          uuidv4(),
+          mailboxId,
+          aliasEmail,
+          alias.displayName || '',
+          alias.isDefault ? 1 : 0,
+          alias.verificationStatus === 'accepted' ? 1 : 0
+        );
+      }
+    });
+  } catch (err: any) {
+    console.error(`[OAuth] Failed to fetch aliases for ${mailboxId}:`, err.message);
   }
 }

@@ -21,7 +21,8 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
     deleteIndividualEmail, 
     sendIndividualEmail,
     fetchMailboxes,
-    fetchContacts
+    fetchContacts,
+    fetchIdentities
   } = useOutreachApi();
 
   const [isLoading, setIsLoading] = useState(emailId !== 'new');
@@ -29,6 +30,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
   const [isSending, setIsSending] = useState(false);
 
   const [mailboxes, setMailboxes] = useState<any[]>([]);
+  const [identities, setIdentities] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
 
   // Form State
@@ -38,7 +40,9 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
     to_email: '',
     subject: '',
     body_html: '',
-    scheduled_at: ''
+    scheduled_at: '',
+    from_email: '',
+    from_name: ''
   });
 
   const [status, setStatus] = useState<'draft' | 'scheduled' | 'sent'>('draft');
@@ -58,13 +62,19 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Load supporting data (mailboxes, contacts)
+  // Load supporting data (mailboxes, contacts, identities)
   useEffect(() => {
-    Promise.all([fetchMailboxes(), fetchContacts()])
-      .then(([mboxes, conts]) => {
+    Promise.all([fetchMailboxes(), fetchContacts(), fetchIdentities()])
+      .then(([mboxes, conts, idents]) => {
         setMailboxes(mboxes || []);
-        if (mboxes?.length > 0 && !form.mailbox_id) {
-          setForm(prev => ({ ...prev, mailbox_id: mboxes[0].id }));
+        setIdentities(idents || []);
+        if (idents?.length > 0 && !form.mailbox_id) {
+          setForm(prev => ({ 
+            ...prev, 
+            mailbox_id: idents[0].mailbox_id,
+            from_email: idents[0].email,
+            from_name: idents[0].name
+          }));
         }
         setContacts(conts || []);
       })
@@ -82,7 +92,9 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
         to_email: '',
         subject: '',
         body_html: '',
-        scheduled_at: ''
+        scheduled_at: '',
+        from_email: identities[0]?.email || '',
+        from_name: identities[0]?.name || ''
       });
       setIsLoading(false);
       return;
@@ -100,7 +112,9 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
             to_email: data.to_email || '',
             subject: data.subject || '',
             body_html: data.body_html || '',
-            scheduled_at: data.scheduled_at ? new Date(data.scheduled_at).toISOString().slice(0,16) : ''
+            scheduled_at: data.scheduled_at ? new Date(data.scheduled_at).toISOString().slice(0,16) : '',
+            from_email: data.from_email || '',
+            from_name: data.from_name || ''
           });
           setStatus(data.status);
         }
@@ -306,23 +320,18 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
                 >
                   <div className="flex items-center gap-2 truncate">
                     {(() => {
-                      const selected = mailboxes.find(m => m.id === form.mailbox_id);
-                      if (!selected) return <span className="text-slate-500">Select a connected account...</span>;
+                      const selected = identities.find(i => i.email === form.from_email) || identities.find(i => i.mailbox_id === form.mailbox_id);
+                      if (!selected) return <span className="text-slate-500">Select a sender account...</span>;
+                      
+                      const mb = mailboxes.find(m => m.id === selected.mailbox_id);
+                      const isWarming = mb?.warmupActive;
+                      
                       return (
-                        <>
-                          {selected.warmupActive ? (
-                            <div className="flex items-center gap-2">
-                              <Flame className="size-4 text-orange-500 shrink-0" />
-                              <span className="truncate">{selected.email}</span>
-                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 shrink-0">Warming Up</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <Mail className="size-4 text-slate-400 shrink-0" />
-                              <span className="truncate">{selected.email}</span>
-                            </div>
-                          )}
-                        </>
+                        <div className="flex items-center gap-2">
+                          {isWarming ? <Flame className="size-4 text-orange-500 shrink-0" /> : <Mail className="size-4 text-slate-400 shrink-0" />}
+                          <span className="truncate">{selected.name ? `${selected.name} <${selected.email}>` : selected.email}</span>
+                          {selected.is_alias && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 shrink-0">Alias</span>}
+                        </div>
                       );
                     })()}
                   </div>
@@ -331,31 +340,44 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
                 
                 {isMailboxOpen && (
                   <div className="absolute z-50 top-full left-0 right-0 mt-2 max-h-64 overflow-y-auto bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl py-1">
-                    {mailboxes.length === 0 && (
-                      <div className="px-4 py-3 text-sm text-slate-500 text-center">No connected mailboxes</div>
+                    {identities.length === 0 && (
+                      <div className="px-4 py-3 text-sm text-slate-500 text-center">No identities found</div>
                     )}
-                    {mailboxes.map(mb => (
-                      <button
-                        key={mb.id}
-                        type="button"
-                        onClick={() => {
-                          setForm({ ...form, mailbox_id: mb.id });
-                          setIsMailboxOpen(false);
-                        }}
-                        className={cn(
-                           "w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition-colors hover:bg-white/5",
-                           form.mailbox_id === mb.id ? "bg-teal-500/10 text-teal-400" : "text-slate-300"
-                        )}
-                      >
-                        {mb.warmupActive ? <Flame className="size-4 text-orange-500 shrink-0" /> : <Mail className="size-4 text-slate-400 shrink-0" />}
-                        <span className="truncate">{mb.email}</span>
-                        {mb.warmupActive ? (
-                           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 ml-auto shrink-0">Warming Up</span>
-                        ) : (
-                           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 ml-auto shrink-0">Mailbox</span>
-                        )}
-                      </button>
-                    ))}
+                    {identities.map((ident, idx) => {
+                      const mb = mailboxes.find(m => m.id === ident.mailbox_id);
+                      const isWarming = mb?.warmupActive;
+                      
+                      return (
+                        <button
+                          key={`${ident.mailbox_id}-${ident.email}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            setForm({ 
+                              ...form, 
+                              mailbox_id: ident.mailbox_id,
+                              from_email: ident.email,
+                              from_name: ident.name
+                            });
+                            setIsMailboxOpen(false);
+                          }}
+                          className={cn(
+                             "w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition-colors hover:bg-white/5",
+                             form.from_email === ident.email ? "bg-teal-500/10 text-teal-400" : "text-slate-300"
+                          )}
+                        >
+                          {isWarming ? <Flame className="size-4 text-orange-500 shrink-0" /> : <Mail className="size-4 text-slate-400 shrink-0" />}
+                          <div className="flex flex-col min-w-0">
+                            <span className="truncate font-medium">{ident.name || 'Primary'}</span>
+                            <span className="truncate text-[10px] opacity-60">{ident.email}</span>
+                          </div>
+                          {ident.is_alias ? (
+                             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 ml-auto shrink-0">Alias</span>
+                          ) : (
+                             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 ml-auto shrink-0">Primary</span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
