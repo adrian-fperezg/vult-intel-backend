@@ -12,11 +12,11 @@ export async function getZeroBounceCredits(apiKey: string) {
     const data = await res.json();
     
     if (res.ok && data.Credits !== undefined) {
-      return { credits: parseInt(data.Credits, 10) || 0 };
+      return parseInt(data.Credits, 10) || 0;
     }
-    return { error: data.message || 'Unknown ZeroBounce error' };
+    throw new Error(data.message || 'Unknown ZeroBounce error');
   } catch (err: any) {
     console.error('[ZeroBounce API] Error fetching credits:', err.message);
-    return { error: 'Failed to connect to ZeroBounce API' };
+    throw err;
   }
 }

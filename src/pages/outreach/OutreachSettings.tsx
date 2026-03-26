@@ -721,44 +721,43 @@ export default function OutreachSettings() {
                     {/* Searches Usage */}
                     <div className="space-y-2">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-400 font-medium">Searches Used</span>
+                        <span className="text-slate-400 font-medium">Search Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.calls?.search?.used?.toLocaleString() || 0} / {( (hunterAccount.calls?.search?.used || 0) + (hunterAccount.calls?.search?.available || 0) ).toLocaleString()}
+                          {hunterAccount.used?.toLocaleString() || 0} / {hunterAccount.available?.toLocaleString() || 0}
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${( (hunterAccount.calls?.search?.used || 0) / ( (hunterAccount.calls?.search?.used || 0) + (hunterAccount.calls?.search?.available || 0) || 1 ) ) * 100}%` 
+                            width: `${((hunterAccount.used || 0) / (hunterAccount.available || 1)) * 100}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>Used Credits: {hunterAccount.calls?.search?.used?.toLocaleString() || 0}</span>
-                        <span>Remaining: {hunterAccount.calls?.search?.available?.toLocaleString() || 0}</span>
+                        <span>{hunterAccount.used?.toLocaleString() || 0} / {hunterAccount.available?.toLocaleString() || 0} credits used</span>
+                        {hunterAccount.reset_date && <span>Renews on: {hunterAccount.reset_date}</span>}
                       </div>
                     </div>
 
                     {/* Verifications Usage */}
                     <div className="space-y-2">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-400 font-medium">Verifications Used</span>
+                        <span className="text-slate-400 font-medium">Verification Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.calls?.verify?.used?.toLocaleString() || 0} / {( (hunterAccount.calls?.verify?.used || 0) + (hunterAccount.calls?.verify?.available || 0) ).toLocaleString()}
+                          {hunterAccount.verify_used?.toLocaleString() || 0} / {hunterAccount.verify_available?.toLocaleString() || 0}
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${( (hunterAccount.calls?.verify?.used || 0) / ( (hunterAccount.calls?.verify?.used || 0) + (hunterAccount.calls?.verify?.available || 0) || 1 ) ) * 100}%` 
+                            width: `${((hunterAccount.verify_used || 0) / (hunterAccount.verify_available || 1)) * 100}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>Used Credits: {hunterAccount.calls?.verify?.used?.toLocaleString() || 0}</span>
-                        <span>Remaining: {hunterAccount.calls?.verify?.available?.toLocaleString() || 0}</span>
+                        <span>{hunterAccount.verify_used?.toLocaleString() || 0} / {hunterAccount.verify_available?.toLocaleString() || 0} credits used</span>
                       </div>
                     </div>
                   </div>
@@ -836,7 +835,9 @@ export default function OutreachSettings() {
                   <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Total Credits</span>
-                      <span className="font-semibold text-white">{zbCredits.credits?.toLocaleString() || zbCredits.toLocaleString()}</span>
+                      <span className="font-semibold text-white">
+                        {typeof zbCredits === 'object' ? zbCredits.credits?.toLocaleString() : zbCredits?.toLocaleString() || 0}
+                      </span>
                     </div>
                     <div className="p-3 bg-teal-500/5 border border-teal-500/10 rounded-xl">
                       <p className="text-[10px] text-teal-400 font-bold uppercase tracking-wider mb-1">Waterfall Mode</p>

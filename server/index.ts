@@ -2164,11 +2164,16 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
     const decryptedKey = decryptToken(settings.hunter_api_key);
     const info = await getAccountInformation(decryptedKey);
     
-    // Hunter returns { data: { calls: { ... } } }
-    // We return it exactly as is, or flattened if preferred.
-    // The instruction said "Return the real calls.used and calls.available (which is total)".
-    // Let's assume the frontend wants info.data.calls
-    res.json(info);
+    // Flatten as requested: Total Credits = available, Used Credits = used
+    res.json({
+      available: info.calls?.search?.available || 0,
+      used: info.calls?.search?.used || 0,
+      reset_date: info.reset_date,
+      plan_name: info.plan_name,
+      // Keep nested for verify too
+      verify_available: info.calls?.verify?.available || 0,
+      verify_used: info.calls?.verify?.used || 0
+    });
   } catch (error: any) {
     console.error(`[API] Hunter Account Error:`, error.message);
     res.status(500).json({ error: error.message });
