@@ -226,6 +226,9 @@ export const initDb = async () => {
         verification_status TEXT,
         verified_at TIMESTAMP,
         last_contacted_at TIMESTAMP,
+        location_city TEXT,
+        location_country TEXT,
+        job_title TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(project_id, email)
       )
@@ -240,7 +243,10 @@ export const initDb = async () => {
       { name: 'company_size', type: 'TEXT' },
       { name: 'industry', type: 'TEXT' },
       { name: 'location', type: 'TEXT' },
-      { name: 'technologies', type: 'TEXT' }
+      { name: 'technologies', type: 'TEXT' },
+      { name: 'location_city', type: 'TEXT' },
+      { name: 'location_country', type: 'TEXT' },
+      { name: 'job_title', type: 'TEXT' }
     ];
 
     for (const col of newCols) {

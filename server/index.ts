@@ -818,25 +818,27 @@ app.get("/api/outreach/contacts", async (req: AuthRequest, res) => {
 app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const {
-    first_name,
-    last_name,
+    first_name, firstName,
+    last_name, lastName,
     email,
-    title,
+    title, jobTitle,
     company,
     website,
     phone,
-    linkedin,
+    linkedin, linkedinUrl,
     status,
     tags,
     project_id,
-    source_detail,
-    confidence_score,
-    verification_status,
+    source_detail, sourceDetail,
+    confidence_score, confidenceScore,
+    verification_status, verificationStatus,
     industry,
-    company_domain,
-    company_size,
+    company_domain, companyDomain,
+    company_size, companySize,
     technologies,
-    location
+    location,
+    locationCity,
+    locationCountry
   } = req.body;
 
   if (!project_id)
@@ -850,9 +852,10 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
       id, user_id, project_id, first_name, last_name, email, 
       title, company, website, phone, linkedin, status, tags,
       source_detail, confidence_score, verification_status,
-      industry, company_domain, company_size, technologies, location
+      industry, company_domain, company_size, technologies, location,
+      location_city, location_country, job_title
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(project_id, email) DO UPDATE SET
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
@@ -869,36 +872,130 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
       company_domain = EXCLUDED.company_domain,
       company_size = EXCLUDED.company_size,
       technologies = EXCLUDED.technologies,
-      location = EXCLUDED.location
+      location = EXCLUDED.location,
+      location_city = EXCLUDED.location_city,
+      location_country = EXCLUDED.location_country,
+      job_title = EXCLUDED.job_title
   `,
   ).run(
     id,
     userId,
     project_id,
-    first_name || "",
-    last_name || "",
+    first_name || firstName || "",
+    last_name || lastName || "",
     email,
-    title || "",
+    title || jobTitle || "",
     company || "",
     website || "",
     phone || "",
-    linkedin || "",
+    linkedin || linkedinUrl || "",
     status || "not_enrolled",
     JSON.stringify(tags || []),
-    source_detail || null,
-    confidence_score || null,
-    verification_status || null,
+    source_detail || sourceDetail || null,
+    confidence_score || confidenceScore || null,
+    verification_status || verificationStatus || null,
     industry || null,
-    company_domain || null,
-    company_size || null,
+    company_domain || companyDomain || null,
+    company_size || companySize || null,
     typeof technologies === 'object' ? JSON.stringify(technologies) : (technologies || null),
-    location || null
+    location || null,
+    locationCity || null,
+    locationCountry || null,
+    jobTitle || title || ""
   );
 
   const contact = await db
     .prepare("SELECT * FROM outreach_contacts WHERE project_id = ? AND email = ?")
     .get(project_id, email);
   res.status(201).json(contact);
+});
+
+// POST /api/outreach/contacts/bulk
+app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, contacts } = req.body;
+
+  if (!project_id || !Array.isArray(contacts)) {
+    return res.status(400).json({ error: "Missing project_id or contacts array" });
+  }
+
+  try {
+    const savedContactIds: string[] = [];
+
+    await db.transaction(async () => {
+      const upsertQuery = `
+        INSERT INTO outreach_contacts (
+          id, user_id, project_id, first_name, last_name, email, 
+          title, company, website, phone, linkedin, status, tags,
+          source_detail, confidence_score, verification_status,
+          industry, company_domain, company_size, technologies, location,
+          location_city, location_country, job_title
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, email) DO UPDATE SET
+          first_name = EXCLUDED.first_name,
+          last_name = EXCLUDED.last_name,
+          title = EXCLUDED.title,
+          company = EXCLUDED.company,
+          website = EXCLUDED.website,
+          phone = EXCLUDED.phone,
+          linkedin = EXCLUDED.linkedin,
+          tags = EXCLUDED.tags,
+          source_detail = EXCLUDED.source_detail,
+          confidence_score = EXCLUDED.confidence_score,
+          verification_status = EXCLUDED.verification_status,
+          industry = EXCLUDED.industry,
+          company_domain = EXCLUDED.company_domain,
+          company_size = EXCLUDED.company_size,
+          technologies = EXCLUDED.technologies,
+          location = EXCLUDED.location,
+          location_city = EXCLUDED.location_city,
+          location_country = EXCLUDED.location_country,
+          job_title = EXCLUDED.job_title
+        RETURNING id
+      `;
+
+      for (const contact of contacts) {
+        if (!contact.email) continue;
+        
+        const contactRes = await db.prepare(upsertQuery).get(
+          uuidv4(),
+          userId,
+          project_id,
+          contact.first_name || contact.firstName || "",
+          contact.last_name || contact.lastName || "",
+          contact.email,
+          contact.title || contact.jobTitle || "",
+          contact.company || "",
+          contact.website || "",
+          contact.phone || "",
+          contact.linkedin || contact.linkedinUrl || "",
+          contact.status || "not_enrolled",
+          JSON.stringify(contact.tags || []),
+          contact.source_detail || contact.sourceDetail || null,
+          contact.confidence_score || contact.confidenceScore || null,
+          contact.verification_status || contact.verificationStatus || null,
+          contact.industry || null,
+          contact.company_domain || contact.companyDomain || null,
+          contact.company_size || contact.companySize || null,
+          typeof contact.technologies === 'object' ? JSON.stringify(contact.technologies) : (contact.technologies || null),
+          contact.location || null,
+          contact.locationCity || null,
+          contact.locationCountry || null,
+          contact.jobTitle || contact.title || ""
+        ) as any;
+
+        if (contactRes?.id) {
+          savedContactIds.push(contactRes.id);
+        }
+      }
+    });
+
+    res.json({ success: true, count: savedContactIds.length, contactIds: savedContactIds });
+  } catch (error: any) {
+    console.error("Bulk contact save failed:", error);
+    res.status(500).json({ error: error.message || "Bulk contact save failed" });
+  }
 });
 
 // POST /api/outreach/lists/save
@@ -919,9 +1016,10 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
             id, user_id, project_id, first_name, last_name, email, 
             title, company, website, phone, linkedin, status, tags,
             source_detail, confidence_score, verification_status,
-            industry, company_domain, company_size, technologies, location
+            industry, company_domain, company_size, technologies, location,
+            location_city, location_country, job_title
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(project_id, email) DO UPDATE SET
             first_name = EXCLUDED.first_name,
             last_name = EXCLUDED.last_name,
@@ -938,7 +1036,10 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
             company_domain = EXCLUDED.company_domain,
             company_size = EXCLUDED.company_size,
             technologies = EXCLUDED.technologies,
-            location = EXCLUDED.location
+            location = EXCLUDED.location,
+            location_city = EXCLUDED.location_city,
+            location_country = EXCLUDED.location_country,
+            job_title = EXCLUDED.job_title
           RETURNING id
         `;
 
@@ -948,31 +1049,34 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
           if (!contact.email) continue;
           
           // 1. Upsert contact
-          const res = await db.prepare(upsertQuery).get(
+          const contactRes = await db.prepare(upsertQuery).get(
             uuidv4(),
             userId,
             project_id,
-            contact.first_name || "",
-            contact.last_name || "",
+            contact.first_name || contact.firstName || "",
+            contact.last_name || contact.lastName || "",
             contact.email,
-            contact.title || "",
+            contact.title || contact.jobTitle || "",
             contact.company || "",
             contact.website || "",
             contact.phone || "",
-            contact.linkedin || "",
+            contact.linkedin || contact.linkedinUrl || "",
             contact.status || "not_enrolled",
             JSON.stringify(contact.tags || []),
-            contact.source_detail || null,
-            contact.confidence_score || null,
-            contact.verification_status || null,
+            contact.source_detail || contact.sourceDetail || null,
+            contact.confidence_score || contact.confidenceScore || null,
+            contact.verification_status || contact.verificationStatus || null,
             contact.industry || null,
-            contact.company_domain || null,
-            contact.company_size || null,
+            contact.company_domain || contact.companyDomain || null,
+            contact.company_size || contact.companySize || null,
             typeof contact.technologies === 'object' ? JSON.stringify(contact.technologies) : (contact.technologies || null),
-            contact.location || null
+            contact.location || null,
+            contact.locationCity || null,
+            contact.locationCountry || null,
+            contact.jobTitle || contact.title || ""
           ) as any;
 
-        const contactId = res.id;
+        const contactId = contactRes.id;
         savedContactIds.push(contactId);
 
         // 2. Add to list if list_id provided

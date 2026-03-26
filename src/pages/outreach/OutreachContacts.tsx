@@ -20,6 +20,7 @@ interface Contact {
   lastName: string;
   email: string;
   title: string;
+  jobTitle?: string;
   company: string;
   website?: string;
   phone?: string;
@@ -31,7 +32,10 @@ interface Contact {
   emailVerified?: boolean;
   industry?: string;
   size?: string;
+  companySize?: string;
   location?: string;
+  locationCity?: string;
+  locationCountry?: string;
 }
 
 const MOCK_CONTACTS: Contact[] = [
@@ -181,7 +185,11 @@ export default function OutreachContacts() {
         lastName: c.last_name || '',
         addedAt: c.created_at ? c.created_at.slice(0, 10) : 'N/A',
         tags: Array.isArray(c.tags) ? c.tags : JSON.parse(c.tags || '[]'),
-        emailVerified: !!c.email_verified
+        emailVerified: !!c.email_verified,
+        companySize: c.company_size || '',
+        locationCity: c.location_city || '',
+        locationCountry: c.location_country || '',
+        jobTitle: c.job_title || c.title || ''
       })));
     } catch (error) {
       console.error('Error fetching contacts:', error);
@@ -540,8 +548,8 @@ export default function OutreachContacts() {
                           </div>
                         </td>
                         <td className="p-3">
-                          <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
-                            {contact.title || '—'}
+                          <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium">
+                            {contact.jobTitle || contact.title || '—'}
                           </span>
                         </td>
                         <td className="p-3">
@@ -556,12 +564,17 @@ export default function OutreachContacts() {
                         </td>
                         <td className="p-3">
                           <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
-                            {contact.size || '—'}
+                            {contact.companySize || contact.size || '—'}
                           </span>
                         </td>
                         <td className="p-3">
-                          <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
-                            {contact.location || '—'}
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
+                            {contact.locationCountry ? (
+                              <span className="flex items-center gap-1">
+                                {contact.locationCity && <span>{contact.locationCity},</span>}
+                                <span className="truncate">{contact.locationCountry}</span>
+                              </span>
+                            ) : (contact.location || '—')}
                           </span>
                         </td>
                         <td className="p-3">

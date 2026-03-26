@@ -242,18 +242,20 @@ export default function OutreachLeadFinder() {
 
   const handleBulkSave = async (listId?: string) => {
     const toSave = results.filter(r => selectedIds.has(r.id)).map(r => ({
-      first_name: r.firstName || '',
-      last_name: r.lastName || '',
+      firstName: r.firstName || '',
+      lastName: r.lastName || '',
       email: r.email,
-      company: r.company || r.domain,
-      website: r.domain,
-      industry: r.industry,
-      size: r.companySize,
-      location: r.country,
-      position: r.title,
-      company_domain: r.domain,
+      company: r.company || r.domain || '',
+      companyDomain: r.domain || '',
+      industry: r.industry || '',
+      companySize: r.companySize || '',
+      locationCountry: r.country || '',
+      locationCity: r.city || '',
+      jobTitle: r.title || '',
+      linkedinUrl: r.linkedinUrl || '',
       status: 'not_enrolled',
-      tags: ['lead-finder', `source-${r.source}`]
+      tags: ['lead-finder', `source-${r.source}`],
+      project_id: api.activeProjectId
     }));
 
     setIsSavingSelected(true);
@@ -277,16 +279,20 @@ export default function OutreachLeadFinder() {
   const handleSaveContact = async (lead: any) => {
     try {
       await api.createContact({
-        first_name: lead.firstName || '',
-        last_name: lead.lastName || '',
+        firstName: lead.firstName || '',
+        lastName: lead.lastName || '',
         email: lead.email,
-        company: lead.company || lead.domain,
-        website: lead.domain,
-        industry: lead.industry,
-        size: lead.companySize,
-        position: lead.title,
+        company: lead.company || lead.domain || '',
+        companyDomain: lead.domain || '',
+        industry: lead.industry || '',
+        companySize: lead.companySize || '',
+        locationCountry: lead.country || '',
+        locationCity: lead.city || '',
+        jobTitle: lead.title || '',
+        linkedinUrl: lead.linkedinUrl || '',
         status: 'not_enrolled',
-        tags: ['lead-finder', `source-${lead.source}`]
+        tags: ['lead-finder', `source-${lead.source}`],
+        project_id: api.activeProjectId
       });
       toast.success(`Saved ${lead.fullName || lead.email} to CRM`);
     } catch (err: any) {
