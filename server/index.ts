@@ -97,7 +97,7 @@ const startServices = async () => {
   }
 };
 
-startServices();
+// startServices() will be called right before app.listen()
 
 // ─── Public health check ──────────────────────────────────────────────────────
 
@@ -263,7 +263,7 @@ app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
   try {
     const mailboxes = await db
       .prepare(
-        "SELECT id, email, name, status, expires_at, scope, created_at FROM outreach_mailboxes WHERE user_id = ? AND project_id = ? AND status != 'disconnected' ORDER BY created_at ASC",
+        "SELECT id, email, name, status, expires_at, scope, connection_type, aliases, created_at FROM outreach_mailboxes WHERE user_id = ? AND project_id = ? AND status != 'disconnected' ORDER BY created_at ASC",
       )
       .all(userId, project_id);
 
@@ -392,10 +392,29 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
   const { email, name } = req.body;
   try {
     const aliasId = uuidv4();
-    await db.prepare(`
-      INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_verified)
-      VALUES (?, ?, ?, ?, 1)
-    `).run(aliasId, id, email, name);
+    await db.transaction(async () => {
+      // 1. Insert into separate table
+      await db.prepare(`
+        INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_verified)
+        VALUES (?, ?, ?, ?, 1)
+      `).run(uuidv4(), id, email, name);
+
+      // 2. Sync aliases JSON array in outreach_mailboxes
+      const mailbox = await db.prepare("SELECT aliases FROM outreach_mailboxes WHERE id = ?").get(id) as any;
+      let currentAliases: { email: string; name: string }[] = [];
+      try {
+        const rawAliases = mailbox.aliases || '[]';
+        currentAliases = typeof rawAliases === 'string' ? JSON.parse(rawAliases) : (rawAliases || []);
+      } catch (e) {
+        console.error("Error parsing aliases for mailbox", id, e);
+      }
+      
+      const exists = currentAliases.some(a => a.email === email);
+      if (!exists) {
+        currentAliases.push({ email, name: name || '' });
+        await db.prepare("UPDATE outreach_mailboxes SET aliases = ? WHERE id = ?").run(JSON.stringify(currentAliases), id);
+      }
+    });
     res.json({ id: aliasId, email, name });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -408,6 +427,20 @@ app.post("/api/outreach/mailboxes/:id/sync", async (req: AuthRequest, res) => {
   try {
     const count = await syncMailbox(mailboxId, getValidAccessToken);
     res.json({ success: true, newMessages: count });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/outreach/mailboxes/:id/sync-gmail-aliases
+app.post("/api/outreach/mailboxes/:id/sync-gmail-aliases", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    await fetchGmailAliases(id);
+    const mailbox = await db.prepare("SELECT aliases FROM outreach_mailboxes WHERE id = ?").get(id) as any;
+    const rawAliases = mailbox.aliases || '[]';
+    const aliases = typeof rawAliases === 'string' ? JSON.parse(rawAliases) : rawAliases;
+    res.json({ success: true, aliases });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2377,6 +2410,14 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
-app.listen(Number(PORT), "0.0.0.0", () => {
-  console.log(`🚀 Outreach API running at http://localhost:${PORT}`);
+const startServer = async () => {
+  await startServices();
+  app.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`🚀 Outreach API running at http://localhost:${PORT}`);
+  });
+};
+
+startServer().catch(err => {
+  console.error('[FATAL] Server failed to start:', err);
+  process.exit(1);
 });

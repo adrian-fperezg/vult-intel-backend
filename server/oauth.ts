@@ -254,9 +254,19 @@ export async function fetchGmailAliases(mailboxId: string) {
     const aliases = res.data.sendAs || [];
     console.log(`[OAuth] Found ${aliases.length} aliases for ${mailboxId}`);
     
+    const aliasData = aliases.map(a => ({ email: a.sendAsEmail, name: a.displayName || '' })).filter(a => !!a.email);
+    console.log(`[OAuth] Found ${aliasData.length} valid aliases for ${mailboxId}`);
+
     await db.transaction(async () => {
+      // 1. Update the aliases column in outreach_mailboxes (JSONB array of objects)
+      await db.prepare(`
+        UPDATE outreach_mailboxes 
+        SET aliases = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(JSON.stringify(aliasData), mailboxId);
+
+      // 2. Keep the separate table entries for backward compatibility/richer data if needed
       for (const alias of aliases) {
-        // Ensure email and sendAsEmail are present
         const aliasEmail = alias.sendAsEmail;
         if (!aliasEmail) continue;
 
@@ -273,7 +283,7 @@ export async function fetchGmailAliases(mailboxId: string) {
           mailboxId,
           aliasEmail,
           alias.displayName || '',
-          alias.isDefault ? 1 : 0,
+          alias.sendAsEmail === alias.replyToAddress ? 1 : 0, // approximation for default
           alias.verificationStatus === 'accepted' ? 1 : 0
         );
       }

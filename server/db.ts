@@ -389,11 +389,8 @@ export const initDb = async () => {
       )
     `);
 
-    // Migration for outreach_mailboxes
-    const mailboxCols = await db.pragma('table_info(outreach_mailboxes)');
-    const mailboxColNames = mailboxCols.map((c: any) => c.name);
     const newMailboxCols = [
-      { name: 'connection_type', type: 'TEXT DEFAULT "gmail_oauth"' },
+      { name: 'connection_type', type: 'TEXT DEFAULT \'gmail_oauth\'' },
       { name: 'smtp_host', type: 'TEXT' },
       { name: 'smtp_port', type: 'INTEGER' },
       { name: 'smtp_secure', type: 'BOOLEAN DEFAULT TRUE' },
@@ -405,18 +402,34 @@ export const initDb = async () => {
       { name: 'imap_username', type: 'TEXT' },
       { name: 'imap_password', type: 'TEXT' },
       { name: 'display_name', type: 'TEXT' },
-      { name: 'provider', type: 'TEXT' }
+      { name: 'provider', type: 'TEXT' },
+      { name: 'aliases', type: db.isPostgres ? 'JSONB DEFAULT \'[]\'' : 'TEXT DEFAULT \'[]\'' }
     ];
 
-    for (const col of newMailboxCols) {
-      try {
-        if (!mailboxColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
-          await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
+    if (db.isPostgres) {
+      console.log('[DB] Running PostgreSQL migrations for outreach_mailboxes...');
+      for (const col of newMailboxCols) {
+        try {
+          // PostgreSQL supports ADD COLUMN IF NOT EXISTS since 9.6
+          await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for column ${col.name} failed (possibly already exists):`, (err as Error).message);
         }
-      } catch (err) {
-        // Individual column migration might fail if it already exists or on other errors, but we continue
-        console.warn(`[DB] Migration for column ${col.name} in outreach_mailboxes was skipped or failed:`, (err as Error).message);
+      }
+    } else {
+      console.log('[DB] Running SQLite migrations for outreach_mailboxes...');
+      const mailboxCols = await db.pragma('table_info(outreach_mailboxes)');
+      const mailboxColNames = (mailboxCols || []).map((c: any) => c.name);
+      
+      for (const col of newMailboxCols) {
+        try {
+          if (!mailboxColNames.includes(col.name)) {
+            console.log(`[DB] SQLite: Adding missing column ${col.name} to outreach_mailboxes`);
+            await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
+          }
+        } catch (err) {
+          console.warn(`[DB] SQLite Migration for column ${col.name} failed:`, (err as Error).message);
+        }
       }
     }
 

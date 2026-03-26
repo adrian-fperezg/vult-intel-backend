@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
+import { 
   Mail, Plus, MoreHorizontal, CheckCircle2, AlertTriangle, XCircle,
   Zap, Code2, Bell, Shield, Copy, Eye, EyeOff, ChevronDown,
-  Wifi, Thermometer, Search, Key, Webhook, Users2, RefreshCw, Loader2, FolderOpen
+  Wifi, Thermometer, Search, Key, Webhook, Users2, RefreshCw, Loader2, FolderOpen,
+  Settings2, ExternalLink, User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
 import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { AliasManager } from './components/AliasManager';
 
 type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications' | 'team';
 
@@ -36,6 +38,7 @@ interface Mailbox {
   warmupActive?: boolean;
   connection_type?: 'gmail' | 'smtp';
   aliases?: Array<{ email: string; name: string }>;
+  provider?: 'gmail' | 'smtp'; // Added provider for AliasManager
 }
 
 const SNIPPETS = [
@@ -298,24 +301,16 @@ export default function OutreachSettings() {
                                   />
                                 </div>
                               </div>
-
-                              {/* Aliases */}
-                              {mb.aliases && mb.aliases.length > 0 && (
-                                <div>
-                                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Verified Aliases</p>
-                                  <div className="space-y-2">
-                                    {mb.aliases.map(alias => (
-                                      <div key={alias.email} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                                        <div>
-                                          <p className="text-sm font-semibold text-white">{alias.name}</p>
-                                          <p className="text-xs text-slate-400">{alias.email}</p>
-                                        </div>
-                                        <OutreachBadge variant="teal">Verified</OutreachBadge>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
+                              <AliasManager 
+                                mailboxId={mb.id}
+                                initialAliases={mb.aliases || []}
+                                provider={(mb.connection_type || 'gmail') as any}
+                                onAliasesUpdated={(newAliases) => {
+                                  setMailboxes(prev => prev.map(m => 
+                                    m.id === mb.id ? { ...m, aliases: newAliases } : m
+                                  ));
+                                }}
+                              />
 
                               {/* DNS Checks */}
                               <div>

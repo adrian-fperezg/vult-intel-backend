@@ -482,5 +482,9 @@ export function useOutreachApi() {
     deleteIcp,
     connectSmtp,
     fetchIdentities,
+    addAlias: (mailboxId: string, email: string, name?: string) => 
+      post<any>(`/mailboxes/${mailboxId}/aliases`, { email, name }),
+    syncGmailAliases: (mailboxId: string) => 
+      post<any>(`/mailboxes/${mailboxId}/sync-aliases`, {}),
   };
 }
