@@ -29,23 +29,28 @@ import hunterRoutes from "./routes/outreach/hunter.js";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Build the origin whitelist from a comma-separated env var, falling back to localhost for dev
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000")
-  .split(",")
-  .map((o) => o.trim())
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(o => o.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow server-to-server / curl / Postman (no origin header)
-      if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      return callback(new Error(`CORS: origin ${origin} not allowed`), false);
-    },
-    credentials: true,
-  }),
-);
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-project-id'],
+}));
+
+app.options('*', cors());
 app.use(express.json({ limit: '1mb' }));
 
 // Catch malformed JSON errors early
