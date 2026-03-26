@@ -231,8 +231,7 @@ export async function discoverCompanies(projectId: string, userId: string, filte
   }
 }
 
-export async function getAccountInformation(projectId: string) {
-  const apiKey = await getApiKey(projectId);
+export async function getAccountInformation(apiKey: string) {
   const params = new URLSearchParams();
   params.append('api_key', apiKey);
   const data = await executeRequestWithRetry(`${HUNTER_API_URL}/account`, params);

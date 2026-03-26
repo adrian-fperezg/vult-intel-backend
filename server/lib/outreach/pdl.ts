@@ -100,12 +100,12 @@ export async function searchPDL(projectId: string, params: {
 /**
  * Fetches real-time usage (credits) from Peopledatalabs V5 API.
  */
-export async function getPDLUsage() {
-  const apiKey = process.env.PDL_API_KEY;
-  if (!apiKey) return { error: 'PDL_API_KEY not configured' };
+export async function getPDLUsage(apiKey?: string) {
+  const finalKey = apiKey || process.env.PDL_API_KEY;
+  if (!finalKey) return { error: 'PDL_API_KEY not configured' };
 
   try {
-    const res = await fetch(`https://api.peopledatalabs.com/v5/usage?api_key=${apiKey}`);
+    const res = await fetch(`https://api.peopledatalabs.com/v5/usage?api_key=${finalKey}`);
     const data = await res.json();
     
     // PDL /usage returns { "available": ..., "used": ..., "remaining": ... }

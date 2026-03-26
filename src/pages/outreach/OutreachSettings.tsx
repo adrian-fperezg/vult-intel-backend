@@ -650,10 +650,10 @@ export default function OutreachSettings() {
                   <div className="size-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
                     <span className="text-lg font-bold text-teal-400">H</span>
                   </div>
-                  {fetchingHunter ? (
+                   {fetchingHunter ? (
                     <Loader2 className="size-4 animate-spin text-slate-400" />
                   ) : has_hunter ? (
-                    <OutreachBadge variant="teal" dot>Connected</OutreachBadge>
+                    null // Removed "Connected" badge as requested
                   ) : (
                     <TealButton size="sm" variant="outline" onClick={() => setShowHunterSetup(!showHunterSetup)}>
                       Connect
@@ -712,27 +712,53 @@ export default function OutreachSettings() {
                 </AnimatePresence>
 
                 {has_hunter && hunterAccount && !showHunterSetup && (
-                  <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Current Plan</span>
-                      <span className="font-semibold text-white">{hunterAccount.plan_name}</span>
+                  <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
+                    <div className="flex justify-between items-center bg-teal-500/5 border border-teal-500/10 rounded-xl p-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400">Usage</span>
+                      <span className="text-[10px] font-semibold text-slate-400">{hunterAccount.plan_name} Plan</span>
                     </div>
-                    <div>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-500">Searches Used</span>
-                        <span className="text-teal-400 font-bold">{hunterAccount.calls?.search?.used} / {hunterAccount.calls?.search?.available}</span>
+
+                    {/* Searches Usage */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="text-slate-400 font-medium">Searches Used</span>
+                        <span className="text-teal-400 font-bold">
+                          {hunterAccount.calls?.search?.used?.toLocaleString() || 0} / {( (hunterAccount.calls?.search?.used || 0) + (hunterAccount.calls?.search?.available || 0) ).toLocaleString()}
+                        </span>
                       </div>
-                      <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterAccount.calls?.search?.used / (hunterAccount.calls?.search?.available || 1)) * 100}%` }} />
+                      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-teal-500 rounded-full transition-all duration-500" 
+                          style={{ 
+                            width: `${( (hunterAccount.calls?.search?.used || 0) / ( (hunterAccount.calls?.search?.used || 0) + (hunterAccount.calls?.search?.available || 0) || 1 ) ) * 100}%` 
+                          }} 
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <span>Used Credits: {hunterAccount.calls?.search?.used?.toLocaleString() || 0}</span>
+                        <span>Remaining: {hunterAccount.calls?.search?.available?.toLocaleString() || 0}</span>
                       </div>
                     </div>
-                    <div>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-500">Verifications Used</span>
-                        <span className="text-teal-400 font-bold">{hunterAccount.calls?.verify?.used} / {hunterAccount.calls?.verify?.available}</span>
+
+                    {/* Verifications Usage */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="text-slate-400 font-medium">Verifications Used</span>
+                        <span className="text-teal-400 font-bold">
+                          {hunterAccount.calls?.verify?.used?.toLocaleString() || 0} / {( (hunterAccount.calls?.verify?.used || 0) + (hunterAccount.calls?.verify?.available || 0) ).toLocaleString()}
+                        </span>
                       </div>
-                      <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterAccount.calls?.verify?.used / (hunterAccount.calls?.verify?.available || 1)) * 100}%` }} />
+                      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-teal-500 rounded-full transition-all duration-500" 
+                          style={{ 
+                            width: `${( (hunterAccount.calls?.verify?.used || 0) / ( (hunterAccount.calls?.verify?.used || 0) + (hunterAccount.calls?.verify?.available || 0) || 1 ) ) * 100}%` 
+                          }} 
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <span>Used Credits: {hunterAccount.calls?.verify?.used?.toLocaleString() || 0}</span>
+                        <span>Remaining: {hunterAccount.calls?.verify?.available?.toLocaleString() || 0}</span>
                       </div>
                     </div>
                   </div>

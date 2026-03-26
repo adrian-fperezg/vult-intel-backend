@@ -2160,9 +2160,17 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
   try {
     const settings = await db.prepare('SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
     if (!settings?.hunter_api_key) return res.status(404).json({ error: "Hunter API key not configured" });
-    const info = await getAccountInformation(decryptToken(settings.hunter_api_key));
+    
+    const decryptedKey = decryptToken(settings.hunter_api_key);
+    const info = await getAccountInformation(decryptedKey);
+    
+    // Hunter returns { data: { calls: { ... } } }
+    // We return it exactly as is, or flattened if preferred.
+    // The instruction said "Return the real calls.used and calls.available (which is total)".
+    // Let's assume the frontend wants info.data.calls
     res.json(info);
   } catch (error: any) {
+    console.error(`[API] Hunter Account Error:`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2192,7 +2200,8 @@ app.get("/api/outreach/pdl/usage", async (req: AuthRequest, res) => {
   try {
     const settings = await db.prepare('SELECT pdl_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
     if (!settings?.pdl_api_key) return res.status(404).json({ error: "PDL API key not configured" });
-    const usage = await getPDLUsage(); // Note: PDL service might need the key passed if it doesn't use env
+    const decryptedKey = decryptToken(settings.pdl_api_key);
+    const usage = await getPDLUsage(decryptedKey);
     res.json(usage);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
