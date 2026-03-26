@@ -86,10 +86,6 @@ export default function OutreachAnalytics() {
   }
 
   const dailyData = data?.daily_data || [];
-  const totalSent = dailyData.reduce((s, d) => s + d.sent, 0);
-  const totalOpens = dailyData.reduce((s, d) => s + d.opens, 0);
-  const totalReplies = dailyData.reduce((s, d) => s + d.replies, 0);
-  const totalClicks = dailyData.reduce((s, d) => s + d.clicks, 0);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
@@ -118,10 +114,61 @@ export default function OutreachAnalytics() {
 
         {/* Top Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <OutreachMetricCard label="Total Sent" value={totalSent.toLocaleString()} teal icon={<Mail />} trend="neutral" trendValue="vs previous period" />
-          <OutreachMetricCard label="Open Rate" value={`${totalSent > 0 ? ((totalOpens / totalSent) * 100).toFixed(1) : 0}%`} icon={<TrendingUp />} trend="neutral" trendValue="vs average" sub="industry avg 21%" />
-          <OutreachMetricCard label="Reply Rate" value={`${totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : 0}%`} icon={<MessageSquare />} trend="neutral" trendValue="vs average" />
-          <OutreachMetricCard label="Click Rate" value={`${totalSent > 0 ? ((totalClicks / totalSent) * 100).toFixed(1) : 0}%`} icon={<MousePointer />} trend="neutral" trendValue="stable" />
+          <OutreachMetricCard 
+            label="Total Sent" 
+            value={data.total_sent?.toLocaleString() || "0"} 
+            teal 
+            icon={<Mail />} 
+            trend={Number(data.sent_change) >= 0 ? "up" : "down"}
+            trendValue={`${Math.abs(Number(data.sent_change))}%`} 
+          />
+          <OutreachMetricCard 
+            label="Open Rate" 
+            value={`${data.open_rate}%`} 
+            icon={<TrendingUp />} 
+            trend="neutral" 
+            trendValue="vs average" 
+            sub="industry avg 21%" 
+          />
+          <OutreachMetricCard 
+            label="Reply Rate" 
+            value={`${data.reply_rate}%`} 
+            icon={<MessageSquare />} 
+            trend="neutral" 
+            trendValue="vs average" 
+          />
+          <OutreachMetricCard 
+            label="Daily Avg" 
+            value={data.emails_sent_today?.toString() || "0"} 
+            icon={<MousePointer />} 
+            trend="neutral" 
+            trendValue="today" 
+          />
+        </div>
+
+        {/* Counts Row */}
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Active Sequences</p>
+              <p className="text-xl font-bold text-white">{data.active_sequences}</p>
+            </div>
+            <BarChart2 className="size-5 text-teal-500/50" />
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Total Recipients</p>
+              <p className="text-xl font-bold text-white">{data.total_recipients}</p>
+            </div>
+            <Users className="size-5 text-teal-500/50" />
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Pending Tasks</p>
+              <p className="text-xl font-bold text-white">{data.pending_tasks}</p>
+            </div>
+            <Loader2 className="size-5 text-teal-500/50" />
+          </div>
         </div>
 
         {/* Time Series Chart */}
@@ -141,7 +188,6 @@ export default function OutreachAnalytics() {
               <Line type="monotone" dataKey="sent"    stroke="#475569"   strokeWidth={1.5} dot={false} name="Sent" />
               <Line type="monotone" dataKey="opens"   stroke="#14B8A6"   strokeWidth={2}   dot={false} name="Opens" />
               <Line type="monotone" dataKey="replies" stroke="#22C55E"   strokeWidth={2}   dot={false} name="Replies" />
-              <Line type="monotone" dataKey="clicks"  stroke="#A78BFA"   strokeWidth={1.5} dot={false} name="Clicks" />
             </LineChart>
           </ResponsiveContainer>
         </div>

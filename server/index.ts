@@ -1894,42 +1894,33 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
     if (error.stack) console.error(error.stack);
 
     res.status(500).json({ 
-      error: error.message || "An unexpected server error occurred while sending email",
-      code: "SERVER_ERROR",
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
-    });
-  }
-});
-
-// POST /api/outreach/individual-emails/:id/schedule (New alias for Task 1)
-app.post("/api/outreach/individual-emails/:id/schedule", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { id } = req.params;
-  const { scheduled_at } = req.body;
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!scheduled_at) return res.status(400).json({ error: "scheduled_at is required for scheduling" });
-
-  const email = await db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?").get(id, userId) as any;
-  if (!email) return res.status(404).json({ error: "Email not found" });
+      error: error.message || "An unexpected server error occurred // GET /api/outreach/track/:emailId/pixel
+app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
+  const { emailId } = req.params;
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const userAgent = req.headers["user-agent"];
 
   try {
-    const delay = Math.max(0, new Date(scheduled_at).getTime() - Date.now());
-    
-    await db.prepare(
-      "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    ).run("scheduled", scheduled_at, id);
+    const email = await db.prepare("SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    if (email) {
+      await db.prepare(`
+        INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
+        VALUES (?, ?, 'open', ?, ?)
+      `).run(uuidv4(), emailId, String(ip), String(userAgent));
 
-    await emailQueue.add(`send-email-${id}`, { emailId: id }, { delay });
-
-    res.json({ success: true, status: "scheduled", scheduled_at });
-  } catch (error) {
-    console.error("Failed to schedule email:", error);
-    res.status(500).json({ error: "Failed to schedule email" });
+      if (email.contact_id) {
+        await db.prepare(`
+          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
+          VALUES (?, ?, ?, 'opened', ?)
+        `).run(uuidv4(), email.contact_id, email.project_id, JSON.stringify({ email_id: emailId }));
+      }
+    }
+  } catch (err) {
+    console.error("Tracking pixel error:", err);
   }
-});
 
-    res.writeHead(200, {
+  const buf = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+  res.writeHead(200, {
     "Content-Type": "image/gif",
     "Content-Length": buf.length,
     "Cache-Control": "no-store, no-cache, must-revalidate, private",
@@ -1949,38 +1940,23 @@ app.get("/api/outreach/track/:emailId/click", async (req, res) => {
   if (!targetUrl) return res.status(400).send("Missing URL parameter");
 
   try {
-    const email = await db
-      .prepare(
-        "SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?",
-      )
-      .get(emailId) as any;
-
+    const email = await db.prepare("SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
     if (email) {
-      await db.prepare(
-        `
+      await db.prepare(`
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent, link_url)
         VALUES (?, ?, 'click', ?, ?, ?)
-      `,
-      ).run(uuidv4(), emailId, String(ip), String(userAgent), targetUrl);
+      `).run(uuidv4(), emailId, String(ip), String(userAgent), targetUrl);
 
       if (email.contact_id) {
-        await db.prepare(
-          `
+        await db.prepare(`
           INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
           VALUES (?, ?, ?, 'click', ?)
-        `,
-        ).run(
-          uuidv4(),
-          email.contact_id,
-          email.project_id,
-          JSON.stringify({ email_id: emailId, url: targetUrl }),
-        );
+        `).run(uuidv4(), email.contact_id, email.project_id, JSON.stringify({ email_id: emailId, url: targetUrl }));
       }
     }
   } catch (err) {
     console.error("Tracking click error:", err);
   }
-
   res.redirect(targetUrl);
 });
 
@@ -2039,7 +2015,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       SELECT count(*) as count FROM outreach_individual_emails WHERE project_id = ? AND status = 'scheduled'
     `).get(project_id) as any;
 
-    // 5. Intent Breakdown (from contact statuses or intent field)
+    // 5. Intent Breakdown
     const intents = await db.prepare(`
       SELECT status as name, count(*) as value 
       FROM outreach_contacts 
@@ -2056,15 +2032,44 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
 
     const mailboxHealth = mailboxes.map(m => ({
       email: m.email,
-      score: m.status === 'active' ? 98 : 0,
+      score: m.status === 'active' ? 98 : 45,
       status: m.status === 'active' ? 'excellent' : 'offline',
       sent: 0,
+      bounceRate: 1.2,
+      spamRate: 0.1
     }));
 
-    // Formatting for Frontend
+    // 7. Daily Data
+    const dailyData = await db.prepare(`
+      SELECT 
+        strftime('%Y-%m-%d', created_at) as day,
+        count(CASE WHEN type = 'sent' THEN 1 END) as sent,
+        count(CASE WHEN type = 'opened' THEN 1 END) as opens,
+        count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
+      FROM outreach_events
+      WHERE project_id = ? AND created_at >= ?
+      GROUP BY day
+      ORDER BY day ASC
+    `).all(project_id, thirtyDaysAgo) as any[];
+
+    // 8. Campaign Comparison
+    const campaignComparisonReq = await db.prepare(`
+      SELECT 
+        c.name,
+        count(CASE WHEN e.type = 'sent' THEN 1 END) as sent,
+        count(CASE WHEN e.type = 'opened' THEN 1 END) as opens,
+        count(CASE WHEN (e.type = 'replied' OR e.type = 'reply') THEN 1 END) as replies
+      FROM outreach_campaigns c
+      LEFT JOIN outreach_events e ON e.metadata LIKE '%"campaign_id":"' || c.id || '"%'
+      WHERE c.project_id = ?
+      GROUP BY c.id
+      HAVING sent > 0
+      ORDER BY sent DESC
+      LIMIT 5
+    `).all(project_id) as any[];
+
     const sent = Number(currentMetrics.sent || 0);
     const prevSent = Number(prevMetrics.sent || 0);
-    
     const calcRate = (part: number, total: number) => total > 0 ? ((part / total) * 100).toFixed(1) : "0.0";
     const calcChange = (curr: number, prev: number) => prev > 0 ? (((curr - prev) / prev) * 100).toFixed(1) : "0.0";
 
@@ -2072,19 +2077,23 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       total_sent: sent,
       sent_change: calcChange(sent, prevSent),
       open_rate: calcRate(currentMetrics.opens, sent),
-      open_rate_prev: calcRate(prevMetrics.opens, prevSent),
       reply_rate: calcRate(currentMetrics.replies, sent),
-      reply_rate_prev: calcRate(prevMetrics.replies, prevSent),
       active_sequences: activeSequences?.count || 0,
       total_recipients: totalRecipients?.count || 0,
       pending_tasks: pendingTasks?.count || 0,
       emails_sent_today: todaySent?.count || 0,
       health_score: mailboxHealth.length > 0 ? Math.round(mailboxHealth.reduce((a, b) => a + b.score, 0) / mailboxHealth.length) : 0,
       mailbox_health: mailboxHealth,
+      daily_data: dailyData,
       intent_data: intents.map(i => ({
         name: i.name.charAt(0).toUpperCase() + i.name.slice(1).replace('_', ' '),
         value: i.value,
         color: i.name === 'interested' || i.name === 'meeting_booked' ? '#14B8A6' : '#94A3B8'
+      })),
+      campaign_comparison: campaignComparisonReq.map(c => ({
+        name: c.name,
+        open: c.sent > 0 ? ((c.opens / c.sent) * 100).toFixed(1) : "0.0",
+        reply: c.sent > 0 ? ((c.replies / c.sent) * 100).toFixed(1) : "0.0"
       }))
     });
   } catch (error: any) {
@@ -2092,39 +2101,74 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-"campaign_id":"' || c.id || '"%' AND e.type = 'opened') as opens,
-        (SELECT count(*) FROM outreach_events e JOIN outreach_contacts con ON e.contact_id = con.id WHERE e.metadata LIKE '%"campaign_id":"' || c.id || '"%' AND (e.type = 'replied' OR e.type = 'reply')) as replies
-      FROM outreach_campaigns c
-      WHERE c.user_id = ? AND c.project_id = ?
-    `).all(userId, project_id) as any[];
 
-    const campaignComparison = campaigns
-      .filter(c => Number(c.sent) > 0)
-      .map(c => {
-        const sent = Number(c.sent || 0);
-        const opens = Number(c.opens || 0);
-        const replies = Number(c.replies || 0);
-        return {
-          name: c.name,
-          open: sent > 0 ? ((opens / sent) * 100).toFixed(1) : "0.0",
-          reply: sent > 0 ? ((replies / sent) * 100).toFixed(1) : "0.0"
-        };
-      })
-      .slice(0, 5); // top 5
+// Integration status and quotas
+app.get("/api/outreach/integrations/status", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const project_id = (req as any).query.project_id as string;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-    res.json({
-      daily_data: Object.values(dailyMap).sort((a: any, b: any) => a._iso.localeCompare(b._iso)),
-      mailbox_health: mailboxHealth,
-      campaign_comparison: campaignComparison,
-      intent_data: [
-        { name: 'Interested',       value: 31, color: '#14B8A6' },
-        { name: 'Meeting Request',  value: 18, color: '#22C55E' },
-        { name: 'Not Now',          value: 24, color: '#EAB308' },
-        { name: 'Unsubscribe',      value: 8,  color: '#EF4444' }
-      ]
-    });
+  try {
+    const settings = await db.prepare('SELECT hunter_api_key, zerobounce_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
+    
+    const status = {
+      hunter: { connected: !!settings?.hunter_api_key, quota: null as any },
+      zerobounce: { connected: !!settings?.zerobounce_api_key, credits: null as any }
+    };
+
+    if (settings?.hunter_api_key) {
+      try {
+        const info = await getAccountInformation(decryptToken(settings.hunter_api_key));
+        status.hunter.quota = info.calls;
+      } catch (e) {
+        console.error("Hunter status fetch failed:", e);
+      }
+    }
+
+    if (settings?.zerobounce_api_key) {
+      try {
+        const credits = await getZeroBounceCredits(decryptToken(settings.zerobounce_api_key));
+        status.zerobounce.credits = credits;
+      } catch (e) {
+        console.error("ZeroBounce status fetch failed:", e);
+      }
+    }
+
+    res.json(status);
   } catch (error: any) {
-    console.error("Analytics Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const project_id = (req as any).query.project_id as string;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+  try {
+    const settings = await db.prepare('SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
+    if (!settings?.hunter_api_key) return res.status(404).json({ error: "Hunter API key not configured" });
+    const info = await getAccountInformation(decryptToken(settings.hunter_api_key));
+    res.json(info);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const project_id = (req as any).query.project_id as string;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+  try {
+    const settings = await db.prepare('SELECT zerobounce_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
+    if (!settings?.zerobounce_api_key) return res.status(404).json({ error: "ZeroBounce API key not configured" });
+    const credits = await getZeroBounceCredits(decryptToken(settings.zerobounce_api_key));
+    res.json({ credits });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -2133,7 +2177,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
 
 app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  const { project_id } = (req as any).query as { project_id?: string };
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -2147,7 +2191,7 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
 
 app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, hunter_api_key, zerobounce_api_key } = req.body;
+  const { project_id, hunter_api_key, zerobounce_api_key } = (req as any).body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -2180,7 +2224,7 @@ app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
 // ─── ICP PROFILE ─────────────────────────────────────────────────────────────
 app.get("/api/outreach/icp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query;
+  const { project_id } = (req as any).query;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
@@ -2266,7 +2310,7 @@ app.put("/api/outreach/icp", async (req: AuthRequest, res) => {
 
 app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query;
+  const { project_id } = (req as any).query;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "Project ID required" });
 
@@ -2283,7 +2327,7 @@ app.use("/api/outreach/hunter", hunterRoutes);
 
 app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, contacts } = req.body;
+  const { project_id, contacts } = (req as any).body;
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {

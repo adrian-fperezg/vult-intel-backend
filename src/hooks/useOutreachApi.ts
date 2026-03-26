@@ -5,9 +5,18 @@ import { useProject } from '@/contexts/ProjectContext';
 const BASE_URL = (import.meta.env.VITE_OUTREACH_API_URL ?? 'http://localhost:3001') + '/api/outreach';
 
 export interface AnalyticsData {
-  daily_data: { day: string; sent: number; opens: number; replies: number; clicks: number }[];
+  total_sent: number;
+  sent_change: string;
+  open_rate: string;
+  reply_rate: string;
+  active_sequences: number;
+  total_recipients: number;
+  pending_tasks: number;
+  emails_sent_today: number;
+  health_score: number;
+  daily_data: { day: string; sent: number; opens: number; replies: number; clicks?: number }[];
   intent_data: { name: string; value: number; color?: string }[];
-  campaign_comparison: { name: string; open: number; reply: number }[];
+  campaign_comparison: { name: string; open: string; reply: string }[];
   mailbox_health: { email: string; score: number; status: string; sent: number; bounceRate: number; spamRate: number }[];
 }
 /**
@@ -253,6 +262,7 @@ export function useOutreachApi() {
   const updateSettings = useCallback((settings: any) => post<any>('/settings', settings), [post]);
   const fetchHunterAccount = useCallback(() => get<any>('/hunter/account'), [get]);
   const fetchZeroBounceCredits = useCallback(() => get<any>('/zerobounce/credits'), [get]);
+  const fetchIntegrationStatus = useCallback(() => get<any>('/integrations/status'), [get]);
 
   const hunterDomainSearch = useCallback((domain: string, options?: any) => 
     post<any>('/hunter/domain-search', { domain, options }), [post]
@@ -487,6 +497,7 @@ export function useOutreachApi() {
     updateIcp,
     deleteIcp,
     fetchZeroBounceCredits,
+    fetchIntegrationStatus,
     verifyEmailsBulk,
     connectSmtp,
     fetchIdentities,

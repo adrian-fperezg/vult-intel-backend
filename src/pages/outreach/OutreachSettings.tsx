@@ -659,19 +659,19 @@ export default function OutreachSettings() {
                     <div>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-slate-500">Searches Used</span>
-                        <span className="text-teal-400 font-bold">{hunterData.requests?.searches?.used} / {hunterData.requests?.searches?.available}</span>
+                        <span className="text-teal-400 font-bold">{hunterData.calls?.search?.used} / {hunterData.calls?.search?.available}</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.requests?.searches?.used / hunterData.requests?.searches?.available) * 100}%` }} />
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.calls?.search?.used / hunterData.calls?.search?.available) * 100}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-slate-500">Verifications Used</span>
-                        <span className="text-teal-400 font-bold">{hunterData.requests?.verifications?.used} / {hunterData.requests?.verifications?.available}</span>
+                        <span className="text-teal-400 font-bold">{hunterData.calls?.verify?.used} / {hunterData.calls?.verify?.available}</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.requests?.verifications?.used / hunterData.requests?.verifications?.available) * 100}%` }} />
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(hunterData.calls?.verify?.used / hunterData.calls?.verify?.available) * 100}%` }} />
                       </div>
                     </div>
                   </div>
