@@ -118,9 +118,9 @@ function StepNode({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "group relative w-[380px] min-w-[380px] max-w-[380px] flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
+          "group relative w-[560px] min-w-[560px] max-w-[560px] flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
           step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02] p-4" : 
-          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
+          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-8" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-4"
         )}
       >
         <div className={cn(
@@ -154,7 +154,7 @@ function StepNode({
               </div>
               <h4 className={cn(
                 "font-semibold text-white truncate",
-                isExpanded ? "text-sm max-w-[280px]" : "text-xs max-w-[220px]"
+                isExpanded ? "text-sm max-w-[460px]" : "text-xs max-w-[400px]"
               )}>
                 {step.step_type === 'condition' ? `Check if user ${step.condition_type}` : (step.config.subject || 'Untitled Step')}
               </h4>
@@ -327,7 +327,7 @@ function StepNode({
                ) : (
                   <button 
                     onClick={() => onAddStep(step.id, 'yes')}
-                    className="flex items-center justify-center gap-2 w-[380px] py-4 rounded-2xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
+                    className="flex items-center justify-center gap-2 w-[560px] py-4 rounded-2xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
                   >
                     <Plus className="size-4" />
                     Add Step
@@ -360,7 +360,7 @@ function StepNode({
                ) : (
                   <button 
                     onClick={() => onAddStep(step.id, 'no')}
-                    className="flex items-center justify-center gap-2 w-[380px] py-4 rounded-2xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
+                    className="flex items-center justify-center gap-2 w-[560px] py-4 rounded-2xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
                   >
                     <Plus className="size-4" />
                     Add Step
@@ -392,7 +392,7 @@ function StepNode({
                  <div className="h-10 w-px bg-white/10" />
                  <button 
                   onClick={() => onAddStep(step.id, 'default')}
-                  className="flex items-center gap-2 px-6 py-4 rounded-2xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold group"
+                  className="flex items-center justify-center gap-2 w-[560px] py-4 rounded-2xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold group"
                 >
                   <Plus className="size-4" />
                   Add Step
@@ -791,7 +791,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     </p>
                     <button 
                       onClick={() => addStep(null, 'default')}
-                      className="flex items-center justify-center gap-2 w-[380px] py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
+                      className="flex items-center justify-center gap-2 w-[560px] py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
                     >
                       <Plus className="size-5" />
                       Add First Step
