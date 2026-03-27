@@ -435,7 +435,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       if (saved) {
         try {
           const { x, y } = JSON.parse(saved);
-          canvasRef.current.scrollTo({ left: x, top: y, behavior: 'instant' });
+          console.log('Restoring scroll position to:', x, y);
+          // Wait for DOM paint to ensure full height/width is available
+          setTimeout(() => {
+            if (canvasRef.current) {
+              canvasRef.current.scrollTo({ left: x, top: y, behavior: 'instant' });
+            }
+          }, 100);
         } catch (e) {
           console.error('Failed to restore scroll position', e);
         }
