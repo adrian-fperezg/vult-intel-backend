@@ -4,6 +4,7 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { initializeGlobalMailer } from "./lib/outreach/mailer.js";
 
 // ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -14,8 +15,14 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // TASK: Dependency check for critical modules
-try { require('nodemailer'); console.log('[STARTUP] Nodemailer loaded'); } catch(e) { console.error('[STARTUP] Nodemailer MISSING'); }
-try { require('imap-simple'); console.log('[STARTUP] imap-simple loaded'); } catch(e) { console.error('[STARTUP] imap-simple MISSING'); }
+import nodemailer from 'nodemailer';
+import imap from 'imap-simple';
+
+if (nodemailer) console.log('[STARTUP] Nodemailer loaded');
+if (imap) console.log('[STARTUP] imap-simple loaded');
+
+// Initialize global SMTP mailer
+initializeGlobalMailer();
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";

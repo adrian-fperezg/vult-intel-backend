@@ -281,6 +281,11 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const attachments = email.attachments ? JSON.parse(email.attachments) : [];
 
   if (mailbox.connection_type === 'smtp') {
+    // Hard check for SMTP credentials before even calling sendSmtpMessage
+    if (!mailbox.smtp_host || !mailbox.smtp_password) {
+      throw new Error('Cannot send email: Nodemailer transporter is not initialized. Check SMTP credentials.');
+    }
+
     const result = await sendSmtpMessage(mailboxId, {
       to: email.to_email,
       subject: email.subject || "(No Subject)",
