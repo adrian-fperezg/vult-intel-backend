@@ -1356,6 +1356,86 @@ app.delete("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   }
 });
 
+// POST /api/outreach/sequences/:id/duplicate
+app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      // 1. Fetch original sequence
+      const original = await tx.get<any>(
+        "SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?",
+        [id, userId]
+      );
+      if (!original) throw new Error("Original sequence not found");
+
+      // 2. Create new sequence
+      const newSequenceId = uuidv4();
+      const newName = `${original.name} (Copy)`;
+      
+      await tx.run(`
+        INSERT INTO outreach_sequences (
+          id, user_id, project_id, name, status, daily_limit, daily_send_limit,
+          min_delay, max_delay, smart_send_min_delay, smart_send_max_delay,
+          send_weekends, send_window_start, send_window_end, send_timezone,
+          send_on_weekdays, stop_on_reply, stop_on_unsubscribe, stop_on_bounce,
+          allow_reenrollment, mailbox_id, from_email, from_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        newSequenceId, userId, original.project_id || '', newName, 'draft', 
+        original.daily_limit, original.daily_send_limit,
+        original.min_delay, original.max_delay, 
+        original.smart_send_min_delay, original.smart_send_max_delay,
+        original.send_weekends, original.send_window_start, original.send_window_end,
+        original.send_timezone, original.send_on_weekdays,
+        original.stop_on_reply, original.stop_on_unsubscribe, original.stop_on_bounce,
+        original.allow_reenrollment, original.mailbox_id, 
+        original.from_email, original.from_name
+      ]);
+
+      // 3. Fetch steps
+      const steps = await tx.all<any>(
+        "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?",
+        [id]
+      );
+
+      // 4. Deep clone steps with ID mapping
+      const oldToNewIdMap = new Map<string, string>();
+      for (const step of steps) {
+        oldToNewIdMap.set(step.id, uuidv4());
+      }
+
+      for (const step of steps) {
+        const newStepId = oldToNewIdMap.get(step.id);
+        const newParentId = step.parent_step_id ? oldToNewIdMap.get(step.parent_step_id) : null;
+
+        await tx.run(`
+          INSERT INTO outreach_sequence_steps (
+            id, sequence_id, project_id, step_number, step_type, config,
+            delay_amount, delay_unit, attachments, parent_step_id,
+            condition_type, branch_path
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          newStepId, newSequenceId, original.project_id || '', 
+          step.step_number, step.step_type, step.config,
+          step.delay_amount, step.delay_unit, step.attachments,
+          newParentId, step.condition_type, step.branch_path
+        ]);
+      }
+
+      return { id: newSequenceId };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("[DUPLICATE] Error:", error);
+    res.status(500).json({ error: (error as Error).message || "Failed to duplicate sequence" });
+  }
+});
+
 
 // ─── CONTACTS ─────────────────────────────────────────────────────────────────
 

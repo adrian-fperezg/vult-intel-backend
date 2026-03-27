@@ -245,6 +245,11 @@ export function useOutreachApi() {
     [post],
   );
 
+  const duplicateSequence = useCallback(
+    (id: string) => post<any>(`/sequences/${id}/duplicate`, {}),
+    [post],
+  );
+
   const updateSequence = useCallback(
     (id: string, updates: Record<string, unknown>) => patch<any>(`/sequences/${id}`, updates),
     [patch],
@@ -526,6 +531,7 @@ export function useOutreachApi() {
     fetchSequences,
     getSequence,
     createSequence,
+    duplicateSequence,
     updateSequence,
     updateSequenceSteps,
     deleteSequence,

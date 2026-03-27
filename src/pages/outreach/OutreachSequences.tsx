@@ -46,6 +46,7 @@ export default function OutreachSequences() {
   };
 
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -87,6 +88,19 @@ export default function OutreachSequences() {
       console.error('Error deleting sequence:', error);
     }
   };
+
+  const handleDuplicate = async (id: string) => {
+    setIsDuplicating(id);
+    try {
+      await api.duplicateSequence(id);
+      await loadData();
+    } catch (error) {
+      console.error('Error duplicating sequence:', error);
+    } finally {
+      setIsDuplicating(null);
+    }
+  };
+
 
   if (!api.activeProjectId) {
     return (
@@ -220,6 +234,17 @@ export default function OutreachSequences() {
                       {seq.status}
                     </OutreachBadge>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                         onClick={(e) => { e.stopPropagation(); handleDuplicate(seq.id); }}
+                         disabled={!!isDuplicating}
+                         className={cn(
+                           "p-1.5 rounded-lg text-slate-600 transition-colors",
+                           isDuplicating === seq.id ? "bg-teal-500/10 text-teal-400" : "hover:bg-teal-500/10 hover:text-teal-400"
+                         )}
+                         title="Duplicate Sequence"
+                      >
+                        {isDuplicating === seq.id ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
+                      </button>
                       <button 
                          onClick={(e) => { e.stopPropagation(); setDeleteDialog(seq.id); }}
                          className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors"
