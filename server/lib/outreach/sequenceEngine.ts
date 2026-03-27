@@ -8,6 +8,9 @@ export interface SequenceStep {
   step_number: number;
   step_type: 'email' | 'delay' | 'condition' | 'task' | 'linkedin' | 'call';
   config: any;
+  delay_amount?: number;
+  delay_unit?: 'minutes' | 'hours' | 'days';
+  attachments?: string;
 }
 
 /**
@@ -27,7 +30,7 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
       projectId
     );
 
-    // Trigger the first step
+    // Trigger the first step (Step 1 usually has no delay)
     await scheduleNextStep(projectId, sequenceId, contactId, 1);
 
     return { success: true, enrollmentId };
@@ -66,15 +69,14 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   // 2. Calculate delay/timing
   let delayMs = 0;
   
-  if (step.step_type === 'delay') {
-    const config = typeof step.config === 'string' ? JSON.parse(step.config) : step.config;
-    const days = config.days || 0;
-    const hours = config.hours || 0;
-    const minutes = config.minutes || 0;
-    const stepDelayMs = (days * 24 * 60 * 60 + hours * 60 * 60 + minutes * 60) * 1000;
+  // Apply step-specific delay if not the first step
+  if (stepNumber > 1) {
+    const amount = step.delay_amount || 2;
+    const unit = step.delay_unit || 'days';
     
-    // Instead of recursing immediately, schedule the NEXT step with this delay
-    return scheduleNextStepWithDelay(projectId, sequenceId, contactId, stepNumber + 1, stepDelayMs);
+    if (unit === 'minutes') delayMs = amount * 60 * 1000;
+    else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
+    else delayMs = amount * 24 * 60 * 60 * 1000; // 'days'
   }
 
   // 3. Queue the work
@@ -84,7 +86,7 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   const smartDelayMs = (Math.floor(Math.random() * (smartMax - smartMin + 1)) + smartMin) * 1000;
   
   // Combine all delays
-  const totalDelay = smartDelayMs; // Base delay is handled by the recursive call or initial call
+  const totalDelay = delayMs + smartDelayMs;
 
   await emailQueue.add('execute-sequence-step', {
     projectId,
@@ -100,50 +102,12 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
       delay: 5000
     }
   });
-}
 
-/**
- * Internal helper to schedule a step with a specific delay.
- */
-async function scheduleNextStepWithDelay(projectId: string, sequenceId: string, contactId: string, nextStepNumber: number, delayMs: number) {
-  // Update enrollment to the next step so we know where we are during the wait
+  // Update enrollment to current step
   await db.run(
     'UPDATE outreach_sequence_enrollments SET current_step_number = ? WHERE sequence_id = ? AND contact_id = ?',
-    nextStepNumber,
+    stepNumber,
     sequenceId,
     contactId
   );
-
-  // Get the next step info
-  const nextStep = await db.get<SequenceStep>(
-    'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND step_number = ?',
-    sequenceId,
-    nextStepNumber
-  );
-
-  if (!nextStep) {
-    // Sequence completed after delay
-    await db.run(
-      'UPDATE outreach_sequence_enrollments SET status = "completed", completed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?',
-      sequenceId,
-      contactId
-    );
-    return;
-  }
-
-  // Queue the execution of the next step after the delay
-  await emailQueue.add('execute-sequence-step', {
-    projectId,
-    sequenceId,
-    contactId,
-    stepId: nextStep.id,
-    stepNumber: nextStepNumber
-  }, {
-    delay: delayMs,
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000
-    }
-  });
 }

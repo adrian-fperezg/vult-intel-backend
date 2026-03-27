@@ -110,8 +110,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         // Create individual email record
         const emailId = uuidv4();
         await db.prepare(`
-          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status, attachments)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
         `).run(
           emailId,
           sequence.user_id,
@@ -122,7 +122,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           sequence.from_name,
           contact.email,
           subject,
-          bodyHtml
+          bodyHtml,
+          step.attachments || "[]"
         );
 
         // Send via processEmail

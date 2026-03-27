@@ -15,7 +15,8 @@ import {
   Sparkles,
   Undo,
   Redo,
-  CloudLightning
+  CloudLightning,
+  Paperclip
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,7 @@ interface TipTapEditorProps {
   placeholder?: string;
   onOptimize?: () => void;
   isOptimizing?: boolean;
+  onAttachFile?: () => void;
 }
 
 const MenuButton = ({ 
@@ -67,7 +69,8 @@ export default function TipTapEditor({
   className,
   placeholder = "Write your email here...",
   onOptimize,
-  isOptimizing = false
+  isOptimizing = false,
+  onAttachFile
 }: TipTapEditorProps) {
   
   const editor = useEditor({
@@ -192,6 +195,15 @@ export default function TipTapEditor({
         >
           <Redo className="size-4" />
         </MenuButton>
+
+        {onAttachFile && (
+          <MenuButton 
+            onClick={onAttachFile}
+            title="Attach File"
+          >
+            <Paperclip className="size-4" />
+          </MenuButton>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           {onOptimize && (

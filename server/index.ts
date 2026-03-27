@@ -1069,9 +1069,19 @@ app.put("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
       // Insert new steps
       for (const [index, step] of steps.entries()) {
         await db.run(`
-          INSERT INTO outreach_sequence_steps (id, sequence_id, project_id, step_number, step_type, config)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `, step.id || uuidv4(), id, project_id, index + 1, step.step_type, JSON.stringify(step.config));
+          INSERT INTO outreach_sequence_steps (id, sequence_id, project_id, step_number, step_type, config, delay_amount, delay_unit, attachments)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, 
+          step.id || uuidv4(), 
+          id, 
+          project_id, 
+          index + 1, 
+          step.step_type, 
+          JSON.stringify(step.config),
+          step.delay_amount || 2,
+          step.delay_unit || 'days',
+          typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || [])
+        );
       }
     });
 
@@ -1138,8 +1148,34 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
     }
     res.json({ success: true });
   } catch (error) {
-    console.error("Failed to add recipients:", error);
+    console.error("Failed to add sequence recipients:", error);
     res.status(500).json({ error: "Failed to add recipients" });
+  }
+});
+
+// DELETE /api/outreach/sequences/:id/recipients/:contactId
+app.delete("/api/outreach/sequences/:id/recipients/:contactId", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id, contactId } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    // Check ownership
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId);
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    await db.run("DELETE FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, contactId);
+    await db.run("DELETE FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?", id, contactId);
+    
+    // Also cancel any pending emails in the queue? 
+    // Usually we just leave the enrollments as 'inactive' or delete them. 
+    // Deleting enrollments is cleaner for this specific "remove from sequence" intent.
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to remove sequence recipient:", error);
+    res.status(500).json({ error: "Failed to remove recipient" });
   }
 });
 

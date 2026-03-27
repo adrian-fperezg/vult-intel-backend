@@ -526,6 +526,8 @@ export function useOutreachApi() {
     deleteSequence,
     activateSequence,
     addSequenceRecipients,
+    removeSequenceRecipient: (sequenceId: string, contactId: string) => 
+      del(`/sequences/${sequenceId}/recipients/${contactId}`),
     getGlobalLimitStatus,
     // Contacts
     fetchContacts,
