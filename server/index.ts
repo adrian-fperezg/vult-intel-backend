@@ -1034,25 +1034,42 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     'stop_on_reply', 'mailbox_id', 'from_email', 'from_name'
   ];
 
-  const filteredUpdates = Object.keys(updates)
-    .filter(key => allowedFields.includes(key))
-    .reduce((obj, key) => {
-      obj[key] = updates[key];
-      return obj;
-    }, {} as any);
+  const filteredUpdates: Record<string, any> = {};
+  for (const field of allowedFields) {
+    if (updates[field] !== undefined) {
+      const val = updates[field];
+      
+      // Safety Check: Database columns like mailbox_id expect strings (UUIDs), not objects.
+      // If the frontend accidentally sends the whole object, we extract the ID or skip it.
+      if (typeof val === 'object' && val !== null) {
+        if (field === 'mailbox_id' && val.id) {
+          filteredUpdates[field] = val.id;
+        } else {
+          console.warn(`[Sequence Settings Update] Warning: Field "${field}" received an object instead of a primitive. Skipping.`, val);
+        }
+      } else {
+        filteredUpdates[field] = val;
+      }
+    }
+  }
 
-  if (Object.keys(filteredUpdates).length === 0) return res.status(400).json({ error: "No valid fields to update" });
+  if (Object.keys(filteredUpdates).length === 0) {
+    return res.status(400).json({ error: "No valid fields provided for update" });
+  }
 
   const sets = Object.keys(filteredUpdates).map(key => `${key} = ?`).join(', ');
-  const values = Object.values(filteredUpdates).map(val => typeof val === 'object' ? JSON.stringify(val) : val);
+  const values = Object.values(filteredUpdates);
 
   try {
-    await db.run(`UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`, ...values, id, userId);
+    await db.run(
+      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`, 
+      ...values, id, userId
+    );
     const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
     res.json(updated);
   } catch (error) {
-    console.error("Failed to update sequence:", error);
-    res.status(500).json({ error: "Failed to update sequence" });
+    console.error('[Sequence Settings Update Error]:', error);
+    res.status(500).json({ error: "Failed up update sequence settings. Check server logs." });
   }
 });
 
