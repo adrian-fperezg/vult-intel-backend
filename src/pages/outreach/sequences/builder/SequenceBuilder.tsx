@@ -10,6 +10,7 @@ import { TealButton, OutreachBadge, OutreachSectionHeader } from '../../Outreach
 import { cn } from '@/lib/utils';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
+import { useDebounce } from '@/hooks/useDebounce';
 import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
@@ -394,10 +395,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [identities, setIdentities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [activeTab, setActiveTab] = useState<'builder' | 'settings' | 'recipients'>('builder');
   const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
+
+  // Debounced values for auto-save
+  const debouncedSteps = useDebounce(steps, 3000);
+  const debouncedSequence = useDebounce(sequence, 3000);
   
   // DAG States
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
@@ -417,16 +424,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [sequenceId, hasChanges]);
 
-  // Auto-save logic (2-second debounce)
+  // Auto-save logic (3-second debounce using useDebounce hook)
   useEffect(() => {
-    if (!hasChanges || isSaving) return;
-    
-    const timer = setTimeout(() => {
-      handleSaveAll();
-    }, 2000);
-    
-    return () => clearTimeout(timer);
-  }, [hasChanges, steps, sequence?.name, sequence?.mailbox_id, sequence?.daily_send_limit, sequence?.stop_on_reply]);
+    // Only auto-save if we have changes and aren't already saving
+    if (hasChanges && !isSaving && !isAutoSaving) {
+      handleSaveAll(true); // Call with silent=true
+    }
+  }, [debouncedSteps, debouncedSequence]);
 
   const loadData = async () => {
     setLoading(true);
@@ -459,9 +463,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
   };
 
-  const handleSaveAll = async () => {
+  const handleSaveAll = async (isSilent: boolean = false) => {
     if (!sequenceId || !activeProjectId || !sequence) return;
-    setIsSaving(true);
+    
+    if (isSilent) setIsAutoSaving(true);
+    else setIsSaving(true);
+
     try {
       // 1. Update sequence basic info
       await api.updateSequence(sequenceId, { 
@@ -484,11 +491,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
       
       setHasChanges(false);
-      // toast.success('Sequence saved'); // Silent auto-save
+      setLastSavedTime(new Date());
     } catch (err) {
-      toast.error('Failed to save changes');
+      if (!isSilent) toast.error('Failed to save changes');
+      console.error('Save error:', err);
     } finally {
       setIsSaving(false);
+      setIsAutoSaving(false);
     }
   };
 
@@ -695,12 +704,19 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             ))}
           </div>
           <div className="h-4 w-px bg-white/10 mx-1" />
-          <OutreachBadge variant={hasChanges ? 'yellow' : 'green'} dot={hasChanges}>
-            {hasChanges ? 'Unsaved Changes' : 'All Changes Saved'}
-          </OutreachBadge>
+          
+          <div className="flex items-center gap-2 px-3">
+             <div className={cn(
+               "size-1.5 rounded-full",
+               (isSaving || isAutoSaving) ? "bg-teal-400 animate-pulse" : hasChanges ? "bg-yellow-400" : "bg-emerald-400"
+             )} />
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
+               {(isSaving || isAutoSaving) ? 'Saving...' : hasChanges ? 'Draft' : 'Saved'}
+             </span>
+          </div>
           <div className="h-6 w-px bg-white/10" />
           <TealButton
-            onClick={handleSaveAll}
+            onClick={() => handleSaveAll()}
             loading={isSaving}
             variant={hasChanges ? 'solid' : 'outline'}
             className="px-6 py-2"
