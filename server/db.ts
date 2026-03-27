@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import pg from 'pg';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -151,9 +152,50 @@ class DbWrapper {
 
 export const db = new DbWrapper();
 
+export const runMigrations = async () => {
+  console.log('[DB] Checking for pending migrations...');
+  const migrationsDir = path.resolve(__dirname, 'migrations');
+  
+  // Ensure migrations log table exists
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS migrations_log (
+      id ${db.isPostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${db.isPostgres ? '' : 'AUTOINCREMENT'},
+      migration_name TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  if (!fs.existsSync(migrationsDir)) {
+    console.log('[DB] No migrations directory found.');
+    return;
+  }
+
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+  const appliedMigrations = (await db.all<{ migration_name: string }>('SELECT migration_name FROM migrations_log')).map(m => m.migration_name);
+
+  for (const file of files) {
+    if (!appliedMigrations.includes(file)) {
+      console.log(`[DB] Running migration: ${file}`);
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      
+      try {
+        await db.exec(sql);
+        await db.run('INSERT INTO migrations_log (migration_name) VALUES (?)', file);
+        console.log(`[DB] Migration ${file} applied successfully.`);
+      } catch (err) {
+        console.error(`[DB] Migration ${file} failed:`, err);
+        throw err;
+      }
+    }
+  }
+};
+
 export const initDb = async () => {
   console.log("[DB] Verifying/Initializing tables...");
   try {
+    // Run automated migrations first
+    await runMigrations();
+
     // 1. Subscriptions
     await db.run(`
       CREATE TABLE IF NOT EXISTS outreach_subscriptions (
@@ -660,19 +702,7 @@ export const initDb = async () => {
       )
     `);
 
-    // 21. Verified Domains
-    await db.run(`
-      CREATE TABLE IF NOT EXISTS outreach_verified_domains (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        domain TEXT NOT NULL,
-        verification_token TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        last_verified_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(project_id, domain)
-      )
-    `);
+    // 21. Verified Domains - MOVED TO MIGRATIONS
 
     console.log("✅ Database initialized successfully");
   } catch (err) {

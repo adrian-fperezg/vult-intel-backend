@@ -447,7 +447,7 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
     
     // Check if the domain is verified for this project
     const verifiedDomain = await db.prepare(
-      "SELECT * FROM outreach_verified_domains WHERE project_id = ? AND domain = ? AND status = 'verified'"
+      `SELECT * FROM outreach_verified_domains WHERE project_id = ? AND domain_name = ? AND is_verified = ${db.isPostgres ? 'TRUE' : '1'}`
     ).get(project_id, domain) as any;
 
     if (!verifiedDomain) {
@@ -591,7 +591,14 @@ app.get("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
 
   try {
     const domains = await db.prepare(
-      "SELECT * FROM outreach_verified_domains WHERE project_id = ? ORDER BY created_at DESC"
+      `SELECT *, domain_name as domain, verified_at as last_verified_at,
+       CASE 
+         WHEN is_verified THEN 'verified' 
+         ELSE 'pending' 
+       END as status 
+       FROM outreach_verified_domains 
+       WHERE project_id = ? 
+       ORDER BY created_at DESC`
     ).all(project_id);
     res.json(domains);
   } catch (err: any) {
@@ -602,8 +609,10 @@ app.get("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
 // POST /api/outreach/verified-domains
 app.post("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
   const { project_id, domain } = req.body;
-  if (!project_id || !domain) {
-    return res.status(400).json({ error: "project_id and domain are required" });
+  const userId = req.user?.uid;
+
+  if (!project_id || !domain || !userId) {
+    return res.status(400).json({ error: "project_id, domain, and auth are required" });
   }
 
   const cleanDomain = domain.toLowerCase().trim();
@@ -612,22 +621,23 @@ app.post("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
 
   try {
     // Check if it already exists for this project
-    const existing = await db.prepare("SELECT * FROM outreach_verified_domains WHERE project_id = ? AND domain = ?").get(project_id, cleanDomain) as any;
+    const existing = await db.prepare("SELECT * FROM outreach_verified_domains WHERE project_id = ? AND domain_name = ?").get(project_id, cleanDomain) as any;
     
     if (existing) {
        await db.prepare(`
         UPDATE outreach_verified_domains SET
           verification_token = ?,
-          status = 'pending'
+          is_verified = ${db.isPostgres ? 'FALSE' : '0'},
+          updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(token, existing.id);
-      return res.json({ ...existing, verification_token: token, status: 'pending' });
+      return res.json({ ...existing, domain: cleanDomain, verification_token: token, status: 'pending' });
     }
 
     await db.prepare(`
-      INSERT INTO outreach_verified_domains (id, project_id, domain, verification_token, status)
-      VALUES (?, ?, ?, ?, 'pending')
-    `).run(id, project_id, cleanDomain, token);
+      INSERT INTO outreach_verified_domains (id, project_id, user_id, domain_name, verification_token, is_verified)
+      VALUES (?, ?, ?, ?, ?, ${db.isPostgres ? 'FALSE' : '0'})
+    `).run(id, project_id, userId, cleanDomain, token);
 
     res.status(201).json({ id, domain: cleanDomain, verification_token: token, status: 'pending' });
   } catch (err: any) {
@@ -642,14 +652,23 @@ app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, r
     const domainData = await db.prepare("SELECT * FROM outreach_verified_domains WHERE id = ?").get(id) as any;
     if (!domainData) return res.status(404).json({ error: "Domain not found" });
 
-    const isVerified = await verifyDomainDns(domainData.domain, domainData.verification_token);
+    const isVerified = await verifyDomainDns(domainData.domain_name, domainData.verification_token);
 
     if (isVerified) {
       await db.prepare(
-        `UPDATE outreach_verified_domains SET status = 'verified', last_verified_at = CURRENT_TIMESTAMP WHERE id = ?`
+        `UPDATE outreach_verified_domains SET 
+         is_verified = ${db.isPostgres ? 'TRUE' : '1'}, 
+         verified_at = CURRENT_TIMESTAMP, 
+         dns_check_error = NULL,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
       ).run(id);
       res.json({ success: true, status: 'verified' });
     } else {
+      await db.prepare(
+        "UPDATE outreach_verified_domains SET dns_check_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run("TXT record not found or incorrect", id);
+
       res.status(400).json({ 
         error: "DNS verification failed. TXT record not found or incorrect.", 
         status: 'pending' 
