@@ -185,8 +185,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         const event = await db.prepare(`
           SELECT * FROM outreach_events 
-          WHERE contact_id = ? AND type = ? AND metadata LIKE ?
-        `).get(contactId, targetEventType, `%${parentEmailStepId}%`) as any;
+          WHERE contact_id = ? AND type = ? AND step_id = ?
+        `).get(contactId, targetEventType, parentEmailStepId) as any;
 
         const branchPath = event ? 'yes' : 'no';
         console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);
@@ -230,7 +230,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       await db.run(
         `UPDATE outreach_sequence_enrollments 
          SET last_error = ?, 
-             updated_at = CURRENT_TIMESTAMP 
+             last_executed_at = CURRENT_TIMESTAMP 
          WHERE sequence_id = ? AND contact_id = ?`,
         error.message || 'Unknown error',
         sequenceId,
@@ -279,8 +279,11 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
   // INJECT TRACKING PIXEL
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
-  const trackingPixel = `\n<img src="${backendUrl}/api/tracking/open?emailId=${emailId}" width="1" height="1" style="display:none;" alt="" />`;
+  const backendUrl = process.env.BACKEND_URL;
+  if (!backendUrl) {
+    console.warn(`[Tracking] BACKEND_URL environment variable is MISSING. Open tracking will fall back to localhost and likely fail in production.`);
+  }
+  const trackingPixel = `\n<img src="${backendUrl || "http://localhost:8080"}/api/tracking/open?emailId=${emailId}" width="1" height="1" style="display:none;" alt="" />`;
   const bodyWithTracking = (email.body_html || "") + trackingPixel;
 
   const attachments = email.attachments ? JSON.parse(email.attachments) : [];
