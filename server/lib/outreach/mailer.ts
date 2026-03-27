@@ -9,26 +9,33 @@ let globalTransporter: nodemailer.Transporter | null = null;
  * Initializes a global SMTP transporter using environment variables.
  * This is used for system-wide mail dispatch if no mailbox-specific transporter is available.
  */
-export function initializeGlobalMailer() {
+export async function initializeGlobalMailer() {
   const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587');
+  const portStr = process.env.SMTP_PORT || '587';
+  const port = parseInt(portStr, 10);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
   if (host && user && pass) {
     try {
+      // Create transporter with strict, provider-agnostic configuration
       globalTransporter = nodemailer.createTransport({
         host,
         port,
-        secure: port === 465, // True for 465, false for other ports
+        secure: port === 465, // Dynamic security: implicit SSL on 465, STARTTLS otherwise
         auth: {
           user,
           pass,
         },
       });
-      console.log(`[STARTUP] Global Nodemailer transporter initialized for ${user}@${host}`);
+
+      // Verification check to ensure credentials and firewall rules allow connection
+      await globalTransporter.verify();
+      console.log(`[MAILER] Universal SMTP connected successfully to ${host}`);
     } catch (err: any) {
-      console.error('[STARTUP] Failed to initialize global Nodemailer transporter:', err.message);
+      console.error('[MAILER] SMTP Connection Failed. Check your host, port, or credentials:', err.message);
+      // Reset to null to ensure we don't try to use a broken transporter
+      globalTransporter = null;
     }
   } else {
     // Collect missing variables for detailed logging

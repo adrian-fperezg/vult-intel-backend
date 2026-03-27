@@ -22,7 +22,9 @@ if (nodemailer) console.log('[STARTUP] Nodemailer loaded');
 if (imap) console.log('[STARTUP] imap-simple loaded');
 
 // Initialize global SMTP mailer
-initializeGlobalMailer();
+(async () => {
+  await initializeGlobalMailer();
+})();
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
