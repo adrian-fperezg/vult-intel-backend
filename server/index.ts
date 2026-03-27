@@ -652,9 +652,10 @@ app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, r
     const domainData = await db.prepare("SELECT * FROM outreach_verified_domains WHERE id = ?").get(id) as any;
     if (!domainData) return res.status(404).json({ error: "Domain not found" });
 
-    const isVerified = await verifyDomainDns(domainData.domain_name, domainData.verification_token);
+    const result = await verifyDomainDns(domainData.domain_name, domainData.verification_token);
+    const { success, error: dnsError } = result;
 
-    if (isVerified) {
+    if (success) {
       await db.prepare(
         `UPDATE outreach_verified_domains SET 
          is_verified = ${db.isPostgres ? 'TRUE' : '1'}, 
@@ -667,10 +668,10 @@ app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, r
     } else {
       await db.prepare(
         "UPDATE outreach_verified_domains SET dns_check_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).run("TXT record not found or incorrect", id);
+      ).run(dnsError || "TXT record not found or incorrect", id);
 
       res.status(400).json({ 
-        error: "DNS verification failed. TXT record not found or incorrect.", 
+        error: dnsError || "DNS verification failed. TXT record not found or incorrect.", 
         status: 'pending' 
       });
     }
