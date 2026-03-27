@@ -170,6 +170,17 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         // Schedule next step based on branch
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
+      } else {
+        // Handle delay, task, or other step types - just pass through to next step
+        console.log(`[Sequence] Executing ${step.step_type} step ${stepId}. Continuing to next step.`);
+        
+        // Record execution
+        await db.prepare(`
+          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(uuidv4(), contactId, projectId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+
+        await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
       }
 
     } catch (error) {

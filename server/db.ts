@@ -657,14 +657,36 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         step_number INTEGER NOT NULL,
         step_type TEXT NOT NULL,
+        config TEXT NOT NULL DEFAULT '{}',
+        delay_amount INTEGER DEFAULT 2,
+        delay_unit TEXT DEFAULT 'days',
+        attachments TEXT, -- JSON array of file paths/names
         parent_step_id TEXT REFERENCES outreach_sequence_steps(id) ON DELETE SET NULL,
         condition_type TEXT, -- 'opened', 'clicked', 'replied'
         branch_path TEXT,    -- 'yes', 'no', 'default'
-        config TEXT NOT NULL DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for outreach_sequence_steps
+    const stepCols = await db.pragma('table_info(outreach_sequence_steps)');
+    const stepColNames = (stepCols || []).map((c: any) => c.name);
+    const newStepCols = [
+      { name: 'parent_step_id', type: 'TEXT' },
+      { name: 'condition_type', type: 'TEXT' },
+      { name: 'branch_path', type: 'TEXT' },
+      { name: 'delay_amount', type: 'INTEGER DEFAULT 2' },
+      { name: 'delay_unit', type: 'TEXT DEFAULT "days"' },
+      { name: 'attachments', type: 'TEXT' }
+    ];
+
+    for (const col of newStepCols) {
+      if (!stepColNames.includes(col.name)) {
+        console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_steps`);
+        await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
 
     // 18. Sequence Recipients
     await db.run(`
@@ -694,7 +716,7 @@ export const initDb = async () => {
       CREATE TABLE IF NOT EXISTS outreach_sequence_enrollments (
         id TEXT PRIMARY KEY,
         sequence_id TEXT NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
-        contact_id NOT NULL REFERENCES outreach_contacts(id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES outreach_contacts(id) ON DELETE CASCADE,
         project_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active',
         current_step_number INTEGER DEFAULT 1,
@@ -706,7 +728,57 @@ export const initDb = async () => {
       )
     `);
 
-    // 21. Verified Domains - MOVED TO MIGRATIONS
+    // Migration for outreach_sequence_enrollments
+    const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
+    const enrollColNames = (enrollCols || []).map((c: any) => c.name);
+    if (!enrollColNames.includes('current_step_id')) {
+      console.log(`[DB] Adding missing column current_step_id to outreach_sequence_enrollments`);
+      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN current_step_id TEXT`);
+    }
+
+    // Backfill current_step_id for enrollments
+    const unmigratedEnrollments = await db.all("SELECT id FROM outreach_sequence_enrollments WHERE current_step_id IS NULL LIMIT 1");
+    if (unmigratedEnrollments.length > 0) {
+      console.log("[DB] Backfilling current_step_id for enrollments...");
+      await db.run(`
+        UPDATE outreach_sequence_enrollments
+        SET current_step_id = (
+          SELECT id FROM outreach_sequence_steps 
+          WHERE sequence_id = outreach_sequence_enrollments.sequence_id 
+          AND step_number = outreach_sequence_enrollments.current_step_number
+        )
+        WHERE current_step_id IS NULL
+      `);
+    }
+
+    // 21. Backfill DAG logic for linear sequences
+    const unmigratedSteps = await db.all("SELECT id FROM outreach_sequence_steps WHERE parent_step_id IS NULL AND step_number > 1 LIMIT 1");
+    if (unmigratedSteps.length > 0) {
+      console.log("[DB] Backfilling DAG parent links for existing sequences...");
+      const allSteps = await db.all<{ id: string, sequence_id: string, step_number: number }>(
+        "SELECT id, sequence_id, step_number FROM outreach_sequence_steps ORDER BY sequence_id, step_number"
+      );
+      
+      let prevId: string | null = null;
+      let prevSeqId: string | null = null;
+
+      for (const step of allSteps) {
+        if (step.sequence_id !== prevSeqId) {
+          // New sequence, first step has no parent
+          await db.run("UPDATE outreach_sequence_steps SET branch_path = 'default' WHERE id = ?", step.id);
+          prevId = step.id;
+          prevSeqId = step.sequence_id;
+        } else {
+          // Link to previous step
+          await db.run(
+            "UPDATE outreach_sequence_steps SET parent_step_id = ?, branch_path = 'default' WHERE id = ?",
+            prevId, step.id
+          );
+          prevId = step.id;
+        }
+      }
+      console.log("[DB] Backfill complete.");
+    }
 
     console.log("✅ Database initialized successfully");
   } catch (err) {
