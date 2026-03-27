@@ -4,13 +4,13 @@ import {
   Mail, Plus, MoreHorizontal, CheckCircle2, AlertTriangle, XCircle,
   Zap, Code2, Bell, Shield, Copy, Eye, EyeOff, ChevronDown,
   Wifi, Thermometer, Search, Key, Webhook, Users2, RefreshCw, Loader2, FolderOpen,
-  Settings2, ExternalLink, User
+  Settings2, ExternalLink, User, Globe
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
 import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-import { AliasManager } from './components/AliasManager';
+import { DomainAliasCard } from './components/DomainAliasCard';
 import DomainVerificationManager from './components/DomainVerificationManager';
 
 type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications';
@@ -59,6 +59,8 @@ export default function OutreachSettings() {
   });
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [mailboxesLoading, setMailboxesLoading] = useState(true);
+  const [verifiedDomains, setVerifiedDomains] = useState<any[]>([]);
+  const [domainsLoading, setDomainsLoading] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
@@ -218,13 +220,19 @@ export default function OutreachSettings() {
 
   const loadMailboxes = async () => {
     setMailboxesLoading(true);
+    setDomainsLoading(true);
     try {
-      const data = await api.fetchMailboxes();
-      setMailboxes(data ?? []);
+      const [mailboxData, domainData] = await Promise.all([
+        api.fetchMailboxes(),
+        api.fetchVerifiedDomains()
+      ]);
+      setMailboxes(mailboxData ?? []);
+      setVerifiedDomains(domainData ?? []);
     } catch {
       // silently fail
     } finally {
       setMailboxesLoading(false);
+      setDomainsLoading(false);
     }
   };
 
@@ -293,14 +301,16 @@ export default function OutreachSettings() {
 
         {/* ── MAILBOXES ── */}
         {activeTab === 'mailboxes' && (
-          <div className="space-y-6 w-full">
+          <div className="space-y-10 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Header Area */}
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold text-white">Connected Mailboxes</h2>
-                <p className="text-sm text-slate-400 mt-0.5">Connect your Gmail accounts to send outreach emails</p>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Mailbox Settings</h2>
+                <p className="text-sm text-slate-400 mt-1">Configure your domains and connected accounts</p>
               </div>
               <TealButton
                 size="sm"
+                className="shadow-lg shadow-teal-500/10"
                 onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}
                 disabled={!api.activeProjectId}
               >
@@ -308,9 +318,7 @@ export default function OutreachSettings() {
               </TealButton>
             </div>
 
-            <DomainVerificationManager />
-
-            {/* Error alert */}
+            {/* ERROR ALERT */}
             {connectError && (
               <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-sm">
                 <AlertTriangle className="size-4 text-red-400 shrink-0 mt-0.5" />
@@ -324,144 +332,185 @@ export default function OutreachSettings() {
                 title="No project selected"
                 description="Select a project to view and manage its connected mailboxes."
               />
-            ) : mailboxesLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="size-6 text-teal-400 animate-spin" />
-              </div>
-            ) : mailboxes.length === 0 ? (
-              <OutreachEmptyState
-                icon={<Mail />}
-                title="No mailboxes connected"
-                description="Connect your Gmail account or custom SMTP to start sending outreach emails."
-                action={<TealButton onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}><Plus className="size-4" /> Add Mailbox</TealButton>}
-              />
             ) : (
-              <div className="space-y-4">
-                {mailboxes.map(mb => {
-                  const score = mb.score ?? 100;
-                  const scoreColor = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
-                  const statusIcon = mb.status === 'healthy' || !mb.status
-                    ? <CheckCircle2 className="size-4 text-teal-400" />
-                    : mb.status === 'warning'
-                    ? <AlertTriangle className="size-4 text-amber-400" />
-                    : <XCircle className="size-4 text-red-400" />;
+              <>
+                {/* 1. DOMAIN VERIFICATION (TOP) */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield className="w-5 h-5 text-teal-400" />
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">DNS Ownership Verification</h3>
+                  </div>
+                  <DomainVerificationManager onStatusChange={loadMailboxes} />
+                </section>
 
-                  return (
-                    <div key={mb.id} className="bg-white/[0.02] border border-white/8 rounded-2xl overflow-hidden">
-                      <div
-                        className="flex items-center gap-4 p-5 cursor-pointer hover:bg-white/[0.02] transition-colors"
-                        onClick={() => setExpandedMailbox(expandedMailbox === mb.id ? null : mb.id)}
-                      >
-                        {/* Avatar */}
-                        <div className="size-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-                          <span className="text-sm font-bold text-teal-400">{(mb.email || 'G')[0].toUpperCase()}</span>
-                        </div>
+                {/* 2. DOMAIN MANAGEMENT (CARDS) */}
+                <section className="space-y-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users2 className="w-5 h-5 text-teal-400" />
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">Domain-Based Identity Management</h3>
+                  </div>
+                  
+                  {domainsLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+                    </div>
+                  ) : verifiedDomains.filter(d => d.status === 'verified').length === 0 ? (
+                    <div className="p-8 text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
+                      <Globe className="w-10 h-10 text-slate-700 mx-auto mb-3" />
+                      <p className="text-sm text-slate-500">No verified domains yet. Complete the verification above to start managing aliases.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-6">
+                      {verifiedDomains
+                        .filter(d => d.status === 'verified')
+                        .map((domain) => (
+                          <DomainAliasCard 
+                            key={domain.id} 
+                            domain={domain} 
+                            mailboxes={mailboxes}
+                            onAliasAdded={loadMailboxes}
+                          />
+                        ))
+                      }
+                    </div>
+                  )}
+                </section>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2.5 mb-0.5">
-                            <p className="font-semibold text-white text-sm">{mb.email}</p>
-                            <OutreachBadge variant={scoreColor as any}>Score {score}</OutreachBadge>
-                            {mb.warmupActive && <OutreachBadge variant="purple" dot>Warming Up</OutreachBadge>}
-                          </div>
-                          <div className="flex items-center gap-4 text-xs text-slate-500">
-                            <span className="flex items-center gap-1.5 capitalize">
-                              {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
-                              {mb.connection_type || 'gmail'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Zap className="size-3" /> {mb.sent ?? 0}/{mb.dailyLimit ?? 200} today
-                            </span>
-                            {mb.aliases && mb.aliases.length > 0 && (
-                              <span className="text-teal-400 font-medium">+{mb.aliases.length} aliases</span>
-                            )}
-                          </div>
-                        </div>
+                {/* 3. CONNECTED MAILBOXES (BOTTOM) */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Mail className="w-5 h-5 text-teal-400" />
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">Connected Sending Engines</h3>
+                  </div>
 
-                        <div className="flex items-center gap-3">
-                          {statusIcon}
-                          <ChevronDown className={cn('size-4 text-slate-500 transition-transform', expandedMailbox === mb.id && 'rotate-180')} />
-                        </div>
-                      </div>
+                  {mailboxesLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+                    </div>
+                  ) : mailboxes.length === 0 ? (
+                    <OutreachEmptyState
+                      icon={<Mail />}
+                      title="No mailboxes connected"
+                      description="Connect your Gmail account or custom SMTP to start sending outreach emails."
+                      action={<TealButton onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}><Plus className="size-4" /> Add Mailbox</TealButton>}
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {mailboxes.map(mb => {
+                        const score = mb.score ?? 100;
+                        const scoreColor = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
+                        const statusIcon = mb.status === 'healthy' || !mb.status
+                          ? <CheckCircle2 className="size-4 text-teal-400" />
+                          : mb.status === 'warning'
+                          ? <AlertTriangle className="size-4 text-amber-400" />
+                          : <XCircle className="size-4 text-red-400" />;
 
-                      <AnimatePresence>
-                        {expandedMailbox === mb.id && (
-                          <motion.div
-                            initial={{ height: 0 }}
-                            animate={{ height: 'auto' }}
-                            exit={{ height: 0 }}
-                            className="overflow-hidden border-t border-white/5"
-                          >
-                            <div className="p-5 space-y-5">
-                              {/* Quota Bar */}
-                              <div>
-                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
-                                  <span>Daily Sending Quota</span>
-                                  <span className="text-teal-400">{mb.sent ?? 0} / {mb.dailyLimit ?? 200} used</span>
-                                </div>
-                                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-teal-500 rounded-full" 
-                                    style={{ width: `${Math.min(100, ((mb.sent ?? 0) / (mb.dailyLimit ?? 200)) * 100)}%` }} 
-                                  />
-                                </div>
+                        return (
+                          <div key={mb.id} className="bg-white/[0.02] border border-white/8 rounded-2xl overflow-hidden hover:border-white/15 transition-all">
+                            <div
+                              className="flex items-center gap-4 p-5 cursor-pointer"
+                              onClick={() => setExpandedMailbox(expandedMailbox === mb.id ? null : mb.id)}
+                            >
+                              <div className="size-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+                                <span className="text-sm font-bold text-teal-400">{(mb.email || 'G')[0].toUpperCase()}</span>
                               </div>
-                              <AliasManager 
-                                mailboxId={mb.id}
-                                initialAliases={mb.aliases || []}
-                                provider={(mb.connection_type || 'gmail') as any}
-                                onAliasesUpdated={(newAliases) => {
-                                  setMailboxes(prev => prev.map(m => 
-                                    m.id === mb.id ? { ...m, aliases: newAliases } : m
-                                  ));
-                                }}
-                              />
 
-                              {/* DNS Checks */}
-                              <div>
-                                <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">DNS Authentication</p>
-                                <div className="grid grid-cols-3 gap-3">
-                                  {[
-                                    { label: 'SPF',   pass: mb.spf ?? true },
-                                    { label: 'DKIM',  pass: mb.dkim ?? true },
-                                    { label: 'DMARC', pass: mb.dmarc ?? true },
-                                  ].map(({ label, pass }) => (
-                                    <div key={label} className={cn(
-                                      'flex items-center gap-2 p-3 rounded-xl border text-sm',
-                                      pass
-                                        ? 'bg-teal-500/5 border-teal-500/20 text-teal-400'
-                                        : 'bg-red-500/5 border-red-500/20 text-red-400'
-                                    )}>
-                                      {pass ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />}
-                                      <span className="font-bold">{label}</span>
-                                      <span className="text-xs ml-auto opacity-60">{pass ? 'pass' : 'fail'}</span>
-                                    </div>
-                                  ))}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2.5 mb-0.5">
+                                  <p className="font-semibold text-white text-sm">{mb.email}</p>
+                                  <OutreachBadge variant={scoreColor as any}>Health: {score}%</OutreachBadge>
+                                </div>
+                                <div className="flex items-center gap-4 text-xs text-slate-500">
+                                  <span className="flex items-center gap-1.5 capitalize">
+                                    {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
+                                    {mb.connection_type || 'gmail'}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Zap className="size-3" /> {mb.sent ?? 0}/{mb.dailyLimit ?? 200} today
+                                  </span>
                                 </div>
                               </div>
 
-                              <div className="flex gap-2">
-                                <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
-                                  <RefreshCw className="size-3.5" /> Re-check DNS
-                                </button>
-                                <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
-                                  <Search className="size-3.5" /> Run Spam Test
-                                </button>
-                                <button
-                                  onClick={e => { e.stopPropagation(); handleDisconnect(mb.id); }}
-                                  disabled={disconnectingId === mb.id}
-                                  className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-xl transition-all ml-auto disabled:opacity-50"
-                                >
-                                  {disconnectingId === mb.id ? 'Disconnecting…' : 'Disconnect'}
-                                </button>
+                              <div className="flex items-center gap-3">
+                                {statusIcon}
+                                <ChevronDown className={cn('size-4 text-slate-500 transition-transform', expandedMailbox === mb.id && 'rotate-180')} />
                               </div>
                             </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+
+                            <AnimatePresence>
+                              {expandedMailbox === mb.id && (
+                                <motion.div
+                                  initial={{ height: 0 }}
+                                  animate={{ height: 'auto' }}
+                                  exit={{ height: 0 }}
+                                  className="overflow-hidden border-t border-white/5"
+                                >
+                                  <div className="p-5 space-y-6">
+                                    {/* Quota Bar */}
+                                    <div>
+                                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+                                        <span>Daily Sending Quota</span>
+                                        <span className="text-teal-400">{mb.sent ?? 0} / {mb.dailyLimit ?? 200} used</span>
+                                      </div>
+                                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-teal-500 rounded-full" 
+                                          style={{ width: `${Math.min(100, ((mb.sent ?? 0) / (mb.dailyLimit ?? 200)) * 100)}%` }} 
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* DNS Checks */}
+                                    <div>
+                                      <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">Authentication Status</p>
+                                      <div className="grid grid-cols-3 gap-3">
+                                        {[
+                                          { label: 'SPF',   pass: mb.spf ?? true },
+                                          { label: 'DKIM',  pass: mb.dkim ?? true },
+                                          { label: 'DMARC', pass: mb.dmarc ?? true },
+                                        ].map(({ label, pass }) => (
+                                          <div key={label} className={cn(
+                                            'flex flex-col gap-1 p-3 rounded-xl border text-sm',
+                                            pass
+                                              ? 'bg-teal-500/5 border-teal-500/10 text-teal-400'
+                                              : 'bg-red-500/5 border-red-500/10 text-red-400'
+                                          )}>
+                                            <div className="flex items-center justify-between">
+                                              <span className="font-bold text-xs">{label}</span>
+                                              {pass ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />}
+                                            </div>
+                                            <span className="text-[10px] opacity-60 uppercase">{pass ? 'Verified' : 'Failing'}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2 pt-2 border-t border-white/5">
+                                      <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+                                        <RefreshCw className="size-3.5" /> Re-check DNS
+                                      </button>
+                                      <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+                                        <Search className="size-3.5" /> Run Spam Test
+                                      </button>
+                                      <button
+                                        onClick={e => { e.stopPropagation(); handleDisconnect(mb.id); }}
+                                        disabled={disconnectingId === mb.id}
+                                        className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-xl transition-all ml-auto disabled:opacity-50"
+                                      >
+                                        {disconnectingId === mb.id ? 'Disconnecting…' : 'Disconnect Mailbox'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </section>
+              </>
             )}
           </div>
         )}

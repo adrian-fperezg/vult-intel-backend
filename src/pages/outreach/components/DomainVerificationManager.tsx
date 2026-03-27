@@ -12,7 +12,11 @@ interface VerifiedDomain {
   created_at: string;
 }
 
-export default function DomainVerificationManager() {
+interface DomainVerificationManagerProps {
+  onStatusChange?: () => void;
+}
+
+export default function DomainVerificationManager({ onStatusChange }: DomainVerificationManagerProps) {
   const api = useOutreachApi();
   const [domains, setDomains] = useState<VerifiedDomain[]>([]);
   const [newDomain, setNewDomain] = useState('');
@@ -41,6 +45,7 @@ export default function DomainVerificationManager() {
       await api.addVerifiedDomain(newDomain);
       setNewDomain('');
       fetchDomains();
+      if (onStatusChange) onStatusChange();
       toast.success('Domain registered. Please add the DNS record.');
     } catch (error: any) {
       toast.error(error.message || 'Failed to add domain');
@@ -55,6 +60,7 @@ export default function DomainVerificationManager() {
       await api.verifyDomain(domain.id);
       toast.success(`${domain.domain} verified successfully!`);
       fetchDomains();
+      if (onStatusChange) onStatusChange();
     } catch (error: any) {
       toast.error(error.message || 'Verification failed. Check your DNS records.');
     } finally {
@@ -67,6 +73,7 @@ export default function DomainVerificationManager() {
     try {
       await api.deleteVerifiedDomain(id);
       fetchDomains();
+      if (onStatusChange) onStatusChange();
       toast.success('Domain removed');
     } catch (error: any) {
       toast.error(error.message || 'Failed to remove domain');
