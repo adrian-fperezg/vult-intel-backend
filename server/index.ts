@@ -461,15 +461,15 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
     const aliasId = uuidv4();
     let updatedAliases: { email: string; name: string }[] = [];
 
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       // 1. Insert into separate table
-      await db.prepare(`
+      await tx.prepare(`
         INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_verified)
         VALUES (?, ?, ?, ?, ${db.isPostgres ? 'TRUE' : '1'})
       `).run(uuidv4(), id, email, name);
 
       // 2. Sync aliases JSON array in outreach_mailboxes
-      const mailbox = await db.prepare("SELECT aliases FROM outreach_mailboxes WHERE id = ?").get(id) as any;
+      const mailbox = await tx.prepare("SELECT aliases FROM outreach_mailboxes WHERE id = ?").get(id) as any;
       try {
         const rawAliases = mailbox.aliases || '[]';
         updatedAliases = typeof rawAliases === 'string' ? JSON.parse(rawAliases) : (rawAliases || []);
@@ -480,7 +480,7 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
       const exists = updatedAliases.some(a => a.email === email);
       if (!exists) {
         updatedAliases.push({ email, name: name || '' });
-        await db.prepare("UPDATE outreach_mailboxes SET aliases = ? WHERE id = ?").run(JSON.stringify(updatedAliases), id);
+        await tx.prepare("UPDATE outreach_mailboxes SET aliases = ? WHERE id = ?").run(JSON.stringify(updatedAliases), id);
       }
     });
     
@@ -807,9 +807,9 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
     const campaign = await db.prepare("SELECT project_id FROM outreach_campaigns WHERE id = ?").get(campaignId) as any;
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       // 1. Update Campaign Settings & Scheduling
-      await db.prepare(`
+      await tx.prepare(`
         UPDATE outreach_campaigns 
         SET status = 'active', 
             mailbox_id = ?, 
@@ -842,7 +842,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
         body_html: content.body_html
       }];
 
-      await db.prepare(`
+      await tx.prepare(`
         INSERT INTO outreach_sequences (id, user_id, project_id, name, steps, status)
         VALUES (?, ?, ?, ?, ?, 'active')
       `).run(
@@ -854,7 +854,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
       );
 
       // Link sequence to campaign
-      await db.prepare("UPDATE outreach_campaigns SET sequence_id = ? WHERE id = ?").run(sequenceId, campaignId);
+      await tx.prepare("UPDATE outreach_campaigns SET sequence_id = ? WHERE id = ?").run(sequenceId, campaignId);
 
       // 3. Upsert Contacts and Enroll them
       const insertContactQuery = `
@@ -877,15 +877,15 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
         const email = contactData[columnMapping.email];
         if (!email) continue;
 
-        const existingContact = await db.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, campaign.project_id) as any;
+        const existingContact = await tx.prepare("SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?").get(email, campaign.project_id) as any;
         
         let contactId;
         if (existingContact) {
           contactId = existingContact.id;
-          await db.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
+          await tx.prepare("UPDATE outreach_contacts SET status = 'enrolled' WHERE id = ?").run(contactId);
         } else {
           contactId = uuidv4();
-          await db.prepare(insertContactQuery).run(
+          await tx.prepare(insertContactQuery).run(
             contactId,
             userId,
             campaign.project_id,
@@ -896,7 +896,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
           );
         }
 
-        await db.prepare(enrollQuery).run(
+        await tx.prepare(enrollQuery).run(
           uuidv4(),
           campaignId,
           contactId,
@@ -1065,7 +1065,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       // 1. Create a mapping of frontend step IDs to backend UUIDs
       // This is CRITICAL for resolving parent_step_id for newly created steps
       const idMap = new Map<string, string>();
@@ -1076,7 +1076,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
       }
 
       // 2. Clear existing steps
-      await db.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ?", id);
+      await tx.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ?", id);
 
       // 3. Insert new steps, resolving parent_step_id using the map
       for (const [index, step] of steps.entries()) {
@@ -1084,7 +1084,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
           const dbId = idMap.get(step.id)!;
           const parentDbId = step.parent_step_id ? (idMap.get(step.parent_step_id) || step.parent_step_id) : null;
 
-          await db.run(`
+          await tx.run(`
             INSERT INTO outreach_sequence_steps (
               id, sequence_id, project_id, step_number, step_type, 
               config, delay_amount, delay_unit, attachments,
@@ -1191,20 +1191,20 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
     const list = Array.isArray(recipients) ? recipients : [];
     const addedContacts: any[] = [];
     
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       for (const item of list) {
         let contact_id: string;
         let contactObj: any = null;
 
         if (typeof item === 'object' && item.email) {
           // Manual contact upsert
-          const existing = await db.get("SELECT * FROM outreach_contacts WHERE email = ? AND user_id = ?", item.email, userId) as any;
+          const existing = await tx.get("SELECT * FROM outreach_contacts WHERE email = ? AND user_id = ?", item.email, userId) as any;
           if (existing) {
             contact_id = existing.id;
             contactObj = existing;
           } else {
             contact_id = item.id || uuidv4();
-            await db.run(`
+            await tx.run(`
               INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title, type)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '', item.type || 'individual');
@@ -1220,19 +1220,19 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
         } else if (typeof item === 'object' && item.id) {
           // Existing contact ID
           contact_id = item.id;
-          contactObj = await db.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ?", contact_id, userId);
+          contactObj = await tx.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ?", contact_id, userId);
         } else if (typeof item === 'object' && item.list_id) {
             // It's a list - expand it and add its members
-            const listMembers = await db.all("SELECT contact_id FROM contact_list_members WHERE list_id = ?", item.list_id) as any[];
+            const listMembers = await tx.all("SELECT contact_id FROM contact_list_members WHERE list_id = ?", item.list_id) as any[];
             for (const member of listMembers) {
                 const memberContactId = member.contact_id;
-                await db.run(`
+                await tx.run(`
                     INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
                     VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO NOTHING
+                    ON CONFLICT(sequence_id, contact_id) DO NOTHING
                 `, uuidv4(), id, project_id, memberContactId, recipientType || 'individual');
                 
-                const c = await db.get("SELECT * FROM outreach_contacts WHERE id = ?", memberContactId);
+                const c = await tx.get("SELECT * FROM outreach_contacts WHERE id = ?", memberContactId);
                 if (c) addedContacts.push(c);
             }
             continue; // Skip the individual add logic since we handled the list
@@ -1241,10 +1241,11 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
         }
 
         if (contact_id) {
-           // Insert into sequence recipients
-          await db.run(`
+           // Insert into sequence recipients with conflict handling
+          await tx.run(`
             INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(sequence_id, contact_id) DO NOTHING
           `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
 
           if (contactObj) {
@@ -1252,7 +1253,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
           }
 
           // If active, enroll immediately
-          const seq = await db.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
+          const seq = await tx.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
           if (seq?.status === 'active') {
             await enrollContactInSequence(project_id, id, contact_id);
           }
@@ -1262,8 +1263,12 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
 
     res.json({ success: true, addedContacts });
   } catch (error) {
-    console.error("Failed to add sequence recipients:", error);
-    res.status(500).json({ error: "Failed to add recipients", details: (error as any).message });
+    console.error(`[Assign Recipients Error for Sequence ${id}]:`, error);
+    res.status(500).json({ 
+      error: "Failed to add recipients", 
+      details: (error as any).message,
+      stack: process.env.NODE_ENV === 'development' ? (error as any).stack : undefined
+    });
   }
 });
 
@@ -1460,7 +1465,7 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
   try {
     const savedContactIds: string[] = [];
 
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       const upsertQuery = `
         INSERT INTO outreach_contacts (
           id, user_id, project_id, first_name, last_name, email, 
@@ -1496,7 +1501,7 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
       for (const contact of contacts) {
         if (!contact.email) continue;
         
-        const contactRes = await db.prepare(upsertQuery).get(
+        const contactRes = await tx.prepare(upsertQuery).get(
           uuidv4(),
           userId,
           project_id,
@@ -1548,7 +1553,7 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
   try {
     const savedContactIds: string[] = [];
 
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
         const upsertQuery = `
           INSERT INTO outreach_contacts (
             id, user_id, project_id, first_name, last_name, email, 
@@ -1587,7 +1592,7 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
           if (!contact.email) continue;
           
           // 1. Upsert contact
-          const contactRes = await db.prepare(upsertQuery).get(
+          const contactRes = await tx.prepare(upsertQuery).get(
             uuidv4(),
             userId,
             project_id,
@@ -1619,7 +1624,7 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
 
         // 2. Add to list if list_id provided
         if (list_id && list_id !== 'all') {
-          await db.prepare(memberQuery).run(list_id, contactId);
+          await tx.prepare(memberQuery).run(list_id, contactId);
         }
       }
     });
@@ -1685,16 +1690,16 @@ app.post("/api/outreach/contacts/bulk-delete", async (req: AuthRequest, res) => 
   }
 
   try {
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       // Create placeholders for the IN clause
       const placeholders = contact_ids.map(() => "?").join(",");
       
       // 1. Delete from outreach_contacts
-      await db.prepare(`DELETE FROM outreach_contacts WHERE project_id = ? AND id IN (${placeholders})`)
+      await tx.prepare(`DELETE FROM outreach_contacts WHERE project_id = ? AND id IN (${placeholders})`)
         .run(project_id, ...contact_ids);
         
       // 2. Delete from list members
-      await db.prepare(`DELETE FROM contact_list_members WHERE contact_id IN (${placeholders})`)
+      await tx.prepare(`DELETE FROM contact_list_members WHERE contact_id IN (${placeholders})`)
         .run(...contact_ids);
     });
 
@@ -1796,10 +1801,10 @@ app.post("/api/outreach/contact-lists/:id/members", async (req: AuthRequest, res
 
   if (!userId || !Array.isArray(contact_ids)) return res.status(400).json({ error: "Invalid payload" });
 
-  await db.transaction(async () => {
+  await db.transaction(async (tx) => {
     const query = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
     for (const cid of contact_ids) {
-      await db.prepare(query).run(id, cid);
+      await tx.prepare(query).run(id, cid);
     }
   });
 

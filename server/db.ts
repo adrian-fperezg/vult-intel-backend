@@ -11,33 +11,37 @@ const DATABASE_URL = process.env.DATABASE_URL;
 class DbWrapper {
   private sqlite?: any;
   private pgPool?: pg.Pool;
+  private client?: pg.PoolClient;
   public isPostgres: boolean;
 
-  constructor() {
+  constructor(pgPool?: pg.Pool, sqlite?: any) {
     this.isPostgres = !!DATABASE_URL;
     if (this.isPostgres) {
-      console.log('[DB] Using PostgreSQL (Production Mode)');
-      this.pgPool = new pg.Pool({
+      this.pgPool = pgPool || new pg.Pool({
         connectionString: DATABASE_URL,
-        ssl: DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
+        ssl: DATABASE_URL && DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
       });
     } else {
-      console.log('[DB] Using SQLite (Development Mode)');
-      this.sqlite = new Database(dbPath);
-      this.sqlite.pragma('journal_mode = WAL');
+      this.sqlite = sqlite || new Database(dbPath);
+      if (!sqlite) {
+        this.sqlite.pragma('journal_mode = WAL');
+      }
     }
+  }
+
+  private get pgConn(): pg.Pool | pg.PoolClient {
+    return this.client || this.pgPool!;
   }
 
   private convertSql(sql: string): string {
     if (!this.isPostgres) return sql;
-    // Simple conversion of ? to $1, $2, etc. (caution: doesn't handle strings with ?)
     let count = 1;
     return sql.replace(/\?/g, () => `$${count++}`);
   }
 
   async exec(sql: string) {
     if (this.isPostgres) {
-      await this.pgPool!.query(sql);
+      await this.pgConn.query(sql);
     } else {
       this.sqlite.exec(sql);
     }
@@ -46,7 +50,7 @@ class DbWrapper {
   async run(sql: string, ...params: any[]) {
     const convertedSql = this.convertSql(sql);
     if (this.isPostgres) {
-      const res = await this.pgPool!.query(convertedSql, params);
+      const res = await this.pgConn.query(convertedSql, params);
       return { lastInsertRowid: null, changes: res.rowCount };
     } else {
       return this.sqlite.prepare(sql).run(...params);
@@ -56,7 +60,7 @@ class DbWrapper {
   async get<T>(sql: string, ...params: any[]): Promise<T | undefined> {
     const convertedSql = this.convertSql(sql);
     if (this.isPostgres) {
-      const res = await this.pgPool!.query(convertedSql, params);
+      const res = await this.pgConn.query(convertedSql, params);
       return res.rows[0];
     } else {
       return this.sqlite.prepare(sql).get(...params);
@@ -66,7 +70,7 @@ class DbWrapper {
   async all<T>(sql: string, ...params: any[]): Promise<T[]> {
     const convertedSql = this.convertSql(sql);
     if (this.isPostgres) {
-      const res = await this.pgPool!.query(convertedSql, params);
+      const res = await this.pgConn.query(convertedSql, params);
       return res.rows;
     } else {
       return this.sqlite.prepare(sql).all(...params);
@@ -79,7 +83,7 @@ class DbWrapper {
     return {
       run: async (...params: any[]) => {
         if (this.isPostgres) {
-          const res = await this.pgPool!.query(convertedSql, params);
+          const res = await this.pgConn.query(convertedSql, params);
           return { lastInsertRowid: null, changes: res.rowCount };
         } else {
           return this.sqlite.prepare(sql).run(...params);
@@ -87,7 +91,7 @@ class DbWrapper {
       },
       get: async <T>(...params: any[]): Promise<T | undefined> => {
         if (this.isPostgres) {
-          const res = await this.pgPool!.query(convertedSql, params);
+          const res = await this.pgConn.query(convertedSql, params);
           return res.rows[0];
         } else {
           return this.sqlite.prepare(sql).get(...params);
@@ -95,7 +99,7 @@ class DbWrapper {
       },
       all: async <T>(...params: any[]): Promise<T[]> => {
         if (this.isPostgres) {
-          const res = await this.pgPool!.query(convertedSql, params);
+          const res = await this.pgConn.query(convertedSql, params);
           return res.rows || [];
         } else {
           return this.sqlite.prepare(sql).all(...params);
@@ -109,11 +113,10 @@ class DbWrapper {
     if (!this.isPostgres) {
       return this.sqlite.pragma(sql);
     }
-    // For migrations (table_info)
     if (sql.startsWith('table_info')) {
       const parts = sql.match(/table_info\((.*)\)/);
       const tableName = parts ? parts[1] : '';
-      const res = await this.pgPool!.query(
+      const res = await this.pgConn.query(
         "SELECT column_name as name FROM information_schema.columns WHERE table_name = $1",
         [tableName]
       );
@@ -122,14 +125,17 @@ class DbWrapper {
     return [];
   }
 
-  // Simple transaction wrapper
-  async transaction(cb: () => Promise<void> | void) {
+  // Robust async transaction wrapper
+  async transaction(cb: (tx: DbWrapper) => Promise<any>): Promise<any> {
     if (this.isPostgres) {
       const client = await this.pgPool!.connect();
+      const tx = new DbWrapper(this.pgPool);
+      tx.client = client; 
       try {
         await client.query('BEGIN');
-        await cb();
+        const result = await cb(tx);
         await client.query('COMMIT');
+        return result;
       } catch (err) {
         await client.query('ROLLBACK');
         throw err;
@@ -137,7 +143,16 @@ class DbWrapper {
         client.release();
       }
     } else {
-      this.sqlite.transaction(cb)();
+      try {
+        this.sqlite.prepare('BEGIN').run();
+        const result = await cb(this);
+        this.sqlite.prepare('COMMIT').run();
+        return result;
+      } catch (err) {
+        // Rollback only if we're actually in a transaction to avoid errors
+        try { this.sqlite.prepare('ROLLBACK').run(); } catch(e) {}
+        throw err;
+      }
     }
   }
 
@@ -148,6 +163,7 @@ class DbWrapper {
       this.sqlite.close();
     }
   }
+
 }
 
 export const db = new DbWrapper();
@@ -697,7 +713,8 @@ export const initDb = async () => {
         contact_id TEXT REFERENCES outreach_contacts(id),
         contact_list_id TEXT REFERENCES contact_lists(id),
         type TEXT NOT NULL,
-        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(sequence_id, contact_id)
       )
     `);
 

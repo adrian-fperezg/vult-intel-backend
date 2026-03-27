@@ -380,15 +380,15 @@ router.post("/save-search", async (req: AuthRequest, res) => {
 
   const searchId = uuidv4();
   try {
-    await db.transaction(async () => {
-      await db.run(`
+    await db.transaction(async (tx) => {
+      await tx.run(`
         INSERT INTO outreach_saved_searches (id, project_id, user_id, query, extracted_params, results_count)
         VALUES (?, ?, ?, ?, ?, ?)
       `, searchId, pId, userId, query || 'Manual Search', JSON.stringify(extracted_params || {}), leads?.length || 0);
 
       if (leads && leads.length > 0) {
         for (const lead of leads) {
-          await db.run(`
+          await tx.run(`
             INSERT INTO outreach_saved_search_leads (id, search_id, email, first_name, last_name, position, confidence, verification_status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `, uuidv4(), searchId, lead.email, lead.first_name || '', lead.last_name || '', lead.position || '', lead.confidence || 0, lead.verification_status || '');

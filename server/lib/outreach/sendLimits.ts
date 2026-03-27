@@ -10,9 +10,9 @@ export async function checkAndIncrementGlobalLimit(projectId: string): Promise<b
 
   let result = false;
   try {
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       // Get current count
-      const counter = await db.get<{ sends_count: number }>(
+      const counter = await tx.get<{ sends_count: number }>(
         'SELECT sends_count FROM outreach_global_send_counters WHERE project_id = ? AND date = ?',
         projectId,
         today
@@ -28,13 +28,13 @@ export async function checkAndIncrementGlobalLimit(projectId: string): Promise<b
 
       // Increment or create
       if (counter) {
-        await db.run(
+        await tx.run(
           'UPDATE outreach_global_send_counters SET sends_count = sends_count + 1 WHERE project_id = ? AND date = ?',
           projectId,
           today
         );
       } else {
-        await db.run(
+        await tx.run(
           'INSERT INTO outreach_global_send_counters (project_id, date, sends_count) VALUES (?, ?, 1)',
           projectId,
           today

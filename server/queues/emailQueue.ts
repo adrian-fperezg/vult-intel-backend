@@ -355,7 +355,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
 
   for (const enrollment of enrollments) {
     try {
-      await db.transaction(async () => {
+      await db.transaction(async (tx) => {
         // Create individual email
         const emailId = uuidv4();
         
@@ -376,7 +376,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           bodyHtml = bodyHtml.replace(regex, value);
         });
 
-        await db.prepare(`
+        await tx.prepare(`
           INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
         `).run(
@@ -393,7 +393,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         );
 
         // Update enrollment
-        await db.prepare(`
+        await tx.prepare(`
           UPDATE outreach_campaign_enrollments 
           SET status = 'active', current_step_id = ?, last_event_at = CURRENT_TIMESTAMP 
           WHERE id = ?

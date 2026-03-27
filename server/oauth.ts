@@ -273,9 +273,9 @@ export async function fetchGmailAliases(mailboxId: string) {
     const aliasData = aliases.map(a => ({ email: a.sendAsEmail, name: a.displayName || '' })).filter(a => !!a.email);
     console.log(`[OAuth] Found ${aliasData.length} valid aliases for ${mailboxId}`);
 
-    await db.transaction(async () => {
+    await db.transaction(async (tx) => {
       // 1. Update the aliases column in outreach_mailboxes (JSONB array of objects)
-      await db.prepare(`
+      await tx.prepare(`
         UPDATE outreach_mailboxes 
         SET aliases = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -286,7 +286,7 @@ export async function fetchGmailAliases(mailboxId: string) {
         const aliasEmail = alias.sendAsEmail;
         if (!aliasEmail) continue;
 
-        await db.prepare(`
+        await tx.prepare(`
           INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_default, is_verified)
           VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(mailbox_id, email) DO UPDATE SET
