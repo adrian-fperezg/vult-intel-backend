@@ -303,10 +303,10 @@ export const initDb = async () => {
     // Migration for outreach_sequences
     const newSeqCols = [
       { name: 'daily_send_limit', type: 'INTEGER DEFAULT 20' },
-      { name: 'send_window_start', type: 'TEXT DEFAULT "08:00"' },
-      { name: 'send_window_end', type: 'TEXT DEFAULT "18:00"' },
-      { name: 'send_timezone', type: 'TEXT DEFAULT "UTC"' },
-      { name: 'send_on_weekdays', type: 'TEXT DEFAULT "{\\"true\\",\\"true\\",\\"true\\",\\"true\\",\\"true\\",\\"false\\",\\"false\\"}"' },
+      { name: 'send_window_start', type: 'TEXT DEFAULT \'08:00\'' },
+      { name: 'send_window_end', type: 'TEXT DEFAULT \'18:00\'' },
+      { name: 'send_timezone', type: 'TEXT DEFAULT \'UTC\'' },
+      { name: 'send_on_weekdays', type: "TEXT DEFAULT '{\"true\",\"true\",\"true\",\"true\",\"true\",\"false\",\"false\"}'" },
       { name: 'smart_send_min_delay', type: 'INTEGER DEFAULT 45' },
       { name: 'smart_send_max_delay', type: 'INTEGER DEFAULT 120' },
       { name: 'stop_on_reply', type: 'BOOLEAN DEFAULT TRUE' },

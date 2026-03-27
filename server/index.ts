@@ -1368,7 +1368,7 @@ app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) 
       // 1. Fetch original sequence
       const original = await tx.get<any>(
         "SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?",
-        [id, userId]
+        id, userId
       );
       if (!original) throw new Error("Original sequence not found");
 
@@ -1384,7 +1384,7 @@ app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) 
           send_on_weekdays, stop_on_reply, stop_on_unsubscribe, stop_on_bounce,
           allow_reenrollment, mailbox_id, from_email, from_name
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
+      `, 
         newSequenceId, userId, original.project_id || '', newName, 'draft', 
         original.daily_limit, original.daily_send_limit,
         original.min_delay, original.max_delay, 
@@ -1394,12 +1394,12 @@ app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) 
         original.stop_on_reply, original.stop_on_unsubscribe, original.stop_on_bounce,
         original.allow_reenrollment, original.mailbox_id, 
         original.from_email, original.from_name
-      ]);
+      );
 
       // 3. Fetch steps
       const steps = await tx.all<any>(
         "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?",
-        [id]
+        id
       );
 
       // 4. Deep clone steps with ID mapping
@@ -1418,12 +1418,12 @@ app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) 
             delay_amount, delay_unit, attachments, parent_step_id,
             condition_type, branch_path
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
+        `, 
           newStepId, newSequenceId, original.project_id || '', 
           step.step_number, step.step_type, step.config,
           step.delay_amount, step.delay_unit, step.attachments,
           newParentId, step.condition_type, step.branch_path
-        ]);
+        );
       }
 
       return { id: newSequenceId };
