@@ -1,8 +1,6 @@
 import React, { useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import { 
   Bold, 
@@ -77,13 +75,6 @@ export default function TipTapEditor({
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Underline,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: 'text-teal-400 underline decoration-teal-400/30 underline-offset-4',
-        },
-      }),
       Placeholder.configure({
         placeholder,
         emptyEditorClass: 'is-editor-empty',

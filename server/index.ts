@@ -1056,8 +1056,8 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   }
 });
 
-// PUT /api/outreach/sequences/:id/steps
-app.put("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
+// POST /api/outreach/sequences/:id/steps
+app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const { steps, project_id } = req.body;
