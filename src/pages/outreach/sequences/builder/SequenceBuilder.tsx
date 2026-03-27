@@ -14,10 +14,15 @@ import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
 
+import ConditionSelectorModal from './ConditionSelectorModal';
+
 interface Step {
   id: string;
   step_number: number;
-  step_type: 'email';
+  step_type: 'email' | 'delay' | 'condition';
+  parent_step_id?: string;
+  condition_type?: 'opened' | 'clicked' | 'replied';
+  branch_path?: 'yes' | 'no' | 'default';
   delay_amount: number;
   delay_unit: 'minutes' | 'hours' | 'days';
   attachments: any[];
@@ -49,26 +54,41 @@ interface SequenceBuilderProps {
   onBack: () => void;
 }
 
-interface EmailStepCardProps {
+interface StepNodeProps {
   step: Step;
-  index: number;
+  allSteps: Step[];
   isFirst: boolean;
   onUpdate: (stepId: string, updates: Partial<Step>) => void;
   onUpdateConfig: (stepId: string, updates: any) => void;
-  onRemove: () => void;
+  onRemove: (stepId: string) => void;
+  onAddStep: (parentId: string, branchPath: 'yes' | 'no' | 'default') => void;
+  onAddCondition: (parentId: string) => void;
   isOptimizing: boolean;
   handleOptimizeStep: (stepId: string) => void;
 }
 
-function SequenceEmailStepCard({ step, index, isFirst, onUpdate, onUpdateConfig, onRemove, isOptimizing, handleOptimizeStep }: EmailStepCardProps) {
+function StepNode({ 
+  step, 
+  allSteps, 
+  isFirst, 
+  onUpdate, 
+  onUpdateConfig, 
+  onRemove, 
+  onAddStep, 
+  onAddCondition,
+  isOptimizing, 
+  handleOptimizeStep 
+}: StepNodeProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   
+  const children = allSteps.filter(s => s.parent_step_id === step.id);
+  const yesChild = children.find(c => c.branch_path === 'yes');
+  const noChild = children.find(c => c.branch_path === 'no');
+  const defaultChild = children.find(c => c.branch_path === 'default');
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    // In a real app, we'd upload this to storage and get a URL/ID
-    // For now, we'll store basic info
     const newAttachment = {
       name: file.name,
       size: file.size,
@@ -83,67 +103,58 @@ function SequenceEmailStepCard({ step, index, isFirst, onUpdate, onUpdateConfig,
   };
 
   return (
-    <div className="relative">
-      {!isFirst && (
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex flex-col items-center">
-          <div className="h-6 w-px bg-gradient-to-b from-white/5 to-white/20" />
-          <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 text-xs font-bold text-slate-500 uppercase tracking-widest">
-            <Clock className="size-3 text-teal-400" />
-            <span>Wait</span>
-            <input
-              type="number"
-              value={step.delay_amount || 2}
-              onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
-              className="w-10 bg-transparent border-b border-white/10 text-center text-white focus:border-teal-400 outline-none"
-            />
-            <select
-              value={step.delay_unit || 'days'}
-              onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
-              className="bg-transparent text-white outline-none cursor-pointer"
-            >
-              <option value="minutes">minutes</option>
-              <option value="hours">hours</option>
-              <option value="days">days</option>
-            </select>
-          </div>
-        </div>
+    <div className="flex flex-col items-center w-full">
+      {/* Connector from parent (if not root) */}
+      {!isFirst && !step.branch_path && (
+        <div className="h-8 w-px bg-white/10" />
       )}
-      
+
+      {/* Step Card */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "group relative bg-[#161b22] border rounded-2xl p-5 transition-all duration-200",
-          isExpanded 
-            ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)]" 
-            : "border-white/5 hover:border-white/15 hover:bg-[#1c2128]"
+          "group relative w-full max-w-xl bg-[#161b22] border rounded-2xl p-5 transition-all duration-200",
+          step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02]" : 
+          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)]" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128]"
         )}
       >
         <div className="flex items-start justify-between gap-4 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
           <div className="flex items-center gap-3">
             <div className={cn(
               "size-10 rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
-              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" : "bg-white/5 border-white/10 text-slate-400"
+              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" : 
+              step.step_type === 'condition' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
+              "bg-white/5 border-white/10 text-slate-400"
             )}>
-              {step.step_type === 'email' ? <Mail className="size-5" /> : <Check className="size-5" />}
+              {step.step_type === 'email' ? <Mail className="size-5" /> : 
+               step.step_type === 'condition' ? <Filter className="size-5" /> :
+               <Clock className="size-5" />}
             </div>
             <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Step {step.step_number}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {step.branch_path ? `${step.branch_path.toUpperCase()} Branch` : `Step ${step.step_number}`}
+                </span>
                 <span className="text-[10px] text-slate-600 font-bold">•</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-500/70">{step.step_type}</span>
+                <span className={cn(
+                  "text-[10px] font-bold uppercase tracking-wider",
+                  step.step_type === 'email' ? "text-teal-500/70" : "text-purple-500/70"
+                )}>{step.step_type}</span>
               </div>
               <h4 className="text-sm font-semibold text-white truncate max-w-[300px]">
-                {step.config.subject || 'Untitled Step Body'}
+                {step.step_type === 'condition' ? `Check if user ${step.condition_type}` : (step.config.subject || 'Untitled Step')}
               </h4>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-1 opacity-80">
-                {step.config.body_html?.replace(/<[^>]*>?/gm, '') || 'Set up your message...'}
-              </p>
+              {step.step_type === 'email' && (
+                <p className="text-xs text-slate-500 mt-1 line-clamp-1 opacity-80">
+                  {step.config.body_html?.replace(/<[^>]*>?/gm, '') || 'Set up your message...'}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button 
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              onClick={(e) => { e.stopPropagation(); onRemove(step.id); }}
               className="p-2 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
             >
               <Trash2 className="size-3.5" />
@@ -152,15 +163,38 @@ function SequenceEmailStepCard({ step, index, isFirst, onUpdate, onUpdateConfig,
         </div>
 
         <AnimatePresence>
-          {isExpanded && (
+          {isExpanded && step.step_type === 'email' && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
               className="mt-6 space-y-6 overflow-hidden"
             >
               <div className="space-y-4">
+                <div className="flex items-end gap-4">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Delay</label>
+                    <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 text-xs">
+                      <Clock className="size-3 text-teal-400" />
+                      <input
+                        type="number"
+                        value={step.delay_amount || 2}
+                        onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
+                        className="w-10 bg-transparent border-b border-white/10 text-center text-white focus:border-teal-400 outline-none"
+                      />
+                      <select
+                        value={step.delay_unit || 'days'}
+                        onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
+                        className="bg-transparent text-white outline-none cursor-pointer"
+                      >
+                        <option value="minutes">minutes</option>
+                        <option value="hours">hours</option>
+                        <option value="days">days</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Subject Line</label>
                   <input 
@@ -171,7 +205,7 @@ function SequenceEmailStepCard({ step, index, isFirst, onUpdate, onUpdateConfig,
                   />
                 </div>
 
-                <div className="flex-1 flex flex-col min-h-[400px]">
+                <div className="flex-1 flex flex-col min-h-[300px]">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Email Content</label>
                   <TipTapEditor 
                     value={step.config.body_html || ''} 
@@ -182,66 +216,151 @@ function SequenceEmailStepCard({ step, index, isFirst, onUpdate, onUpdateConfig,
                   />
                 </div>
               </div>
+              
+              <div className="pt-4 flex justify-center">
+                 <button 
+                  onClick={() => onAddCondition(step.id)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 text-purple-400 rounded-xl border border-purple-500/20 hover:bg-purple-500/20 transition-all text-[10px] font-bold uppercase tracking-widest"
+                >
+                  <Plus className="size-3" />
+                  Add Condition
+                </button>
+              </div>
+            </motion.div>
+          )}
 
-              {/* Hidden file input controlled by editor paperclip */}
-              <input 
-                id={`file-upload-${step.id}`}
-                type="file" 
-                className="hidden" 
-                onChange={handleFileUpload} 
-              />
-
-              {/* Attachments Area */}
-              <div className="pt-6 border-t border-white/5">
-                <div className="flex items-center justify-between mb-4">
-                  <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1 flex items-center gap-2">
-                    <Paperclip className="size-3" />
-                    Attachments
-                  </h5>
-                  <label className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer border border-white/5">
-                    <Plus className="size-3" />
-                    Add File
-                    <input type="file" className="hidden" onChange={handleFileUpload} />
-                  </label>
-                </div>
-                
-                {step.attachments?.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {step.attachments.map((file: any) => (
-                      <div key={file.id} className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl group/att">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-400">
-                            <FileText className="size-4" />
-                          </div>
-                          <div className="overflow-hidden">
-                            <p className="text-xs font-bold text-white truncate">{file.name}</p>
-                            <p className="text-[10px] text-slate-500">{(file.size / 1024).toFixed(1)} KB</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => removeAttachment(file.id)}
-                          className="p-1 px-2 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover/att:opacity-100"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 border border-dashed border-white/5 rounded-2xl bg-white/[0.01]">
-                    <Paperclip className="size-6 text-slate-700 mb-2" />
-                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">No attachments for this step</p>
-                  </div>
-                )}
+          {isExpanded && step.step_type === 'condition' && (
+             <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-4 p-4 rounded-xl bg-purple-500/5 border border-purple-500/10 text-xs text-slate-400"
+            >
+              Wait for <span className="text-white font-bold">{step.delay_amount || 2} {step.delay_unit || 'days'}</span>, then check if <span className="text-white font-bold">"{step.condition_type}"</span>.
+              <div className="mt-3 flex items-center gap-3">
+                 <div className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-md border border-white/5">
+                    <input
+                      type="number"
+                      value={step.delay_amount || 2}
+                      onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
+                      className="w-8 bg-transparent text-center text-white outline-none text-[10px]"
+                    />
+                    <select
+                      value={step.delay_unit || 'days'}
+                      onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
+                      className="bg-transparent text-white outline-none cursor-pointer text-[10px]"
+                    >
+                      <option value="minutes">min</option>
+                      <option value="hours">hrs</option>
+                      <option value="days">days</option>
+                    </select>
+                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
+
+      {/* Children Rendering */}
+      {step.step_type === 'condition' ? (
+        <div className="w-full mt-10">
+          <div className="flex gap-16 justify-center">
+            {/* YES Branch */}
+            <div className="flex flex-col items-center flex-1 max-w-xl">
+               <div className="flex flex-col items-center mb-4">
+                  <div className="h-6 w-px bg-green-500/40" />
+                  <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/30 text-[10px] font-black text-green-500 uppercase tracking-widest">Yes</div>
+                  <div className="h-6 w-px bg-green-500/40" />
+               </div>
+               {yesChild ? (
+                 <StepNode 
+                  step={yesChild} 
+                  allSteps={allSteps} 
+                  isFirst={false}
+                  onUpdate={onUpdate}
+                  onUpdateConfig={onUpdateConfig}
+                  onRemove={onRemove}
+                  onAddStep={onAddStep}
+                  onAddCondition={onAddCondition}
+                  isOptimizing={isOptimizing}
+                  handleOptimizeStep={handleOptimizeStep}
+                 />
+               ) : (
+                  <button 
+                    onClick={() => onAddStep(step.id, 'yes')}
+                    className="flex items-center gap-2 px-6 py-4 rounded-2xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
+                  >
+                    <Plus className="size-4" />
+                    Add Step
+                  </button>
+               )}
+            </div>
+
+            {/* NO Branch */}
+            <div className="flex flex-col items-center flex-1 max-w-xl">
+               <div className="flex flex-col items-center mb-4">
+                  <div className="h-6 w-px bg-red-500/40" />
+                  <div className="px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-black text-red-500 uppercase tracking-widest">No</div>
+                  <div className="h-6 w-px bg-red-500/40" />
+               </div>
+               {noChild ? (
+                 <StepNode 
+                  step={noChild} 
+                  allSteps={allSteps} 
+                  isFirst={false}
+                  onUpdate={onUpdate}
+                  onUpdateConfig={onUpdateConfig}
+                  onRemove={onRemove}
+                  onAddStep={onAddStep}
+                  onAddCondition={onAddCondition}
+                  isOptimizing={isOptimizing}
+                  handleOptimizeStep={handleOptimizeStep}
+                 />
+               ) : (
+                  <button 
+                    onClick={() => onAddStep(step.id, 'no')}
+                    className="flex items-center gap-2 px-6 py-4 rounded-2xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
+                  >
+                    <Plus className="size-4" />
+                    Add Step
+                  </button>
+               )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center w-full">
+           {defaultChild && (
+             <StepNode 
+              step={defaultChild} 
+              allSteps={allSteps} 
+              isFirst={false}
+              onUpdate={onUpdate}
+              onUpdateConfig={onUpdateConfig}
+              onRemove={onRemove}
+              onAddStep={onAddStep}
+              onAddCondition={onAddCondition}
+              isOptimizing={isOptimizing}
+              handleOptimizeStep={handleOptimizeStep}
+             />
+           )}
+           {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
+              <div className="flex flex-col items-center w-full">
+                 <div className="h-10 w-px bg-white/10" />
+                 <button 
+                  onClick={() => onAddStep(step.id, 'default')}
+                  className="flex items-center gap-2 px-6 py-4 rounded-2xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold group"
+                >
+                  <Plus className="size-4" />
+                  Add Step
+                </button>
+              </div>
+           )}
+        </div>
+      )}
     </div>
   );
 }
-
 
 export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderProps) {
   const api = useOutreachApi();
@@ -253,10 +372,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'builder' | 'settings' | 'recipients'>('builder');
   const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  
+  // DAG States
+  const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
+  const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -304,7 +426,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           }
         }));
         setSteps(mappedSteps);
-        if (mappedSteps.length > 0) setActiveStepId(mappedSteps[0].id);
       }
       setMailboxes(mailboxData || []);
       setIdentities(identityData || []);
@@ -312,17 +433,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       toast.error("Failed to load sequence");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRemoveRecipient = async (contactId: string) => {
-    if (!window.confirm("Are you sure you want to remove this contact from the sequence?")) return;
-    
-    try {
-      await api.removeSequenceRecipient(sequenceId, contactId);
-      loadData();
-    } catch (error) {
-      console.error("Failed to remove recipient:", error);
     }
   };
 
@@ -342,14 +452,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         from_name: sequence.from_name
       });
       
-      // 2. Update all steps
-      await api.updateSequenceSteps(sequenceId, steps.map(s => ({
+      // 2. Update all steps - ensure attachments are stringified
+      const stepsToSave = steps.map(s => ({
         ...s,
-        attachments: JSON.stringify(s.attachments) // Store attachments as string
-      })), activeProjectId);
+        attachments: JSON.stringify(s.attachments)
+      }));
+      
+      await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
       
       setHasChanges(false);
-      toast.success('Sequence saved successfully');
+      // toast.success('Sequence saved'); // Silent auto-save
     } catch (err) {
       toast.error('Failed to save changes');
     } finally {
@@ -357,23 +469,82 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
   };
 
-  const handleActivate = async () => {
-    if (!sequence?.mailbox_id) {
-      toast.error("Please select a mailbox in Settings first");
-      setActiveTab('settings');
-      return;
-    }
-    setIsSaving(true);
-    try {
-      await api.activateSequence(sequenceId, activeProjectId!);
-      toast.success("Sequence activated!");
-      loadData();
-    } catch (error) {
-      toast.error("Activation failed");
-    } finally {
-      setIsSaving(false);
-    }
+  const addStep = (parentId: string | null = null, branchPath: 'yes' | 'no' | 'default' = 'default') => {
+    const newStep: Step = {
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      step_number: steps.length + 1,
+      step_type: 'email',
+      parent_step_id: parentId || undefined,
+      branch_path: parentId ? branchPath : undefined,
+      delay_amount: 2,
+      delay_unit: 'days',
+      attachments: [],
+      config: {
+        subject: '',
+        body_html: '',
+      },
+    };
+    setSteps([...steps, newStep]);
+    setHasChanges(true);
   };
+
+  const addCondition = (parentId: string) => {
+    setPendingConditionParentId(parentId);
+    setIsConditionModalOpen(true);
+  };
+
+  const handleSelectCondition = (conditionType: 'opened' | 'clicked' | 'replied') => {
+    if (!pendingConditionParentId) return;
+    
+    const newStep: Step = {
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      step_number: steps.length + 1,
+      step_type: 'condition',
+      parent_step_id: pendingConditionParentId,
+      branch_path: 'default', // Condition itself is a child of the email step
+      condition_type: conditionType,
+      delay_amount: 2,
+      delay_unit: 'days',
+      attachments: [],
+      config: {
+        subject: '',
+        body_html: '',
+      },
+    };
+    setSteps([...steps, newStep]);
+    setHasChanges(true);
+    setPendingConditionParentId(null);
+  };
+
+  const handleUpdateStep = (stepId: string, updates: Partial<Step>) => {
+    setSteps(steps.map(s => s.id === stepId ? { ...s, ...updates } : s));
+    setHasChanges(true);
+  };
+
+  const handleUpdateStepConfig = (stepId: string, updates: any) => {
+    setSteps(steps.map(s => 
+      s.id === stepId ? { ...s, config: { ...s.config, ...updates } } : s
+    ));
+    setHasChanges(true);
+  };
+
+  const removeStep = (id: string) => {
+    // Also remove all descendants
+    const getDescendantIds = (parentId: string): string[] => {
+      const children = steps.filter(s => s.parent_step_id === parentId);
+      let ids = children.map(c => c.id);
+      children.forEach(c => {
+        ids = [...ids, ...getDescendantIds(c.id)];
+      });
+      return ids;
+    };
+
+    const idsToRemove = [id, ...getDescendantIds(id)];
+    setSteps(steps.filter(s => !idsToRemove.includes(s.id)));
+    setHasChanges(true);
+  };
+
+  const rootStep = steps.find(s => !s.parent_step_id);
 
   const handleOptimizeStep = async (stepId: string) => {
     const step = steps.find(s => s.id === stepId);
@@ -409,46 +580,27 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
   };
 
-  const addStep = () => {
-    const newStep: Step = {
-      id: `new-${Date.now()}`,
-      step_number: steps.length + 1,
-      step_type: 'email',
-      delay_amount: 2,
-      delay_unit: 'days',
-      attachments: [],
-      config: {
-        subject: '',
-        body_html: '',
-      },
-    };
-    setSteps([...steps, newStep]);
-    setHasChanges(true);
-  };
-
-  const handleUpdateStep = (stepId: string, updates: Partial<Step>) => {
-    setSteps(steps.map(s => s.id === stepId ? { ...s, ...updates } : s));
-    setHasChanges(true);
-  };
-
-  const handleUpdateStepConfig = (stepId: string, updates: any) => {
-    setSteps(steps.map(s => 
-      s.id === stepId ? { ...s, config: { ...s.config, ...updates } } : s
-    ));
-    setHasChanges(true);
-  };
-
-  const removeStep = (id: string) => {
-    const filtered = steps.filter(s => s.id !== id);
-    const reordered = filtered.map((s, i) => ({ ...s, step_number: i + 1 }));
-    setSteps(reordered);
-    if (activeStepId === id) setActiveStepId(reordered[0]?.id || null);
-    setHasChanges(true);
+  const handleActivate = async () => {
+    if (!sequence?.mailbox_id) {
+      toast.error("Please select a mailbox in Settings first");
+      setActiveTab('settings');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await api.activateSequence(sequenceId, activeProjectId!);
+      toast.success("Sequence activated!");
+      loadData();
+    } catch (error) {
+      toast.error("Activation failed");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAssignRecipients = async (recipients: any[]) => {
     if (!sequenceId || !activeProjectId) return;
-    setLoading(true); // Using general loading for this
+    setLoading(true);
     try {
       await api.addSequenceRecipients(sequenceId, recipients, activeProjectId);
       toast.success(`${recipients.length} recipients assigned`);
@@ -457,6 +609,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       toast.error('Failed to assign recipients');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRemoveRecipient = async (contactId: string) => {
+    if (!window.confirm("Are you sure you want to remove this contact from the sequence?")) return;
+    try {
+      await api.removeSequenceRecipient(sequenceId, contactId);
+      loadData();
+    } catch (error) {
+      console.error("Failed to remove recipient:", error);
     }
   };
 
@@ -543,34 +705,39 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       <main className="flex-1 flex overflow-hidden">
         {activeTab === 'builder' && (
           <div className="flex-1 overflow-y-auto bg-[#0d1117] relative custom-scrollbar">
-            <div className="max-w-xl mx-auto py-12 px-6">
-              <div className="space-y-6">
-                {steps.map((step, idx) => (
-                  <SequenceEmailStepCard
-                    key={step.id}
-                    step={step}
-                    index={idx}
-                    isFirst={idx === 0}
+            <div className="max-w-4xl mx-auto py-12 px-6">
+              <div className="flex flex-col items-center">
+                {rootStep ? (
+                  <StepNode 
+                    step={rootStep} 
+                    allSteps={steps} 
+                    isFirst={true}
                     onUpdate={handleUpdateStep}
                     onUpdateConfig={handleUpdateStepConfig}
-                    onRemove={() => removeStep(step.id)}
+                    onRemove={removeStep}
+                    onAddStep={addStep}
+                    onAddCondition={addCondition}
                     isOptimizing={isOptimizing}
                     handleOptimizeStep={handleOptimizeStep}
                   />
-                ))}
-
-                <div className="pt-8 flex flex-col items-center">
-                  <div className="h-8 w-px bg-white/10" />
-                  <button 
-                    onClick={addStep}
-                    className="flex items-center gap-2 px-6 py-3 rounded-2xl border-2 border-dashed border-white/10 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-sm font-bold group"
-                  >
-                    <div className="size-6 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-teal-500/20 transition-all">
-                      <Plus className="size-3.5" />
+                ) : (
+                  <div className="flex flex-col items-center py-20">
+                    <div className="size-20 rounded-[40px] bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-6">
+                      <Mail className="size-8 text-teal-400" />
                     </div>
-                    Add step
-                  </button>
-                </div>
+                    <h3 className="text-xl font-bold text-white mb-2">Build Your Flow</h3>
+                    <p className="text-sm text-slate-500 max-w-sm mb-8 text-center">
+                      Start by adding your first email step. You can later add conditions and branches to automate your outreach.
+                    </p>
+                    <button 
+                      onClick={() => addStep(null, 'default')}
+                      className="flex items-center gap-2 px-8 py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
+                    >
+                      <Plus className="size-5" />
+                      Add First Step
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

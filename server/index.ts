@@ -1003,10 +1003,13 @@ app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     );
 
     const recipients = await db.all(`
-      SELECT r.*, c.email, c.first_name, c.last_name, c.company, e.status as enrollment_status, e.current_step_number
+      SELECT r.*, c.email, c.first_name, c.last_name, c.company, 
+             e.status as enrollment_status, e.current_step_id,
+             s.step_type as current_step_type, s.step_number as current_step_number
       FROM outreach_sequence_recipients r
       LEFT JOIN outreach_contacts c ON r.contact_id = c.id
       LEFT JOIN outreach_sequence_enrollments e ON r.sequence_id = e.sequence_id AND r.contact_id = e.contact_id
+      LEFT JOIN outreach_sequence_steps s ON e.current_step_id = s.id
       WHERE r.sequence_id = ?
     `, id);
 
@@ -1069,8 +1072,12 @@ app.put("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
       // Insert new steps
       for (const [index, step] of steps.entries()) {
         await db.run(`
-          INSERT INTO outreach_sequence_steps (id, sequence_id, project_id, step_number, step_type, config, delay_amount, delay_unit, attachments)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO outreach_sequence_steps (
+            id, sequence_id, project_id, step_number, step_type, 
+            config, delay_amount, delay_unit, attachments,
+            parent_step_id, condition_type, branch_path
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, 
           step.id || uuidv4(), 
           id, 
@@ -1080,7 +1087,10 @@ app.put("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
           JSON.stringify(step.config),
           step.delay_amount || 2,
           step.delay_unit || 'days',
-          typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || [])
+          typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || []),
+          step.parent_step_id || null,
+          step.condition_type || null,
+          step.branch_path || 'default'
         );
       }
     });

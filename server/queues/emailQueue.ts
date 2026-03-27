@@ -128,20 +128,49 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         // Send via processEmail
         await processEmail(emailId);
+        
+        // Record event
+        await db.prepare(`
+          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(uuidv4(), contactId, projectId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+
+        // Schedule next step (default path)
+        await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
+      } else if (step.step_type === 'condition') {
+        // Evaluation Engine Logic
+        const parentEmailStepId = step.parent_step_id;
+        if (!parentEmailStepId) {
+          console.error(`[Sequence] Condition step ${stepId} has no parent email step`);
+          return;
+        }
+
+        // Check for events related to the parent email step for this contact
+        // We look for 'email_opened', 'email_clicked', or 'email_replied' based on condition_type
+        const eventTypeMapping: Record<string, string> = {
+          'opened': 'email_opened',
+          'clicked': 'email_clicked',
+          'replied': 'email_replied'
+        };
+        const targetEventType = eventTypeMapping[step.condition_type] || 'email_opened';
+
+        const event = await db.prepare(`
+          SELECT * FROM outreach_events 
+          WHERE contact_id = ? AND type = ? AND metadata LIKE ?
+        `).get(contactId, targetEventType, `%${parentEmailStepId}%`) as any;
+
+        const branchPath = event ? 'yes' : 'no';
+        console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);
+
+        // Record condition execution
+        await db.prepare(`
+          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(uuidv4(), contactId, projectId, 'sequence_condition_evaluated', JSON.stringify({ sequenceId, stepId, result: branchPath }));
+
+        // Schedule next step based on branch
+        await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
       }
-
-      // 4. Record event
-      await db.prepare(`
-        INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(uuidv4(), contactId, projectId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
-
-      // 5. Schedule next step
-      await db.prepare(
-        'UPDATE outreach_sequence_enrollments SET current_step_number = ? WHERE sequence_id = ? AND contact_id = ?'
-      ).run(stepNumber + 1, sequenceId, contactId);
-
-      await scheduleNextStep(projectId, sequenceId, contactId, stepNumber + 1);
 
     } catch (error) {
       console.error(`[Sequence] Error executing step ${stepNumber} for sequence ${sequenceId}:`, error);

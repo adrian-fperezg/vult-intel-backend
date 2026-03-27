@@ -657,6 +657,9 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         step_number INTEGER NOT NULL,
         step_type TEXT NOT NULL,
+        parent_step_id TEXT REFERENCES outreach_sequence_steps(id) ON DELETE SET NULL,
+        condition_type TEXT, -- 'opened', 'clicked', 'replied'
+        branch_path TEXT,    -- 'yes', 'no', 'default'
         config TEXT NOT NULL DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -695,6 +698,7 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active',
         current_step_number INTEGER DEFAULT 1,
+        current_step_id TEXT REFERENCES outreach_sequence_steps(id) ON DELETE SET NULL,
         enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         completed_at TIMESTAMP,
         paused_at TIMESTAMP,
