@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, Plus, Trash2, ArrowRight, Settings, 
@@ -420,11 +420,47 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
   
-  // DAG States
+  // DAG States & Scroll Persistence
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
   
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Restore scroll
+  useEffect(() => {
+    if (!loading && steps.length > 0 && canvasRef.current) {
+      const saved = sessionStorage.getItem(`sequence_scroll_${sequenceId}`);
+      if (saved) {
+        try {
+          const { x, y } = JSON.parse(saved);
+          canvasRef.current.scrollTo({ left: x, top: y, behavior: 'instant' });
+        } catch (e) {
+          console.error('Failed to restore scroll position', e);
+        }
+      }
+    }
+  }, [loading, steps.length, sequenceId]);
+
+  const handleScroll = useCallback(() => {
+    if (canvasRef.current) {
+      const { scrollLeft, scrollTop } = canvasRef.current;
+      sessionStorage.setItem(`sequence_scroll_${sequenceId}`, JSON.stringify({ x: scrollLeft, y: scrollTop }));
+    }
+  }, [sequenceId]);
+
+  const onScroll = () => {
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(handleScroll, 200);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [sequenceId]);
@@ -762,7 +798,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
       <main className="flex-1 flex overflow-hidden">
         {activeTab === 'builder' && (
-          <div className="flex-1 overflow-auto bg-[#0d1117] relative custom-scrollbar">
+          <div 
+            ref={canvasRef}
+            onScroll={onScroll}
+            className="flex-1 overflow-auto bg-[#0d1117] relative custom-scrollbar"
+          >
             <div className="w-full py-12 px-20">
               <div className="flex flex-col items-start min-w-max">
                 {rootStep ? (
