@@ -11,6 +11,7 @@ import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon'
 import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { AliasManager } from './components/AliasManager';
+import DomainVerificationManager from './components/DomainVerificationManager';
 
 type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications';
 
@@ -306,6 +307,8 @@ export default function OutreachSettings() {
                 <Plus className="size-4" /> Add Mailbox
               </TealButton>
             </div>
+
+            <DomainVerificationManager />
 
             {/* Error alert */}
             {connectError && (

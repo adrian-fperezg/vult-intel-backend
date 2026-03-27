@@ -649,7 +649,7 @@ export const initDb = async () => {
       CREATE TABLE IF NOT EXISTS outreach_sequence_enrollments (
         id TEXT PRIMARY KEY,
         sequence_id TEXT NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
-        contact_id TEXT NOT NULL REFERENCES outreach_contacts(id) ON DELETE CASCADE,
+        contact_id NOT NULL REFERENCES outreach_contacts(id) ON DELETE CASCADE,
         project_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active',
         current_step_number INTEGER DEFAULT 1,
@@ -657,6 +657,20 @@ export const initDb = async () => {
         completed_at TIMESTAMP,
         paused_at TIMESTAMP,
         UNIQUE(sequence_id, contact_id)
+      )
+    `);
+
+    // 21. Verified Domains
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_verified_domains (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        verification_token TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        last_verified_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, domain)
       )
     `);
 

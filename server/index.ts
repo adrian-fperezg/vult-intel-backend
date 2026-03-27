@@ -35,6 +35,7 @@ import { getAccountInformation } from "./lib/outreach/hunter.js";
 import { getZeroBounceCredits } from "./lib/outreach/zerobounce.js";
 import { getPDLUsage } from "./lib/outreach/pdl.js";
 import { verifyEmailWaterfall } from "./lib/outreach/verifier.js";
+import { extractDomain, generateVerificationToken, verifyDomainDns } from "./lib/outreach/domainVerification.js";
 
 
 const app = express();
@@ -435,8 +436,28 @@ app.get("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) => 
 // Manually add an alias (useful for SMTP mailboxes that might have aliases)
 app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) => {
   const { id } = req.params;
-  const { email, name } = req.body;
+  const { email, name, projectId } = req.body;
+  const project_id = projectId || req.query.project_id;
+
+  if (!email) return res.status(400).json({ error: "Email is required" });
+  if (!project_id) return res.status(400).json({ error: "project_id is required" });
+
   try {
+    const domain = extractDomain(email);
+    
+    // Check if the domain is verified for this project
+    const verifiedDomain = await db.prepare(
+      "SELECT * FROM outreach_verified_domains WHERE project_id = ? AND domain = ? AND status = 'verified'"
+    ).get(project_id, domain) as any;
+
+    if (!verifiedDomain) {
+      return res.status(403).json({ 
+        error: "Domain not verified", 
+        code: "DOMAIN_NOT_VERIFIED", 
+        domain: domain 
+      });
+    }
+
     const aliasId = uuidv4();
     let updatedAliases: { email: string; name: string }[] = [];
 
@@ -466,7 +487,6 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
     // Return updated aliases so UI can refresh immediately
     res.json({ success: true, id: aliasId, email, name, aliases: updatedAliases });
   } catch (err: any) {
-    // Unique constraint violation: Postgres 23505 or SQLite error message
     if (err.code === '23505' || (err.message && err.message.includes('UNIQUE constraint failed'))) {
       return res.status(400).json({ error: "Alias already exists" });
     }
@@ -559,6 +579,95 @@ app.delete("/api/outreach/mailboxes/:id", async (req: AuthRequest, res) => {
   } catch (err: any) {
     console.error(`[DELETE /mailboxes/${id}] Fatal Error:`, err);
     res.status(500).json({ error: "Failed to disconnect mailbox", message: err.message });
+  }
+});
+
+// ─── VERIFIED DOMAINS ────────────────────────────────────────────────────────
+
+// GET /api/outreach/verified-domains
+app.get("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
+  const { project_id } = req.query as { project_id?: string };
+  if (!project_id) return res.status(400).json({ error: "project_id is required" });
+
+  try {
+    const domains = await db.prepare(
+      "SELECT * FROM outreach_verified_domains WHERE project_id = ? ORDER BY created_at DESC"
+    ).all(project_id);
+    res.json(domains);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/outreach/verified-domains
+app.post("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
+  const { project_id, domain } = req.body;
+  if (!project_id || !domain) {
+    return res.status(400).json({ error: "project_id and domain are required" });
+  }
+
+  const cleanDomain = domain.toLowerCase().trim();
+  const token = generateVerificationToken();
+  const id = uuidv4();
+
+  try {
+    // Check if it already exists for this project
+    const existing = await db.prepare("SELECT * FROM outreach_verified_domains WHERE project_id = ? AND domain = ?").get(project_id, cleanDomain) as any;
+    
+    if (existing) {
+       await db.prepare(`
+        UPDATE outreach_verified_domains SET
+          verification_token = ?,
+          status = 'pending'
+        WHERE id = ?
+      `).run(token, existing.id);
+      return res.json({ ...existing, verification_token: token, status: 'pending' });
+    }
+
+    await db.prepare(`
+      INSERT INTO outreach_verified_domains (id, project_id, domain, verification_token, status)
+      VALUES (?, ?, ?, ?, 'pending')
+    `).run(id, project_id, cleanDomain, token);
+
+    res.status(201).json({ id, domain: cleanDomain, verification_token: token, status: 'pending' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/outreach/verified-domains/:id/verify
+app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    const domainData = await db.prepare("SELECT * FROM outreach_verified_domains WHERE id = ?").get(id) as any;
+    if (!domainData) return res.status(404).json({ error: "Domain not found" });
+
+    const isVerified = await verifyDomainDns(domainData.domain, domainData.verification_token);
+
+    if (isVerified) {
+      await db.prepare(
+        `UPDATE outreach_verified_domains SET status = 'verified', last_verified_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).run(id);
+      res.json({ success: true, status: 'verified' });
+    } else {
+      res.status(400).json({ 
+        error: "DNS verification failed. TXT record not found or incorrect.", 
+        status: 'pending' 
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/outreach/verified-domains/:id
+app.delete("/api/outreach/verified-domains/:id", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    await db.prepare("DELETE FROM outreach_verified_domains WHERE id = ?").run(id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

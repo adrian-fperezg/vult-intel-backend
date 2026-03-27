@@ -587,5 +587,14 @@ export function useOutreachApi() {
       get<any[]>(`/mailboxes/${mailboxId}/aliases`),
     syncGmailAliases: (mailboxId: string) => 
       post<any>(`/mailboxes/${mailboxId}/sync-aliases`, {}),
+    // Domain Verification
+    fetchVerifiedDomains: () => 
+      get<any[]>('/verified-domains'),
+    addVerifiedDomain: (domain: string) => 
+      post<any>('/verified-domains', { domain }),
+    verifyDomain: (id: string) => 
+      post<any>(`/verified-domains/${id}/verify`, {}),
+    deleteVerifiedDomain: (id: string) => 
+      del(`/verified-domains/${id}`),
   };
 }

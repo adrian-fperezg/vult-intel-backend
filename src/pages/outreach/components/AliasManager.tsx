@@ -20,7 +20,7 @@ export const AliasManager: React.FC<AliasManagerProps> = ({
   provider,
   onAliasesUpdated,
 }) => {
-  const { addAlias, syncGmailAliases } = useOutreachApi();
+  const { addAlias, syncGmailAliases, fetchAliases } = useOutreachApi();
   const [aliases, setAliases] = useState<Alias[]>(initialAliases || []);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -32,7 +32,7 @@ export const AliasManager: React.FC<AliasManagerProps> = ({
   const loadAliases = React.useCallback(async () => {
     setLoading(true);
     try {
-      const data = await useOutreachApi().fetchAliases(mailboxId);
+      const data = await fetchAliases(mailboxId);
       if (data) {
         setAliases(data);
         onAliasesUpdated(data);
@@ -42,7 +42,7 @@ export const AliasManager: React.FC<AliasManagerProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [mailboxId, onAliasesUpdated]);
+  }, [mailboxId, onAliasesUpdated, fetchAliases]);
 
   React.useEffect(() => {
     if (aliases.length === 0) {
@@ -81,7 +81,11 @@ export const AliasManager: React.FC<AliasManagerProps> = ({
         setNewName('');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to add alias');
+      if (err.message?.includes('DOMAIN_NOT_VERIFIED')) {
+        setError(`Domain not verified. Please verify the domain in the "Verified Domains" section above first.`);
+      } else {
+        setError(err.message || 'Failed to add alias');
+      }
     } finally {
       setIsAdding(false);
     }
