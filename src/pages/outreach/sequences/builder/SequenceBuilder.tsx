@@ -403,10 +403,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   // DAG States
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
-
+  
   useEffect(() => {
     loadData();
-    
+  }, [sequenceId]);
+
+  useEffect(() => {
     // Warn about unsaved changes
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges) {
@@ -416,7 +418,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [sequenceId, hasUnsavedChanges]);
+  }, [hasUnsavedChanges]);
 
 
   const loadData = async () => {
@@ -441,10 +443,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         }));
         setSteps(mappedSteps);
       }
-      setMailboxes(mailboxData || []);
-      setIdentities(identityData || []);
-    } catch (error) {
-      toast.error("Failed to load sequence");
+      setMailboxes(mailboxData);
+      setIdentities(identityData);
+    } catch (err) {
+      toast.error('Failed to load sequence data');
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -477,6 +480,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       
       setHasUnsavedChanges(false);
       setLastSavedTime(new Date());
+      toast.success('Sequence saved successfully');
     } catch (err) {
       toast.error('Failed to save changes');
       console.error('Save error:', err);

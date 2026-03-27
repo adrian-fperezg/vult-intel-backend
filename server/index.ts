@@ -1066,12 +1066,24 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
 
   try {
     await db.transaction(async () => {
-      // Clear existing steps
+      // 1. Create a mapping of frontend step IDs to backend UUIDs
+      // This is CRITICAL for resolving parent_step_id for newly created steps
+      const idMap = new Map<string, string>();
+      for (const step of steps) {
+        // If it's a real UUID, keep it. If it's "new-...", generate a new UUID.
+        const dbId = step.id && !step.id.startsWith('new-') ? step.id : uuidv4();
+        idMap.set(step.id, dbId);
+      }
+
+      // 2. Clear existing steps
       await db.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ?", id);
 
-      // Insert new steps
+      // 3. Insert new steps, resolving parent_step_id using the map
       for (const [index, step] of steps.entries()) {
         try {
+          const dbId = idMap.get(step.id)!;
+          const parentDbId = step.parent_step_id ? (idMap.get(step.parent_step_id) || step.parent_step_id) : null;
+
           await db.run(`
             INSERT INTO outreach_sequence_steps (
               id, sequence_id, project_id, step_number, step_type, 
@@ -1080,7 +1092,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, 
-            step.id && !step.id.startsWith('new-') ? step.id : uuidv4(), 
+            dbId, 
             id, 
             project_id, 
             index + 1, 
@@ -1089,7 +1101,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
             step.delay_amount || 2,
             step.delay_unit || 'days',
             typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || []),
-            step.parent_step_id || null,
+            parentDbId,
             step.condition_type || null,
             step.branch_path || 'default'
           );
