@@ -320,6 +320,7 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
 
     const identities: any[] = [];
 
+    // Flatten aliases
     for (const mb of mailboxes as any[]) {
       // Add primary mailbox as an identity
       identities.push({
@@ -331,26 +332,31 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
       });
 
       // Add aliases
-      const aliases = await db.all(`
-        SELECT email, name 
-        FROM outreach_mailbox_aliases 
-        WHERE mailbox_id = ? AND is_verified = 1
-      `, mb.id);
+      try {
+        const aliases = await db.all(`
+          SELECT email, name 
+          FROM outreach_mailbox_aliases 
+          WHERE mailbox_id = ? AND is_verified = ${db.isPostgres ? 'TRUE' : '1'}
+        `, mb.id);
 
-      for (const alias of aliases as any[]) {
-        identities.push({
-          mailbox_id: mb.id,
-          email: alias.email,
-          name: alias.name,
-          connection_type: mb.connection_type,
-          is_alias: true
-        });
+        for (const alias of aliases as any[]) {
+          identities.push({
+            mailbox_id: mb.id,
+            email: alias.email,
+            name: alias.name || mb.name,
+            connection_type: mb.connection_type,
+            is_alias: true
+          });
+        }
+      } catch (aliasErr: any) {
+        console.error(`[GET /mailboxes/identities] Failed to fetch aliases for mailbox ${mb.id}:`, aliasErr.message);
+        // Continue with other mailboxes even if one fails
       }
     }
 
     res.json(identities);
   } catch (err: any) {
-    console.error("[GET /mailboxes/identities] Error:", err);
+    console.error("[GET /mailboxes/identities] CRITICAL ERROR:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch identities" });
   }
 });
@@ -392,8 +398,8 @@ app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
       VALUES (?, ?, ?, ?, ?, 'smtp_imap', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `).run(
       mailboxId, userId, pId, email, name || email, 
-      smtp_host, Number(smtp_port), smtp_secure ? 1 : 0, sUser, encryptedSmtpPass,
-      imap_host || null, imap_port ? Number(imap_port) : null, imap_secure ? 1 : 0, iUser, encryptedImapPass,
+      smtp_host, Number(smtp_port), !!smtp_secure, sUser, encryptedSmtpPass,
+      imap_host || null, imap_port ? Number(imap_port) : null, !!imap_secure, iUser, encryptedImapPass,
     );
 
     res.status(201).json({ id: mailboxId, email, name });
@@ -425,7 +431,7 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
       // 1. Insert into separate table
       await db.prepare(`
         INSERT INTO outreach_mailbox_aliases (id, mailbox_id, email, name, is_verified)
-        VALUES (?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ${db.isPostgres ? 'TRUE' : '1'})
       `).run(uuidv4(), id, email, name);
 
       // 2. Sync aliases JSON array in outreach_mailboxes
@@ -1824,7 +1830,7 @@ app.patch("/api/outreach/compose/:id", upload.array('attachments', 5), async (re
 
   if (newFiles.length > 0) {
     try {
-      const existingRecord = await db.get("SELECT attachments FROM outreach_individual_emails WHERE id = ? AND user_id = ?", id, userId);
+      const existingRecord = await db.get<{ attachments: string }>("SELECT attachments FROM outreach_individual_emails WHERE id = ? AND user_id = ?", id, userId);
       const existingAttachments = JSON.parse(existingRecord?.attachments || '[]');
       const updatedAttachments = [...existingAttachments, ...newFiles];
       fields.push("attachments = ?");
@@ -2098,9 +2104,10 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     }));
 
     // 7. Daily Data
+    const dayExpr = db.isPostgres ? "TO_CHAR(created_at, 'YYYY-MM-DD')" : "strftime('%Y-%m-%d', created_at)";
     const dailyData = await db.prepare(`
       SELECT 
-        strftime('%Y-%m-%d', created_at) as day,
+        ${dayExpr} as day,
         count(CASE WHEN type = 'sent' THEN 1 END) as sent,
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies

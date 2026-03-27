@@ -283,8 +283,8 @@ export async function fetchGmailAliases(mailboxId: string) {
           mailboxId,
           aliasEmail,
           alias.displayName || '',
-          alias.sendAsEmail === alias.replyToAddress ? 1 : 0, // approximation for default
-          alias.verificationStatus === 'accepted' ? 1 : 0
+          alias.sendAsEmail === alias.replyToAddress, 
+          alias.verificationStatus === 'accepted'
         );
       }
     });
