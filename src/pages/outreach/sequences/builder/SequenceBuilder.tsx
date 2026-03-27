@@ -5,7 +5,7 @@ import {
   Users, Plus, Trash2, ArrowRight, Settings, 
   Search, Filter, Mail, ChevronRight, X,
   Save, Clock, Paperclip, AlertCircle, Check, FileText,
-  Mailbox, Globe, ShieldCheck, UserPlus, Play, ArrowLeft
+  Mailbox, Globe, ShieldCheck, UserPlus, Play, Pause, ArrowLeft
 } from 'lucide-react';
 import { TealButton, OutreachBadge, OutreachSectionHeader } from '../../OutreachCommon';
 import { cn } from '@/lib/utils';
@@ -766,6 +766,20 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
   };
 
+  const handleToggleStatus = async (newStatus: 'active' | 'paused') => {
+    setIsSaving(true);
+    try {
+      await api.updateSequence(sequenceId, { status: newStatus });
+      setSequence(prev => prev ? { ...prev, status: newStatus } : null);
+      toast.success(`Sequence ${newStatus === 'active' ? 'resumed' : 'paused'}`);
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to ${newStatus === 'active' ? 'resume' : 'pause'} sequence`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleAssignRecipients = async (recipients: any[]) => {
     if (!sequenceId || !activeProjectId) return;
     
@@ -900,9 +914,32 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             Save Sequence
           </TealButton>
           
-          {sequence?.status === 'active' ? (
-            <OutreachBadge variant="green" dot className="h-[34px] px-4 flex items-center">Active</OutreachBadge>
-          ) : (
+          {sequence?.status === 'active' && (
+            <div className="flex items-center gap-3">
+              <OutreachBadge variant="green" dot className="h-[34px] px-4 flex items-center">Active</OutreachBadge>
+              <button 
+                onClick={() => handleToggleStatus('paused')}
+                className="flex items-center gap-2 h-[34px] px-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 transition-all text-[10px] font-black uppercase tracking-widest"
+              >
+                <Pause className="size-3" />
+                Pause Sequence
+              </button>
+            </div>
+          )}
+
+          {sequence?.status === 'paused' && (
+            <div className="flex items-center gap-3">
+              <OutreachBadge variant="yellow" dot className="h-[34px] px-4 flex items-center">Paused</OutreachBadge>
+              <TealButton 
+                className="h-[34px] px-6 text-[10px] font-black uppercase tracking-widest rounded-xl" 
+                onClick={() => handleToggleStatus('active')}
+              >
+                <Play className="size-3.5" /> Resume Sequence
+              </TealButton>
+            </div>
+          )}
+
+          {sequence?.status === 'draft' && (
             <TealButton 
               className="h-[34px] px-6 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-teal-500/5" 
               onClick={handleActivate}

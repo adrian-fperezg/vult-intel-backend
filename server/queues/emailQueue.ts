@@ -74,6 +74,13 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         return;
       }
 
+      // Check Parent Sequence Status (Handle Pause)
+      const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
+      if (!sequence || sequence.status !== 'active') {
+        console.log(`[Sequence] Skipping execution for sequence ${sequenceId}: Sequence status is ${sequence?.status || 'missing'}`);
+        return;
+      }
+
       // Heartbeat: Log start of processing
       console.log(`[Sequence] [Heartbeat] Processing step ${stepId} (${stepNumber}) for contact ${contactId} in sequence ${sequenceId}`);
 
@@ -91,7 +98,6 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       if (!step) throw new Error('Step not found');
 
       if (step.step_type === 'email') {
-        const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
         const contact = await db.prepare('SELECT * FROM outreach_contacts WHERE id = ?').get(contactId) as any;
         const config = typeof step.config === 'string' ? JSON.parse(step.config) : step.config;
 
