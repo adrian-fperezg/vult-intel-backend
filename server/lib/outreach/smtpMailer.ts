@@ -13,7 +13,7 @@ export interface SmtpConfig {
 /**
  * Sends an email via SMTP.
  */
-export async function sendSmtpMessage(mailboxId: string, emailData: { to: string, subject: string, bodyHtml: string, fromEmail?: string, fromName?: string }) {
+export async function sendSmtpMessage(mailboxId: string, emailData: { to: string, subject: string, bodyHtml: string, fromEmail?: string, fromName?: string, attachments?: any[] }) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   
   if (!mailbox) throw new Error("Mailbox not found");
@@ -43,6 +43,11 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
     to: emailData.to,
     subject: emailData.subject,
     html: emailData.bodyHtml,
+    attachments: (emailData.attachments || []).map(a => ({
+      filename: a.filename,
+      path: a.path,
+      contentType: a.mimetype
+    }))
   });
 
   console.log(`[SMTP] Email sent successfully. Message ID: ${info.messageId}`);

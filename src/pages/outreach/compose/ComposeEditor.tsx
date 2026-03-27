@@ -44,6 +44,9 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
     from_email: '',
     from_name: ''
   });
+  const [existingAttachments, setExistingAttachments] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [status, setStatus] = useState<'draft' | 'scheduled' | 'sent'>('draft');
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -116,6 +119,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
             from_email: data.from_email || '',
             from_name: data.from_name || ''
           });
+          setExistingAttachments(JSON.parse(data.attachments || '[]'));
           setStatus(data.status);
         }
       })
@@ -137,14 +141,31 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
 
     setIsSaving(true);
     try {
+      const formData = new FormData();
+      Object.entries(form).forEach(([key, value]) => {
+        if (value) formData.append(key, value as any);
+      });
+      attachments.forEach(file => {
+        formData.append('attachments', file as any);
+      });
+
       if (emailId === 'new') {
-        await createIndividualEmail({ ...form, status: 'draft' });
+        await createIndividualEmail(formData);
         if (showToast) toast.success('Draft saved');
-        onClose(); // Alternatively, we could navigate to the new ID, but onClose is simpler
+        onClose();
         refreshSidebar();
       } else {
-        await updateIndividualEmail(emailId, { ...form });
+        // Use FormData if there are new attachments, otherwise JSON is fine
+        if (attachments.length > 0) {
+          await updateIndividualEmail(emailId, formData);
+        } else {
+          await updateIndividualEmail(emailId, { ...form });
+        }
         if (showToast) toast.success('Draft saved');
+        setAttachments([]); // Clear new attachments after successful upload
+        // Reload existing attachments
+        const updated = await getIndividualEmail(emailId);
+        if (updated) setExistingAttachments(JSON.parse(updated.attachments || '[]'));
         refreshSidebar();
       }
     } catch (err: any) {
@@ -162,10 +183,18 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
     }
     setIsSending(true);
     try {
-      // If it's a new email, we must create it first before sending
       let targetId = emailId;
       if (emailId === 'new') {
-        const created = await createIndividualEmail({ ...form, status: 'draft' });
+        const formData = new FormData();
+        Object.entries(form).forEach(([key, value]) => {
+          if (value) formData.append(key, value as any);
+        });
+        attachments.forEach(file => {
+          formData.append('attachments', file as any);
+        });
+        formData.append('status', 'draft');
+
+        const created = await createIndividualEmail(formData);
         targetId = created.id; 
       } else {
         await updateIndividualEmail(emailId, { ...form });
@@ -296,7 +325,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
               </div>
               <button
                 onClick={() => {
-                  window.location.href = `${process.env.NEXT_PUBLIC_API_URL || ''}/api/outreach/auth/google`;
+                  window.location.href = `${import.meta.env.VITE_OUTREACH_API_URL || ''}/api/outreach/auth/google`;
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors shrink-0"
               >
@@ -466,6 +495,68 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
               onChange={(val) => setForm({ ...form, body_html: val })}
               disabled={isReadOnly}
             />
+          </div>
+
+          {/* Attachments Section */}
+          <div className="mt-8 space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Attachments</label>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 text-xs font-bold text-teal-400 hover:text-teal-300 transition-colors"
+                >
+                  <Paperclip className="size-3" />
+                  Add Files
+                </button>
+              )}
+              <input 
+                type="file"
+                ref={fileInputRef}
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  setAttachments(prev => [...prev, ...files]);
+                  e.target.value = ''; // Reset to allow same file again
+                }}
+              />
+            </div>
+
+            {(existingAttachments.length > 0 || attachments.length > 0) && (
+              <div className="grid grid-cols-2 gap-2">
+                {/* Existing Attachments */}
+                {existingAttachments.map((file, idx) => (
+                  <div key={`existing-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-teal-500/5 border border-teal-500/10 group">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Paperclip className="size-3.5 text-teal-400 shrink-0" />
+                      <span className="text-xs text-slate-300 truncate">{file.filename}</span>
+                      <span className="text-[10px] text-slate-500 shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* New Attachments */}
+                {attachments.map((file, idx) => (
+                  <div key={`new-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10 group">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Paperclip className="size-3.5 text-slate-500 shrink-0" />
+                      <span className="text-xs text-slate-300 truncate">{file.name}</span>
+                      <span className="text-[10px] text-slate-500 shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
+                    </div>
+                    {!isReadOnly && (
+                      <button 
+                        onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
+                        className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>

@@ -148,6 +148,7 @@ interface TealButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
   size?: 'sm' | 'md' | 'lg';
   children: React.ReactNode;
   loading?: boolean;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
 }
 
 export function TealButton({ variant = 'solid', size = 'md', children, className, loading, ...props }: TealButtonProps) {

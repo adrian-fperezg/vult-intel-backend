@@ -6,6 +6,8 @@ import { getValidGmailClient } from '../oauth.js';
 import redis from '../redis.js';
 import { sendSmtpMessage } from '../lib/outreach/smtpMailer.js';
 import { pollImap } from '../lib/outreach/imapPoller.js';
+// @ts-ignore
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
 dotenv.config();
 
@@ -183,13 +185,16 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
+  const attachments = email.attachments ? JSON.parse(email.attachments) : [];
+
   if (mailbox.connection_type === 'smtp') {
     const result = await sendSmtpMessage(mailboxId, {
       to: email.to_email,
       subject: email.subject || "(No Subject)",
       bodyHtml: email.body_html || "",
       fromEmail: email.from_email,
-      fromName: email.from_name
+      fromName: email.from_name,
+      attachments
     });
 
     console.log(`[processEmail] SMTP email sent. messageId: ${result.messageId}`);
@@ -214,18 +219,22 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const fromName = email.from_name || mailbox.name;
   const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
-  const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
-  const str = [
-    `Content-Type: text/html; charset="UTF-8"`,
-    `MIME-Version: 1.0`,
-    `To: ${to}`,
-    `From: ${fromHeader}`,
-    `Subject: ${utf8Subject}`,
-    ``,
-    `${body}`,
-  ].join("\r\n");
+  const mailOptions = {
+    from: fromHeader,
+    to: to,
+    subject: subject,
+    html: body,
+    attachments: attachments.map((a: any) => ({
+      filename: a.filename,
+      path: a.path,
+      contentType: a.mimetype
+    }))
+  };
 
-  const encodedMessage = Buffer.from(str)
+  const mail = new MailComposer(mailOptions);
+  const message = await mail.compile().build();
+
+  const encodedMessage = Buffer.from(message)
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")

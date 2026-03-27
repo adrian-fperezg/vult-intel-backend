@@ -63,6 +63,74 @@ export function useOutreachApi() {
     [activeProjectId, authHeaders],
   );
 
+  /** Helper: POST with FormData */
+  const postFormData = useCallback(
+    async <T>(path: string, formData: FormData): Promise<T> => {
+      if (!activeProjectId) throw new Error('No project selected');
+      
+      if (!currentUser) throw new Error('Not authenticated');
+      const token = await currentUser.getIdToken();
+      
+      // Ensure project_id is in the FormData
+      if (!formData.has('project_id')) {
+        formData.append('project_id', activeProjectId);
+      }
+
+      const res = await fetch(`${BASE_URL}${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // Don't set Content-Type, fetch will set it with the correct boundary
+        },
+        body: formData,
+      });
+      
+      if (!res.ok) {
+        let errorMsg = `POST ${path} failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+        } catch {
+          // No JSON body
+        }
+        throw new Error(errorMsg);
+      }
+      return res.json() as Promise<T>;
+    },
+    [activeProjectId, currentUser],
+  );
+
+  /** Helper: PATCH with FormData */
+  const patchFormData = useCallback(
+    async <T>(path: string, formData: FormData): Promise<T> => {
+      if (!activeProjectId) throw new Error('No project selected');
+      
+      if (!currentUser) throw new Error('Not authenticated');
+      const token = await currentUser.getIdToken();
+      
+      const res = await fetch(`${BASE_URL}${path}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      
+      if (!res.ok) {
+        let errorMsg = `PATCH ${path} failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+        } catch {
+          // No JSON body
+        }
+        throw new Error(errorMsg);
+      }
+      return res.json() as Promise<T>;
+    },
+    [activeProjectId, currentUser],
+  );
+
   /** Helper: POST with project_id in body */
   const post = useCallback(
     async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
@@ -407,13 +475,23 @@ export function useOutreachApi() {
   );
 
   const createIndividualEmail = useCallback(
-    (data: Record<string, unknown>) => post<any>('/compose', data),
-    [post]
+    (data: Record<string, unknown> | FormData) => {
+      if (data instanceof FormData) {
+        return postFormData<any>('/compose', data);
+      }
+      return post<any>('/compose', data);
+    },
+    [post, postFormData]
   );
 
   const updateIndividualEmail = useCallback(
-    (id: string, data: Record<string, unknown>) => patch<any>(`/compose/${id}`, data),
-    [patch]
+    (id: string, data: Record<string, unknown> | FormData) => {
+      if (data instanceof FormData) {
+        return patchFormData<any>(`/compose/${id}`, data);
+      }
+      return patch<any>(`/compose/${id}`, data);
+    },
+    [patch, patchFormData]
   );
 
   const deleteIndividualEmail = useCallback(

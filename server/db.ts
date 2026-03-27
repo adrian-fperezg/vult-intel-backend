@@ -446,6 +446,7 @@ export const initDb = async () => {
         to_email TEXT NOT NULL,
         subject TEXT,
         body_html TEXT,
+        attachments TEXT DEFAULT '[]',
         status TEXT NOT NULL DEFAULT 'draft',
         scheduled_at TIMESTAMP,
         sent_at TIMESTAMP,
@@ -461,7 +462,8 @@ export const initDb = async () => {
     const emailColNames = emailCols.map((c: any) => c.name);
     const newEmailCols = [
       { name: 'from_email', type: 'TEXT' },
-      { name: 'from_name', type: 'TEXT' }
+      { name: 'from_name', type: 'TEXT' },
+      { name: 'attachments', type: 'TEXT DEFAULT \'[]\'' }
     ];
 
     try {

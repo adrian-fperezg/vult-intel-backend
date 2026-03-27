@@ -1,6 +1,9 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 // TASK: Dependency check for critical modules
 try { require('nodemailer'); console.log('[STARTUP] Nodemailer loaded'); } catch(e) { console.error('[STARTUP] Nodemailer MISSING'); }
@@ -59,6 +62,27 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     return res.status(400).json({ error: 'Invalid JSON payload' });
   }
   next();
+});
+
+// Configure Multer for attachments
+const uploadDir = path.join(process.cwd(), 'uploads', 'attachments');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
 // Initialize session handling with Redis for persistence across deployments
@@ -1679,7 +1703,7 @@ app.get("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/compose
-app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
+app.post("/api/outreach/compose", upload.array('attachments', 5), async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const {
     project_id,
@@ -1701,11 +1725,18 @@ app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "mailbox_id is required" });
   if (!to_email) return res.status(400).json({ error: "to_email is required" });
 
+  const attachments = (req.files as any[] || []).map(f => ({
+    filename: f.originalname,
+    path: f.path,
+    size: f.size,
+    mimetype: f.mimetype
+  }));
+
   const id = uuidv4();
   await db.prepare(
     `
-    INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, status, scheduled_at, from_email, from_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, to_email, subject, body_html, attachments, status, scheduled_at, from_email, from_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -1716,6 +1747,7 @@ app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
     to_email,
     subject || "",
     body_html || "",
+    JSON.stringify(attachments),
     status || "draft",
     scheduled_at || null,
     from_email || null,
@@ -1729,7 +1761,7 @@ app.post("/api/outreach/compose", async (req: AuthRequest, res) => {
 });
 
 // PATCH /api/outreach/compose/:id
-app.patch("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
+app.patch("/api/outreach/compose/:id", upload.array('attachments', 5), async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const {
@@ -1777,13 +1809,29 @@ app.patch("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
     fields.push("scheduled_at = ?");
     values.push(scheduled_at);
   }
-  if (from_email !== undefined) {
-    fields.push("from_email = ?");
-    values.push(from_email);
-  }
   if (from_name !== undefined) {
     fields.push("from_name = ?");
     values.push(from_name);
+  }
+
+  // Handle new attachments in PATCH
+  const newFiles = (req.files as any[] || []).map(f => ({
+    filename: f.originalname,
+    path: f.path,
+    size: f.size,
+    mimetype: f.mimetype
+  }));
+
+  if (newFiles.length > 0) {
+    try {
+      const existingRecord = await db.get("SELECT attachments FROM outreach_individual_emails WHERE id = ? AND user_id = ?", id, userId);
+      const existingAttachments = JSON.parse(existingRecord?.attachments || '[]');
+      const updatedAttachments = [...existingAttachments, ...newFiles];
+      fields.push("attachments = ?");
+      values.push(JSON.stringify(updatedAttachments));
+    } catch (err) {
+      console.error("Error updating attachments in PATCH:", err);
+    }
   }
 
   if (fields.length === 0)
