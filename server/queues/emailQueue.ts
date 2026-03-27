@@ -283,7 +283,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   if (mailbox.connection_type === 'smtp') {
     // Hard check for SMTP credentials before even calling sendSmtpMessage
     if (!mailbox.smtp_host || !mailbox.smtp_password) {
-      throw new Error('Cannot send email: Nodemailer transporter is not initialized. Check SMTP credentials.');
+      throw new Error('No mailbox configured for this sequence');
     }
 
     const result = await sendSmtpMessage(mailboxId, {

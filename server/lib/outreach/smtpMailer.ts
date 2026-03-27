@@ -25,14 +25,15 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
   const transporter = nodemailer.createTransport({
     host: mailbox.smtp_host,
     port: mailbox.smtp_port,
-    secure: mailbox.smtp_secure,
+    secure: mailbox.smtp_port === 465, // Correctly handle implicit SSL vs STARTTLS
     auth: {
       user: mailbox.smtp_username || mailbox.email,
       pass: password,
     },
   });
 
-  const fromEmail = emailData.fromEmail || mailbox.email;
+  // Ensure the from address matches the authenticated user to prevent spam rejection
+  const fromEmail = mailbox.smtp_username || mailbox.email;
   const fromName = emailData.fromName || mailbox.name;
   const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
