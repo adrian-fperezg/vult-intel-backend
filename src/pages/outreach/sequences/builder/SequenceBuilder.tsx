@@ -10,7 +10,6 @@ import { TealButton, OutreachBadge, OutreachSectionHeader } from '../../Outreach
 import { cn } from '@/lib/utils';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
-import { useDebounce } from '@/hooks/useDebounce';
 import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
@@ -395,16 +394,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [identities, setIdentities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [activeTab, setActiveTab] = useState<'builder' | 'settings' | 'recipients'>('builder');
   const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
-
-  // Debounced values for auto-save
-  const debouncedSteps = useDebounce(steps, 3000);
-  const debouncedSequence = useDebounce(sequence, 3000);
   
   // DAG States
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
@@ -415,22 +409,15 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     
     // Warn about unsaved changes
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasChanges) {
+      if (hasUnsavedChanges) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [sequenceId, hasChanges]);
+  }, [sequenceId, hasUnsavedChanges]);
 
-  // Auto-save logic (3-second debounce using useDebounce hook)
-  useEffect(() => {
-    // Only auto-save if we have changes and aren't already saving
-    if (hasChanges && !isSaving && !isAutoSaving) {
-      handleSaveAll(true); // Call with silent=true
-    }
-  }, [debouncedSteps, debouncedSequence]);
 
   const loadData = async () => {
     setLoading(true);
@@ -463,12 +450,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
   };
 
-  const handleSaveAll = async (isSilent: boolean = false) => {
+  const handleSaveAll = async () => {
     if (!sequenceId || !activeProjectId || !sequence) return;
     
-    if (isSilent) setIsAutoSaving(true);
-    else setIsSaving(true);
-
+    setIsSaving(true);
     try {
       // 1. Update sequence basic info
       await api.updateSequence(sequenceId, { 
@@ -490,14 +475,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       
       await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
       
-      setHasChanges(false);
+      setHasUnsavedChanges(false);
       setLastSavedTime(new Date());
     } catch (err) {
-      if (!isSilent) toast.error('Failed to save changes');
+      toast.error('Failed to save changes');
       console.error('Save error:', err);
     } finally {
       setIsSaving(false);
-      setIsAutoSaving(false);
     }
   };
 
@@ -517,7 +501,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       },
     };
     setSteps([...steps, newStep]);
-    setHasChanges(true);
+    setHasUnsavedChanges(true);
   };
 
   const addCondition = (parentId: string) => {
@@ -544,20 +528,20 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       },
     };
     setSteps([...steps, newStep]);
-    setHasChanges(true);
+    setHasUnsavedChanges(true);
     setPendingConditionParentId(null);
   };
 
   const handleUpdateStep = (stepId: string, updates: Partial<Step>) => {
     setSteps(steps.map(s => s.id === stepId ? { ...s, ...updates } : s));
-    setHasChanges(true);
+    setHasUnsavedChanges(true);
   };
 
   const handleUpdateStepConfig = (stepId: string, updates: any) => {
     setSteps(steps.map(s => 
       s.id === stepId ? { ...s, config: { ...s.config, ...updates } } : s
     ));
-    setHasChanges(true);
+    setHasUnsavedChanges(true);
   };
 
   const removeStep = (id: string) => {
@@ -573,7 +557,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
     const idsToRemove = [id, ...getDescendantIds(id)];
     setSteps(steps.filter(s => !idsToRemove.includes(s.id)));
-    setHasChanges(true);
+    setHasUnsavedChanges(true);
   };
 
   const rootStep = steps.find(s => !s.parent_step_id);
@@ -602,7 +586,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         ? { ...s, config: { ...s.config, body_html: data.optimizedContent } } 
         : s
       ));
-      setHasChanges(true);
+      setHasUnsavedChanges(true);
       toast.success('Optimized with Gemini!');
     } catch (err) {
       console.error(err);
@@ -680,7 +664,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           <div className="flex flex-col">
             <input 
               value={sequence?.name || ''} 
-              onChange={e => { setSequence(prev => prev ? { ...prev, name: e.target.value } : null); setHasChanges(true); }}
+              onChange={e => { setSequence(prev => prev ? { ...prev, name: e.target.value } : null); setHasUnsavedChanges(true); }}
               className="bg-transparent border-none outline-none font-bold text-white text-sm focus:ring-0 p-0"
               placeholder="Sequence Name"
             />
@@ -706,19 +690,27 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           <div className="h-4 w-px bg-white/10 mx-1" />
           
           <div className="flex items-center gap-2 px-3">
-             <div className={cn(
-               "size-1.5 rounded-full",
-               (isSaving || isAutoSaving) ? "bg-teal-400 animate-pulse" : hasChanges ? "bg-yellow-400" : "bg-emerald-400"
-             )} />
-             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
-               {(isSaving || isAutoSaving) ? 'Saving...' : hasChanges ? 'Draft' : 'Saved'}
-             </span>
+             {hasUnsavedChanges ? (
+               <div className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full animate-in fade-in duration-300">
+                 <AlertCircle className="size-3 text-[#E24B4A]" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-[#E24B4A] whitespace-nowrap">
+                   ⚠️ Unsaved Changes
+                 </span>
+               </div>
+             ) : (
+               <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/5 rounded-full">
+                 <Check className="size-3 text-emerald-500/50" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
+                   ✓ All changes saved
+                 </span>
+               </div>
+             )}
           </div>
           <div className="h-6 w-px bg-white/10" />
           <TealButton
             onClick={() => handleSaveAll()}
             loading={isSaving}
-            variant={hasChanges ? 'solid' : 'outline'}
+            variant={hasUnsavedChanges ? 'solid' : 'outline'}
             className="px-6 py-2"
           >
             <Save className="size-4" />
