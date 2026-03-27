@@ -242,24 +242,29 @@ export const initDb = async () => {
       )
     `);
 
-    // Migration for outreach_campaigns
-    const campCols = await db.pragma('table_info(outreach_campaigns)');
-    const campColNames = campCols.map((c: any) => c.name);
-    const newCampCols = [
+    const campaignColsMigration = [
       { name: 'mailbox_id', type: 'TEXT' },
       { name: 'from_email', type: 'TEXT' },
       { name: 'from_name', type: 'TEXT' }
     ];
 
-    try {
-      for (const col of newCampCols) {
+    if (db.isPostgres) {
+      for (const col of campaignColsMigration) {
+        try {
+          await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for campaign ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const campCols = await db.pragma('table_info(outreach_campaigns)');
+      const campColNames = (campCols || []).map((c: any) => c.name);
+      for (const col of campaignColsMigration) {
         if (!campColNames.includes(col.name)) {
           console.log(`[DB] Adding missing column ${col.name} to outreach_campaigns`);
           await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN ${col.name} ${col.type}`);
         }
       }
-    } catch (e) {
-      console.error('[DB] Migration failed for outreach_campaigns:', e);
     }
 
     // 3. Sequences
@@ -296,15 +301,12 @@ export const initDb = async () => {
     `);
 
     // Migration for outreach_sequences
-    const seqColumns = await db.pragma('table_info(outreach_sequences)');
-    const seqColumnNames = seqColumns.map((c: any) => c.name);
-    
     const newSeqCols = [
       { name: 'daily_send_limit', type: 'INTEGER DEFAULT 20' },
       { name: 'send_window_start', type: 'TEXT DEFAULT "08:00"' },
       { name: 'send_window_end', type: 'TEXT DEFAULT "18:00"' },
       { name: 'send_timezone', type: 'TEXT DEFAULT "UTC"' },
-      { name: 'send_on_weekdays', type: 'TEXT DEFAULT "{\"true\",\"true\",\"true\",\"true\",\"true\",\"false\",\"false\"}"' },
+      { name: 'send_on_weekdays', type: 'TEXT DEFAULT "{\\"true\\",\\"true\\",\\"true\\",\\"true\\",\\"true\\",\\"false\\",\\"false\\"}"' },
       { name: 'smart_send_min_delay', type: 'INTEGER DEFAULT 45' },
       { name: 'smart_send_max_delay', type: 'INTEGER DEFAULT 120' },
       { name: 'stop_on_reply', type: 'BOOLEAN DEFAULT TRUE' },
@@ -314,18 +316,27 @@ export const initDb = async () => {
       { name: 'start_at', type: 'TIMESTAMP' },
       { name: 'mailbox_id', type: 'TEXT' },
       { name: 'from_email', type: 'TEXT' },
-      { name: 'from_name', type: 'TEXT' }
+      { name: 'from_name', type: 'TEXT' },
+      { name: 'steps', type: 'TEXT' }
     ];
 
-    try {
+    if (db.isPostgres) {
+      for (const col of newSeqCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_sequences ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for sequence column ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const seqColumns = await db.pragma('table_info(outreach_sequences)');
+      const seqColumnNames = (seqColumns || []).map((c: any) => c.name);
       for (const col of newSeqCols) {
         if (!seqColumnNames.includes(col.name)) {
           console.log(`[DB] Adding missing column ${col.name} to outreach_sequences`);
           await db.run(`ALTER TABLE outreach_sequences ADD COLUMN ${col.name} ${col.type}`);
         }
       }
-    } catch (e) {
-      console.error('[DB] Migration failed for outreach_sequences:', e);
     }
 
     // 4. Contacts
@@ -359,12 +370,11 @@ export const initDb = async () => {
         location_country TEXT,
         job_title TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(project_id, email)
       )
     `);
 
-    const contactCols = await db.pragma('table_info(outreach_contacts)');
-    const contactColNames = contactCols.map((c: any) => c.name);
     const newContactCols = [
       { name: 'company_domain', type: 'TEXT' },
       { name: 'company_size', type: 'TEXT' },
@@ -376,15 +386,23 @@ export const initDb = async () => {
       { name: 'job_title', type: 'TEXT' }
     ];
 
-    try {
+    if (db.isPostgres) {
+      for (const col of newContactCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_contacts ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for contact ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const contactCols = await db.pragma('table_info(outreach_contacts)');
+      const contactColNames = (contactCols || []).map((c: any) => c.name);
       for (const col of newContactCols) {
         if (!contactColNames.includes(col.name)) {
           console.log(`[DB] Adding missing column ${col.name} to outreach_contacts`);
           await db.run(`ALTER TABLE outreach_contacts ADD COLUMN ${col.name} ${col.type}`);
         }
       }
-    } catch (e) {
-      console.error('[DB] Migration failed for outreach_contacts:', e);
     }
 
     // 5. Events
@@ -448,7 +466,7 @@ export const initDb = async () => {
     `);
 
     const newMailboxCols = [
-      { name: 'connection_type', type: 'TEXT DEFAULT \'gmail_oauth\'' },
+      { name: 'connection_type', type: "TEXT DEFAULT 'gmail_oauth'" },
       { name: 'smtp_host', type: 'TEXT' },
       { name: 'smtp_port', type: 'INTEGER' },
       { name: 'smtp_secure', type: 'BOOLEAN DEFAULT TRUE' },
@@ -461,32 +479,24 @@ export const initDb = async () => {
       { name: 'imap_password', type: 'TEXT' },
       { name: 'display_name', type: 'TEXT' },
       { name: 'provider', type: 'TEXT' },
-      { name: 'aliases', type: db.isPostgres ? 'JSONB DEFAULT \'[]\'' : 'TEXT DEFAULT \'[]\'' }
+      { name: 'aliases', type: db.isPostgres ? "JSONB DEFAULT '[]'" : "TEXT DEFAULT '[]'" }
     ];
 
     if (db.isPostgres) {
-      console.log('[DB] Running PostgreSQL migrations for outreach_mailboxes...');
       for (const col of newMailboxCols) {
         try {
-          // PostgreSQL supports ADD COLUMN IF NOT EXISTS since 9.6
           await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
         } catch (err) {
-          console.warn(`[DB] PG Migration for column ${col.name} failed (possibly already exists):`, (err as Error).message);
+          console.warn(`[DB] PG Migration for mailbox column ${col.name} failed:`, (err as Error).message);
         }
       }
     } else {
-      console.log('[DB] Running SQLite migrations for outreach_mailboxes...');
       const mailboxCols = await db.pragma('table_info(outreach_mailboxes)');
       const mailboxColNames = (mailboxCols || []).map((c: any) => c.name);
-      
       for (const col of newMailboxCols) {
-        try {
-          if (!mailboxColNames.includes(col.name)) {
-            console.log(`[DB] SQLite: Adding missing column ${col.name} to outreach_mailboxes`);
-            await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
-          }
-        } catch (err) {
-          console.warn(`[DB] SQLite Migration for column ${col.name} failed:`, (err as Error).message);
+        if (!mailboxColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
+          await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
         }
       }
     }
@@ -515,24 +525,29 @@ export const initDb = async () => {
       )
     `);
 
-    // Migration for outreach_individual_emails
-    const emailCols = await db.pragma('table_info(outreach_individual_emails)');
-    const emailColNames = emailCols.map((c: any) => c.name);
     const newEmailCols = [
       { name: 'from_email', type: 'TEXT' },
       { name: 'from_name', type: 'TEXT' },
-      { name: 'attachments', type: 'TEXT DEFAULT \'[]\'' }
+      { name: 'attachments', type: "TEXT DEFAULT '[]'" }
     ];
 
-    try {
+    if (db.isPostgres) {
+      for (const col of newEmailCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for email column ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const emailCols = await db.pragma('table_info(outreach_individual_emails)');
+      const emailColNames = (emailCols || []).map((c: any) => c.name);
       for (const col of newEmailCols) {
         if (!emailColNames.includes(col.name)) {
           console.log(`[DB] Adding missing column ${col.name} to outreach_individual_emails`);
           await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN ${col.name} ${col.type}`);
         }
       }
-    } catch (e) {
-      console.error('[DB] Migration failed for outreach_individual_emails:', e);
     }
 
     // 8. Settings
@@ -546,23 +561,29 @@ export const initDb = async () => {
       )
     `);
 
-    const settingsCols = await db.pragma('table_info(outreach_settings)');
-    const settingsColNames = settingsCols.map((c: any) => c.name);
     const newSettingsCols = [
       { name: 'hunter_api_key', type: 'TEXT' },
       { name: 'zerobounce_api_key', type: 'TEXT' },
       { name: 'pdl_api_key', type: 'TEXT' }
     ];
 
-    try {
+    if (db.isPostgres) {
+      for (const col of newSettingsCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_settings ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for settings column ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const settingsCols = await db.pragma('table_info(outreach_settings)');
+      const settingsColNames = (settingsCols || []).map((c: any) => c.name);
       for (const col of newSettingsCols) {
         if (!settingsColNames.includes(col.name)) {
           console.log(`[DB] Adding missing column ${col.name} to outreach_settings`);
           await db.run(`ALTER TABLE outreach_settings ADD COLUMN ${col.name} ${col.type}`);
         }
       }
-    } catch (e) {
-      console.error('[DB] Migration failed for outreach_settings:', e);
     }
 
     // 9. ICP Profiles
@@ -685,22 +706,31 @@ export const initDb = async () => {
       )
     `);
 
-    // Migration for outreach_sequence_steps
-    const stepCols = await db.pragma('table_info(outreach_sequence_steps)');
-    const stepColNames = (stepCols || []).map((c: any) => c.name);
     const newStepCols = [
       { name: 'parent_step_id', type: 'TEXT' },
       { name: 'condition_type', type: 'TEXT' },
       { name: 'branch_path', type: 'TEXT' },
       { name: 'delay_amount', type: 'INTEGER DEFAULT 2' },
-      { name: 'delay_unit', type: 'TEXT DEFAULT "days"' },
+      { name: 'delay_unit', type: "TEXT DEFAULT 'days'" },
       { name: 'attachments', type: 'TEXT' }
     ];
 
-    for (const col of newStepCols) {
-      if (!stepColNames.includes(col.name)) {
-        console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_steps`);
-        await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN ${col.name} ${col.type}`);
+    if (db.isPostgres) {
+      for (const col of newStepCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for step column ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const stepCols = await db.pragma('table_info(outreach_sequence_steps)');
+      const stepColNames = (stepCols || []).map((c: any) => c.name);
+      for (const col of newStepCols) {
+        if (!stepColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_steps`);
+          await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
     }
 
@@ -745,12 +775,15 @@ export const initDb = async () => {
       )
     `);
 
-    // Migration for outreach_sequence_enrollments
-    const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
-    const enrollColNames = (enrollCols || []).map((c: any) => c.name);
-    if (!enrollColNames.includes('current_step_id')) {
-      console.log(`[DB] Adding missing column current_step_id to outreach_sequence_enrollments`);
-      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN current_step_id TEXT`);
+    if (db.isPostgres) {
+      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS current_step_id TEXT`);
+    } else {
+      const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
+      const enrollColNames = (enrollCols || []).map((c: any) => c.name);
+      if (!enrollColNames.includes('current_step_id')) {
+        console.log(`[DB] Adding missing column current_step_id to outreach_sequence_enrollments`);
+        await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN current_step_id TEXT`);
+      }
     }
 
     // Backfill current_step_id for enrollments
