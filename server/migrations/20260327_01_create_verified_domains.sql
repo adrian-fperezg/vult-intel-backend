@@ -3,8 +3,8 @@
 
 CREATE TABLE IF NOT EXISTS outreach_verified_domains (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL,
-  user_id UUID NOT NULL,
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
   domain_name TEXT NOT NULL,
   verification_token TEXT NOT NULL UNIQUE,
   is_verified BOOLEAN NOT NULL DEFAULT false,
