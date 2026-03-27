@@ -100,16 +100,29 @@ export async function getValidGmailClient(mailboxId: string) {
     }
   });
 
-  // This will trigger a refresh if the token is expired
+  // 5-minute grace period: if token expires in less than 5 minutes, refresh now.
+  const now = Date.now();
+  const expiryDate = mailbox.expires_at ? new Date(mailbox.expires_at).getTime() : 0;
+  const isNearExpiry = (expiryDate - now) < (5 * 60 * 1000);
+
+  // This will trigger a refresh if the token is expired or if we force it
   try {
-    console.log(`[OAuth] Probing access token for mailbox ${mailboxId}...`);
-    const { token } = await oauth2Client.getAccessToken();
-    if (!token) {
-       console.error(`[OAuth] getAccessToken returned null for mailbox ${mailboxId}`);
-       throw new Error("GMAIL_AUTH_FAILED");
+    if (isNearExpiry) {
+      console.log(`[OAuth] Token for ${mailboxId} is near expiry (expires in ${Math.round((expiryDate - now) / 1000)}s). Forcing refresh...`);
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      if (credentials.access_token) {
+        wasRefreshed = true;
+      }
+    } else {
+      console.log(`[OAuth] Probing access token for mailbox ${mailboxId}...`);
+      const { token } = await oauth2Client.getAccessToken();
+      if (!token) {
+         console.error(`[OAuth] getAccessToken returned null for mailbox ${mailboxId}`);
+         throw new Error("GMAIL_AUTH_FAILED");
+      }
     }
     console.log(`[OAuth] Access token is valid for mailbox ${mailboxId}`);
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[OAuth] Refresh failed for mailbox ${mailboxId}:`, err.message);
     if (err.message.includes('invalid_grant')) {
       console.error(`[OAuth] INVALID_GRANT for ${mailboxId} - User may have revoked access or refresh token expired.`);
@@ -128,7 +141,10 @@ export async function getValidGmailClient(mailboxId: string) {
     });
   }
 
-  return google.gmail({ version: 'v1', auth: oauth2Client });
+  return {
+    gmail: google.gmail({ version: 'v1', auth: oauth2Client }),
+    mailboxEmail: mailbox.email
+  };
 }
 
 /**
@@ -246,7 +262,7 @@ export async function fetchGmailAliases(mailboxId: string) {
   console.log(`[OAuth] Fetching aliases for mailbox ${mailboxId}`);
   
   try {
-    const gmail = await getValidGmailClient(mailboxId);
+    const { gmail } = await getValidGmailClient(mailboxId);
     const res = await gmail.users.settings.sendAs.list({
       userId: 'me'
     });

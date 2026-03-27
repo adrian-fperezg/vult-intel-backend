@@ -210,7 +210,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   }
 
   // Gmail logic
-  const gmail = await getValidGmailClient(mailboxId);
+  const { gmail, mailboxEmail } = await getValidGmailClient(mailboxId);
   
   const subject = email.subject || "(No Subject)";
   const body = email.body_html || "";
@@ -242,7 +242,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
 
   try {
     const res = await gmail.users.messages.send({
-      userId: 'me',
+      userId: mailboxEmail, // Use primary email for auth context
       requestBody: {
         raw: encodedMessage,
       },
