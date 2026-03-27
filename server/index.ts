@@ -5,6 +5,14 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 
+// ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // TASK: Dependency check for critical modules
 try { require('nodemailer'); console.log('[STARTUP] Nodemailer loaded'); } catch(e) { console.error('[STARTUP] Nodemailer MISSING'); }
 try { require('imap-simple'); console.log('[STARTUP] imap-simple loaded'); } catch(e) { console.error('[STARTUP] imap-simple MISSING'); }

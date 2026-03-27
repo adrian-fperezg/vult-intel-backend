@@ -34,7 +34,8 @@ export const campaignQueue = new Queue('campaign-queue', {
 
 export async function pollMailboxes() {
   console.log('[IMAP] Starting scheduled mailbox poll...');
-  const mailboxes = await db.prepare("SELECT id FROM outreach_mailboxes WHERE connection_type = 'smtp'").all() as any[];
+  // Add LIMIT to prevent memory issues if there are hundreds of mailboxes
+  const mailboxes = await db.prepare("SELECT id FROM outreach_mailboxes WHERE connection_type = 'smtp' LIMIT 50").all() as any[];
   for (const mailbox of mailboxes) {
     try {
       await pollImap(mailbox.id);
@@ -132,7 +133,13 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         );
 
         // Send via processEmail
-        await processEmail(emailId);
+        try {
+          await processEmail(emailId);
+        } catch (procErr: any) {
+          console.error(`[Sequence] processEmail failed for ${emailId}:`, procErr);
+          await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
+          throw procErr; // Re-throw to be caught by the outer sequence catch block
+        }
         
         // Record event
         await db.prepare(`
@@ -382,12 +389,13 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
     return;
   }
 
-  // Find pending enrollments
+  // Find pending enrollments - added LIMIT 50 to prevent OOM
   const enrollments = await db.prepare(`
     SELECT e.*, c.email as contact_email, c.first_name, c.last_name, c.company
     FROM outreach_campaign_enrollments e
     JOIN outreach_contacts c ON e.contact_id = c.id
     WHERE e.campaign_id = ? AND e.status = 'pending'
+    LIMIT 50
   `).all(campaignId) as any[];
 
   console.log(`Enrolling ${enrollments.length} contacts for campaign ${campaignId}`);
@@ -442,8 +450,17 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         emailQueue.add(`email-${emailId}`, { emailId }, { jobId: emailId });
       });
     } catch (err) {
-      console.error(`Failed to process enrollment ${enrollment.id}:`, err);
+      console.error(`[Campaign] Failed to enroll contact ${enrollment.contact_id} for campaign ${campaignId}:`, err);
+      // Update enrollment to failed if it can't be processed
+      await db.prepare("UPDATE outreach_campaign_enrollments SET status = 'failed' WHERE id = ?").run(enrollment.id);
     }
+  }
+
+  // If there were more than 50, re-queue the campaign to process the next batch
+  const remaining = await db.prepare("SELECT count(*) as count FROM outreach_campaign_enrollments WHERE campaign_id = ? AND status = 'pending'").get(campaignId) as any;
+  if (remaining && remaining.count > 0) {
+    console.log(`[Campaign] ${remaining.count} enrollments remaining for campaign ${campaignId}. Re-queuing...`);
+    await campaignQueue.add('campaign-process', { campaignId }, { delay: 5000 });
   }
 }, { connection: redis as any });
 
@@ -519,33 +536,37 @@ export async function sequenceWatchdog() {
     console.log(`[SequenceWatchdog] Found ${overdueEnrollments.length} overdue enrollments. Verifying queue status...`);
 
     for (const enrollment of overdueEnrollments) {
-      const jobId = `seq-${enrollment.sequence_id}-contact-${enrollment.contact_id}-step-${enrollment.next_step_id}`;
-      
-      // Check if job already exists in 'waiting' or 'delayed' state
-      const job = await emailQueue.getJob(jobId);
-      
-      if (!job) {
-        console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} is overdue but has NO job in queue. Recovering...`);
+      try {
+        const jobId = `seq-${enrollment.sequence_id}-contact-${enrollment.contact_id}-step-${enrollment.next_step_id}`;
         
-        // Re-queue the job
-        await emailQueue.add('execute-sequence-step', {
-          projectId: enrollment.project_id,
-          sequenceId: enrollment.sequence_id,
-          contactId: enrollment.contact_id,
-          stepId: enrollment.next_step_id,
-          isRecovery: true
-        }, {
-          jobId: jobId,
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 5000 }
-        });
+        // Check if job already exists in 'waiting' or 'delayed' state
+        const job = await emailQueue.getJob(jobId);
+        
+        if (!job) {
+          console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} is overdue but has NO job in queue. Recovering...`);
+          
+          // Re-queue the job
+          await emailQueue.add('execute-sequence-step', {
+            projectId: enrollment.project_id,
+            sequenceId: enrollment.sequence_id,
+            contactId: enrollment.contact_id,
+            stepId: enrollment.next_step_id,
+            isRecovery: true
+          }, {
+            jobId: jobId,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5000 }
+          });
 
-        console.log(`[SequenceWatchdog] Recovered enrollment ${enrollment.id} (contact ${enrollment.contact_id})`);
-      } else {
-        // Job exists, let BullMQ handle it
-        // Note: If scheduled_at is long ago, BullMQ should have already picked it up unless stalled
-        const jobState = await job.getState();
-        console.log(`[SequenceWatchdog] Enrollment ${enrollment.id} in queue with state: ${jobState}`);
+          console.log(`[SequenceWatchdog] Recovered enrollment ${enrollment.id} (contact ${enrollment.contact_id})`);
+        } else {
+          // Job exists, let BullMQ handle it
+          // Note: If scheduled_at is long ago, BullMQ should have already picked it up unless stalled
+          const jobState = await job.getState();
+          console.log(`[SequenceWatchdog] Enrollment ${enrollment.id} in queue with state: ${jobState}`);
+        }
+      } catch (innerErr) {
+        console.error(`[SequenceWatchdog] Failed to process enrollment ${enrollment.id}:`, innerErr);
       }
     }
   } catch (err) {
