@@ -1159,20 +1159,22 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
     if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
 
-    await db.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ?", id);
-    
-    // Enroll existing recipients who are not already enrolled
-    const recipients = await db.all(`
-      SELECT contact_id FROM outreach_sequence_recipients 
-      WHERE sequence_id = ? AND contact_id IS NOT NULL
-      AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ?)
-    `, id, id) as any[];
+    await db.transaction(async (tx) => {
+      await tx.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ?", id);
+      
+      // Enroll existing recipients who are not already enrolled
+      const recipients = await tx.all(`
+        SELECT contact_id FROM outreach_sequence_recipients 
+        WHERE sequence_id = ? AND contact_id IS NOT NULL
+        AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ?)
+      `, id, id) as any[];
 
-    for (const r of recipients) {
-      await enrollContactInSequence(project_id, id, r.contact_id);
-    }
+      for (const r of recipients) {
+        await enrollContactInSequence(project_id, id, r.contact_id, tx);
+      }
 
-    res.json({ success: true, enrolledCount: recipients.length });
+      res.json({ success: true, enrolledCount: recipients.length });
+    });
   } catch (error) {
     console.error("Failed to activate sequence:", error);
     res.status(500).json({ error: "Failed to activate sequence" });
@@ -1205,9 +1207,9 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
           } else {
             contact_id = item.id || uuidv4();
             await tx.run(`
-              INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title, type)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '', item.type || 'individual');
+              INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '');
             
             contactObj = {
               id: contact_id,
@@ -1255,7 +1257,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
           // If active, enroll immediately
           const seq = await tx.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
           if (seq?.status === 'active') {
-            await enrollContactInSequence(project_id, id, contact_id);
+            await enrollContactInSequence(project_id, id, contact_id, tx);
           }
         }
       }

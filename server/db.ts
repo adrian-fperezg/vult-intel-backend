@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.resolve(__dirname, '../outreach.db');
 const DATABASE_URL = process.env.DATABASE_URL;
 
-class DbWrapper {
+export class DbWrapper {
   private sqlite?: any;
   private pgPool?: pg.Pool;
   private client?: pg.PoolClient;

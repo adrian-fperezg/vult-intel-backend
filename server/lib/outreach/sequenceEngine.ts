@@ -1,4 +1,4 @@
-import { db } from '../../db.js';
+import db, { DbWrapper } from '../../db.js';
 import { emailQueue } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,11 +16,12 @@ export interface SequenceStep {
 /**
  * Enrolls a contact into a sequence.
  */
-export async function enrollContactInSequence(projectId: string, sequenceId: string, contactId: string) {
+export async function enrollContactInSequence(projectId: string, sequenceId: string, contactId: string, tx?: DbWrapper) {
   const enrollmentId = uuidv4();
+  const d = tx || db;
 
   try {
-    await db.run(
+    await d.run(
       `INSERT INTO outreach_sequence_enrollments 
       (id, sequence_id, contact_id, project_id, status) 
       VALUES (?, ?, ?, ?, 'active')`,
@@ -31,7 +32,7 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
     );
 
     // Trigger the first step (Root step has no parent)
-    await scheduleNextStep(projectId, sequenceId, contactId, null, 'default');
+    await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx);
 
     return { success: true, enrollmentId };
   } catch (error: any) {
@@ -45,23 +46,24 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
 /**
  * Schedules the next step for an enrolled contact.
  */
-export async function scheduleNextStep(projectId: string, sequenceId: string, contactId: string, parentStepId: string | null = null, branchPath: string = 'default') {
+export async function scheduleNextStep(projectId: string, sequenceId: string, contactId: string, parentStepId: string | null = null, branchPath: string = 'default', tx?: DbWrapper) {
   console.log(`[SequenceEngine] Scheduling next step for sequence ${sequenceId}, contact ${contactId}. Parent: ${parentStepId}, Path: ${branchPath}`);
+  const d = tx || db;
   
   // 1. Get sequence and step info
-  const sequence = await db.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', sequenceId);
+  const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', sequenceId);
   if (!sequence) throw new Error('Sequence not found');
 
   // Find the child step of parentStepId with matching branchPath
   let step: SequenceStep | undefined;
   if (parentStepId === null) {
     // Root step
-    step = await db.get<SequenceStep>(
+    step = await d.get<SequenceStep>(
       'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL',
       sequenceId
     );
   } else {
-    step = await db.get<SequenceStep>(
+    step = await d.get<SequenceStep>(
       'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
       sequenceId,
       parentStepId,
@@ -74,7 +76,7 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
     console.log(`[SequenceEngine] No more steps found for sequence ${sequenceId} after parent ${parentStepId} on path ${branchPath}`);
     // Only mark as completed if we are not at the start and there are truly no more steps
     if (parentStepId !== null) {
-      await db.run(
+      await d.run(
         'UPDATE outreach_sequence_enrollments SET status = "completed", completed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?',
         sequenceId,
         contactId
@@ -120,7 +122,7 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   });
 
   // Update enrollment to current step
-  await db.run(
+  await d.run(
     'UPDATE outreach_sequence_enrollments SET current_step_id = ? WHERE sequence_id = ? AND contact_id = ?',
     step.id,
     sequenceId,
