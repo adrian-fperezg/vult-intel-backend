@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, Plus, Trash2, ArrowRight, Settings, 
@@ -47,6 +48,7 @@ interface Sequence {
   send_on_weekdays?: boolean;
   from_email?: string;
   from_name?: string;
+  recipients?: any[];
 }
 
 interface SequenceBuilderProps {
@@ -415,10 +417,20 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'builder' | 'settings' | 'recipients'>('builder');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeView = (searchParams.get('view') as 'builder' | 'settings' | 'recipients' | 'analytics') || 'builder';
+  
+  const setActiveView = (view: 'builder' | 'settings' | 'recipients' | 'analytics') => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev);
+      newParams.set('view', view);
+      return newParams;
+    }, { replace: true });
+  };
   const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
+
   
   // DAG States & Scroll Persistence
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
@@ -668,7 +680,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const handleActivate = async () => {
     if (!sequence?.mailbox_id) {
       toast.error("Please select a mailbox in Settings first");
-      setActiveTab('settings');
+      setActiveView('settings');
       return;
     }
     setIsSaving(true);
@@ -685,15 +697,37 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   const handleAssignRecipients = async (recipients: any[]) => {
     if (!sequenceId || !activeProjectId) return;
-    setLoading(true);
+    
+    // Determine if these are manual contact objects or just IDs
+    const isManual = recipients.length > 0 && typeof recipients[0] === 'object';
+    const payload = isManual 
+      ? { recipients, project_id: activeProjectId }
+      : { contact_ids: recipients, project_id: activeProjectId };
+
     try {
-      await api.addSequenceRecipients(sequenceId, recipients, activeProjectId);
-      toast.success(`${recipients.length} recipients assigned`);
-      loadData();
+      const result = await api.addSequenceRecipients(sequenceId, payload);
+      
+      if (result.success && result.addedContacts) {
+        setSequence(prev => {
+          if (!prev) return prev;
+          const currentRecipients = prev.recipients || [];
+          // Filter out any that might already be in state just in case, then add new ones
+          const newRecipients = (result.addedContacts || []).filter(
+            (nc: any) => !currentRecipients.some((rc: any) => rc.id === nc.id)
+          );
+          return {
+            ...prev,
+            recipients: [...currentRecipients, ...newRecipients]
+          };
+        });
+        toast.success(`${result.addedContacts.length} recipients assigned`);
+      } else {
+        toast.success(`${recipients.length} recipients assigned`);
+        loadData();
+      }
     } catch (err) {
+      console.error("Failed to assign recipients:", err);
       toast.error('Failed to assign recipients');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -743,13 +777,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
         <div className="flex items-center gap-3">
           <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/5">
-            {['builder', 'recipients', 'settings'].map((tab) => (
+            {['analytics', 'builder', 'recipients', 'settings'].map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab as any)}
+                onClick={() => setActiveView(tab as any)}
                 className={cn(
                   "px-3 py-1.5 text-xs font-semibold rounded-md transition-all capitalize",
-                  activeTab === tab ? "bg-teal-500/10 text-teal-400 shadow-sm" : "text-slate-500 hover:text-slate-300"
+                  activeView === tab ? "bg-teal-500/10 text-teal-400 shadow-sm" : "text-slate-500 hover:text-slate-300"
                 )}
               >
                 {tab}
@@ -802,12 +836,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         </div>
       </header>
 
-      <main className="flex-1 flex overflow-hidden">
-        {activeTab === 'builder' && (
+      <main className="flex-1 overflow-hidden">
+        {activeView === 'builder' && (
           <div 
             ref={canvasRef}
             onScroll={onScroll}
-            className="flex-1 overflow-auto bg-[#0d1117] relative custom-scrollbar"
+            className="h-full overflow-auto bg-[#0d1117] relative custom-scrollbar"
           >
             <div className="w-full py-12 px-20">
               <div className="flex flex-col items-start min-w-max">
@@ -849,8 +883,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           </div>
         )}
 
-        {activeTab === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-12 bg-[#0d1117] custom-scrollbar">
+        {activeView === 'settings' && sequence && (
+          <div className="h-full overflow-y-auto p-12 bg-[#0d1117] custom-scrollbar">
             <div className="max-w-2xl mx-auto space-y-12">
               <section className="space-y-6">
                 <div>
@@ -959,8 +993,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           </div>
         )}
 
-        {activeTab === 'recipients' && (
-          <div className="flex-1 overflow-y-auto p-12 bg-[#0d1117] custom-scrollbar">
+        {activeView === 'recipients' && sequence && (
+          <div className="h-full overflow-y-auto p-12 bg-[#0d1117] custom-scrollbar">
              <div className="max-w-5xl mx-auto space-y-8">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -1036,6 +1070,18 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   </div>
                 )}
              </div>
+          </div>
+        )}
+
+        {activeView === 'analytics' && (
+          <div className="h-full flex items-center justify-center p-12 w-full">
+            <div className="max-w-md text-center">
+               <div className="size-16 bg-teal-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                 <Play className="size-8 text-teal-500" />
+               </div>
+               <h3 className="text-xl font-bold text-white mb-2">Sequence Analytics</h3>
+               <p className="text-slate-400">Detailed performance metrics for this specific sequence will appear here once it is active and sending.</p>
+            </div>
           </div>
         )}
       </main>

@@ -268,8 +268,8 @@ export function useOutreachApi() {
   );
 
   const addSequenceRecipients = useCallback(
-    (id: string, contact_ids: string[], project_id: string) => 
-      post<any>(`/sequences/${id}/recipients`, { contact_ids, project_id }),
+    (id: string, data: { contact_ids?: string[], recipients?: any[], project_id: string }) => 
+      post<any>(`/sequences/${id}/recipients`, data),
     [post]
   );
 

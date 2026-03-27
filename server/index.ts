@@ -1183,44 +1183,84 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
 app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
-  const { recipients, project_id, type } = req.body; // 'recipients' can be IDs or full objects
+  const { recipients, project_id, type: recipientType } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
     const list = Array.isArray(recipients) ? recipients : [];
+    const addedContacts: any[] = [];
     
-    for (const item of list) {
-      let contact_id: string;
+    await db.transaction(async () => {
+      for (const item of list) {
+        let contact_id: string;
+        let contactObj: any = null;
 
-      if (typeof item === 'object' && item.email) {
-        // BUG 2: Handle manual contact upsert
-        const existing = await db.get("SELECT id FROM outreach_contacts WHERE email = ? AND user_id = ?", item.email, userId) as any;
-        if (existing) {
-          contact_id = existing.id;
+        if (typeof item === 'object' && item.email) {
+          // Manual contact upsert
+          const existing = await db.get("SELECT * FROM outreach_contacts WHERE email = ? AND user_id = ?", item.email, userId) as any;
+          if (existing) {
+            contact_id = existing.id;
+            contactObj = existing;
+          } else {
+            contact_id = item.id || uuidv4();
+            await db.run(`
+              INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title, type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '', item.type || 'individual');
+            
+            contactObj = {
+              id: contact_id,
+              email: item.email,
+              first_name: item.first_name || '',
+              last_name: item.last_name || '',
+              company: item.company || ''
+            };
+          }
+        } else if (typeof item === 'object' && item.id) {
+          // Existing contact ID
+          contact_id = item.id;
+          contactObj = await db.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ?", contact_id, userId);
+        } else if (typeof item === 'object' && item.list_id) {
+            // It's a list - expand it and add its members
+            const listMembers = await db.all("SELECT contact_id FROM contact_list_members WHERE list_id = ?", item.list_id) as any[];
+            for (const member of listMembers) {
+                const memberContactId = member.contact_id;
+                await db.run(`
+                    INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                `, uuidv4(), id, project_id, memberContactId, recipientType || 'individual');
+                
+                const c = await db.get("SELECT * FROM outreach_contacts WHERE id = ?", memberContactId);
+                if (c) addedContacts.push(c);
+            }
+            continue; // Skip the individual add logic since we handled the list
         } else {
-          contact_id = uuidv4();
-          await db.run(`
-            INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.type || 'individual');
+          contact_id = typeof item === 'string' ? item : item.id;
         }
-      } else {
-        contact_id = item; // It's just an ID
-      }
 
-      await db.run(`
-        INSERT OR IGNORE INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
-        VALUES (?, ?, ?, ?, ?)
-      `, uuidv4(), id, project_id, contact_id, type || 'individual');
+        if (contact_id) {
+           // Insert into sequence recipients
+          await db.run(`
+            INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+            VALUES (?, ?, ?, ?, ?)
+          `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
 
-      // If active, enroll immediately
-      const seq = await db.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
-      if (seq?.status === 'active') {
-        await enrollContactInSequence(project_id, id, contact_id);
+          if (contactObj) {
+            addedContacts.push(contactObj);
+          }
+
+          // If active, enroll immediately
+          const seq = await db.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
+          if (seq?.status === 'active') {
+            await enrollContactInSequence(project_id, id, contact_id);
+          }
+        }
       }
-    }
-    res.json({ success: true });
+    });
+
+    res.json({ success: true, addedContacts });
   } catch (error) {
     console.error("Failed to add sequence recipients:", error);
     res.status(500).json({ error: "Failed to add recipients", details: (error as any).message });

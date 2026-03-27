@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -34,7 +35,17 @@ const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
 export default function OutreachLayout() {
   const { status, daysRemaining, isLoading } = useOutreachSubscription();
   const { fetchIndividualEmails } = useOutreachApi();
-  const [activeTab, setActiveTab] = useState<OutreachTab>('analytics');
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  const activeTab = (searchParams.get('tab') as OutreachTab) || 'analytics';
+  const setActiveTab = (tab: OutreachTab) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev);
+      newParams.set('tab', tab);
+      return newParams;
+    }, { replace: true });
+  };
+
   const [trialBannerDismissed, setTrialBannerDismissed] = useState(false);
   const [draftCount, setDraftCount] = useState(0);
 
@@ -60,7 +71,8 @@ export default function OutreachLayout() {
     };
     window.addEventListener('outreach-tab-change', handleTabChange);
     return () => window.removeEventListener('outreach-tab-change', handleTabChange);
-  }, []);
+  }, [setSearchParams]);
+
 
   // Poll for draft count
   useEffect(() => {

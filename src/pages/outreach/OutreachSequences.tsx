@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Sparkles, Mail, Linkedin, Phone, CheckSquare, MoreHorizontal,
@@ -28,7 +29,22 @@ export default function OutreachSequences() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
-  const [editingId, setEditingId] = useState<string | null>(null);
+  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editingId = searchParams.get('seqId');
+
+  const setEditingId = (id: string | null) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev);
+      if (id) {
+        newParams.set('seqId', id);
+      } else {
+        newParams.delete('seqId');
+      }
+      return newParams;
+    }, { replace: true });
+  };
+
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +76,7 @@ export default function OutreachSequences() {
       console.error('Error creating sequence:', error);
     }
   };
+
 
   const handleDelete = async (id: string) => {
     try {
