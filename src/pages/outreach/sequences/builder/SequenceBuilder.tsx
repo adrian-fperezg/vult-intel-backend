@@ -776,13 +776,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/5">
+          <div className="flex bg-white/5 p-1 rounded-lg border border-white/5 h-[34px] items-center">
             {['analytics', 'builder', 'recipients', 'settings'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveView(tab as any)}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-all capitalize",
+                  "px-3 h-full text-[11px] font-bold uppercase tracking-wider rounded-md transition-all",
                   activeView === tab ? "bg-teal-500/10 text-teal-400 shadow-sm" : "text-slate-500 hover:text-slate-300"
                 )}
               >
@@ -792,19 +792,19 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           </div>
           <div className="h-4 w-px bg-white/10 mx-1" />
           
-          <div className="flex items-center gap-2 px-3">
+          <div className="flex items-center gap-2">
              {hasUnsavedChanges ? (
-               <div className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full animate-in fade-in duration-300">
+               <div className="flex items-center gap-1.5 px-3 h-[34px] bg-red-500/10 border border-red-500/20 rounded-xl animate-in fade-in duration-300">
                  <AlertCircle className="size-3 text-[#E24B4A]" />
                  <span className="text-[10px] font-black uppercase tracking-widest text-[#E24B4A] whitespace-nowrap">
                    ⚠️ Unsaved Changes
                  </span>
                </div>
              ) : (
-               <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/5 rounded-full">
-                 <Check className="size-3 text-emerald-500/50" />
+               <div className="flex items-center gap-1.5 px-3 h-[34px] bg-emerald-500/5 rounded-xl border border-white/5">
+                 <Check className="size-3 text-emerald-500/40" />
                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
-                   ✓ All changes saved
+                   All changes saved
                  </span>
                </div>
              )}
@@ -813,23 +813,20 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           <TealButton
             onClick={() => handleSaveAll()}
             loading={isSaving}
-            variant={hasUnsavedChanges ? 'solid' : 'outline'}
-            className="px-6 py-2"
+            variant="ghost"
+            className="px-4 h-[34px] text-[10px] font-black uppercase tracking-widest"
           >
-            <Save className="size-4" />
+            <Save className="size-3.5" />
             Save Sequence
           </TealButton>
-          <button
-            onClick={() => setIsRecipientModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-teal-500/10 text-teal-400 font-bold rounded-xl border border-teal-500/20 hover:bg-teal-500/20 transition-all shadow-lg shadow-teal-500/5 group"
-          >
-            <Users className="size-4 transition-transform group-hover:scale-110" />
-            Manage Audience
-          </button>
+          
           {sequence?.status === 'active' ? (
-            <OutreachBadge variant="green" dot>Active</OutreachBadge>
+            <OutreachBadge variant="green" dot className="h-[34px] px-4 flex items-center">Active</OutreachBadge>
           ) : (
-            <TealButton size="sm" className="h-8" onClick={handleActivate}>
+            <TealButton 
+              className="h-[34px] px-6 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-teal-500/5" 
+              onClick={handleActivate}
+            >
               <Play className="size-3.5" /> Launch
             </TealButton>
           )}
@@ -1002,7 +999,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     <OutreachBadge variant="teal" className="ml-2">{(sequence as any)?.recipients?.length || 0}</OutreachBadge>
                   </h3>
                   <div className="flex gap-3">
-                    <TealButton variant="outline" size="sm" onClick={() => setIsRecipientModalOpen(true)}>
+                    <TealButton variant="solid" size="md" onClick={() => setIsRecipientModalOpen(true)} className="rounded-xl">
                       <UserPlus className="size-4" /> Add Recipients
                     </TealButton>
                   </div>
