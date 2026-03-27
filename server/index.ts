@@ -1107,6 +1107,33 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
   }
 });
 
+// DELETE /api/outreach/sequences/:id/recipients/:contactId
+app.delete("/api/outreach/sequences/:id/recipients/:contactId", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id, contactId } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    // 1. Remove from source recipients table
+    await db.run(
+      "DELETE FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?",
+      id, contactId
+    );
+
+    // 2. Remove from active enrollments
+    await db.run(
+      "DELETE FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?",
+      id, contactId
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to remove sequence recipient:", error);
+    res.status(500).json({ error: "Failed to remove recipient" });
+  }
+});
+
 // POST /api/outreach/sequences/:id/activate
 app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

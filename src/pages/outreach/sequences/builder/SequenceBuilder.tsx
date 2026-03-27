@@ -896,9 +896,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-white/5 bg-white/5">
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Contact</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Name</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
                           <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Status</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Current Step</th>
                           <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
                         </tr>
                       </thead>
@@ -906,15 +907,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                         {(sequence as any).recipients.map((r: any) => (
                           <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-400 font-bold text-xs">
-                                  {r.first_name?.[0] || r.email[0].toUpperCase()}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-bold text-white">{r.first_name} {r.last_name}</p>
-                                  <p className="text-xs text-slate-500">{r.email}</p>
-                                </div>
-                              </div>
+                              <span className="text-sm font-medium text-white">{r.email}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm text-slate-300">{r.first_name} {r.last_name}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm text-slate-400 italic opacity-70">{r.company || '—'}</span>
                             </td>
                             <td className="px-6 py-4">
                               {r.enrollment_status ? (
@@ -922,13 +921,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                                   {r.enrollment_status}
                                 </OutreachBadge>
                               ) : (
-                                <span className="text-xs text-slate-600 font-medium">Pending Launch</span>
+                                <span className="text-xs text-slate-600 font-medium">Pending</span>
                               )}
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-xs font-mono text-slate-400">
-                                {r.current_step_number ? `Step ${r.current_step_number}` : '-'}
-                              </span>
                             </td>
                             <td className="px-6 py-4 text-right">
                               <button 
