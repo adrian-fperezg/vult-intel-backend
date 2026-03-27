@@ -17,7 +17,7 @@ import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
-import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes } from "./queues/emailQueue.js";
+import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, sequenceWatchdog } from "./queues/emailQueue.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -3015,6 +3015,11 @@ emailQueue.add('poll-mailboxes', {}, {
   repeat: { every: 600000 },
   jobId: 'poll-mailboxes-repeat' 
 }).catch(console.error);
+
+// Start Outreach Sequence Watchdog every 5 minutes (safety net for stalled sequences)
+setInterval(() => {
+  sequenceWatchdog().catch(err => console.error('[Watchdog Error]', err));
+}, 5 * 60 * 1000);
 
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
 

@@ -799,6 +799,10 @@ export const initDb = async () => {
         status TEXT NOT NULL DEFAULT 'active',
         current_step_number INTEGER DEFAULT 1,
         current_step_id TEXT REFERENCES outreach_sequence_steps(id) ON DELETE SET NULL,
+        next_step_id TEXT REFERENCES outreach_sequence_steps(id) ON DELETE SET NULL,
+        scheduled_at TIMESTAMP,
+        last_error TEXT,
+        last_executed_at TIMESTAMP,
         enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         completed_at TIMESTAMP,
         paused_at TIMESTAMP,
@@ -808,12 +812,27 @@ export const initDb = async () => {
 
     if (db.isPostgres) {
       await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS current_step_id TEXT`);
+      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS next_step_id TEXT`);
+      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP`);
+      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS last_error TEXT`);
+      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS last_executed_at TIMESTAMP`);
     } else {
       const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
       const enrollColNames = (enrollCols || []).map((c: any) => c.name);
-      if (!enrollColNames.includes('current_step_id')) {
-        console.log(`[DB] Adding missing column current_step_id to outreach_sequence_enrollments`);
-        await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN current_step_id TEXT`);
+      
+      const missingEnrollCols = [
+        { name: 'current_step_id', type: 'TEXT' },
+        { name: 'next_step_id', type: 'TEXT' },
+        { name: 'scheduled_at', type: 'TIMESTAMP' },
+        { name: 'last_error', type: 'TEXT' },
+        { name: 'last_executed_at', type: 'TIMESTAMP' }
+      ];
+
+      for (const col of missingEnrollCols) {
+        if (!enrollColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_enrollments`);
+          await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN ${col.name} ${col.type}`);
+        }
       }
     }
 

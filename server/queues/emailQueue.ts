@@ -73,6 +73,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         return;
       }
 
+      // Heartbeat: Log start of processing
+      console.log(`[Sequence] [Heartbeat] Processing step ${stepId} (${stepNumber}) for contact ${contactId} in sequence ${sequenceId}`);
+
       // 2. Check Global Send Limit
       const canSend = await checkAndIncrementGlobalLimit(projectId);
       if (!canSend) {
@@ -139,6 +142,17 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         // Schedule next step (default path)
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
+        
+        // Update enrollment with success
+        await db.run(
+          `UPDATE outreach_sequence_enrollments 
+           SET last_executed_at = CURRENT_TIMESTAMP, 
+               current_step_id = ?,
+               last_error = NULL 
+           WHERE sequence_id = ? AND contact_id = ?`,
+          step.id, sequenceId, contactId
+        );
+        console.log(`[Sequence] [Heartbeat] Step ${stepId} executed successfully for contact ${contactId}`);
       } else if (step.step_type === 'condition') {
         // Evaluation Engine Logic
         const parentEmailStepId = step.parent_step_id;
@@ -172,6 +186,17 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         // Schedule next step based on branch
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
+
+        // Update enrollment with success
+        await db.run(
+          `UPDATE outreach_sequence_enrollments 
+           SET last_executed_at = CURRENT_TIMESTAMP, 
+               current_step_id = ?,
+               last_error = NULL 
+           WHERE sequence_id = ? AND contact_id = ?`,
+          step.id, sequenceId, contactId
+        );
+        console.log(`[Sequence] [Heartbeat] Condition step ${stepId} evaluated to '${branchPath}' for contact ${contactId}`);
       } else {
         // Handle delay, task, or other step types - just pass through to next step
         console.log(`[Sequence] Executing ${step.step_type} step ${stepId}. Continuing to next step.`);
@@ -185,8 +210,20 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[Sequence] Error executing step ${stepNumber} for sequence ${sequenceId}:`, error);
+      
+      // Persist error to enrollment
+      await db.run(
+        `UPDATE outreach_sequence_enrollments 
+         SET last_error = ?, 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE sequence_id = ? AND contact_id = ?`,
+        error.message || 'Unknown error',
+        sequenceId,
+        contactId
+      );
+
       throw error;
     }
     return;
@@ -450,4 +487,68 @@ export async function cancelMailboxJobs(mailboxId: string) {
 
   console.log(`[cancelMailboxJobs] Cancelled ${cancelledCount} jobs for mailbox ${mailboxId}`);
   return cancelledCount;
+}
+
+/**
+ * The Sequence Watchdog polls for 'active' enrollments that have passed their
+ * scheduled_at time but haven't been completed. It re-queues them in BullMQ
+ * to ensure that Redis clearing or worker stalls don't stop the sequence.
+ */
+export async function sequenceWatchdog() {
+  console.log('[SequenceWatchdog] Starting safety-net poll...');
+  
+  try {
+    // Find active enrollments that are overdue
+    // We check for enrollments where scheduled_at is in the past
+    const overdueEnrollments = await db.all(`
+      SELECT e.*, s.project_id
+      FROM outreach_sequence_enrollments e
+      JOIN outreach_sequences s ON e.sequence_id = s.id
+      WHERE e.status = 'active' 
+        AND e.scheduled_at <= CURRENT_TIMESTAMP
+        AND e.next_step_id IS NOT NULL
+        AND s.status = 'active'
+      LIMIT 50
+    `) as any[];
+
+    if (overdueEnrollments.length === 0) {
+      console.log('[SequenceWatchdog] No overdue enrollments found.');
+      return;
+    }
+
+    console.log(`[SequenceWatchdog] Found ${overdueEnrollments.length} overdue enrollments. Verifying queue status...`);
+
+    for (const enrollment of overdueEnrollments) {
+      const jobId = `seq-${enrollment.sequence_id}-contact-${enrollment.contact_id}-step-${enrollment.next_step_id}`;
+      
+      // Check if job already exists in 'waiting' or 'delayed' state
+      const job = await emailQueue.getJob(jobId);
+      
+      if (!job) {
+        console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} is overdue but has NO job in queue. Recovering...`);
+        
+        // Re-queue the job
+        await emailQueue.add('execute-sequence-step', {
+          projectId: enrollment.project_id,
+          sequenceId: enrollment.sequence_id,
+          contactId: enrollment.contact_id,
+          stepId: enrollment.next_step_id,
+          isRecovery: true
+        }, {
+          jobId: jobId,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 }
+        });
+
+        console.log(`[SequenceWatchdog] Recovered enrollment ${enrollment.id} (contact ${enrollment.contact_id})`);
+      } else {
+        // Job exists, let BullMQ handle it
+        // Note: If scheduled_at is long ago, BullMQ should have already picked it up unless stalled
+        const jobState = await job.getState();
+        console.log(`[SequenceWatchdog] Enrollment ${enrollment.id} in queue with state: ${jobState}`);
+      }
+    }
+  } catch (err) {
+    console.error('[SequenceWatchdog] Critical error:', err);
+  }
 }

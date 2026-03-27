@@ -91,7 +91,6 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   let delayMs = 0;
   
   // Apply step-specific delay
-  // Root step usually has no delay unless configured (wait, current UI puts delay on first step too?)
   const amount = step.delay_amount || (parentStepId === null ? 0 : 2);
   const unit = step.delay_unit || 'days';
   
@@ -105,27 +104,37 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   const smartDelayMs = (Math.floor(Math.random() * (smartMax - smartMin + 1)) + smartMin) * 1000;
   
   const totalDelay = delayMs + (step.step_type === 'email' ? smartDelayMs : 0);
+  const scheduledAt = new Date(Date.now() + totalDelay);
+
+  // Update enrollment to next step and scheduled time BEFORE adding to queue
+  // This ensures the database is the source of truth if Redis fails
+  await d.run(
+    `UPDATE outreach_sequence_enrollments 
+     SET next_step_id = ?, 
+         scheduled_at = ?, 
+         last_error = NULL 
+     WHERE sequence_id = ? AND contact_id = ?`,
+    step.id,
+    scheduledAt.toISOString(),
+    sequenceId,
+    contactId
+  );
 
   await emailQueue.add('execute-sequence-step', {
     projectId,
     sequenceId,
     contactId,
     stepId: step.id,
-    stepNumber: step.step_number // Keep for legacy/logging
+    stepNumber: step.step_number
   }, {
     delay: totalDelay,
     attempts: 3,
     backoff: {
       type: 'exponential',
       delay: 5000
-    }
+    },
+    jobId: `seq-${sequenceId}-contact-${contactId}-step-${step.id}` // Deterministic ID to prevent double-queuing
   });
 
-  // Update enrollment to current step
-  await d.run(
-    'UPDATE outreach_sequence_enrollments SET current_step_id = ? WHERE sequence_id = ? AND contact_id = ?',
-    step.id,
-    sequenceId,
-    contactId
-  );
+  console.log(`[SequenceEngine] Queued step ${step.id} for contact ${contactId} at ${scheduledAt.toISOString()}`);
 }
