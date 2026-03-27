@@ -258,6 +258,67 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
   }
 });
 
+// ─── TRACKING PIXEL ───────────────────────────────────────────────────────────
+app.get("/api/tracking/open", async (req, res) => {
+  const { emailId } = req.query as { emailId?: string };
+  if (!emailId) {
+    // Still return the pixel even if ID is missing to avoid broken image icons
+    const pixel = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+    res.writeHead(200, { "Content-Type": "image/gif", "Content-Length": pixel.length });
+    return res.end(pixel);
+  }
+
+  try {
+    // 1. Fetch email record
+    const email = await db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    if (email) {
+      // 2. Mark as opened if not already opened
+      if (!email.opened_at) {
+        await db.prepare("UPDATE outreach_individual_emails SET opened_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
+
+        // 3. Record event in specific tracking table
+        await db.prepare(`
+          INSERT INTO outreach_individual_email_events (id, mailbox_id, contact_id, project_id, sequence_id, step_id, type)
+          VALUES (?, ?, ?, ?, ?, ?, 'opened')
+        `).run(uuidv4(), email.mailbox_id, email.contact_id, email.project_id, email.sequence_id, email.step_id);
+
+        // 4. Record event in main events table (Critical for Sequence Condition Logic)
+        if (email.contact_id) {
+          await db.prepare(`
+            INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+            VALUES (?, ?, ?, ?, ?, 'email_opened', ?)
+          `).run(uuidv4(), email.contact_id, email.project_id, email.sequence_id, email.step_id, JSON.stringify({ email_id: emailId }));
+
+          // 5. Update sequence enrollment status
+          if (email.sequence_id) {
+            await db.prepare(`
+              UPDATE outreach_sequence_enrollments 
+              SET opened = ${db.isPostgres ? 'TRUE' : '1'} 
+              WHERE sequence_id = ? AND contact_id = ?
+            `).run(email.sequence_id, email.contact_id);
+          }
+        }
+        console.log(`[Tracking] Email ${emailId} open recorded successfully.`);
+      }
+    } else {
+      console.warn(`[Tracking] Received open request for unknown emailId: ${emailId}`);
+    }
+  } catch (err: any) {
+    console.error(`[Tracking] Fatal error recording open for ${emailId}:`, err.message);
+  }
+
+  // 6. Return 1x1 transparent GIF with no-cache headers
+  const pixel = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+  res.writeHead(200, {
+    "Content-Type": "image/gif",
+    "Content-Length": pixel.length,
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+  });
+  res.end(pixel);
+});
+
 // ─── Protected routes (require Firebase token) ────────────────────────────────
 
 app.use("/api/outreach", verifyFirebaseToken as any);

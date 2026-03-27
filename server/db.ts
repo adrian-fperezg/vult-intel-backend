@@ -559,7 +559,8 @@ export const initDb = async () => {
       { name: 'from_name', type: 'TEXT' },
       { name: 'attachments', type: "TEXT DEFAULT '[]'" },
       { name: 'sequence_id', type: 'TEXT' },
-      { name: 'step_id', type: 'TEXT' }
+      { name: 'step_id', type: 'TEXT' },
+      { name: 'opened_at', type: 'TIMESTAMP' }
     ];
 
     if (db.isPostgres) {
@@ -670,11 +671,40 @@ export const initDb = async () => {
         id TEXT PRIMARY KEY,
         mailbox_id TEXT,
         contact_id TEXT,
+        project_id TEXT,
+        sequence_id TEXT,
+        step_id TEXT,
         type TEXT,
         metadata TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for tracking events
+    const newTrackCols = [
+      { name: 'project_id', type: 'TEXT' },
+      { name: 'sequence_id', type: 'TEXT' },
+      { name: 'step_id', type: 'TEXT' }
+    ];
+
+    if (db.isPostgres) {
+      for (const col of newTrackCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_individual_email_events ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for tracking event column ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const trackCols = await db.pragma('table_info(outreach_individual_email_events)');
+      const trackColNames = (trackCols || []).map((c: any) => c.name);
+      for (const col of newTrackCols) {
+        if (!trackColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_individual_email_events`);
+          await db.run(`ALTER TABLE outreach_individual_email_events ADD COLUMN ${col.name} ${col.type}`);
+        }
+      }
+    }
 
     // 14. Hunter Usage Log
     await db.run(`
@@ -810,31 +840,34 @@ export const initDb = async () => {
       )
     `);
 
-    if (db.isPostgres) {
-      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS current_step_id TEXT`);
-      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS next_step_id TEXT`);
-      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP`);
-      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS last_error TEXT`);
-      await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS last_executed_at TIMESTAMP`);
-    } else {
-      const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
-      const enrollColNames = (enrollCols || []).map((c: any) => c.name);
-      
       const missingEnrollCols = [
         { name: 'current_step_id', type: 'TEXT' },
         { name: 'next_step_id', type: 'TEXT' },
         { name: 'scheduled_at', type: 'TIMESTAMP' },
         { name: 'last_error', type: 'TEXT' },
-        { name: 'last_executed_at', type: 'TIMESTAMP' }
+        { name: 'last_executed_at', type: 'TIMESTAMP' },
+        { name: 'opened', type: 'BOOLEAN DEFAULT FALSE' }
       ];
 
-      for (const col of missingEnrollCols) {
-        if (!enrollColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_enrollments`);
-          await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN ${col.name} ${col.type}`);
+      if (db.isPostgres) {
+        for (const col of missingEnrollCols) {
+          try {
+            await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+          } catch (err) {
+            console.warn(`[DB] PG Migration for enrollment column ${col.name} failed:`, (err as Error).message);
+          }
+        }
+      } else {
+        const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
+        const enrollColNames = (enrollCols || []).map((c: any) => c.name);
+        
+        for (const col of missingEnrollCols) {
+          if (!enrollColNames.includes(col.name)) {
+            console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_enrollments`);
+            await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN ${col.name} ${col.type}`);
+          }
         }
       }
-    }
 
     // Backfill current_step_id for enrollments
     const unmigratedEnrollments = await db.all("SELECT id FROM outreach_sequence_enrollments WHERE current_step_id IS NULL LIMIT 1");

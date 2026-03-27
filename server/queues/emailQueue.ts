@@ -278,6 +278,11 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
+  // INJECT TRACKING PIXEL
+  const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
+  const trackingPixel = `\n<img src="${backendUrl}/api/tracking/open?emailId=${emailId}" width="1" height="1" style="display:none;" alt="" />`;
+  const bodyWithTracking = (email.body_html || "") + trackingPixel;
+
   const attachments = email.attachments ? JSON.parse(email.attachments) : [];
 
   if (mailbox.connection_type === 'smtp') {
@@ -289,7 +294,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     const result = await sendSmtpMessage(mailboxId, {
       to: email.to_email,
       subject: email.subject || "(No Subject)",
-      bodyHtml: email.body_html || "",
+      bodyHtml: bodyWithTracking,
       fromEmail: email.from_email,
       fromName: email.from_name,
       attachments
@@ -303,7 +308,6 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       WHERE id = ?
     `).run(result.messageId, emailId);
 
-    // Skip tracking for now or implement SMTP specific tracking
     return { success: true, messageId: result.messageId };
   }
 
@@ -311,7 +315,6 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const { gmail, mailboxEmail } = await getValidGmailClient(mailboxId);
   
   const subject = email.subject || "(No Subject)";
-  const body = email.body_html || "";
   const to = email.to_email;
   const fromEmail = email.from_email || mailbox.email;
   const fromName = email.from_name || mailbox.name;
@@ -321,7 +324,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     from: fromHeader,
     to: to,
     subject: subject,
-    html: body,
+    html: bodyWithTracking,
     attachments: attachments.map((a: any) => ({
       filename: a.filename,
       path: a.path,
@@ -356,6 +359,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     `).run(result.id, result.threadId, emailId);
 
     if (email.contact_id) {
+      // Record sent event
       await db.prepare(`
         INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
         VALUES (?, ?, ?, ?, ?, 'sent', ?)
