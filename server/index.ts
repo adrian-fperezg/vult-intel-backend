@@ -2331,7 +2331,7 @@ app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
   const userAgent = req.headers["user-agent"];
 
   try {
-    const email = await db.prepare("SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
     if (email) {
       await db.prepare(`
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
@@ -2340,9 +2340,9 @@ app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
 
       if (email.contact_id) {
         await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-          VALUES (?, ?, ?, 'opened', ?)
-        `).run(uuidv4(), email.contact_id, email.project_id, JSON.stringify({ email_id: emailId }));
+          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?, 'opened', ?)
+        `).run(uuidv4(), email.contact_id, email.project_id, email.sequence_id, email.step_id, JSON.stringify({ email_id: emailId }));
       }
     }
   } catch (err) {
@@ -2390,7 +2390,52 @@ app.get("/api/outreach/track/:emailId/click", async (req, res) => {
   res.redirect(targetUrl);
 });
 
-// ── Analytics ─────────────────────────────────────────────────────────────
+// GET /api/outreach/sequences/:id/step-analytics
+app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const events = await db.prepare(`
+      SELECT 
+        step_id,
+        count(CASE WHEN type = 'sent' THEN 1 END) as sent,
+        count(DISTINCT CASE WHEN type = 'opened' THEN contact_id END) as opens,
+        count(DISTINCT CASE WHEN type = 'clicked' THEN contact_id END) as clicks,
+        count(DISTINCT CASE WHEN (type = 'replied' OR type = 'reply') THEN contact_id END) as replies
+      FROM outreach_events 
+      WHERE sequence_id = ?
+      AND step_id IS NOT NULL
+      GROUP BY step_id
+    `).all(id) as any[];
+
+    const analytics: Record<string, any> = {};
+    
+    events.forEach(row => {
+      const sent = parseInt(row.sent) || 0;
+      const opens = parseInt(row.opens) || 0;
+      const clicks = parseInt(row.clicks) || 0;
+      const replies = parseInt(row.replies) || 0;
+
+      analytics[row.step_id] = {
+        sent,
+        opens,
+        clicks,
+        replies,
+        openRate: sent > 0 ? (opens / sent) * 100 : 0,
+        clickRate: sent > 0 ? (clicks / sent) * 100 : 0,
+        replyRate: sent > 0 ? (replies / sent) * 100 : 0
+      };
+    });
+
+    res.json(analytics);
+  } catch (error: any) {
+    console.error("Step analytics error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

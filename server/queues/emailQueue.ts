@@ -110,14 +110,16 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         // Create individual email record
         const emailId = uuidv4();
         await db.prepare(`
-          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status, attachments)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body_html, status, attachments)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
         `).run(
           emailId,
           sequence.user_id,
           projectId,
           sequence.mailbox_id,
           contactId,
+          sequenceId,
+          stepId,
           sequence.from_email,
           sequence.from_name,
           contact.email,
@@ -131,9 +133,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         
         // Record event
         await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(uuidv4(), contactId, projectId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
 
         // Schedule next step (default path)
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
@@ -164,9 +166,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         // Record condition execution
         await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(uuidv4(), contactId, projectId, 'sequence_condition_evaluated', JSON.stringify({ sequenceId, stepId, result: branchPath }));
+          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_condition_evaluated', JSON.stringify({ sequenceId, stepId, result: branchPath }));
 
         // Schedule next step based on branch
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
@@ -176,9 +178,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         
         // Record execution
         await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(uuidv4(), contactId, projectId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
 
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
       }
@@ -300,9 +302,9 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
 
     if (email.contact_id) {
       await db.prepare(`
-        INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(uuidv4(), email.contact_id, email.project_id, 'email_sent', JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
+        INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+        VALUES (?, ?, ?, ?, ?, 'sent', ?)
+      `).run(uuidv4(), email.contact_id, email.project_id, email.sequence_id, email.step_id, JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
       
       await db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
     }

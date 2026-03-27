@@ -278,6 +278,11 @@ export function useOutreachApi() {
     [get]
   );
 
+  const fetchStepAnalytics = useCallback(
+    (id: string) => get<Record<string, any>>(`/sequences/${id}/step-analytics`),
+    [get]
+  );
+
   const deleteSequence = useCallback(
     (id: string) => del(`/sequences/${id}`),
     [del],
@@ -525,6 +530,7 @@ export function useOutreachApi() {
     updateSequenceSteps,
     deleteSequence,
     activateSequence,
+    fetchStepAnalytics,
     addSequenceRecipients,
     removeSequenceRecipient: (sequenceId: string, contactId: string) => 
       del(`/sequences/${sequenceId}/recipients/${contactId}`),

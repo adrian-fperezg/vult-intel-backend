@@ -69,6 +69,7 @@ interface StepNodeProps {
   handleOptimizeStep: (stepId: string) => void;
   activeStepId: string | null;
   setActiveStepId: (id: string | null) => void;
+  analytics?: Record<string, any>;
 }
 
 function StepNode({ 
@@ -83,7 +84,8 @@ function StepNode({
   isOptimizing, 
   handleOptimizeStep,
   activeStepId,
-  setActiveStepId 
+  setActiveStepId,
+  analytics
 }: StepNodeProps) {
   const isExpanded = activeStepId === step.id;
   
@@ -168,6 +170,19 @@ function StepNode({
             </div>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {!isExpanded && step.step_type === 'email' && analytics?.[step.id] && (
+              <div className="flex items-center gap-3 px-3 py-1 rounded-lg bg-white/5 border border-white/5 mr-2">
+                <div className="flex flex-col items-center">
+                  <span className="text-[8px] text-slate-500 font-bold uppercase">Sent</span>
+                  <span className="text-[10px] font-bold text-white">{analytics[step.id].sent}</span>
+                </div>
+                <div className="w-px h-4 bg-white/10" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[8px] text-slate-500 font-bold uppercase">Open</span>
+                  <span className="text-[10px] font-bold text-teal-400">{analytics[step.id].openRate.toFixed(0)}%</span>
+                </div>
+              </div>
+            )}
             {!isExpanded && <FileText className="size-3.5 text-slate-500" />}
             <button 
               onClick={(e) => { e.stopPropagation(); onRemove(step.id); }}
@@ -177,6 +192,38 @@ function StepNode({
             </button>
           </div>
         </div>
+        
+        {/* Expanded Analytics Row */}
+        {isExpanded && step.step_type === 'email' && analytics?.[step.id] && (
+          <div className="mx-8 mt-2 p-4 rounded-xl bg-white/[0.02] border border-white/5 grid grid-cols-4 gap-4">
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sent</span>
+              <p className="text-lg font-bold text-white leading-none">{analytics[step.id].sent}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Open Rate</span>
+              <p className="text-lg font-bold text-teal-400 leading-none">{analytics[step.id].openRate.toFixed(1)}%</p>
+              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-teal-500" style={{ width: `${Math.min(100, analytics[step.id].openRate)}%` }} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">CTR</span>
+              <p className="text-lg font-bold text-blue-400 leading-none">{analytics[step.id].clickRate.toFixed(1)}%</p>
+              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, analytics[step.id].clickRate)}%` }} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Reply Rate</span>
+              <p className="text-lg font-bold text-emerald-400 leading-none">{analytics[step.id].replyRate.toFixed(1)}%</p>
+              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, analytics[step.id].replyRate)}%` }} />
+              </div>
+            </div>
+          </div>
+        )}
+
 
         <AnimatePresence>
           {isExpanded && step.step_type === 'email' && (
@@ -325,6 +372,7 @@ function StepNode({
                   handleOptimizeStep={handleOptimizeStep}
                   activeStepId={activeStepId}
                   setActiveStepId={setActiveStepId}
+                  analytics={analytics}
                  />
                ) : (
                   <button 
@@ -358,6 +406,7 @@ function StepNode({
                   handleOptimizeStep={handleOptimizeStep}
                   activeStepId={activeStepId}
                   setActiveStepId={setActiveStepId}
+                  analytics={analytics}
                  />
                ) : (
                   <button 
@@ -387,6 +436,7 @@ function StepNode({
               handleOptimizeStep={handleOptimizeStep}
               activeStepId={activeStepId}
               setActiveStepId={setActiveStepId}
+              analytics={analytics}
              />
            )}
            {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
@@ -412,6 +462,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const { activeProjectId } = useProject();
   const [sequence, setSequence] = useState<Sequence | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [stepAnalytics, setStepAnalytics] = useState<Record<string, any>>({});
   const [mailboxes, setMailboxes] = useState<any[]>([]);
   const [identities, setIdentities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -520,6 +571,14 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       }
       setMailboxes(mailboxData);
       setIdentities(identityData);
+      
+      // Load Analytics
+      try {
+        const analyticsData = await api.fetchStepAnalytics(sequenceId);
+        if (analyticsData) setStepAnalytics(analyticsData);
+      } catch (err) {
+        console.warn('Failed to load step analytics', err);
+      }
     } catch (err) {
       toast.error('Failed to load sequence data');
       console.error(err);
@@ -561,6 +620,18 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       console.error('Save error:', err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const refreshAnalytics = async () => {
+    try {
+      const analyticsData = await api.fetchStepAnalytics(sequenceId);
+      if (analyticsData) {
+        setStepAnalytics(analyticsData);
+        toast.success('Analytics updated');
+      }
+    } catch (err) {
+      toast.error('Failed to refresh analytics');
     }
   };
 
@@ -810,6 +881,15 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
              )}
           </div>
           <div className="h-6 w-px bg-white/10" />
+          
+          <button
+            onClick={refreshAnalytics}
+            className="p-2 hover:bg-white/5 rounded-xl text-slate-500 hover:text-teal-400 transition-all mr-2"
+            title="Refresh Analytics"
+          >
+            <Clock className="size-4" />
+          </button>
+
           <TealButton
             onClick={() => handleSaveAll()}
             loading={isSaving}
@@ -856,6 +936,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     handleOptimizeStep={handleOptimizeStep}
                     activeStepId={activeStepId}
                     setActiveStepId={setActiveStepId}
+                    analytics={stepAnalytics}
                   />
                 ) : (
                   <div className="flex flex-col items-center py-20">

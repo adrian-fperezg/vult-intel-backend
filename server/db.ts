@@ -412,11 +412,38 @@ export const initDb = async () => {
         campaign_id TEXT REFERENCES outreach_campaigns(id),
         contact_id TEXT REFERENCES outreach_contacts(id),
         project_id TEXT NOT NULL DEFAULT '',
+        sequence_id TEXT REFERENCES outreach_sequences(id),
+        step_id TEXT REFERENCES outreach_sequence_steps(id),
         type TEXT NOT NULL,
         metadata TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for outreach_events
+    const newEventCols = [
+      { name: 'sequence_id', type: 'TEXT' },
+      { name: 'step_id', type: 'TEXT' }
+    ];
+
+    if (db.isPostgres) {
+      for (const col of newEventCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_events ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for event column ${col.name} failed:`, (err as Error).message);
+        }
+      }
+    } else {
+      const eventCols = await db.pragma('table_info(outreach_events)');
+      const eventColNames = (eventCols || []).map((c: any) => c.name);
+      for (const col of newEventCols) {
+        if (!eventColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_events`);
+          await db.run(`ALTER TABLE outreach_events ADD COLUMN ${col.name} ${col.type}`);
+        }
+      }
+    }
 
     // 6. Mailboxes
     await db.run(`
@@ -509,6 +536,8 @@ export const initDb = async () => {
         project_id TEXT NOT NULL,
         mailbox_id TEXT NOT NULL REFERENCES outreach_mailboxes(id),
         contact_id TEXT REFERENCES outreach_contacts(id),
+        sequence_id TEXT REFERENCES outreach_sequences(id),
+        step_id TEXT REFERENCES outreach_sequence_steps(id),
         from_email TEXT,
         from_name TEXT,
         to_email TEXT NOT NULL,
@@ -528,7 +557,9 @@ export const initDb = async () => {
     const newEmailCols = [
       { name: 'from_email', type: 'TEXT' },
       { name: 'from_name', type: 'TEXT' },
-      { name: 'attachments', type: "TEXT DEFAULT '[]'" }
+      { name: 'attachments', type: "TEXT DEFAULT '[]'" },
+      { name: 'sequence_id', type: 'TEXT' },
+      { name: 'step_id', type: 'TEXT' }
     ];
 
     if (db.isPostgres) {
