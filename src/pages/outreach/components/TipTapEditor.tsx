@@ -72,6 +72,7 @@ export default function TipTapEditor({
   isOptimizing = false,
   onAttachFile
 }: TipTapEditorProps) {
+  const [showVariables, setShowVariables] = React.useState(false);
   
   const editor = useEditor({
     extensions: [
@@ -222,25 +223,37 @@ export default function TipTapEditor({
           )}
 
           {variables.length > 0 && (
-            <div className="relative group">
+            <div className="relative">
               <button 
                 type="button" 
-                className="p-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-teal-400 rounded hover:bg-white/5 transition-colors"
+                onClick={() => setShowVariables(!showVariables)}
+                className={cn(
+                  "p-1.5 flex items-center gap-1.5 text-xs font-semibold rounded transition-colors",
+                  showVariables ? "bg-teal-500/20 text-teal-400" : "text-slate-400 hover:text-teal-400 hover:bg-white/5"
+                )}
               >
                 <Type className="size-3.5" /> Variables
               </button>
-              <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl z-20 w-40 overflow-hidden">
-                {variables.map(v => (
-                  <button 
-                    key={v}
-                    type="button"
-                    onClick={() => insertVariable(v)}
-                    className="block w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-teal-500/10 hover:text-white transition-colors"
-                  >
-                    {`{{${v}}}`}
-                  </button>
-                ))}
-              </div>
+              {showVariables && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowVariables(false)} />
+                  <div className="absolute right-0 top-full mt-1 bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl z-20 w-40 overflow-hidden animate-in fade-in slide-in-from-top-1">
+                    {variables.map(v => (
+                      <button 
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          insertVariable(v);
+                          setShowVariables(false);
+                        }}
+                        className="block w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-teal-500/10 hover:text-white transition-colors"
+                      >
+                        {`{{${v}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

@@ -99,7 +99,7 @@ function StepNode({
   };
 
   const removeAttachment = (id: string) => {
-    onUpdate(step.id, { attachments: step.attachments.filter(a => a.id !== id) });
+    onUpdate(step.id, { attachments: (step.attachments || []).filter((a: any) => a.id !== id) });
   };
 
   return (
@@ -214,6 +214,29 @@ function StepNode({
                     isOptimizing={isOptimizing}
                     onAttachFile={() => document.getElementById(`file-upload-${step.id}`)?.click()}
                   />
+                  <input 
+                    type="file"
+                    id={`file-upload-${step.id}`}
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                  
+                  {step.attachments && step.attachments.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {step.attachments.map((file: any) => (
+                        <div key={file.id} className="flex items-center gap-2 px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] text-slate-400">
+                          <Paperclip className="size-3 text-teal-400" />
+                          <span className="truncate max-w-[150px]">{file.name}</span>
+                          <button 
+                            onClick={() => removeAttachment(file.id)}
+                            className="hover:text-red-400 transition-colors"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -944,6 +967,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         onClose={() => setIsRecipientModalOpen(false)}
         onConfirm={handleAssignRecipients}
         api={api}
+      />
+      <ConditionSelectorModal
+        isOpen={isConditionModalOpen}
+        onClose={() => setIsConditionModalOpen(false)}
+        onSelect={handleSelectCondition}
       />
     </div>
   );

@@ -1071,34 +1071,39 @@ app.put("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
 
       // Insert new steps
       for (const [index, step] of steps.entries()) {
-        await db.run(`
-          INSERT INTO outreach_sequence_steps (
-            id, sequence_id, project_id, step_number, step_type, 
-            config, delay_amount, delay_unit, attachments,
-            parent_step_id, condition_type, branch_path
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, 
-          step.id || uuidv4(), 
-          id, 
-          project_id, 
-          index + 1, 
-          step.step_type, 
-          JSON.stringify(step.config),
-          step.delay_amount || 2,
-          step.delay_unit || 'days',
-          typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || []),
-          step.parent_step_id || null,
-          step.condition_type || null,
-          step.branch_path || 'default'
-        );
+        try {
+          await db.run(`
+            INSERT INTO outreach_sequence_steps (
+              id, sequence_id, project_id, step_number, step_type, 
+              config, delay_amount, delay_unit, attachments,
+              parent_step_id, condition_type, branch_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, 
+            step.id && !step.id.startsWith('new-') ? step.id : uuidv4(), 
+            id, 
+            project_id, 
+            index + 1, 
+            step.step_type, 
+            JSON.stringify(step.config),
+            step.delay_amount || 2,
+            step.delay_unit || 'days',
+            typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || []),
+            step.parent_step_id || null,
+            step.condition_type || null,
+            step.branch_path || 'default'
+          );
+        } catch (stepErr) {
+          console.error(`Failed to insert step ${index + 1} (${step.step_type}):`, stepErr);
+          throw stepErr; // Rollback transaction
+        }
       }
     });
 
     res.json({ success: true });
   } catch (error) {
     console.error("Failed to bulk update steps:", error);
-    res.status(500).json({ error: "Failed to update steps" });
+    res.status(500).json({ error: "Failed to update steps", details: (error as any).message });
   }
 });
 
@@ -1139,12 +1144,32 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
 app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
-  const { contact_ids, project_id, type } = req.body;
+  const { recipients, project_id, type } = req.body; // 'recipients' can be IDs or full objects
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    for (const contact_id of contact_ids) {
+    const list = Array.isArray(recipients) ? recipients : [];
+    
+    for (const item of list) {
+      let contact_id: string;
+
+      if (typeof item === 'object' && item.email) {
+        // BUG 2: Handle manual contact upsert
+        const existing = await db.get("SELECT id FROM outreach_contacts WHERE email = ? AND user_id = ?", item.email, userId) as any;
+        if (existing) {
+          contact_id = existing.id;
+        } else {
+          contact_id = uuidv4();
+          await db.run(`
+            INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.type || 'individual');
+        }
+      } else {
+        contact_id = item; // It's just an ID
+      }
+
       await db.run(`
         INSERT OR IGNORE INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
         VALUES (?, ?, ?, ?, ?)
@@ -1159,7 +1184,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
     res.json({ success: true });
   } catch (error) {
     console.error("Failed to add sequence recipients:", error);
-    res.status(500).json({ error: "Failed to add recipients" });
+    res.status(500).json({ error: "Failed to add recipients", details: (error as any).message });
   }
 });
 
