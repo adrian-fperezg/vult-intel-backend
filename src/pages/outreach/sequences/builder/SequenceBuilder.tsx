@@ -65,6 +65,8 @@ interface StepNodeProps {
   onAddCondition: (parentId: string) => void;
   isOptimizing: boolean;
   handleOptimizeStep: (stepId: string) => void;
+  activeStepId: string | null;
+  setActiveStepId: (id: string | null) => void;
 }
 
 function StepNode({ 
@@ -77,9 +79,11 @@ function StepNode({
   onAddStep, 
   onAddCondition,
   isOptimizing, 
-  handleOptimizeStep 
+  handleOptimizeStep,
+  activeStepId,
+  setActiveStepId 
 }: StepNodeProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const isExpanded = activeStepId === step.id;
   
   const children = allSteps.filter(s => s.parent_step_id === step.id);
   const yesChild = children.find(c => c.branch_path === 'yes');
@@ -114,38 +118,47 @@ function StepNode({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "group relative w-full max-w-xl bg-[#161b22] border rounded-2xl p-5 transition-all duration-200",
-          step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02]" : 
-          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)]" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128]"
+          "group relative w-[380px] min-w-[380px] max-w-[380px] flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
+          step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02] p-4" : 
+          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
         )}
       >
-        <div className="flex items-start justify-between gap-4 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+        <div className={cn(
+          "flex items-start justify-between gap-4 cursor-pointer",
+          !isExpanded && "items-center"
+        )} onClick={() => setActiveStepId(isExpanded ? null : step.id)}>
           <div className="flex items-center gap-3">
             <div className={cn(
-              "size-10 rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
+              "rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
+              isExpanded ? "size-10" : "size-8",
               step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" : 
               step.step_type === 'condition' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
               "bg-white/5 border-white/10 text-slate-400"
             )}>
-              {step.step_type === 'email' ? <Mail className="size-5" /> : 
-               step.step_type === 'condition' ? <Filter className="size-5" /> :
-               <Clock className="size-5" />}
+              {step.step_type === 'email' ? <Mail className={cn(isExpanded ? "size-5" : "size-4")} /> : 
+               step.step_type === 'condition' ? <Filter className={cn(isExpanded ? "size-5" : "size-4")} /> :
+               <Clock className={cn(isExpanded ? "size-5" : "size-4")} />}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                   {step.branch_path ? `${step.branch_path.toUpperCase()} Branch` : `Step ${step.step_number}`}
                 </span>
-                <span className="text-[10px] text-slate-600 font-bold">•</span>
-                <span className={cn(
-                  "text-[10px] font-bold uppercase tracking-wider",
-                  step.step_type === 'email' ? "text-teal-500/70" : "text-purple-500/70"
-                )}>{step.step_type}</span>
+                {!isExpanded && <span className="text-[10px] text-slate-600 font-bold">•</span>}
+                {!isExpanded && (
+                  <span className={cn(
+                    "text-[10px] font-bold uppercase tracking-wider",
+                    step.step_type === 'email' ? "text-teal-500/70" : "text-purple-500/70"
+                  )}>{step.step_type}</span>
+                )}
               </div>
-              <h4 className="text-sm font-semibold text-white truncate max-w-[300px]">
+              <h4 className={cn(
+                "font-semibold text-white truncate",
+                isExpanded ? "text-sm max-w-[280px]" : "text-xs max-w-[220px]"
+              )}>
                 {step.step_type === 'condition' ? `Check if user ${step.condition_type}` : (step.config.subject || 'Untitled Step')}
               </h4>
-              {step.step_type === 'email' && (
+              {isExpanded && step.step_type === 'email' && (
                 <p className="text-xs text-slate-500 mt-1 line-clamp-1 opacity-80">
                   {step.config.body_html?.replace(/<[^>]*>?/gm, '') || 'Set up your message...'}
                 </p>
@@ -153,6 +166,7 @@ function StepNode({
             </div>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {!isExpanded && <FileText className="size-3.5 text-slate-500" />}
             <button 
               onClick={(e) => { e.stopPropagation(); onRemove(step.id); }}
               className="p-2 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
@@ -289,7 +303,7 @@ function StepNode({
         <div className="w-full mt-10">
           <div className="flex gap-16 justify-center">
             {/* YES Branch */}
-            <div className="flex flex-col items-center flex-1 max-w-xl">
+            <div className="flex flex-col items-center flex-shrink-0">
                <div className="flex flex-col items-center mb-4">
                   <div className="h-6 w-px bg-green-500/40" />
                   <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/30 text-[10px] font-black text-green-500 uppercase tracking-widest">Yes</div>
@@ -307,11 +321,13 @@ function StepNode({
                   onAddCondition={onAddCondition}
                   isOptimizing={isOptimizing}
                   handleOptimizeStep={handleOptimizeStep}
+                  activeStepId={activeStepId}
+                  setActiveStepId={setActiveStepId}
                  />
                ) : (
                   <button 
                     onClick={() => onAddStep(step.id, 'yes')}
-                    className="flex items-center gap-2 px-6 py-4 rounded-2xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
+                    className="flex items-center justify-center gap-2 w-[380px] py-4 rounded-2xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
                   >
                     <Plus className="size-4" />
                     Add Step
@@ -320,7 +336,7 @@ function StepNode({
             </div>
 
             {/* NO Branch */}
-            <div className="flex flex-col items-center flex-1 max-w-xl">
+            <div className="flex flex-col items-center flex-shrink-0">
                <div className="flex flex-col items-center mb-4">
                   <div className="h-6 w-px bg-red-500/40" />
                   <div className="px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-black text-red-500 uppercase tracking-widest">No</div>
@@ -338,11 +354,13 @@ function StepNode({
                   onAddCondition={onAddCondition}
                   isOptimizing={isOptimizing}
                   handleOptimizeStep={handleOptimizeStep}
+                  activeStepId={activeStepId}
+                  setActiveStepId={setActiveStepId}
                  />
                ) : (
                   <button 
                     onClick={() => onAddStep(step.id, 'no')}
-                    className="flex items-center gap-2 px-6 py-4 rounded-2xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
+                    className="flex items-center justify-center gap-2 w-[380px] py-4 rounded-2xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
                   >
                     <Plus className="size-4" />
                     Add Step
@@ -365,6 +383,8 @@ function StepNode({
               onAddCondition={onAddCondition}
               isOptimizing={isOptimizing}
               handleOptimizeStep={handleOptimizeStep}
+              activeStepId={activeStepId}
+              setActiveStepId={setActiveStepId}
              />
            )}
            {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
@@ -401,6 +421,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
   
   // DAG States
+  const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
   
@@ -505,6 +526,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       },
     };
     setSteps([...steps, newStep]);
+    setActiveStepId(newStep.id);
     setHasUnsavedChanges(true);
   };
 
@@ -532,6 +554,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       },
     };
     setSteps([...steps, newStep]);
+    setActiveStepId(newStep.id);
     setHasUnsavedChanges(true);
     setPendingConditionParentId(null);
   };
@@ -739,9 +762,9 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
       <main className="flex-1 flex overflow-hidden">
         {activeTab === 'builder' && (
-          <div className="flex-1 overflow-y-auto bg-[#0d1117] relative custom-scrollbar">
-            <div className="max-w-4xl mx-auto py-12 px-6">
-              <div className="flex flex-col items-center">
+          <div className="flex-1 overflow-auto bg-[#0d1117] relative custom-scrollbar">
+            <div className="w-full py-12 px-20">
+              <div className="flex flex-col items-start min-w-max">
                 {rootStep ? (
                   <StepNode 
                     step={rootStep} 
@@ -754,6 +777,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     onAddCondition={addCondition}
                     isOptimizing={isOptimizing}
                     handleOptimizeStep={handleOptimizeStep}
+                    activeStepId={activeStepId}
+                    setActiveStepId={setActiveStepId}
                   />
                 ) : (
                   <div className="flex flex-col items-center py-20">
@@ -766,7 +791,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     </p>
                     <button 
                       onClick={() => addStep(null, 'default')}
-                      className="flex items-center gap-2 px-8 py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
+                      className="flex items-center justify-center gap-2 w-[380px] py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
                     >
                       <Plus className="size-5" />
                       Add First Step
