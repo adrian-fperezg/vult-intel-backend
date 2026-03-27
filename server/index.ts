@@ -1228,11 +1228,13 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
             const listMembers = await tx.all("SELECT contact_id FROM contact_list_members WHERE list_id = ?", item.list_id) as any[];
             for (const member of listMembers) {
                 const memberContactId = member.contact_id;
-                await tx.run(`
-                    INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(sequence_id, contact_id) DO NOTHING
-                `, uuidv4(), id, project_id, memberContactId, recipientType || 'individual');
+                const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, memberContactId);
+                if (!existing) {
+                  await tx.run(`
+                      INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+                      VALUES (?, ?, ?, ?, ?)
+                  `, uuidv4(), id, project_id, memberContactId, recipientType || 'individual');
+                }
                 
                 const c = await tx.get("SELECT * FROM outreach_contacts WHERE id = ?", memberContactId);
                 if (c) addedContacts.push(c);
@@ -1244,11 +1246,13 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
 
         if (contact_id) {
            // Insert into sequence recipients with conflict handling
-          await tx.run(`
-            INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(sequence_id, contact_id) DO NOTHING
-          `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
+           const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, contact_id);
+           if (!existing) {
+             await tx.run(`
+               INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+               VALUES (?, ?, ?, ?, ?)
+             `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
+           }
 
           if (contactObj) {
             addedContacts.push(contactObj);
