@@ -583,6 +583,8 @@ export function useOutreachApi() {
     fetchIdentities,
     addAlias: (mailboxId: string, email: string, name?: string) => 
       post<any>(`/mailboxes/${mailboxId}/aliases`, { email, name }),
+    fetchAliases: (mailboxId: string) => 
+      get<any[]>(`/mailboxes/${mailboxId}/aliases`),
     syncGmailAliases: (mailboxId: string) => 
       post<any>(`/mailboxes/${mailboxId}/sync-aliases`, {}),
   };

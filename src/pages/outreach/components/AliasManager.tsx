@@ -27,6 +27,28 @@ export const AliasManager: React.FC<AliasManagerProps> = ({
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadAliases = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await useOutreachApi().fetchAliases(mailboxId);
+      if (data) {
+        setAliases(data);
+        onAliasesUpdated(data);
+      }
+    } catch (err: any) {
+      console.error("Failed to load aliases:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [mailboxId, onAliasesUpdated]);
+
+  React.useEffect(() => {
+    if (aliases.length === 0) {
+      loadAliases();
+    }
+  }, [mailboxId]);
 
   const handleSync = async () => {
     setIsSyncing(true);

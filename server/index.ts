@@ -420,6 +420,17 @@ app.post("/api/outreach/mailboxes/:id/aliases/sync", async (req: AuthRequest, re
   }
 });
 
+// GET /api/outreach/mailboxes/:id/aliases
+app.get("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    const aliases = await db.prepare("SELECT email, name FROM outreach_mailbox_aliases WHERE mailbox_id = ?").all(id) as any[];
+    res.json(aliases);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/outreach/mailboxes/:id/aliases
 // Manually add an alias (useful for SMTP mailboxes that might have aliases)
 app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) => {
@@ -427,6 +438,8 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
   const { email, name } = req.body;
   try {
     const aliasId = uuidv4();
+    let updatedAliases: { email: string; name: string }[] = [];
+
     await db.transaction(async () => {
       // 1. Insert into separate table
       await db.prepare(`
@@ -436,22 +449,28 @@ app.post("/api/outreach/mailboxes/:id/aliases", async (req: AuthRequest, res) =>
 
       // 2. Sync aliases JSON array in outreach_mailboxes
       const mailbox = await db.prepare("SELECT aliases FROM outreach_mailboxes WHERE id = ?").get(id) as any;
-      let currentAliases: { email: string; name: string }[] = [];
       try {
         const rawAliases = mailbox.aliases || '[]';
-        currentAliases = typeof rawAliases === 'string' ? JSON.parse(rawAliases) : (rawAliases || []);
+        updatedAliases = typeof rawAliases === 'string' ? JSON.parse(rawAliases) : (rawAliases || []);
       } catch (e) {
         console.error("Error parsing aliases for mailbox", id, e);
       }
       
-      const exists = currentAliases.some(a => a.email === email);
+      const exists = updatedAliases.some(a => a.email === email);
       if (!exists) {
-        currentAliases.push({ email, name: name || '' });
-        await db.prepare("UPDATE outreach_mailboxes SET aliases = ? WHERE id = ?").run(JSON.stringify(currentAliases), id);
+        updatedAliases.push({ email, name: name || '' });
+        await db.prepare("UPDATE outreach_mailboxes SET aliases = ? WHERE id = ?").run(JSON.stringify(updatedAliases), id);
       }
     });
-    res.json({ id: aliasId, email, name });
+    
+    // Return updated aliases so UI can refresh immediately
+    res.json({ success: true, id: aliasId, email, name, aliases: updatedAliases });
   } catch (err: any) {
+    // Unique constraint violation: Postgres 23505 or SQLite error message
+    if (err.code === '23505' || (err.message && err.message.includes('UNIQUE constraint failed'))) {
+      return res.status(400).json({ error: "Alias already exists" });
+    }
+    console.error("Error adding alias:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2127,9 +2146,9 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       FROM outreach_campaigns c
       LEFT JOIN outreach_events e ON e.metadata LIKE '%"campaign_id":"' || c.id || '"%'
       WHERE c.project_id = ?
-      GROUP BY c.id
-      HAVING sent > 0
-      ORDER BY sent DESC
+      GROUP BY c.id, c.name
+      HAVING count(CASE WHEN e.type = 'sent' THEN 1 END) > 0
+      ORDER BY 2 DESC
       LIMIT 5
     `).all(project_id) as any[];
 
