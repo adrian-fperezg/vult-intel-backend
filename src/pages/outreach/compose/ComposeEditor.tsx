@@ -5,7 +5,7 @@ import { TealButton } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import ScheduleModal from './ScheduleModal';
-import EmailEditor from '../components/EmailEditor';
+import TipTapEditor from '../components/TipTapEditor';
 
 interface ComposeEditorProps {
   emailId: string;
@@ -28,6 +28,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
   const [isLoading, setIsLoading] = useState(emailId !== 'new');
   const [isSaving, setIsSaving] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   const [mailboxes, setMailboxes] = useState<any[]>([]);
   const [identities, setIdentities] = useState<any[]>([]);
@@ -173,6 +174,33 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
       toast.error(err.message || 'Failed to save');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleOptimize = async () => {
+    if (!form.body_html || form.body_html.length < 20) {
+      toast.error('Please write some content first.');
+      return;
+    }
+    setIsOptimizing(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_OUTREACH_API_URL || ''}/api/outreach/ai/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          content: form.body_html,
+          subject: form.subject
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to optimize');
+      const data = await response.json();
+      setForm(prev => ({ ...prev, body_html: data.optimizedContent }));
+      toast.success('Optimized with Gemini!');
+    } catch (err) {
+      console.error(err);
+      toast.error('AI Optimization failed');
+    } finally {
+      setIsOptimizing(false);
     }
   };
 
@@ -488,12 +516,13 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
             />
           </div>
 
-          {/* Body */}
           <div className="mt-8">
-            <EmailEditor 
+            <TipTapEditor 
               value={form.body_html}
               onChange={(val) => setForm({ ...form, body_html: val })}
               disabled={isReadOnly}
+              onOptimize={handleOptimize}
+              isOptimizing={isOptimizing}
             />
           </div>
 

@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TealButton, OutreachBadge, OutreachMetricCard } from '../../OutreachCommon';
-import { useOutreachApi } from '@/hooks/useOutreachApi';
-import EmailEditor from '../../components/EmailEditor';
+import { useOutreachApi } from '../../../../hooks/useOutreachApi';
+import TipTapEditor from '../../components/TipTapEditor';
 import { toast } from 'react-hot-toast';
 
 interface Step {
@@ -53,6 +53,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [identities, setIdentities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'builder' | 'settings' | 'recipients'>('builder');
 
@@ -119,6 +120,39 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       toast.error("Activation failed");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOptimizeStep = async (stepId: string) => {
+    const step = steps.find(s => s.id === stepId);
+    if (!step || !step.config.body_html || step.config.body_html.length < 20) {
+      toast.error('Please write some content first.');
+      return;
+    }
+    
+    setIsOptimizing(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_OUTREACH_API_URL || ''}/api/outreach/ai/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          content: step.config.body_html,
+          subject: step.config.subject
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to optimize');
+      const data = await response.json();
+      
+      setSteps(prev => prev.map(s => s.id === stepId 
+        ? { ...s, config: { ...s.config, body_html: data.optimizedContent } } 
+        : s
+      ));
+      toast.success('Optimized with Gemini!');
+    } catch (err) {
+      console.error(err);
+      toast.error('AI Optimization failed');
+    } finally {
+      setIsOptimizing(false);
     }
   };
 
@@ -333,11 +367,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
                       <div className="flex-1 flex flex-col min-h-[400px]">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Email Content</label>
-                        <EmailEditor 
+                        <TipTapEditor 
                           value={activeStep.config.body_html || ''} 
                           onChange={val => {
                             setSteps(steps.map(s => s.id === activeStep.id ? { ...s, config: { ...s.config, body_html: val } } : s));
                           }}
+                          onOptimize={() => handleOptimizeStep(activeStep.id)}
+                          isOptimizing={isOptimizing}
                         />
                       </div>
                     </div>

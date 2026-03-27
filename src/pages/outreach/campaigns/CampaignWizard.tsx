@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertCircle, Trash2, Clock
 } from 'lucide-react';
 import { TealButton } from '../OutreachCommon';
-import EmailEditor from '../components/EmailEditor';
+import TipTapEditor from '../components/TipTapEditor';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
@@ -57,6 +57,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
     send_weekends: false,
   });
   const [isMailboxOpen, setIsMailboxOpen] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -136,6 +137,33 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
       toast.error('Failed to launch campaign');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleOptimize = async () => {
+    if (!content.body_html || content.body_html.length < 20) {
+      toast.error('Please write some content first.');
+      return;
+    }
+    setIsOptimizing(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_OUTREACH_API_URL || ''}/api/outreach/ai/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          content: content.body_html,
+          subject: content.subject
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to optimize');
+      const data = await response.json();
+      setContent(prev => ({ ...prev, body_html: data.optimizedContent }));
+      toast.success('Optimized with Gemini!');
+    } catch (err) {
+      console.error(err);
+      toast.error('AI Optimization failed');
+    } finally {
+      setIsOptimizing(false);
     }
   };
 
@@ -325,10 +353,12 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                       className="w-full px-4 py-3 bg-[#161b22] border border-[#30363d] rounded-xl text-white focus:outline-none focus:border-teal-500/50 transition-colors"
                     />
                   </div>
-                  <EmailEditor 
+                  <TipTapEditor 
                     value={content.body_html}
                     onChange={val => setContent({...content, body_html: val})}
                     className="h-[450px]"
+                    onOptimize={handleOptimize}
+                    isOptimizing={isOptimizing}
                   />
                 </div>
               </div>

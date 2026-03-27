@@ -9,7 +9,7 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
 import { cn } from '@/lib/utils';
-import EmailEditor from '../components/EmailEditor';
+import TipTapEditor from '../components/TipTapEditor';
 
 interface SequenceWizardProps {
   isOpen: boolean;
@@ -39,8 +39,9 @@ export interface SequenceNode {
 
 export default function SequenceWizard({ isOpen, onClose, onComplete }: SequenceWizardProps) {
   const api = useOutreachApi();
-  const [step, setStep] = useState<WizardStep>('settings');
+   const [step, setStep] = useState<WizardStep>('settings');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   // 1. Settings
   const [name, setName] = useState('');
@@ -130,6 +131,36 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
     }
   };
 
+  const handleOptimizeNode = async (nodeId: string, parentArray: SequenceNode[], setParentArray: (arr: SequenceNode[]) => void) => {
+    const node = parentArray.find(n => n.id === nodeId);
+    if (!node || !node.body_html || node.body_html.length < 20) {
+      toast.error('Please write some content first.');
+      return;
+    }
+    
+    setIsOptimizing(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_OUTREACH_API_URL || ''}/api/outreach/ai/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          content: node.body_html,
+          subject: node.subject
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to optimize');
+      const data = await response.json();
+      
+      updateNode(nodeId, { body_html: data.optimizedContent }, parentArray, setParentArray);
+      toast.success('Optimized with Gemini!');
+    } catch (err) {
+      console.error(err);
+      toast.error('AI Optimization failed');
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
   const addNode = (type: SequenceNodeType, parentArray: SequenceNode[], setParentArray: (arr: SequenceNode[]) => void) => {
     const newNode: SequenceNode = { id: Math.random().toString(36).substr(2, 9), type };
     if (type === 'delay') newNode.delayDays = 2;
@@ -210,9 +241,11 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
                     onChange={e => updateNode(node.id, { subject: e.target.value }, parentArray, setParentArray)} 
                     className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white"
                   />
-                  <EmailEditor 
+                   <TipTapEditor 
                     value={node.body_html || ''}
                     onChange={(b) => updateNode(node.id, { body_html: b }, parentArray, setParentArray)}
+                    onOptimize={() => handleOptimizeNode(node.id, parentArray, setParentArray)}
+                    isOptimizing={isOptimizing}
                   />
                 </div>
               )}

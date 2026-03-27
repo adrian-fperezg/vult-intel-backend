@@ -429,7 +429,11 @@ export function useOutreachApi() {
 
   // ── Analytics ─────────────────────────────────────────────────────────────
 
-  const fetchAnalytics = useCallback((days: number) => get<AnalyticsData>(`/analytics?days=${days}`), [get]);
+  const fetchAnalytics = useCallback((days: number, campaignId?: string) => {
+    const params: Record<string, string> = { days: days.toString() };
+    if (campaignId) params.campaign_id = campaignId;
+    return get<AnalyticsData>('/analytics', params);
+  }, [get]);
 
   const disconnectMailbox = useCallback(
     (id: string) => del(`/mailboxes/${id}?project_id=${activeProjectId}`),

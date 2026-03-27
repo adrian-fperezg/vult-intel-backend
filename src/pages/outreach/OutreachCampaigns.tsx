@@ -12,6 +12,7 @@ import {
 } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import CampaignWizard from './campaigns/CampaignWizard';
+import CampaignAnalyticsDashboard from './campaigns/CampaignAnalyticsDashboard';
 
 type CampaignStatus = 'active' | 'paused' | 'draft' | 'completed' | 'scheduled';
 
@@ -69,6 +70,7 @@ export default function OutreachCampaigns() {
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [viewingAnalytics, setViewingAnalytics] = useState<Campaign | null>(null);
 
   useEffect(() => {
     loadCampaigns();
@@ -137,6 +139,16 @@ export default function OutreachCampaigns() {
         icon={<FolderOpen />}
         title="No project selected"
         description="Select a project from the top bar to view and manage its campaigns."
+      />
+    );
+  }
+
+  if (viewingAnalytics) {
+    return (
+      <CampaignAnalyticsDashboard 
+        campaignId={viewingAnalytics.id}
+        campaignName={viewingAnalytics.name}
+        onBack={() => setViewingAnalytics(null)}
       />
     );
   }
@@ -305,7 +317,9 @@ export default function OutreachCampaigns() {
                           ))}
                         </div>
                         <div className="mt-4 flex items-center gap-3">
-                          <TealButton size="sm">View Analytics</TealButton>
+                          <TealButton size="sm" onClick={(e) => { e.stopPropagation(); setViewingAnalytics(campaign); }}>
+                            View Analytics
+                          </TealButton>
                           <button className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
                             Edit Campaign
                           </button>

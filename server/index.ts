@@ -2106,6 +2106,46 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
   }
 });
 
+// ─── AI OPTIMIZATION ─────────────────────────────────────────────────────────
+
+app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
+  const { content, subject } = req.body;
+  if (!content) return res.status(400).json({ error: "Content is required" });
+
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "Gemini API key not configured" });
+
+  try {
+    const client = new GoogleGenAI({ apiKey });
+    
+    const prompt = `
+      You are an expert sales copywriter. Re-write the following cold email to be more engaging, concise, and professional. 
+      Maintain the original intent and any variables in double curly braces like {{first_name}} or {{company}}.
+      
+      Original Subject: ${subject || 'No subject'}
+      Original Body: 
+      ${content}
+      
+      Provide only the optimized HTML body content. Do not include any preamble or explanations.
+    `;
+
+    const response = await client.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    });
+
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Clean markdown if Gemini returns it
+    const optimizedContent = text.trim().replace(/^```html\n?/, '').replace(/\n?```$/, '');
+    
+    res.json({ optimizedContent });
+  } catch (err: any) {
+    console.error("[AI OPTIMIZE ERROR]:", err);
+    res.status(500).json({ error: "Failed to optimize content", details: err.message });
+  }
+});
+
 // GET /api/outreach/track/:emailId/pixel
 app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
   const { emailId } = req.params;
@@ -2176,7 +2216,7 @@ app.get("/api/outreach/track/:emailId/click", async (req, res) => {
 
 app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  const { project_id, campaign_id } = req.query as { project_id?: string, campaign_id?: string };
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -2187,25 +2227,27 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
 
-    // 1. Core Metrics (Current 30d)
+    const campaignFilter = campaign_id ? `AND metadata LIKE '%"campaign_id":"' || ? || '"%'` : "";
+    const queryParams = campaign_id ? [project_id, thirtyDaysAgo, campaign_id] : [project_id, thirtyDaysAgo];
+
     const currentMetrics = await db.prepare(`
       SELECT 
         count(CASE WHEN type = 'sent' THEN 1 END) as sent,
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
       FROM outreach_events 
-      WHERE project_id = ? AND created_at >= ?
-    `).get(project_id, thirtyDaysAgo) as any;
+      WHERE project_id = ? AND created_at >= ? ${campaignFilter}
+    `).get(...queryParams) as any;
 
-    // 2. Previous 30d Metrics (for comparisons)
+    const prevQueryParams = campaign_id ? [project_id, sixtyDaysAgo, thirtyDaysAgo, campaign_id] : [project_id, sixtyDaysAgo, thirtyDaysAgo];
     const prevMetrics = await db.prepare(`
       SELECT 
         count(CASE WHEN type = 'sent' THEN 1 END) as sent,
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
       FROM outreach_events 
-      WHERE project_id = ? AND created_at >= ? AND created_at < ?
-    `).get(project_id, sixtyDaysAgo, thirtyDaysAgo) as any;
+      WHERE project_id = ? AND created_at >= ? AND created_at < ? ${campaignFilter}
+    `).get(...prevQueryParams) as any;
 
     // 3. Today's Performance
     const todaySent = await db.prepare(`
@@ -2260,10 +2302,10 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
       FROM outreach_events
-      WHERE project_id = ? AND created_at >= ?
+      WHERE project_id = ? AND created_at >= ? ${campaignFilter}
       GROUP BY day
       ORDER BY day ASC
-    `).all(project_id, thirtyDaysAgo) as any[];
+    `).all(...queryParams) as any[];
 
     // 8. Campaign Comparison
     const campaignComparisonReq = await db.prepare(`
