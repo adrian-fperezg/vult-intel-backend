@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Upload, Download, Filter, MoreHorizontal,
@@ -161,38 +161,21 @@ export default function OutreachContacts() {
     }
   };
 
-  // Immediately clear stale data when project switches, then re-fetch
-  useEffect(() => {
-    setContacts([]);
-    setContactLists([]);
-    setSelectedIds(new Set());
-    loadContacts();
-    loadLists();
-  }, [api.activeProjectId, listFilter]);
-
-  useEffect(() => {
-    if (listFilter === 'all') {
-      setListMemberIds(new Set());
-      return;
-    }
-    api.fetchContactListMembers(listFilter)
-       .then(ids => setListMemberIds(new Set(ids || [])))
-       .catch(e => console.error('Failed to load list members', e));
-  }, [listFilter, api.activeProjectId]);
-
-  const loadLists = async () => {
+  const loadLists = useCallback(async () => {
+    if (!api.activeProjectId) return;
     try {
       const lists = await api.fetchContactLists();
       setContactLists(lists || []);
     } catch (e) {
       console.error('Failed to load lists', e);
     }
-  };
+  }, [api.activeProjectId, api.fetchContactLists]);
 
-  const loadContacts = async () => {
+  const loadContacts = useCallback(async () => {
+    if (!api.activeProjectId) return;
     setIsLoading(true);
     try {
-      const data = await api.fetchContacts(listFilter);
+      const data = await api.fetchContacts(listFilter === 'all' || listFilter === 'unassigned' ? undefined : listFilter);
       setContacts((data ?? []).map((c: any) => ({
         ...c,
         firstName: c.first_name || 'N/A',
@@ -210,7 +193,27 @@ export default function OutreachContacts() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [api.activeProjectId, api.fetchContacts, listFilter]);
+
+  // Immediately clear stale data when project switches, then re-fetch
+  useEffect(() => {
+    setContacts([]);
+    setContactLists([]);
+    setSelectedIds(new Set());
+    loadContacts();
+    loadLists();
+  }, [loadContacts, loadLists]);
+
+  // Load list member IDs for sidebar highlighting
+  useEffect(() => {
+    if (listFilter === 'all' || listFilter === 'unassigned') {
+      setListMemberIds(new Set());
+      return;
+    }
+    api.fetchContactListMembers(listFilter)
+       .then(ids => setListMemberIds(new Set(ids || [])))
+       .catch(e => console.error('Failed to load list members', e));
+  }, [listFilter, api.activeProjectId]);
 
   const handleCreate = async () => {
     setIsCreating(true);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -24,6 +24,7 @@ interface Sequence {
 
 export default function OutreachSequences() {
   const api = useOutreachApi();
+  const { activeProjectId } = api;
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [limitStatus, setLimitStatus] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,20 +49,13 @@ export default function OutreachSequences() {
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
 
-  // Immediately clear stale data when project switches, then re-fetch
-  useEffect(() => {
-    setSequences([]);
-    setLimitStatus(null);
-    loadData();
-  }, [api.activeProjectId]);
-
-  const loadData = async () => {
-    if (!api.activeProjectId) return;
+  const loadData = useCallback(async () => {
+    if (!activeProjectId) return;
     setIsLoading(true);
     try {
       const [seqs, limits] = await Promise.all([
         api.fetchSequences(),
-        api.getGlobalLimitStatus(api.activeProjectId)
+        api.getGlobalLimitStatus(activeProjectId)
       ]);
       setSequences(seqs || []);
       setLimitStatus(limits);
@@ -70,7 +64,14 @@ export default function OutreachSequences() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeProjectId, api.fetchSequences, api.getGlobalLimitStatus]);
+
+  // Immediately clear stale data when project switches, then re-fetch
+  useEffect(() => {
+    setSequences([]);
+    setLimitStatus(null);
+    loadData();
+  }, [loadData]);
 
   const handleCreate = async () => {
     try {

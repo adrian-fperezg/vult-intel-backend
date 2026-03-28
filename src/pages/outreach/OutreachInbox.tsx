@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Reply, Archive, Star, MoreHorizontal,
@@ -127,29 +127,7 @@ export default function OutreachInbox() {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Immediately clear stale data when project switches, then re-sync
-  useEffect(() => {
-    setThreads([]);
-    setSelected(null);
-    handleSync();
-  }, [api.activeProjectId]);
-
-  const handleSync = async () => {
-    if (!api.activeProjectId) return;
-    setIsSyncing(true);
-    try {
-      await api.syncInbox();
-      await loadInbox();
-    } catch (e) {
-      console.error('Sync failed:', e);
-      // Fallback to just loading local data
-      await loadInbox();
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const loadInbox = async () => {
+  const loadInbox = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await api.fetchInbox();
@@ -175,7 +153,29 @@ export default function OutreachInbox() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [api.fetchInbox]);
+
+  const handleSync = useCallback(async () => {
+    if (!api.activeProjectId) return;
+    setIsSyncing(true);
+    try {
+      await api.syncInbox();
+      await loadInbox();
+    } catch (e) {
+      console.error('Sync failed:', e);
+      // Fallback to just loading local data
+      await loadInbox();
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [api.activeProjectId, api.syncInbox, loadInbox]);
+
+  // Immediately clear stale data when project switches, then re-sync
+  useEffect(() => {
+    setThreads([]);
+    setSelected(null);
+    handleSync();
+  }, [handleSync]);
 
   if (!api.activeProjectId) {
     return (
