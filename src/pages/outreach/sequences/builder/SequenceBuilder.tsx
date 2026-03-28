@@ -122,7 +122,7 @@ function StepNode({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "group relative w-[420px] min-w-[420px] max-w-[420px] flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
+          "group relative w-full flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
           step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02] p-3" : 
           isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
         )}
@@ -158,7 +158,7 @@ function StepNode({
               </div>
               <h4 className={cn(
                 "font-semibold text-white truncate",
-                isExpanded ? "text-sm max-w-[340px]" : "text-xs max-w-[300px]"
+                isExpanded ? "text-sm" : "text-xs"
               )}>
                 {step.step_type === 'condition' ? `Check if user ${step.condition_type}` : (step.config.subject || 'Untitled Step')}
               </h4>
@@ -195,7 +195,7 @@ function StepNode({
         
         {/* Expanded Analytics Row */}
         {isExpanded && step.step_type === 'email' && analytics?.[step.id] && (
-          <div className="mx-4 mt-1 p-2 rounded-xl bg-white/[0.02] border border-white/5 grid grid-cols-4 gap-4">
+          <div className="mt-2 p-2 rounded-xl bg-white/[0.02] border border-white/5 grid grid-cols-4 gap-4">
             <div className="space-y-1">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sent</span>
               <p className="text-lg font-bold text-white leading-none">{analytics[step.id].sent}</p>
@@ -223,7 +223,6 @@ function StepNode({
             </div>
           </div>
         )}
-
 
         <AnimatePresence>
           {isExpanded && step.step_type === 'email' && (
@@ -303,8 +302,8 @@ function StepNode({
                 </div>
               </div>
               
-              <div className="pt-4 flex justify-center">
-                 <button 
+              <div className="pt-2 flex justify-center">
+                <button 
                   onClick={() => onAddCondition(step.id)}
                   className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 text-purple-400 rounded-xl border border-purple-500/20 hover:bg-purple-500/20 transition-all text-[10px] font-bold uppercase tracking-widest"
                 >
@@ -316,7 +315,7 @@ function StepNode({
           )}
 
           {isExpanded && step.step_type === 'condition' && (
-             <motion.div
+            <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
@@ -324,45 +323,48 @@ function StepNode({
             >
               Wait for <span className="text-white font-bold">{step.delay_amount || 2} {step.delay_unit || 'days'}</span>, then check if <span className="text-white font-bold">"{step.condition_type}"</span>.
               <div className="mt-3 flex items-center gap-3">
-                 <div className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-md border border-white/5">
-                    <input
-                      type="number"
-                      value={step.delay_amount || 2}
-                      onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
-                      className="w-8 bg-transparent text-center text-white outline-none text-[10px]"
-                    />
-                    <select
-                      value={step.delay_unit || 'days'}
-                      onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
-                      className="bg-transparent text-white outline-none cursor-pointer text-[10px]"
-                    >
-                      <option value="minutes">min</option>
-                      <option value="hours">hrs</option>
-                      <option value="days">days</option>
-                    </select>
-                 </div>
+                <div className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-md border border-white/5">
+                  <input
+                    type="number"
+                    value={step.delay_amount || 2}
+                    onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
+                    className="w-8 bg-transparent text-center text-white outline-none text-[10px]"
+                  />
+                  <select
+                    value={step.delay_unit || 'days'}
+                    onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
+                    className="bg-transparent text-white outline-none cursor-pointer text-[10px]"
+                  >
+                    <option value="minutes">min</option>
+                    <option value="hours">hrs</option>
+                    <option value="days">days</option>
+                  </select>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
 
-      {/* Children Rendering */}
+      {/* ── VERTICAL STACK CHILDREN ── */}
       {step.step_type === 'condition' ? (
-        <div className="w-full mt-6">
-          <div className="flex gap-8 justify-center">
-            {/* YES Branch */}
-            <div className="flex flex-col items-center flex-shrink-0">
-               <div className="flex flex-col items-center mb-2">
-                  <div className="h-4 w-px bg-green-500/40" />
-                  <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/30 text-[10px] font-black text-green-500 uppercase tracking-widest">Yes</div>
-                  <div className="h-4 w-px bg-green-500/40" />
-               </div>
-               {yesChild ? (
-                 <StepNode 
+        <div className="w-full flex flex-col mt-1">
+
+          {/* YES branch */}
+          <div className="w-full flex flex-col">
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-4 w-px bg-green-500/40 mx-auto" style={{ marginLeft: '16px' }} />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-px w-6 bg-green-500/30" />
+              <span className="px-2.5 py-0.5 rounded-full bg-green-500/10 border border-green-500/30 text-[10px] font-black text-green-500 uppercase tracking-widest">Yes</span>
+            </div>
+            <div className="ml-6 pl-4 border-l-2 border-green-500/20 mt-2">
+              {yesChild ? (
+                <StepNode 
                   step={yesChild} 
                   allSteps={allSteps} 
-                  isFirst={false}
+                  isFirst={true}
                   onUpdate={onUpdate}
                   onUpdateConfig={onUpdateConfig}
                   onRemove={onRemove}
@@ -373,57 +375,59 @@ function StepNode({
                   activeStepId={activeStepId}
                   setActiveStepId={setActiveStepId}
                   analytics={analytics}
-                 />
-               ) : (
-                     <button 
-                    onClick={() => onAddStep(step.id, 'yes')}
-                    className="flex items-center justify-center gap-2 w-[420px] py-4 rounded-2xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
-                  >
-                    <Plus className="size-4" />
-                    Add Step
-                  </button>
-               )}
-            </div>
-
-            {/* NO Branch */}
-            <div className="flex flex-col items-center flex-shrink-0">
-               <div className="flex flex-col items-center mb-2">
-                  <div className="h-4 w-px bg-red-500/40" />
-                  <div className="px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-black text-red-500 uppercase tracking-widest">No</div>
-                  <div className="h-4 w-px bg-red-500/40" />
-               </div>
-               {noChild ? (
-                 <StepNode 
-                  step={noChild} 
-                  allSteps={allSteps} 
-                  isFirst={false}
-                  onUpdate={onUpdate}
-                  onUpdateConfig={onUpdateConfig}
-                  onRemove={onRemove}
-                  onAddStep={onAddStep}
-                  onAddCondition={onAddCondition}
-                  isOptimizing={isOptimizing}
-                  handleOptimizeStep={handleOptimizeStep}
-                  activeStepId={activeStepId}
-                  setActiveStepId={setActiveStepId}
-                  analytics={analytics}
-                 />
-               ) : (
-                  <button 
-                    onClick={() => onAddStep(step.id, 'no')}
-                    className="flex items-center justify-center gap-2 w-[420px] py-4 rounded-2xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
-                  >
-                    <Plus className="size-4" />
-                    Add Step
-                  </button>
-               )}
+                />
+              ) : (
+                <button 
+                  onClick={() => onAddStep(step.id, 'yes')}
+                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
+                >
+                  <Plus className="size-3.5" />
+                  Add Yes Step
+                </button>
+              )}
             </div>
           </div>
+
+          {/* NO branch */}
+          <div className="w-full flex flex-col mt-4">
+            <div className="flex items-center gap-2">
+              <div className="h-px w-6 bg-red-500/30" />
+              <span className="px-2.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-black text-red-500 uppercase tracking-widest">No</span>
+            </div>
+            <div className="ml-6 pl-4 border-l-2 border-red-500/20 mt-2">
+              {noChild ? (
+                <StepNode 
+                  step={noChild} 
+                  allSteps={allSteps} 
+                  isFirst={true}
+                  onUpdate={onUpdate}
+                  onUpdateConfig={onUpdateConfig}
+                  onRemove={onRemove}
+                  onAddStep={onAddStep}
+                  onAddCondition={onAddCondition}
+                  isOptimizing={isOptimizing}
+                  handleOptimizeStep={handleOptimizeStep}
+                  activeStepId={activeStepId}
+                  setActiveStepId={setActiveStepId}
+                  analytics={analytics}
+                />
+              ) : (
+                <button 
+                  onClick={() => onAddStep(step.id, 'no')}
+                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
+                >
+                  <Plus className="size-3.5" />
+                  Add No Step
+                </button>
+              )}
+            </div>
+          </div>
+
         </div>
       ) : (
         <div className="flex flex-col items-center w-full">
-           {defaultChild && (
-             <StepNode 
+          {defaultChild && (
+            <StepNode 
               step={defaultChild} 
               allSteps={allSteps} 
               isFirst={false}
@@ -437,20 +441,20 @@ function StepNode({
               activeStepId={activeStepId}
               setActiveStepId={setActiveStepId}
               analytics={analytics}
-             />
-           )}
-           {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
-              <div className="flex flex-col items-center w-full">
-                 <div className="h-5 w-px bg-white/10" />
-                 <button 
-                  onClick={() => onAddStep(step.id, 'default')}
-                  className="flex items-center justify-center gap-2 w-[420px] py-4 rounded-2xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold group"
-                >
-                  <Plus className="size-4" />
-                  Add Step
-                </button>
-              </div>
-           )}
+            />
+          )}
+          {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
+            <div className="flex flex-col items-center w-full">
+              <div className="h-5 w-px bg-white/10" />
+              <button 
+                onClick={() => onAddStep(step.id, 'default')}
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold"
+              >
+                <Plus className="size-4" />
+                Add Step
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -955,45 +959,43 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           <div 
             ref={canvasRef}
             onScroll={onScroll}
-            className="h-full overflow-auto bg-[#0d1117] relative custom-scrollbar"
+            className="h-full overflow-y-auto overflow-x-hidden bg-[#0d1117] relative custom-scrollbar"
           >
-            <div className="w-full py-8 px-8">
-              <div className="flex flex-col items-start min-w-max">
-                {rootStep ? (
-                  <StepNode 
-                    step={rootStep} 
-                    allSteps={steps} 
-                    isFirst={true}
-                    onUpdate={handleUpdateStep}
-                    onUpdateConfig={handleUpdateStepConfig}
-                    onRemove={removeStep}
-                    onAddStep={addStep}
-                    onAddCondition={addCondition}
-                    isOptimizing={isOptimizing}
-                    handleOptimizeStep={handleOptimizeStep}
-                    activeStepId={activeStepId}
-                    setActiveStepId={setActiveStepId}
-                    analytics={stepAnalytics}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center py-20">
-                    <div className="size-20 rounded-[40px] bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-6">
-                      <Mail className="size-8 text-teal-400" />
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Build Your Flow</h3>
-                    <p className="text-sm text-slate-500 max-w-sm mb-8 text-center">
-                      Start by adding your first email step. You can later add conditions and branches to automate your outreach.
-                    </p>
-                    <button 
-                      onClick={() => addStep(null, 'default')}
-                      className="flex items-center justify-center gap-2 w-[420px] py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
-                    >
-                      <Plus className="size-5" />
-                      Add First Step
-                    </button>
+            <div className="w-full max-w-2xl mx-auto py-8 px-6">
+              {rootStep ? (
+                <StepNode 
+                  step={rootStep} 
+                  allSteps={steps} 
+                  isFirst={true}
+                  onUpdate={handleUpdateStep}
+                  onUpdateConfig={handleUpdateStepConfig}
+                  onRemove={removeStep}
+                  onAddStep={addStep}
+                  onAddCondition={addCondition}
+                  isOptimizing={isOptimizing}
+                  handleOptimizeStep={handleOptimizeStep}
+                  activeStepId={activeStepId}
+                  setActiveStepId={setActiveStepId}
+                  analytics={stepAnalytics}
+                />
+              ) : (
+                <div className="flex flex-col items-center py-20">
+                  <div className="size-20 rounded-[40px] bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-6">
+                    <Mail className="size-8 text-teal-400" />
                   </div>
-                )}
-              </div>
+                  <h3 className="text-xl font-bold text-white mb-2">Build Your Flow</h3>
+                  <p className="text-sm text-slate-500 max-w-sm mb-8 text-center">
+                    Start by adding your first email step. You can later add conditions and branches to automate your outreach.
+                  </p>
+                  <button 
+                    onClick={() => addStep(null, 'default')}
+                    className="flex items-center justify-center gap-2 w-full max-w-xs py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
+                  >
+                    <Plus className="size-5" />
+                    Add First Step
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
