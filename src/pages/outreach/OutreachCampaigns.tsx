@@ -72,7 +72,10 @@ export default function OutreachCampaigns() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [viewingAnalytics, setViewingAnalytics] = useState<Campaign | null>(null);
 
+  // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
+    setCampaigns([]);
+    setSelected(null);
     loadCampaigns();
   }, [api.activeProjectId]);
 

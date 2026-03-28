@@ -161,7 +161,11 @@ export default function OutreachContacts() {
     }
   };
 
+  // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
+    setContacts([]);
+    setContactLists([]);
+    setSelectedIds(new Set());
     loadContacts();
     loadLists();
   }, [api.activeProjectId, listFilter]);

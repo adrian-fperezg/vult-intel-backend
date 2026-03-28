@@ -99,12 +99,31 @@ export default function OutreachSettings() {
     imap_host: '', imap_port: 993, imap_secure: true,
   });
 
+  // Reload data when the tab changes (within the same project)
   useEffect(() => {
-    if (activeTab === 'mailboxes') loadMailboxes();
     if (activeTab === 'integrations' && api.activeProjectId) {
       loadIntegrationStatus();
     }
-  }, [activeTab, api.activeProjectId]);
+  }, [activeTab]);
+
+  // When the active project changes: clear ALL stale data immediately, then reload
+  useEffect(() => {
+    // Clear stale mailbox & domain data
+    setMailboxes([]);
+    setVerifiedDomains([]);
+    // Clear stale integration data
+    setHasHunter(false);
+    setHasZb(false);
+    setHasPdl(false);
+    setHunterAccount(null);
+    setZbCredits(null);
+    setPdlUsage(null);
+
+    if (!api.activeProjectId) return;
+    // Reload whatever tab is currently active
+    if (activeTab === 'mailboxes') loadMailboxes();
+    if (activeTab === 'integrations') loadIntegrationStatus();
+  }, [api.activeProjectId]);
 
   const loadIntegrationStatus = async () => {
     if (!api.activeProjectId) return;

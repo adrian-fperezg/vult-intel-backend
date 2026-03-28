@@ -48,7 +48,10 @@ export default function OutreachSequences() {
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
 
+  // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
+    setSequences([]);
+    setLimitStatus(null);
     loadData();
   }, [api.activeProjectId]);
 

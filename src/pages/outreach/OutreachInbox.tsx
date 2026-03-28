@@ -127,7 +127,10 @@ export default function OutreachInbox() {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Immediately clear stale data when project switches, then re-sync
   useEffect(() => {
+    setThreads([]);
+    setSelected(null);
     handleSync();
   }, [api.activeProjectId]);
 
