@@ -77,7 +77,7 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
     // Only mark as completed if we are not at the start and there are truly no more steps
     if (parentStepId !== null) {
       await d.run(
-        'UPDATE outreach_sequence_enrollments SET status = "completed", completed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?',
+        'UPDATE outreach_sequence_enrollments SET status = \'completed\', completed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?',
         sequenceId,
         contactId
       );

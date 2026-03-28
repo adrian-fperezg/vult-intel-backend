@@ -846,7 +846,8 @@ export const initDb = async () => {
         { name: 'scheduled_at', type: 'TIMESTAMP' },
         { name: 'last_error', type: 'TEXT' },
         { name: 'last_executed_at', type: 'TIMESTAMP' },
-        { name: 'opened', type: 'BOOLEAN DEFAULT FALSE' }
+        { name: 'opened', type: 'BOOLEAN DEFAULT FALSE' },
+        { name: 'completed_at', type: 'TIMESTAMP' }
       ];
 
       if (db.isPostgres) {

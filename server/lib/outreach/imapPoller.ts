@@ -98,7 +98,7 @@ export async function pollImap(mailboxId: string) {
             // Stop sequence enrollments for this contact (if stop_on_reply is true)
             const result = await db.prepare(`
               UPDATE outreach_sequence_enrollments 
-              SET status = 'stopped', updated_at = CURRENT_TIMESTAMP
+              SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
               WHERE contact_id = ? AND status = 'active'
               AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = 1)
             `).run(originalEmail.contact_id);
