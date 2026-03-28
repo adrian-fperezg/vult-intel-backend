@@ -186,9 +186,27 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         const event = await db.prepare(`
           SELECT * FROM outreach_events 
           WHERE contact_id = ? AND type = ? AND step_id = ?
+          ORDER BY created_at DESC
+          LIMIT 1
         `).get(contactId, targetEventType, parentEmailStepId) as any;
 
-        const branchPath = event ? 'yes' : 'no';
+        let branchPath = event ? 'yes' : 'no';
+
+        // For 'replied' conditions with a keyword configured, also check keyword_matched
+        // The IMAP poller sets keyword_matched: false if the keyword was NOT found in the reply.
+        if (branchPath === 'yes' && step.condition_type === 'replied' && step.condition_keyword && event?.metadata) {
+          try {
+            const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
+            // If keyword_matched is explicitly false, route to NO branch
+            if (meta.keyword_matched === false) {
+              branchPath = 'no';
+              console.log(`[Sequence] Keyword "${step.condition_keyword}" not found in reply. Routing to NO branch.`);
+            }
+          } catch {
+            // If metadata can't be parsed, fall back to 'yes' (event exists)
+          }
+        }
+
         console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);
 
         // Record condition execution

@@ -23,6 +23,7 @@ interface Step {
   step_type: 'email' | 'delay' | 'condition';
   parent_step_id?: string;
   condition_type?: 'opened' | 'clicked' | 'replied';
+  condition_keyword?: string;
   branch_path?: 'yes' | 'no' | 'default';
   delay_amount: number;
   delay_unit: 'minutes' | 'hours' | 'days';
@@ -319,10 +320,10 @@ function StepNode({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-4 p-4 rounded-xl bg-purple-500/5 border border-purple-500/10 text-xs text-slate-400"
+              className="mt-4 p-4 rounded-xl bg-purple-500/5 border border-purple-500/10 text-xs text-slate-400 space-y-3"
             >
-              Wait for <span className="text-white font-bold">{step.delay_amount || 2} {step.delay_unit || 'days'}</span>, then check if <span className="text-white font-bold">"{step.condition_type}"</span>.
-              <div className="mt-3 flex items-center gap-3">
+              <div>Wait for <span className="text-white font-bold">{step.delay_amount || 2} {step.delay_unit || 'days'}</span>, then check if contact <span className="text-white font-bold">"{step.condition_type}"</span>.</div>
+              <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-md border border-white/5">
                   <input
                     type="number"
@@ -341,6 +342,29 @@ function StepNode({
                   </select>
                 </div>
               </div>
+
+              {/* Keyword Intent Parsing — only for 'replied' conditions */}
+              {step.condition_type === 'replied' && (
+                <div className="pt-1 space-y-1.5">
+                  <label className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
+                    🔍 Intent Keyword <span className="text-slate-500 normal-case font-normal">(optional)</span>
+                  </label>
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-lg border border-purple-500/20">
+                    <input
+                      type="text"
+                      placeholder="e.g. interested, yes, schedule..."
+                      value={step.condition_keyword || ''}
+                      onChange={e => onUpdate(step.id, { condition_keyword: e.target.value })}
+                      onClick={e => e.stopPropagation()}
+                      className="flex-1 bg-transparent text-white text-[11px] outline-none placeholder:text-slate-600"
+                    />
+                  </div>
+                  <p className="text-[9px] text-slate-600 leading-relaxed">
+                    If set, the reply body will be scanned for this keyword.<br/>
+                    ✅ <span className="text-green-500/60">Found</span> → YES branch · ❌ <span className="text-red-500/60">Not found</span> → NO branch &amp; email stays unread
+                  </p>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -565,6 +589,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           ...s,
           delay_amount: s.delay_amount ?? s.config?.delay_days ?? 2,
           delay_unit: s.delay_unit || 'days',
+          condition_keyword: s.condition_keyword || '',
           attachments: typeof s.attachments === 'string' ? JSON.parse(s.attachments) : (s.attachments || []),
           config: {
             subject: s.config?.subject || '',

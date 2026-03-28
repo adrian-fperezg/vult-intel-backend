@@ -770,6 +770,7 @@ export const initDb = async () => {
     const newStepCols = [
       { name: 'parent_step_id', type: 'TEXT' },
       { name: 'condition_type', type: 'TEXT' },
+      { name: 'condition_keyword', type: 'TEXT' },
       { name: 'branch_path', type: 'TEXT' },
       { name: 'delay_amount', type: 'INTEGER DEFAULT 2' },
       { name: 'delay_unit', type: "TEXT DEFAULT 'days'" },

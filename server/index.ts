@@ -1183,9 +1183,9 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
             INSERT INTO outreach_sequence_steps (
               id, sequence_id, project_id, step_number, step_type, 
               config, delay_amount, delay_unit, attachments,
-              parent_step_id, condition_type, branch_path
+              parent_step_id, condition_type, condition_keyword, branch_path
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, 
             dbId, 
             id, 
@@ -1198,6 +1198,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
             typeof step.attachments === 'string' ? step.attachments : JSON.stringify(step.attachments || []),
             parentDbId,
             step.condition_type || null,
+            step.condition_keyword || null,
             step.branch_path || 'default'
           );
         } catch (stepErr) {
@@ -2556,23 +2557,43 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
+    // Aggregate from outreach_events using correct event type names:
+    // - 'sent': recorded by Gmail path
+    // - 'email_opened', 'email_clicked': written by tracking pixel route
+    // - 'email_replied': written by IMAP poller
     const events = await db.prepare(`
       SELECT 
         step_id,
-        count(CASE WHEN type = 'sent' THEN 1 END) as sent,
-        count(DISTINCT CASE WHEN type = 'opened' THEN contact_id END) as opens,
-        count(DISTINCT CASE WHEN type = 'clicked' THEN contact_id END) as clicks,
-        count(DISTINCT CASE WHEN (type = 'replied' OR type = 'reply') THEN contact_id END) as replies
+        count(CASE WHEN type = 'sent' THEN 1 END) as sent_gmail,
+        count(DISTINCT CASE WHEN type = 'email_opened' THEN contact_id END) as opens,
+        count(DISTINCT CASE WHEN type = 'email_clicked' THEN contact_id END) as clicks,
+        count(DISTINCT CASE WHEN type = 'email_replied' THEN contact_id END) as replies
       FROM outreach_events 
       WHERE sequence_id = ?
       AND step_id IS NOT NULL
       GROUP BY step_id
     `).all(id) as any[];
 
+    // Also count SMTP-sent emails directly from outreach_individual_emails
+    const smtpSent = await db.prepare(`
+      SELECT step_id, count(*) as cnt
+      FROM outreach_individual_emails
+      WHERE sequence_id = ? AND status = 'sent' AND step_id IS NOT NULL
+      GROUP BY step_id
+    `).all(id) as any[];
+
+    const smtpSentMap: Record<string, number> = {};
+    smtpSent.forEach((r: any) => {
+      smtpSentMap[r.step_id] = parseInt(r.cnt) || 0;
+    });
+
     const analytics: Record<string, any> = {};
     
     events.forEach(row => {
-      const sent = parseInt(row.sent) || 0;
+      const sentGmail = parseInt(row.sent_gmail) || 0;
+      // Use max of gmail events vs direct sent count (SMTP path doesn't emit 'sent' event)
+      const sentSmtp = smtpSentMap[row.step_id] || 0;
+      const sent = Math.max(sentGmail, sentSmtp);
       const opens = parseInt(row.opens) || 0;
       const clicks = parseInt(row.clicks) || 0;
       const replies = parseInt(row.replies) || 0;
@@ -2587,6 +2608,21 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
         replyRate: sent > 0 ? (replies / sent) * 100 : 0
       };
     });
+
+    // Also include steps that only appear in smtpSentMap (no events recorded yet)
+    for (const [stepId, sentCount] of Object.entries(smtpSentMap)) {
+      if (!analytics[stepId]) {
+        analytics[stepId] = {
+          sent: sentCount,
+          opens: 0,
+          clicks: 0,
+          replies: 0,
+          openRate: 0,
+          clickRate: 0,
+          replyRate: 0
+        };
+      }
+    }
 
     res.json(analytics);
   } catch (error: any) {
