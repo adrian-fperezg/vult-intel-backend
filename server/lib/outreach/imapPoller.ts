@@ -144,9 +144,11 @@ export async function pollImap(mailboxId: string) {
           // Extract reply body text for keyword search
           const bodyText = await extractEmailBody(msg);
           keywordMatched = bodyText.includes(conditionKeyword);
-          console.log(`[IMAP] Keyword check: looking for "${conditionKeyword}" in reply. Match: ${keywordMatched}`);
+          console.log(`[IMAP] Keyword check for "${conditionKeyword}" in reply. Match: ${keywordMatched}`);
         }
       }
+
+      console.log(`[IMAP] Reply processed. Keyword match: ${keywordMatched}`);
       // ── END KEYWORD PARSING ─────────────────────────────────────────────
 
       // Record the reply event with keyword context

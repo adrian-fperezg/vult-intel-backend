@@ -45,6 +45,29 @@ export async function pollMailboxes() {
   }
 }
 
+/**
+ * Forcefully clear ANY existing repeatable jobs to ensure fresh schedule
+ */
+export async function resetRepeatableJobs() {
+  console.log('[QUEUE] Resetting repeatable jobs...');
+  try {
+    const jobs = await emailQueue.getRepeatableJobs();
+    for (const job of jobs) {
+      await emailQueue.removeRepeatableByKey(job.key);
+      console.log(`[QUEUE] Removed stale repeatable job: ${job.key} (name: ${job.name})`);
+    }
+
+    // Add fresh job with 1-minute interval
+    await emailQueue.add('poll-mailboxes', {}, { 
+      repeat: { every: 60000 },
+      removeOnComplete: true
+    });
+    console.log('[QUEUE] Re-added poll-mailboxes with 1-minute interval.');
+  } catch (err) {
+    console.error('[QUEUE] Error resetting repeatable jobs:', err);
+  }
+}
+
 import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
 import { scheduleNextStep } from '../lib/outreach/sequenceEngine.js';
 

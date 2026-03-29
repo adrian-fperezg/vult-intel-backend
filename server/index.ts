@@ -34,7 +34,7 @@ import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
-import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, sequenceWatchdog } from "./queues/emailQueue.js";
+import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog } from "./queues/emailQueue.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -132,12 +132,9 @@ const startServices = async () => {
     await initDb();
     console.log('[DB] Initialization complete. Scheduling background jobs...');
     
-    // Schedule recurring tasks
-    await emailQueue.add('poll-mailboxes', {}, { 
-      repeat: { pattern: '*/10 * * * *' }, // Every 10 minutes
-      removeOnComplete: true
-    });
-    console.log('[QUEUE] Background jobs scheduled.');
+    // Schedule recurring tasks by first purging any stale BullMQ jobs
+    await resetRepeatableJobs();
+    console.log('[QUEUE] Background jobs initialized and scheduled.');
   } catch (err) {
     console.error('[CRITICAL STARTUP ERROR] Initialization failed, but proceeding anyway:', err);
     // DO NOT process.exit(1) - we want the health check to be available
