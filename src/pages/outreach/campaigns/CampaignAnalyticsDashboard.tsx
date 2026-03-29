@@ -146,11 +146,12 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
                         tickLine={false} 
                         axisLine={false}
                         tickFormatter={(str) => {
+                          if (!str) return '';
                           const date = new Date(str);
-                          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                         }}
                       />
-                      <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => val.toLocaleString()} />
+                      <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => (val ?? 0).toLocaleString()} />
                       <Tooltip 
                         contentStyle={{ backgroundColor: '#1c2128', border: '1px solid #30363d', borderRadius: '12px' }}
                         itemStyle={{ fontSize: '12px' }}
@@ -176,7 +177,7 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
                     { label: 'Replies', value: Math.round((data?.total_sent || 0) * (parseFloat(data?.reply_rate || '0') / 100)), color: 'text-green-400' },
                   ].map((item, idx) => (
                     <div key={item.label} className="relative flex flex-col items-center">
-                      <div className={cn("text-4xl font-bold mb-2", item.color)}>{item.value.toLocaleString()}</div>
+                      <div className={cn("text-4xl font-bold mb-2", item.color)}>{(item.value ?? 0).toLocaleString()}</div>
                       <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{item.label}</div>
                       {idx < 2 && (
                         <div className="hidden md:block absolute top-1/2 -right-4 -translate-y-1/2">

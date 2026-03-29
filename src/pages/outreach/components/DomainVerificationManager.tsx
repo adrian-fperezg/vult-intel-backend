@@ -202,7 +202,11 @@ export default function DomainVerificationManager({ onStatusChange }: DomainVeri
                 <div className="px-4 py-2 border-t border-white/5 flex items-center gap-2">
                   <Clock className="w-3 h-3 text-teal-500/40" />
                   <span className="text-[10px] text-slate-500 italic">
-                    Verified {domain.last_verified_at ? new Date(domain.last_verified_at).toLocaleDateString() : 'recently'}
+                    Verified {(() => {
+                      if (!domain.last_verified_at) return 'recently';
+                      const date = new Date(domain.last_verified_at);
+                      return isNaN(date.getTime()) ? 'recently' : date.toLocaleDateString();
+                    })()}
                   </span>
                 </div>
               )}

@@ -17,6 +17,9 @@ interface Sequence {
   status: 'active' | 'draft' | 'paused' | 'archived';
   step_count: number;
   contact_count: number;
+  total_sent: number;
+  unique_opens: number;
+  unique_replies: number;
   open_rate: number;
   reply_rate: number;
   created_at: string;
@@ -169,9 +172,11 @@ export default function OutreachSequences() {
           />
           <OutreachMetricCard 
             label="Overall Open Rate" 
-            value="42.8%" 
-            trend="up" 
-            trendValue="3.2%"
+            value={(() => {
+              const totalSent = sequences.reduce((acc, s) => acc + (s.total_sent || 0), 0);
+              const totalOpened = sequences.reduce((acc, s) => acc + (s.unique_opens || 0), 0);
+              return totalSent > 0 ? `${((totalOpened / totalSent) * 100).toFixed(1)}%` : "0.0%";
+            })()} 
             icon={<BarChart3 className="size-4" />}
           />
         </div>

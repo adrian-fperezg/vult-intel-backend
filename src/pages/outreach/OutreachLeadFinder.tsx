@@ -244,8 +244,8 @@ export default function OutreachLeadFinder() {
     const toSave = results.filter(r => selectedIds.has(r.id)).map(r => ({
       firstName: r.firstName || '',
       lastName: r.lastName || '',
-      email: r.email,
-      company: r.company || r.domain || '',
+      email: r.email || '',
+      company: r.company || r.domain || 'N/A',
       companyDomain: r.domain || '',
       industry: r.industry || '',
       companySize: r.companySize || '',
@@ -254,7 +254,7 @@ export default function OutreachLeadFinder() {
       jobTitle: r.title || '',
       linkedinUrl: r.linkedinUrl || '',
       status: 'not_enrolled',
-      tags: ['lead-finder', `source-${r.source}`],
+      tags: ['lead-finder', `source-${r.source || 'hunter'}`],
       project_id: api.activeProjectId
     }));
 
@@ -384,7 +384,7 @@ export default function OutreachLeadFinder() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Job Titles</label>
                     <textarea 
-                      value={icpProfile.jobTitles.join(', ')}
+                      value={(icpProfile.jobTitles || []).join(', ')}
                       onChange={(e) => setIcpProfile({ ...icpProfile, jobTitles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
                       placeholder="e.g. CEO, Founder, VP Sales"
                       className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-teal-500/50 min-h-[60px] resize-none transition-all"
@@ -395,7 +395,7 @@ export default function OutreachLeadFinder() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Industries</label>
                     <textarea 
-                      value={icpProfile.industries.join(', ')}
+                      value={(icpProfile.industries || []).join(', ')}
                       onChange={(e) => setIcpProfile({ ...icpProfile, industries: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
                       placeholder="e.g. SaaS, Fintech, Crypto"
                       className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-teal-500/50 min-h-[60px] resize-none transition-all"
@@ -406,7 +406,7 @@ export default function OutreachLeadFinder() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Company Size</label>
                     <select 
-                      value={icpProfile.companySize}
+                      value={icpProfile.companySize || ''}
                       onChange={(e) => setIcpProfile({ ...icpProfile, companySize: e.target.value })}
                       className="w-full bg-black/40 border border-white/5 rounded-xl px-3 h-10 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 transition-all appearance-none"
                     >
@@ -426,7 +426,7 @@ export default function OutreachLeadFinder() {
                     <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Countries</label>
                     <input 
                       type="text"
-                      value={icpProfile.countries.join(', ')}
+                      value={(icpProfile.countries || []).join(', ')}
                       onChange={(e) => setIcpProfile({ ...icpProfile, countries: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
                       placeholder="e.g. US, UK, DE"
                       className="w-full bg-black/40 border border-white/5 rounded-xl px-3 h-10 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-teal-500/50 transition-all"
@@ -519,11 +519,14 @@ export default function OutreachLeadFinder() {
                     <div className="space-y-2.5">
                       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Job Titles</p>
                       <div className="flex flex-wrap gap-2">
-                        {aiResult.params.jobTitles.map((title, idx) => (
+                        {(aiResult.params?.jobTitles || []).map((title, idx) => (
                           <span key={idx} className="px-3 py-1 text-xs bg-[#0a2724] border border-[#114a43] text-teal-400 rounded-md font-medium">
                             {title}
                           </span>
                         ))}
+                        {(!aiResult.params?.jobTitles || aiResult.params.jobTitles.length === 0) && (
+                          <span className="text-[10px] text-slate-600 italic">No job titles specified</span>
+                        )}
                       </div>
                     </div>
 
@@ -531,11 +534,14 @@ export default function OutreachLeadFinder() {
                     <div className="space-y-2.5">
                       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Industries</p>
                       <div className="flex flex-wrap gap-2">
-                        {aiResult.params.industries.map((ind, idx) => (
+                        {(aiResult.params?.industries || []).map((ind, idx) => (
                           <span key={idx} className="px-3 py-1 text-xs bg-[#0a2724] border border-[#114a43] text-teal-400 rounded-md font-medium">
                             {ind}
                           </span>
                         ))}
+                        {(!aiResult.params?.industries || aiResult.params.industries.length === 0) && (
+                          <span className="text-[10px] text-slate-600 italic">No industries specified</span>
+                        )}
                       </div>
                     </div>
 
@@ -543,11 +549,14 @@ export default function OutreachLeadFinder() {
                     <div className="space-y-2.5">
                       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Seniority</p>
                       <div className="flex flex-wrap gap-2">
-                        {aiResult.params.seniority.map((s, idx) => (
+                        {(aiResult.params?.seniority || []).map((s, idx) => (
                           <span key={idx} className="px-3 py-1 text-xs bg-[#0a2724] border border-[#114a43] text-teal-400 rounded-md font-medium uppercase tracking-tighter">
                             {s}
                           </span>
                         ))}
+                        {(!aiResult.params?.seniority || aiResult.params.seniority.length === 0) && (
+                          <span className="text-[10px] text-slate-600 italic">Any seniority</span>
+                        )}
                       </div>
                     </div>
                     {/* Keywords & Revenue */}
@@ -785,10 +794,10 @@ export default function OutreachLeadFinder() {
                                 <User className="size-5 text-teal-400" />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate">{item.fullName}</p>
+                                <p className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate">{String(item.fullName || item.email || 'Unknown Lead')}</p>
                                 <div className="flex items-center gap-2">
                                   <Mail className="size-3 text-slate-600" />
-                                  <span className="text-[10px] text-slate-500 font-medium truncate">{item.email}</span>
+                                  <span className="text-[10px] text-slate-500 font-medium truncate">{String(item.email || 'No email')}</span>
                                 </div>
                               </div>
                             </div>

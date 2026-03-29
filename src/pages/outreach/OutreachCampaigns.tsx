@@ -171,10 +171,10 @@ export default function OutreachCampaigns() {
           </TealButton>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <OutreachMetricCard label="Total Sent" value={totalSent.toLocaleString()} teal icon={<Mail />} trend="up" trendValue="12% this week" />
-          <OutreachMetricCard label="Avg Open Rate" value={`${avgOpenRate.toFixed(1)}%`} icon={<TrendingUp />} trend="up" trendValue="vs 21% industry" />
-          <OutreachMetricCard label="Avg Reply Rate" value={`${avgReplyRate.toFixed(1)}%`} icon={<CheckCircle2 />} trend="up" trendValue="vs 5% industry" />
-          <OutreachMetricCard label="Pending Tasks" value={totalTasks} icon={<ListChecks />} sub="due today" />
+          <OutreachMetricCard label="Total Sent" value={(totalSent ?? 0).toLocaleString()} teal icon={<Mail />} trend="up" trendValue="12% this week" />
+          <OutreachMetricCard label="Avg Open Rate" value={`${(avgOpenRate ?? 0).toFixed(1)}%`} icon={<TrendingUp />} trend="up" trendValue="vs 21% industry" />
+          <OutreachMetricCard label="Avg Reply Rate" value={`${(avgReplyRate ?? 0).toFixed(1)}%`} icon={<CheckCircle2 />} trend="up" trendValue="vs 5% industry" />
+          <OutreachMetricCard label="Pending Tasks" value={totalTasks ?? 0} icon={<ListChecks />} sub="due today" />
         </div>
       </div>
 
@@ -230,25 +230,25 @@ export default function OutreachCampaigns() {
                         )}
                         <div className="flex items-center gap-4 mt-3 flex-wrap">
                           <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <Users className="size-3.5" /> {campaign.leads} leads
+                            <Users className="size-3.5" /> {(campaign.leads ?? 0).toLocaleString()} leads
                           </span>
                           <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <Mail className="size-3.5" /> {campaign.sent} sent
+                            <Mail className="size-3.5" /> {(campaign.sent ?? 0).toLocaleString()} sent
                           </span>
-                          {campaign.sent > 0 && (
+                          {(campaign.sent ?? 0) > 0 && (
                             <>
-                              <span className="text-xs font-semibold text-teal-400">{campaign.openRate}% opens</span>
-                              <span className="text-xs font-semibold text-green-400">{campaign.replyRate}% replies</span>
-                              <span className="text-xs text-slate-500">{campaign.clickRate}% clicks</span>
+                              <span className="text-xs font-semibold text-teal-400">{campaign.openRate ?? '0.0'}% opens</span>
+                              <span className="text-xs font-semibold text-green-400">{campaign.replyRate ?? '0.0'}% replies</span>
+                              <span className="text-xs text-slate-500">{campaign.clickRate ?? '0.0'}% clicks</span>
                             </>
                           )}
-                          {campaign.pendingTasks > 0 && (
+                          {(campaign.pendingTasks ?? 0) > 0 && (
                             <span className="flex items-center gap-1 text-xs font-semibold text-amber-400">
                               <ListChecks className="size-3.5" /> {campaign.pendingTasks} task{campaign.pendingTasks > 1 ? 's' : ''}
                             </span>
                           )}
                           <span className="flex items-center gap-1 text-xs text-slate-600">
-                            <Clock className="size-3" /> {String(campaign.createdAt)}
+                            <Clock className="size-3" /> {String(campaign.createdAt ?? 'N/A')}
                           </span>
                         </div>
                       </div>

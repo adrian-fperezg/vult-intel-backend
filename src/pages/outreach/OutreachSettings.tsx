@@ -798,19 +798,19 @@ export default function OutreachSettings() {
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-400 font-medium">Search Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.searches?.used?.toLocaleString() || 0} used / {hunterAccount.searches?.total?.toLocaleString() || 0} limit
+                          {(hunterAccount.searches?.used ?? 0).toLocaleString()} used / {(hunterAccount.searches?.total ?? 0).toLocaleString()} limit
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${Math.min(100, ((hunterAccount.searches?.used || 0) / (hunterAccount.searches?.total || 1)) * 100)}%` 
+                            width: `${Math.min(100, ((hunterAccount.searches?.used ?? 0) / (hunterAccount.searches?.total ?? 1)) * 100)}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>{hunterAccount.searches?.remaining?.toLocaleString() || 0} credits remaining</span>
+                        <span>{(hunterAccount.searches?.remaining ?? 0).toLocaleString()} credits remaining</span>
                         {hunterAccount.reset_date && <span>Renews on: {hunterAccount.reset_date}</span>}
                       </div>
                     </div>
@@ -820,19 +820,19 @@ export default function OutreachSettings() {
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-400 font-medium">Verification Credits</span>
                         <span className="text-teal-400 font-bold">
-                          {hunterAccount.verifications?.used?.toLocaleString() || 0} used / {hunterAccount.verifications?.total?.toLocaleString() || 0} limit
+                          {(hunterAccount.verifications?.used ?? 0).toLocaleString()} used / {(hunterAccount.verifications?.total ?? 0).toLocaleString()} limit
                         </span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-teal-500 rounded-full transition-all duration-500" 
                           style={{ 
-                            width: `${Math.min(100, ((hunterAccount.verifications?.used || 0) / (hunterAccount.verifications?.total || 1)) * 100)}%` 
+                            width: `${Math.min(100, ((hunterAccount.verifications?.used ?? 0) / (hunterAccount.verifications?.total ?? 1)) * 100)}%` 
                           }} 
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>{hunterAccount.verifications?.remaining?.toLocaleString() || 0} credits remaining</span>
+                        <span>{(hunterAccount.verifications?.remaining ?? 0).toLocaleString()} credits remaining</span>
                       </div>
                     </div>
                   </div>
@@ -911,7 +911,7 @@ export default function OutreachSettings() {
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Total Credits</span>
                       <span className="font-semibold text-white">
-                        {zbCredits?.toLocaleString() || 0}
+                        {(zbCredits ?? 0).toLocaleString()}
                       </span>
                     </div>
                     <div className="p-3 bg-teal-500/5 border border-teal-500/10 rounded-xl">
@@ -993,15 +993,15 @@ export default function OutreachSettings() {
                   <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Remaining</span>
-                      <span className="font-semibold text-white">{pdlUsage?.remaining?.toLocaleString() ?? 0}</span>
+                      <span className="font-semibold text-white">{(pdlUsage?.remaining ?? 0).toLocaleString()}</span>
                     </div>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-slate-500">Usage</span>
-                        <span className="text-teal-400 font-bold">{pdlUsage?.used?.toLocaleString() ?? 0} / {pdlUsage?.available?.toLocaleString() ?? 0}</span>
+                        <span className="text-teal-400 font-bold">{(pdlUsage?.used ?? 0).toLocaleString()} / {(pdlUsage?.available ?? 0).toLocaleString()}</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${((pdlUsage?.used || 0) / (pdlUsage?.available || 1)) * 100}%` }} />
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${((pdlUsage?.used ?? 0) / (pdlUsage?.available ?? 1)) * 100}%` }} />
                       </div>
                     </div>
                   </div>

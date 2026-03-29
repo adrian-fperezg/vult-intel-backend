@@ -1019,13 +1019,26 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
     const sequences = await db.all(`
       SELECT s.*, 
              (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id) as step_count,
-             (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id) as contact_count
+             (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id) as contact_count,
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as total_sent,
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened') as unique_opens,
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied') as unique_replies
       FROM outreach_sequences s
       WHERE s.user_id = ? AND s.project_id = ?
       ORDER BY s.created_at DESC
     `, userId, project_id);
+
+    // Calculate rates in JS for cleaner query
+    const mappedSequences = sequences.map((s: any) => {
+      const totalSent = parseInt(s.total_sent) || 0;
+      return {
+        ...s,
+        open_rate: totalSent > 0 ? parseFloat(((parseInt(s.unique_opens) || 0) / totalSent * 100).toFixed(1)) : 0,
+        reply_rate: totalSent > 0 ? parseFloat(((parseInt(s.unique_replies) || 0) / totalSent * 100).toFixed(1)) : 0
+      };
+    });
     
-    res.json(sequences);
+    res.json(mappedSequences);
   } catch (error) {
     console.error("Failed to fetch sequences:", error);
     res.status(500).json({ error: "Failed to fetch sequences" });
@@ -2632,16 +2645,26 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
 app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
+  const projectId = req.headers['x-project-id'] as string;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID required" });
 
   try {
+    // Verify sequence ownership and project scope
+    const sequence = await db.prepare("SELECT name FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?")
+      .get(id, userId, projectId) as any;
+    
+    if (!sequence) {
+      return res.status(404).json({ error: "Sequence not found or unauthorized" });
+    }
+
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // 1. Overall Totals
     const totals = await db.prepare(`
       SELECT 
-        (SELECT count(*) FROM outreach_individual_emails WHERE sequence_id = ? AND status = 'sent') as total_sent,
+        (SELECT count(*) FROM outreach_individual_emails WHERE sequence_id = ?) as total_sent,
         (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_opened') as unique_opens,
         (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_replied') as unique_replies,
         (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_clicked') as unique_clicks,
@@ -2656,7 +2679,6 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
     const clickRate = totalSent > 0 ? ((parseInt(totals.unique_clicks) || 0) / totalSent) * 100 : 0;
 
     // 2. Daily Stats (Last 30 days)
-    // We combine sent emails from both paths and engagement events
     const dailyEvents = await db.prepare(`
       SELECT 
         ${db.isPostgres ? "TO_CHAR(created_at, 'YYYY-MM-DD')" : "date(created_at)"} as day,
@@ -2681,8 +2703,6 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
 
     // Merge daily stats
     const statsMap: Record<string, any> = {};
-    
-    // Fill with last 30 days
     for (let i = 0; i < 30; i++) {
       const d = new Date();
       d.setDate(d.getDate() - (29 - i));
@@ -2701,17 +2721,19 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
       }
     });
 
-    const dailyData = Object.values(statsMap);
-
     res.json({
-      total_sent: totalSent,
-      open_rate: parseFloat(openRate.toFixed(1)),
-      reply_rate: parseFloat(replyRate.toFixed(1)),
-      click_rate: parseFloat(clickRate.toFixed(1)),
-      total_recipients: parseInt(totals.total_recipients) || 0,
-      active_enrollments: parseInt(totals.active_enrollments) || 0,
-      completed_enrollments: parseInt(totals.completed_enrollments) || 0,
-      daily_data: dailyData
+      id,
+      name: sequence.name,
+      totalSent,
+      openRate: parseFloat(openRate.toFixed(1)),
+      replyRate: parseFloat(replyRate.toFixed(1)),
+      clickRate: parseFloat(clickRate.toFixed(1)),
+      enrollmentStats: {
+        total: parseInt(totals.total_recipients) || 0,
+        active: parseInt(totals.active_enrollments) || 0,
+        completed: parseInt(totals.completed_enrollments) || 0,
+      },
+      dailyStats: Object.values(statsMap)
     });
 
   } catch (error: any) {

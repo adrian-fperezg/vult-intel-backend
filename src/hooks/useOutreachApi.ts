@@ -37,8 +37,9 @@ export function useOutreachApi() {
     return {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      'x-project-id': activeProjectId ?? '',
     };
-  }, [currentUser]);
+  }, [currentUser, activeProjectId]);
 
   /** Helper: GET with project_id query param */
   const get = useCallback(
@@ -108,10 +109,16 @@ export function useOutreachApi() {
       if (!currentUser) throw new Error('Not authenticated');
       const token = await currentUser.getIdToken();
       
+      // Ensure project_id is in the FormData
+      if (!formData.has('project_id')) {
+        formData.append('project_id', activeProjectId);
+      }
+
       const res = await fetch(`${BASE_URL}${path}`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,
+          'x-project-id': activeProjectId,
         },
         body: formData,
       });
@@ -160,11 +167,12 @@ export function useOutreachApi() {
   /** Helper: PATCH */
   const patch = useCallback(
     async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
+      if (!activeProjectId) throw new Error('No project selected');
       const headers = await authHeaders();
       const res = await fetch(`${BASE_URL}${path}`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, project_id: activeProjectId }),
       });
       if (!res.ok) {
         let errorMsg = `PATCH ${path} failed: ${res.status}`;
@@ -178,14 +186,16 @@ export function useOutreachApi() {
       }
       return res.json() as Promise<T>;
     },
-    [authHeaders],
+    [activeProjectId, authHeaders],
   );
 
   /** Helper: DELETE */
   const del = useCallback(
     async (path: string): Promise<void> => {
+      if (!activeProjectId) throw new Error('No project selected');
       const headers = await authHeaders();
-      const res = await fetch(`${BASE_URL}${path}`, {
+      const separator = path.includes('?') ? '&' : '?';
+      const res = await fetch(`${BASE_URL}${path}${separator}project_id=${activeProjectId}`, {
         method: 'DELETE',
         headers,
       });
@@ -200,7 +210,7 @@ export function useOutreachApi() {
         throw new Error(errorMsg);
       }
     },
-    [authHeaders],
+    [activeProjectId, authHeaders],
   );
 
   // ── Campaigns ────────────────────────────────────────────────────────────

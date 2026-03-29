@@ -116,15 +116,15 @@ export default function OutreachAnalytics() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <OutreachMetricCard 
             label="Total Sent" 
-            value={data.total_sent?.toLocaleString() || "0"} 
+            value={(data.total_sent ?? 0).toLocaleString()} 
             teal 
             icon={<Mail />} 
-            trend={Number(data.sent_change) >= 0 ? "up" : "down"}
-            trendValue={`${Math.abs(Number(data.sent_change))}%`} 
+            trend={Number(data.sent_change ?? 0) >= 0 ? "up" : "down"}
+            trendValue={`${Math.abs(Number(data.sent_change ?? 0))}%`} 
           />
           <OutreachMetricCard 
             label="Open Rate" 
-            value={`${data.open_rate}%`} 
+            value={`${data.open_rate ?? '0.0'}%`} 
             icon={<TrendingUp />} 
             trend="neutral" 
             trendValue="vs average" 
@@ -132,14 +132,14 @@ export default function OutreachAnalytics() {
           />
           <OutreachMetricCard 
             label="Reply Rate" 
-            value={`${data.reply_rate}%`} 
+            value={`${data.reply_rate ?? '0.0'}%`} 
             icon={<MessageSquare />} 
             trend="neutral" 
             trendValue="vs average" 
           />
           <OutreachMetricCard 
             label="Daily Avg" 
-            value={data.emails_sent_today?.toString() || "0"} 
+            value={(data.emails_sent_today ?? 0).toLocaleString()} 
             icon={<MousePointer />} 
             trend="neutral" 
             trendValue="today" 
@@ -151,21 +151,21 @@ export default function OutreachAnalytics() {
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Active Sequences</p>
-              <p className="text-xl font-bold text-white">{data.active_sequences}</p>
+              <p className="text-xl font-bold text-white">{data.active_sequences ?? 0}</p>
             </div>
             <BarChart2 className="size-5 text-teal-500/50" />
           </div>
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Total Recipients</p>
-              <p className="text-xl font-bold text-white">{data.total_recipients}</p>
+              <p className="text-xl font-bold text-white">{(data.total_recipients ?? 0).toLocaleString()}</p>
             </div>
             <Users className="size-5 text-teal-500/50" />
           </div>
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Pending Tasks</p>
-              <p className="text-xl font-bold text-white">{data.pending_tasks}</p>
+              <p className="text-xl font-bold text-white">{data.pending_tasks ?? 0}</p>
             </div>
             <Loader2 className="size-5 text-teal-500/50" />
           </div>
@@ -278,9 +278,9 @@ export default function OutreachAnalytics() {
                       </OutreachBadge>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-slate-500">
-                      <span>{Number(sent).toLocaleString()} sent</span>
-                      <span className={Number(bounceRate) > 3 ? 'text-red-400' : 'text-slate-400'}>Bounce: {String(bounceRate)}%</span>
-                      <span className={Number(spamRate) > 0.5 ? 'text-amber-400' : 'text-slate-400'}>Spam: {String(spamRate)}%</span>
+                      <span>{(Number(sent) ?? 0).toLocaleString()} sent</span>
+                      <span className={Number(bounceRate ?? 0) > 3 ? 'text-red-400' : 'text-slate-400'}>Bounce: {String(bounceRate ?? '0.0')}%</span>
+                      <span className={Number(spamRate ?? 0) > 0.5 ? 'text-amber-400' : 'text-slate-400'}>Spam: {String(spamRate ?? '0.0')}%</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 shrink-0 text-xs">

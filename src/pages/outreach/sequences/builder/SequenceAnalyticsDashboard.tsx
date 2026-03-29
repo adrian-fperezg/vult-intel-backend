@@ -115,26 +115,26 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <OutreachMetricCard 
           label="Total Sent" 
-          value={stats.totalSent.toLocaleString()} 
+          value={(stats?.totalSent ?? 0).toLocaleString()} 
           teal 
           icon={<Mail className="size-4" />} 
           sub="Delivered emails"
         />
         <OutreachMetricCard 
           label="Open Rate" 
-          value={`${stats.openRate}%`} 
+          value={`${stats?.openRate ?? 0}%`} 
           icon={<TrendingUp className="size-4" />} 
           sub="Unique opens"
         />
         <OutreachMetricCard 
           label="Reply Rate" 
-          value={`${stats.replyRate}%`} 
+          value={`${stats?.replyRate ?? 0}%`} 
           icon={<MessageSquare className="size-4" />} 
           sub="Unique replies"
         />
         <OutreachMetricCard 
           label="Click Rate" 
-          value={`${stats.clickRate}%`} 
+          value={`${stats?.clickRate ?? 0}%`} 
           icon={<MousePointer className="size-4" />} 
           sub="Link engagement"
         />
@@ -195,7 +195,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active</p>
-                    <p className="text-lg font-bold text-white">{stats.enrollmentStats.active}</p>
+                    <p className="text-lg font-bold text-white">{(stats?.enrollmentStats?.active ?? 0).toLocaleString()}</p>
                   </div>
                 </div>
                 <OutreachBadge variant="teal" dot>In Progress</OutreachBadge>
@@ -208,7 +208,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Completed</p>
-                    <p className="text-lg font-bold text-white">{stats.enrollmentStats.completed}</p>
+                    <p className="text-lg font-bold text-white">{(stats?.enrollmentStats?.completed ?? 0).toLocaleString()}</p>
                   </div>
                 </div>
                 <OutreachBadge variant="blue">Finished</OutreachBadge>
@@ -220,17 +220,17 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                     <Users className="size-4 text-slate-500" />
                     <span className="text-sm font-medium text-slate-400">Total Enrolled</span>
                   </div>
-                  <span className="text-xl font-black text-white">{stats.enrollmentStats.total}</span>
+                  <span className="text-xl font-black text-white">{(stats?.enrollmentStats?.total ?? 0).toLocaleString()}</span>
                 </div>
                 {/* Simple progress bar */}
                 <div className="h-1.5 w-full bg-white/5 rounded-full mt-3 overflow-hidden">
                   <div 
                     className="h-full bg-teal-500 rounded-full transition-all duration-1000" 
-                    style={{ width: `${(stats.enrollmentStats.completed / (stats.enrollmentStats.total || 1)) * 100}%` }}
+                    style={{ width: `${((stats?.enrollmentStats?.completed ?? 0) / (stats?.enrollmentStats?.total || 1)) * 100}%` }}
                   />
                 </div>
                 <p className="text-[10px] text-slate-500 mt-2 font-medium">
-                  {Math.round((stats.enrollmentStats.completed / (stats.enrollmentStats.total || 1)) * 100)}% of sequence completions
+                  {Math.round(((stats?.enrollmentStats?.completed ?? 0) / (stats?.enrollmentStats?.total || 1)) * 100)}% of sequence completions
                 </p>
               </div>
             </div>

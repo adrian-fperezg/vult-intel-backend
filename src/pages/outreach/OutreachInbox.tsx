@@ -131,23 +131,47 @@ export default function OutreachInbox() {
     setIsLoading(true);
     try {
       const data = await api.fetchInbox();
-      setThreads((data ?? []).map((m: any) => ({
-        ...m,
-        contact: { name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || m.email, email: m.email, company: m.company || '' },
-        receivedAt: m.event_at ? new Date(m.event_at).toLocaleDateString() : 'N/A',
-        isRead: true,
-        isStarred: false,
-        isArchived: false,
-        intent: (m.last_event === 'reply' ? 'INTERESTED' : 'NEUTRAL') as IntentLabel,
-        subject: `RE: Campaign`,
-        preview: m.intent || 'New reply',
-        fullBody: '',
-        campaign: m.metadata ? (JSON.parse(m.metadata).campaign_name || 'Direct Email') : 'Direct Email',
-        mailbox: '',
-        messages: [
-          { role: 'received' as const, body: m.last_event || 'No message preview', at: m.event_at ? new Date(m.event_at).toLocaleTimeString() : '' }
-        ]
-      })));
+      setThreads((data ?? []).map((m: any) => {
+        let campaignName = 'Direct Email';
+        try {
+          if (m.metadata) {
+            const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+            campaignName = meta.campaign_name || campaignName;
+          }
+        } catch (e) {
+          console.warn('Failed to parse metadata', e);
+        }
+
+        const eventDate = m.event_at ? new Date(m.event_at) : null;
+        const isValidDate = eventDate && !isNaN(eventDate.getTime());
+
+        return {
+          ...m,
+          id: m.id || `temp-${Math.random()}`,
+          contact: { 
+            name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || m.email || 'Unknown Contact', 
+            email: m.email || '', 
+            company: m.company || 'N/A' 
+          },
+          receivedAt: isValidDate ? eventDate!.toLocaleDateString() : 'N/A',
+          isRead: true,
+          isStarred: false,
+          isArchived: false,
+          intent: (m.last_event === 'reply' ? 'INTERESTED' : 'NEUTRAL') as IntentLabel,
+          subject: m.subject || `RE: Campaign`,
+          preview: m.intent || m.last_event || 'New reply',
+          fullBody: m.body || '',
+          campaign: campaignName,
+          mailbox: m.mailbox_email || '',
+          messages: [
+            { 
+              role: 'received' as const, 
+              body: m.last_event || 'No message preview', 
+              at: isValidDate ? eventDate!.toLocaleTimeString() : '' 
+            }
+          ]
+        };
+      }));
     } catch (error) {
       console.error('Error fetching inbox:', error);
     } finally {
@@ -298,7 +322,7 @@ export default function OutreachInbox() {
             <div className="p-6 text-center text-sm text-slate-500">No threads match this filter</div>
           ) : (
             filtered.map(thread => {
-              const intentCfg = INTENT_CFG[thread.intent];
+              const intentCfg = INTENT_CFG[thread.intent as IntentLabel] || INTENT_CFG.NEUTRAL;
               return (
                 <button
                   key={thread.id}
@@ -329,12 +353,12 @@ export default function OutreachInbox() {
                     </div>
                   </div>
                   <p className={cn('text-[11px] font-semibold truncate mb-1', !thread.isRead ? 'text-white' : 'text-slate-400')}>
-                    {String(thread.subject)}
+                    {String(thread.subject || 'No Subject')}
                   </p>
-                  <p className="text-[10px] text-slate-600 truncate line-clamp-1">{String(thread.preview)}</p>
+                  <p className="text-[10px] text-slate-600 truncate line-clamp-1">{String(thread.preview || '')}</p>
                   <div className="mt-2 flex items-center justify-between">
                     <OutreachBadge variant={intentCfg.variant}>{intentCfg.label}</OutreachBadge>
-                    <span className="text-[9px] font-medium text-slate-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{String(thread.campaign)}</span>
+                    <span className="text-[9px] font-medium text-slate-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{String(thread.campaign || 'Direct Email')}</span>
                   </div>
                 </button>
               );
@@ -357,15 +381,15 @@ export default function OutreachInbox() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2.5 mb-1">
-                    <h2 className="font-bold text-white">{String(activeThread.subject)}</h2>
-                    <OutreachBadge variant={INTENT_CFG[activeThread.intent]?.variant || 'gray'}>
-                      {INTENT_CFG[activeThread.intent]?.label || 'Neutral'}
+                    <h2 className="font-bold text-white">{String(activeThread.subject || 'No Subject')}</h2>
+                    <OutreachBadge variant={INTENT_CFG[activeThread.intent]?.variant || INTENT_CFG.NEUTRAL.variant}>
+                      {INTENT_CFG[activeThread.intent]?.label || INTENT_CFG.NEUTRAL.label}
                     </OutreachBadge>
                   </div>
                   <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1"><Mail className="size-3" /> {String(activeThread.mailbox)}</span>
-                    <span className="flex items-center gap-1"><Tag className="size-3" /> {String(activeThread.campaign)}</span>
-                    <span className="flex items-center gap-1"><Clock className="size-3" /> {String(activeThread.receivedAt)}</span>
+                    <span className="flex items-center gap-1"><Mail className="size-3" /> {String(activeThread.mailbox || 'No Mailbox')}</span>
+                    <span className="flex items-center gap-1"><Tag className="size-3" /> {String(activeThread.campaign || 'Direct Email')}</span>
+                    <span className="flex items-center gap-1"><Clock className="size-3" /> {String(activeThread.receivedAt || 'N/A')}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -394,9 +418,9 @@ export default function OutreachInbox() {
                       ? 'bg-teal-600/20 border border-teal-500/20 text-teal-50 rounded-tr-sm'
                       : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-sm'
                   )}>
-                    <p className="whitespace-pre-wrap">{msg.body}</p>
+                    <p className="whitespace-pre-wrap">{msg.body || ''}</p>
                     <p className={cn('text-[10px] mt-2', msg.role === 'sent' ? 'text-teal-400/60' : 'text-slate-600')}>
-                      {msg.role === 'sent' ? 'You' : activeThread.contact.name} · {msg.at}
+                      {msg.role === 'sent' ? 'You' : (activeThread.contact.name || 'Contact')} · {msg.at || ''}
                     </p>
                   </div>
                 </motion.div>
@@ -435,22 +459,22 @@ export default function OutreachInbox() {
             <h3 className="text-sm font-bold text-white mb-4">Contact Profile</h3>
             <div className="flex items-center gap-3 mb-6">
               <div className="size-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-                <span className="text-sm font-bold text-teal-400">{activeThread.contact.name[0]}</span>
+                <span className="text-sm font-bold text-teal-400">{(activeThread.contact.name || '?')[0]}</span>
               </div>
               <div>
-                <p className="text-sm font-semibold text-white">{String(activeThread.contact.name)}</p>
-                <p className="text-xs text-slate-400">{String(activeThread.contact.company)}</p>
+                <p className="text-sm font-semibold text-white">{String(activeThread.contact.name || 'Unknown Contact')}</p>
+                <p className="text-xs text-slate-400">{String(activeThread.contact.company || 'N/A')}</p>
               </div>
             </div>
             
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-sm">
                 <Mail className="size-4 text-slate-500" />
-                <span className="text-slate-300">{activeThread.contact.email}</span>
+                <span className="text-slate-300">{activeThread.contact.email || 'No email provided'}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Building2 className="size-4 text-slate-500" />
-                <span className="text-slate-300">{activeThread.contact.company}</span>
+                <span className="text-slate-300">{activeThread.contact.company || 'No company provided'}</span>
               </div>
             </div>
           </div>
@@ -489,13 +513,13 @@ export default function OutreachInbox() {
             <div className="space-y-4 relative before:absolute before:inset-y-2 before:left-2 before:w-px before:bg-white/10 ml-2 border-slate-700">
               <div className="relative pl-6">
                 <div className="absolute left-0 top-1.5 -translate-x-1/2 size-2 rounded-full bg-slate-500 border-2 border-background-dark" />
-                <p className="text-xs font-semibold text-slate-300">{activeThread.campaign}</p>
+                <p className="text-xs font-semibold text-slate-300">{activeThread.campaign || 'Direct Email'}</p>
                 <p className="text-[10px] text-slate-500">Source Event</p>
               </div>
               <div className="relative pl-6">
                 <div className="absolute left-0 top-1.5 -translate-x-1/2 size-2 rounded-full bg-teal-400 border-2 border-background-dark shadow-[0_0_8px_rgba(45,212,191,0.5)]" />
-                <p className="text-xs font-semibold text-white">Latest Reply ({INTENT_CFG[activeThread.intent].label})</p>
-                <p className="text-[10px] text-slate-500">{activeThread.receivedAt}</p>
+                <p className="text-xs font-semibold text-white">Latest Reply ({INTENT_CFG[activeThread.intent as IntentLabel]?.label || 'Neutral'})</p>
+                <p className="text-[10px] text-slate-500">{activeThread.receivedAt || 'N/A'}</p>
               </div>
             </div>
           </div>

@@ -176,18 +176,36 @@ export default function OutreachContacts() {
     setIsLoading(true);
     try {
       const data = await api.fetchContacts(listFilter === 'all' || listFilter === 'unassigned' ? undefined : listFilter);
-      setContacts((data ?? []).map((c: any) => ({
-        ...c,
-        firstName: c.first_name || 'N/A',
-        lastName: c.last_name || '',
-        addedAt: c.created_at ? c.created_at.slice(0, 10) : 'N/A',
-        tags: Array.isArray(c.tags) ? c.tags : JSON.parse(c.tags || '[]'),
-        emailVerified: !!c.email_verified,
-        companySize: c.company_size || '',
-        locationCity: c.location_city || '',
-        locationCountry: c.location_country || '',
-        jobTitle: c.job_title || c.title || ''
-      })));
+      setContacts((data ?? []).map((m: any) => {
+        const createdAt = m.created_at ? new Date(m.created_at) : null;
+        const isValidDate = createdAt && !isNaN(createdAt.getTime());
+        let tags: string[] = [];
+        try {
+          tags = Array.isArray(m.tags) ? m.tags : (typeof m.tags === 'string' ? JSON.parse(m.tags) : []);
+        } catch (e) {
+          console.warn('Failed to parse tags', e);
+        }
+
+        return {
+          ...m,
+          id: m.id || `contact-${Math.random()}`,
+          firstName: m.first_name || 'N/A',
+          lastName: m.last_name || '',
+          email: m.email || '',
+          company: m.company || '—',
+          addedAt: isValidDate ? createdAt!.toISOString().slice(0, 10) : 'N/A',
+          lastActivity: isValidDate ? createdAt!.toLocaleDateString() : 'No activity',
+          tags: tags,
+          emailVerified: !!m.email_verified,
+          companySize: m.company_size || m.size || '—',
+          locationCity: m.location_city || '',
+          locationCountry: m.location_country || '',
+          location: m.location || '—',
+          jobTitle: m.job_title || m.title || '—',
+          status: (m.status || 'not_enrolled') as ContactStatus,
+          verification_status: (m.verification_status || 'unverified') as any
+        };
+      }));
     } catch (error) {
       console.error('Error fetching contacts:', error);
     } finally {
@@ -237,7 +255,7 @@ export default function OutreachContacts() {
     if (query) {
       const q = query.toLowerCase();
       list = list.filter(c =>
-        `${c.firstName} ${c.lastName} ${c.email} ${c.company}`.toLowerCase().includes(q)
+        `${c.firstName || ''} ${c.lastName || ''} ${c.email || ''} ${c.company || ''}`.toLowerCase().includes(q)
       );
     }
     if (statusFilter !== 'all') list = list.filter(c => c.status === statusFilter);
@@ -315,7 +333,10 @@ export default function OutreachContacts() {
   const handleSuppress = async (email: string) => {
     try {
       await api.addToSuppressionList(email, "Manual suppression from profile");
-      await api.updateContact(contacts.find(c => c.email === email)!.id, { status: 'unsubscribed' });
+      const target = contacts.find(c => c.email === email);
+      if (target) {
+        await api.updateContact(target.id, { status: 'unsubscribed' });
+      }
       await loadContacts();
     } catch (e) {
       console.error('Failed to suppress contact', e);
@@ -584,7 +605,7 @@ export default function OutreachContacts() {
                               )}
                             </div>
                             <span className="text-xs font-bold text-white whitespace-nowrap">
-                              {contact.firstName} {contact.lastName}
+                              {contact.firstName || ''} {contact.lastName || ''}
                             </span>
                           </div>
                         </td>
@@ -621,21 +642,21 @@ export default function OutreachContacts() {
                         <td className="p-3">
                           <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
                             <Mail className="size-3 text-slate-600 shrink-0" />
-                            <span className="truncate">{contact.email}</span>
+                            <span className="truncate">{contact.email || 'No email'}</span>
                             {contact.verification_status && contact.verification_status !== 'unverified' && (
                               <OutreachBadge 
-                                variant={VERIFICATION_CFG[contact.verification_status].variant} 
+                                variant={(VERIFICATION_CFG[contact.verification_status] || VERIFICATION_CFG.unverified).variant} 
                                 className="text-[8px] px-1 py-0 scale-90 origin-left"
                               >
-                                {VERIFICATION_CFG[contact.verification_status].label}
+                                {(VERIFICATION_CFG[contact.verification_status] || VERIFICATION_CFG.unverified).label}
                               </OutreachBadge>
                             )}
                           </div>
                         </td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">
-                            <OutreachBadge variant={statusCfg.variant} className="text-[9px] px-1.5 py-0">
-                              {statusCfg.label}
+                            <OutreachBadge variant={(STATUS_CFG[contact.status] || STATUS_CFG.not_enrolled).variant} className="text-[9px] px-1.5 py-0">
+                              {(STATUS_CFG[contact.status] || STATUS_CFG.not_enrolled).label}
                             </OutreachBadge>
                           </div>
                         </td>

@@ -156,7 +156,12 @@ export default function ComposeSidebar({
                         {email.contact_id ? 'Linked to contact' : 'Standalone email'}
                       </span>
                       <span className="shrink-0">
-                        {new Date(email.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric'})}
+                        {(() => {
+                          const date = new Date(email.created_at);
+                          return isNaN(date.getTime()) 
+                            ? 'N/A' 
+                            : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric'});
+                        })()}
                       </span>
                     </div>
                   </motion.button>
