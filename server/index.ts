@@ -3410,6 +3410,34 @@ import {
 } from './lib/veoStudio/access.js';
 import { v4 as _veoUuid } from 'uuid';
 
+/**
+ * Helper to construct brand context string for prompting
+ */
+async function getBrandContextSuffix(uid: string, projectId: string): Promise<string> {
+  try {
+    const kit = await getBrandKit(uid, projectId);
+    if (!kit || !kit.isActive) return '';
+
+    const parts = [];
+    if (kit.brandName) parts.push(`Brand: ${kit.brandName}`);
+    if (kit.visualStyle) {
+      const styleLabel = kit.visualStyle === 'dark' ? 'Dark & Cinematic' : 
+                         kit.visualStyle === 'light' ? 'Bright & Airy' : 
+                         kit.visualStyle === 'vibrant' ? 'Bold & Vibrant' : 'Muted & Elegant';
+      parts.push(`Style: ${styleLabel}`);
+    }
+    if (kit.lightingPreference) parts.push(`Lighting: ${kit.lightingPreference}`);
+    
+    let baseSuffix = parts.length > 0 ? ` [${parts.join(', ')}].` : '';
+    if (kit.promptSuffix) baseSuffix += ` ${kit.promptSuffix}`;
+    
+    return baseSuffix;
+  } catch (err) {
+    console.error('[VEO] Error fetching brand kit for suffix:', err);
+    return '';
+  }
+}
+
 // GET /api/veo-studio/subscription
 app.get('/api/veo-studio/subscription', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
@@ -3438,16 +3466,26 @@ app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: Auth
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
   if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
 
-  const { prompt, aspectRatio, style } = req.body;
+  const { prompt, aspectRatio, style, applyBrandKit } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const access = await checkVeoStudioAccess(uid, email);
   if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
 
+  // Handle Brand Kit injection
+  let finalPrompt = prompt;
+  if (applyBrandKit) {
+    const brandSuffix = await getBrandContextSuffix(uid, projectId);
+    if (brandSuffix) {
+      finalPrompt = `${prompt}${brandSuffix}`;
+      console.log(`[VEO] Applied Brand Kit to job for ${uid}. Final prompt length: ${finalPrompt.length}`);
+    }
+  }
+
   await incrementVideoCount(uid);
   const jobId = _veoUuid();
-  await createJobDoc(uid, projectId, jobId, prompt);
-  await veoQueue.add('generate-video', { uid, projectId, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+  await createJobDoc(uid, projectId, jobId, finalPrompt);
+  await veoQueue.add('generate-video', { uid, projectId, jobId, prompt: finalPrompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
 
   res.json({ jobId });
 });
@@ -3460,16 +3498,26 @@ app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthR
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
   if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
 
-  const { prompt, imageBase64, aspectRatio, style } = req.body;
+  const { prompt, imageBase64, aspectRatio, style, applyBrandKit } = req.body;
   if (!prompt || !imageBase64) return res.status(400).json({ error: 'prompt and imageBase64 are required' });
 
   const access = await checkVeoStudioAccess(uid, email);
   if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
 
+  // Handle Brand Kit injection
+  let finalPrompt = prompt;
+  if (applyBrandKit) {
+    const brandSuffix = await getBrandContextSuffix(uid, projectId);
+    if (brandSuffix) {
+      finalPrompt = `${prompt}${brandSuffix}`;
+      console.log(`[VEO] Applied Brand Kit to animation job for ${uid}`);
+    }
+  }
+
   await incrementVideoCount(uid);
   const jobId = _veoUuid();
-  await createJobDoc(uid, projectId, jobId, prompt);
-  await veoQueue.add('animate-image', { uid, projectId, jobId, prompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+  await createJobDoc(uid, projectId, jobId, finalPrompt);
+  await veoQueue.add('animate-image', { uid, projectId, jobId, prompt: finalPrompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
 
   res.json({ jobId });
 });
@@ -3482,16 +3530,26 @@ app.post('/api/veo-studio/generate-image', verifyFirebaseToken, async (req: Auth
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
   if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
 
-  const { prompt, aspectRatio, style } = req.body;
+  const { prompt, aspectRatio, style, applyBrandKit } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const access = await checkVeoStudioAccess(uid, email);
   if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
 
+  // Handle Brand Kit injection
+  let finalPrompt = prompt;
+  if (applyBrandKit) {
+    const brandSuffix = await getBrandContextSuffix(uid, projectId);
+    if (brandSuffix) {
+      finalPrompt = `${prompt}${brandSuffix}`;
+      console.log(`[VEO] Applied Brand Kit to image job for ${uid}`);
+    }
+  }
+
   const jobId = _veoUuid();
-  await createJobDoc(uid, projectId, jobId, prompt);
+  await createJobDoc(uid, projectId, jobId, finalPrompt);
   // Image generation still goes through queue but doesn't consume video credits
-  await veoQueue.add('generate-image', { uid, projectId, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style });
+  await veoQueue.add('generate-image', { uid, projectId, jobId, prompt: finalPrompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style });
 
   res.json({ jobId });
 });

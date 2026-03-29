@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Film,
@@ -55,9 +55,38 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
   const [currentJob, setCurrentJob] = useState<GenerationJob | null>(null);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [useBrandKit, setUseBrandKit] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const apiBase = import.meta.env.VITE_OUTREACH_API_URL || 'http://localhost:3001';
+  
+  useEffect(() => {
+    async function checkBrandKit() {
+      try {
+        const token = await currentUser?.getIdToken();
+        const res = await fetch(`${apiBase}/api/veo-studio/brand-kit`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-project-id': projectId
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Default to true only if the kit exists and is explicitly active
+          if (data && data.isActive) {
+            setUseBrandKit(true);
+          } else {
+            setUseBrandKit(false);
+          }
+        } else {
+          setUseBrandKit(false);
+        }
+      } catch (err) {
+        setUseBrandKit(false);
+      }
+    }
+    checkBrandKit();
+  }, [currentUser, projectId, apiBase]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -113,6 +142,7 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
       const body: any = {
         prompt: `${prompt}. ${STYLE_PRESETS[style].suffix}`,
         aspectRatio,
+        applyBrandKit: useBrandKit,
       };
       if (mode === 'image-to-video' && uploadedImage) {
         body.imageBase64 = uploadedImage;
@@ -330,6 +360,33 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
               </div>
             </div>
           )}
+
+          {/* Apply Brand Kit Toggle */}
+          <div className="flex items-center justify-between p-3.5 bg-amber-500/5 border border-amber-500/10 rounded-xl mb-2">
+            <div className="flex items-center gap-2">
+              <div className="size-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                <Wand2 className="size-4 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-[12px] font-bold text-amber-200 leading-none mb-0.5">Apply Brand Kit</p>
+                <p className="text-[10px] text-amber-500/60 font-medium">Use saved visual style & suffixes</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setUseBrandKit(!useBrandKit)}
+              className={cn(
+                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                useBrandKit ? "bg-amber-500" : "bg-white/10"
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                  useBrandKit ? "translate-x-4" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
 
           {/* Generate button */}
           <button
