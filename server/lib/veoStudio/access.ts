@@ -1,13 +1,8 @@
-import admin from 'firebase-admin';
+import admin, { initializeFirebase } from '../firebase.js';
 
 // Ensure Firebase Admin is initialized before requiring Firestore
-// (It is initialized in middleware.ts which is imported before server routes)
 function getFirestore() {
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-    });
-  }
+  initializeFirebase();
   return admin.firestore();
 }
 

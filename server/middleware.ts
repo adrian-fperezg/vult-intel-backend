@@ -1,15 +1,12 @@
 import admin from 'firebase-admin';
 import { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
+import { initializeFirebase } from './lib/firebase.js';
 
 dotenv.config();
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  });
-}
+// Initialize Firebase Admin with support for JSON credentials
+initializeFirebase();
 
 export interface AuthRequest extends Request {
   user?: admin.auth.DecodedIdToken;
