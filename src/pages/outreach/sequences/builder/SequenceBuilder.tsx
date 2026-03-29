@@ -16,6 +16,7 @@ import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
 
 import ConditionSelectorModal from './ConditionSelectorModal';
+import SequenceAnalyticsDashboard from './SequenceAnalyticsDashboard';
 
 interface Step {
   id: string;
@@ -497,7 +498,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeView = (searchParams.get('view') as 'builder' | 'settings' | 'recipients' | 'analytics') || 'builder';
+  const activeView = (searchParams.get('view') as 'builder' | 'settings' | 'recipients' | 'analytics') || 'analytics';
   
   const setActiveView = (view: 'builder' | 'settings' | 'recipients' | 'analytics') => {
     setSearchParams(prev => {
@@ -1216,13 +1217,9 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         )}
 
         {activeView === 'analytics' && (
-          <div className="h-full flex items-center justify-center p-12 w-full">
-            <div className="max-w-md text-center">
-               <div className="size-16 bg-teal-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                 <Play className="size-8 text-teal-500" />
-               </div>
-               <h3 className="text-xl font-bold text-white mb-2">Sequence Analytics</h3>
-               <p className="text-slate-400">Detailed performance metrics for this specific sequence will appear here once it is active and sending.</p>
+          <div className="h-full overflow-y-auto p-12 bg-[#0d1117] custom-scrollbar">
+            <div className="max-w-6xl mx-auto">
+              <SequenceAnalyticsDashboard sequenceId={sequenceId} />
             </div>
           </div>
         )}

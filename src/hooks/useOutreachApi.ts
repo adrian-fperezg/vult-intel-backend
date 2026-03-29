@@ -288,6 +288,11 @@ export function useOutreachApi() {
     [get]
   );
 
+  const fetchSequenceStats = useCallback(
+    (id: string) => get<any>(`/sequences/${id}/dashboard-stats`),
+    [get]
+  );
+
   const deleteSequence = useCallback(
     (id: string) => del(`/sequences/${id}`),
     [del],
@@ -537,6 +542,7 @@ export function useOutreachApi() {
     deleteSequence,
     activateSequence,
     fetchStepAnalytics,
+    fetchSequenceStats,
     addSequenceRecipients,
     removeSequenceRecipient: (sequenceId: string, contactId: string) => 
       del(`/sequences/${sequenceId}/recipients/${contactId}`),

@@ -2628,6 +2628,99 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
   }
 });
 
+// GET /api/outreach/sequences/:id/dashboard-stats
+app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Overall Totals
+    const totals = await db.prepare(`
+      SELECT 
+        (SELECT count(*) FROM outreach_individual_emails WHERE sequence_id = ? AND status = 'sent') as total_sent,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_opened') as unique_opens,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_replied') as unique_replies,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_clicked') as unique_clicks,
+        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ?) as total_recipients,
+        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'active') as active_enrollments,
+        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'completed') as completed_enrollments
+    `).get(id, id, id, id, id, id, id) as any;
+
+    const totalSent = parseInt(totals.total_sent) || 0;
+    const openRate = totalSent > 0 ? ((parseInt(totals.unique_opens) || 0) / totalSent) * 100 : 0;
+    const replyRate = totalSent > 0 ? ((parseInt(totals.unique_replies) || 0) / totalSent) * 100 : 0;
+    const clickRate = totalSent > 0 ? ((parseInt(totals.unique_clicks) || 0) / totalSent) * 100 : 0;
+
+    // 2. Daily Stats (Last 30 days)
+    // We combine sent emails from both paths and engagement events
+    const dailyEvents = await db.prepare(`
+      SELECT 
+        ${db.isPostgres ? "TO_CHAR(created_at, 'YYYY-MM-DD')" : "date(created_at)"} as day,
+        count(CASE WHEN type = 'email_opened' THEN 1 END) as opens,
+        count(CASE WHEN type = 'email_replied' THEN 1 END) as replies,
+        count(CASE WHEN type = 'email_clicked' THEN 1 END) as clicks
+      FROM outreach_events
+      WHERE sequence_id = ? AND created_at >= ?
+      GROUP BY day
+      ORDER BY day ASC
+    `).all(id, thirtyDaysAgo) as any[];
+
+    const dailySent = await db.prepare(`
+      SELECT 
+        ${db.isPostgres ? "TO_CHAR(sent_at, 'YYYY-MM-DD')" : "date(sent_at)"} as day,
+        count(*) as sent
+      FROM outreach_individual_emails
+      WHERE sequence_id = ? AND status = 'sent' AND sent_at >= ?
+      GROUP BY day
+      ORDER BY day ASC
+    `).all(id, thirtyDaysAgo) as any[];
+
+    // Merge daily stats
+    const statsMap: Record<string, any> = {};
+    
+    // Fill with last 30 days
+    for (let i = 0; i < 30; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - (29 - i));
+      const dayStr = d.toISOString().split('T')[0];
+      statsMap[dayStr] = { day: dayStr, sent: 0, opens: 0, replies: 0, clicks: 0 };
+    }
+
+    dailySent.forEach(row => {
+      if (statsMap[row.day]) statsMap[row.day].sent = parseInt(row.sent) || 0;
+    });
+    dailyEvents.forEach(row => {
+      if (statsMap[row.day]) {
+        statsMap[row.day].opens = parseInt(row.opens) || 0;
+        statsMap[row.day].replies = parseInt(row.replies) || 0;
+        statsMap[row.day].clicks = parseInt(row.clicks) || 0;
+      }
+    });
+
+    const dailyData = Object.values(statsMap);
+
+    res.json({
+      total_sent: totalSent,
+      open_rate: parseFloat(openRate.toFixed(1)),
+      reply_rate: parseFloat(replyRate.toFixed(1)),
+      click_rate: parseFloat(clickRate.toFixed(1)),
+      total_recipients: parseInt(totals.total_recipients) || 0,
+      active_enrollments: parseInt(totals.active_enrollments) || 0,
+      completed_enrollments: parseInt(totals.completed_enrollments) || 0,
+      daily_data: dailyData
+    });
+
+  } catch (error: any) {
+    console.error("Dashboard stats error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, campaign_id } = req.query as { project_id?: string, campaign_id?: string };
