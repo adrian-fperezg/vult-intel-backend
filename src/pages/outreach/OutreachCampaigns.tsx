@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, MoreHorizontal, Play, Pause, Copy, Trash2,
@@ -72,14 +72,8 @@ export default function OutreachCampaigns() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [viewingAnalytics, setViewingAnalytics] = useState<Campaign | null>(null);
 
-  // Immediately clear stale data when project switches, then re-fetch
-  useEffect(() => {
-    setCampaigns([]);
-    setSelected(null);
-    loadCampaigns();
-  }, [api.activeProjectId]);
-
-  const loadCampaigns = async () => {
+  const loadCampaigns = useCallback(async () => {
+    if (!api.activeProjectId) return;
     setIsLoading(true);
     try {
       const data = await api.fetchCampaigns();
@@ -98,7 +92,14 @@ export default function OutreachCampaigns() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [api.activeProjectId, api.fetchCampaigns]);
+
+  // Immediately clear stale data when project switches, then re-fetch
+  useEffect(() => {
+    setCampaigns([]);
+    setSelected(null);
+    loadCampaigns();
+  }, [loadCampaigns]);
 
   const handleCreate = () => {
     setIsWizardOpen(true);
