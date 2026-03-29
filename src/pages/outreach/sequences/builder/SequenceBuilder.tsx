@@ -5,7 +5,8 @@ import {
   Users, Plus, Trash2, ArrowRight, Settings, 
   Search, Filter, Mail, ChevronRight, X,
   Save, Clock, Paperclip, AlertCircle, Check, FileText,
-  Mailbox, Globe, ShieldCheck, UserPlus, Play, Pause, ArrowLeft
+  Mailbox, Globe, ShieldCheck, UserPlus, Play, Pause, ArrowLeft,
+  Eye, MousePointer2, MessageSquare, SendHorizontal
 } from 'lucide-react';
 import { TealButton, OutreachBadge, OutreachSectionHeader } from '../../OutreachCommon';
 import { cn } from '@/lib/utils';
@@ -172,17 +173,13 @@ function StepNode({
             </div>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {!isExpanded && step.step_type === 'email' && analytics?.[step.id] && (
-              <div className="flex items-center gap-3 px-3 py-1 rounded-lg bg-white/5 border border-white/5 mr-2">
-                <div className="flex flex-col items-center">
-                  <span className="text-[8px] text-slate-500 font-bold uppercase">Sent</span>
-                  <span className="text-[10px] font-bold text-white">{analytics[step.id].sent}</span>
-                </div>
-                <div className="w-px h-4 bg-white/10" />
-                <div className="flex flex-col items-center">
-                  <span className="text-[8px] text-slate-500 font-bold uppercase">Open</span>
-                  <span className="text-[10px] font-bold text-teal-400">{analytics[step.id].openRate.toFixed(0)}%</span>
-                </div>
+            {!isExpanded && step.step_type === 'email' && (
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/5 border border-white/5 mr-2">
+                <SendHorizontal className="size-2.5 text-teal-500/70" />
+                <span className="text-[10px] font-bold text-white">{analytics?.[step.id]?.sent ?? 0}</span>
+                <span className="mx-1 opacity-20 text-white leading-none">|</span>
+                <Eye className="size-2.5 text-blue-500/70" />
+                <span className="text-[10px] font-bold text-white">{(analytics?.[step.id]?.openRate ?? 0).toFixed(0)}%</span>
               </div>
             )}
             {!isExpanded && <FileText className="size-3.5 text-slate-500" />}
@@ -196,31 +193,45 @@ function StepNode({
         </div>
         
         {/* Expanded Analytics Row */}
-        {isExpanded && step.step_type === 'email' && analytics?.[step.id] && (
-          <div className="mt-2 p-2 rounded-xl bg-white/[0.02] border border-white/5 grid grid-cols-4 gap-4">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sent</span>
-              <p className="text-lg font-bold text-white leading-none">{analytics[step.id].sent}</p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Open Rate</span>
-              <p className="text-lg font-bold text-teal-400 leading-none">{analytics[step.id].openRate.toFixed(1)}%</p>
-              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-teal-500" style={{ width: `${Math.min(100, analytics[step.id].openRate)}%` }} />
+        {isExpanded && step.step_type === 'email' && (
+          <div className="mt-4 grid grid-cols-4 gap-2">
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
+              <div className="p-1.5 rounded-lg bg-teal-500/10 text-teal-400 group-hover/pill:bg-teal-500/20 transition-colors">
+                <SendHorizontal className="size-3.5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sent</span>
+                <span className="text-xs font-bold text-white leading-none mt-0.5">{analytics?.[step.id]?.sent ?? 0}</span>
               </div>
             </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">CTR</span>
-              <p className="text-lg font-bold text-blue-400 leading-none">{analytics[step.id].clickRate.toFixed(1)}%</p>
-              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, analytics[step.id].clickRate)}%` }} />
+            
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
+              <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 group-hover/pill:bg-blue-500/20 transition-colors">
+                <Eye className="size-3.5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Open</span>
+                <span className="text-xs font-bold text-white leading-none mt-0.5">{(analytics?.[step.id]?.openRate ?? 0).toFixed(1)}%</span>
               </div>
             </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Reply Rate</span>
-              <p className="text-lg font-bold text-emerald-400 leading-none">{analytics[step.id].replyRate.toFixed(1)}%</p>
-              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, analytics[step.id].replyRate)}%` }} />
+
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
+              <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 group-hover/pill:bg-amber-500/20 transition-colors">
+                <MousePointer2 className="size-3.5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Click</span>
+                <span className="text-xs font-bold text-white leading-none mt-0.5">{(analytics?.[step.id]?.clickRate ?? 0).toFixed(1)}%</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
+              <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover/pill:bg-emerald-500/20 transition-colors">
+                <MessageSquare className="size-3.5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Reply</span>
+                <span className="text-xs font-bold text-white leading-none mt-0.5">{(analytics?.[step.id]?.replyRate ?? 0).toFixed(1)}%</span>
               </div>
             </div>
           </div>

@@ -2597,18 +2597,25 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
       smtpSentMap[r.step_id] = parseInt(r.cnt) || 0;
     });
 
+    // Create a map of all step_ids that have any activity
+    const allStepIds = new Set<string>([
+      ...events.map(r => r.step_id),
+      ...Object.keys(smtpSentMap)
+    ]);
+
     const analytics: Record<string, any> = {};
     
-    events.forEach(row => {
-      const sentGmail = parseInt(row.sent_gmail) || 0;
-      // Use max of gmail events vs direct sent count (SMTP path doesn't emit 'sent' event)
-      const sentSmtp = smtpSentMap[row.step_id] || 0;
+    allStepIds.forEach(stepId => {
+      const eventRow = events.find(e => e.step_id === stepId) || {};
+      const sentGmail = parseInt(eventRow.sent_gmail) || 0;
+      const sentSmtp = smtpSentMap[stepId] || 0;
       const sent = Math.max(sentGmail, sentSmtp);
-      const opens = parseInt(row.opens) || 0;
-      const clicks = parseInt(row.clicks) || 0;
-      const replies = parseInt(row.replies) || 0;
+      
+      const opens = parseInt(eventRow.opens) || 0;
+      const clicks = parseInt(eventRow.clicks) || 0;
+      const replies = parseInt(eventRow.replies) || 0;
 
-      analytics[row.step_id] = {
+      analytics[stepId] = {
         sent,
         opens,
         clicks,

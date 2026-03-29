@@ -262,7 +262,7 @@ export default function TipTapEditor({
            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Rich Text Mode</span>
         </div>
         <span className="text-[10px] text-slate-600 font-mono">
-          {value.length} characters
+          {value.replace(/<[^>]*>?/gm, '').length} characters
         </span>
       </div>
 
