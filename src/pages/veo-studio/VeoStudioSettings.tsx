@@ -18,7 +18,11 @@ interface DefaultSettings {
 
 const STYLE_OPTIONS: StylePreset[] = ['cinematic', 'documentary', 'commercial', 'music-video', 'nature', 'action', 'dreamy'];
 
-export default function VeoStudioSettings() {
+interface VeoStudioSettingsProps {
+  projectId: string;
+}
+
+export default function VeoStudioSettings({ projectId }: VeoStudioSettingsProps) {
   const { currentUser, isFounder } = useAuth();
   const { videosUsed, videosLimit, periodResetAt } = useVeoStudioSubscription();
   const [settings, setSettings] = useState<DefaultSettings>({
@@ -41,7 +45,11 @@ export default function VeoStudioSettings() {
       const apiBase = import.meta.env.VITE_OUTREACH_API_URL || 'http://localhost:3001';
       await fetch(`${apiBase}/api/veo-studio/default-settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        },
         body: JSON.stringify(settings),
       });
       setSavedOk(true);

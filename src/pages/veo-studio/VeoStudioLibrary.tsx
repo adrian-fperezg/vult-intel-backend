@@ -15,7 +15,11 @@ interface LibraryAsset {
   style?: string;
 }
 
-export default function VeoStudioLibrary() {
+interface VeoStudioLibraryProps {
+  projectId: string;
+}
+
+export default function VeoStudioLibrary({ projectId }: VeoStudioLibraryProps) {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
@@ -33,7 +37,10 @@ export default function VeoStudioLibrary() {
       try {
         const token = await currentUser?.getIdToken();
         const res = await fetch(`${apiBase}/api/veo-studio/library`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-project-id': projectId
+          }
         });
         if (!res.ok) throw new Error('Failed to load library');
         const data = await res.json();
@@ -45,7 +52,7 @@ export default function VeoStudioLibrary() {
       }
     }
     load();
-  }, [currentUser]);
+  }, [currentUser, projectId]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this asset? This cannot be undone.')) return;
@@ -54,7 +61,10 @@ export default function VeoStudioLibrary() {
       const token = await currentUser?.getIdToken();
       const res = await fetch(`${apiBase}/api/veo-studio/library/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        }
       });
       if (!res.ok) throw new Error();
       setAssets(prev => prev.filter(a => a.id !== id));

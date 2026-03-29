@@ -53,6 +53,8 @@ import { getZeroBounceCredits } from "./lib/outreach/zerobounce.js";
 import { getPDLUsage } from "./lib/outreach/pdl.js";
 import { verifyEmailWaterfall } from "./lib/outreach/verifier.js";
 import { extractDomain, generateVerificationToken, verifyDomainDns } from "./lib/outreach/domainVerification.js";
+import { stripe, verifyStripeSignature } from "./lib/stripe.js";
+import admin from 'firebase-admin';
 
 
 const app = express();
@@ -71,6 +73,97 @@ app.use(cors({
 }));
 
 app.options('*', cors());
+
+// Stripe Webhook handler (Must be BEFORE express.json() to get raw body)
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = verifyStripeSignature(req.body, sig as string);
+  } catch (err: any) {
+    console.error(`[Stripe Webhook] Signature verification failed: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  const ADDON_KEY = 'veo_studio_pack';
+  const VEO_STUDIO_PRODUCT_ID = 'prod_U54OcVdHHV38Qv';
+
+  try {
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as any;
+        const customerId = subscription.customer;
+        
+        // Check if the subscription contains the Veo Studio Pack product
+        const hasVeoPack = subscription.items.data.some((item: any) => 
+          item.plan?.product === VEO_STUDIO_PRODUCT_ID || item.price?.product === VEO_STUDIO_PRODUCT_ID
+        );
+
+        if (hasVeoPack) {
+          const isActive = subscription.status === 'active' || subscription.status === 'trialing';
+          
+          // Find the user with this stripeId in Firestore
+          const usersSnap = await admin.firestore().collection('customers')
+            .where('stripeId', '==', customerId)
+            .limit(1)
+            .get();
+
+          if (!usersSnap.empty) {
+            const userDoc = usersSnap.docs[0];
+            const uid = userDoc.id;
+            
+            if (isActive) {
+              console.log(`[Stripe Webhook] Activating ${ADDON_KEY} for user ${uid}`);
+              await userDoc.ref.update({
+                activeAddons: admin.firestore.FieldValue.arrayUnion(ADDON_KEY)
+              });
+            } else {
+              console.log(`[Stripe Webhook] Deactivating ${ADDON_KEY} for user ${uid} (Status: ${subscription.status})`);
+              await userDoc.ref.update({
+                activeAddons: admin.firestore.FieldValue.arrayRemove(ADDON_KEY)
+              });
+            }
+          } else {
+            console.warn(`[Stripe Webhook] No Firestore user found for stripeId: ${customerId}`);
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as any;
+        const customerId = subscription.customer;
+
+        const usersSnap = await admin.firestore().collection('customers')
+          .where('stripeId', '==', customerId)
+          .limit(1)
+          .get();
+
+        if (!usersSnap.empty) {
+          const userDoc = usersSnap.docs[0];
+          const uid = userDoc.id;
+          console.log(`[Stripe Webhook] Subscription deleted. Removing ${ADDON_KEY} for user ${uid}`);
+          await userDoc.ref.update({
+            activeAddons: admin.firestore.FieldValue.arrayRemove(ADDON_KEY)
+          });
+        }
+        break;
+      }
+
+      default:
+        // Unhandled event type
+        console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error: any) {
+    console.error('[Stripe Webhook Error] Handler failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.use(express.json({ limit: '1mb' }));
 
 // Catch malformed JSON errors early
@@ -3341,7 +3434,9 @@ app.get('/api/veo-studio/subscription', verifyFirebaseToken, async (req: AuthReq
 app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
   const email = req.user?.email;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
 
   const { prompt, aspectRatio, style } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
@@ -3351,8 +3446,8 @@ app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: Auth
 
   await incrementVideoCount(uid);
   const jobId = _veoUuid();
-  await createJobDoc(uid, jobId, prompt);
-  await veoQueue.add('generate-video', { uid, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+  await createJobDoc(uid, projectId, jobId, prompt);
+  await veoQueue.add('generate-video', { uid, projectId, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
 
   res.json({ jobId });
 });
@@ -3361,7 +3456,9 @@ app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: Auth
 app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
   const email = req.user?.email;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
 
   const { prompt, imageBase64, aspectRatio, style } = req.body;
   if (!prompt || !imageBase64) return res.status(400).json({ error: 'prompt and imageBase64 are required' });
@@ -3371,8 +3468,8 @@ app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthR
 
   await incrementVideoCount(uid);
   const jobId = _veoUuid();
-  await createJobDoc(uid, jobId, prompt);
-  await veoQueue.add('animate-image', { uid, jobId, prompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+  await createJobDoc(uid, projectId, jobId, prompt);
+  await veoQueue.add('animate-image', { uid, projectId, jobId, prompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
 
   res.json({ jobId });
 });
@@ -3381,7 +3478,9 @@ app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthR
 app.post('/api/veo-studio/generate-image', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
   const email = req.user?.email;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
 
   const { prompt, aspectRatio, style } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
@@ -3390,9 +3489,9 @@ app.post('/api/veo-studio/generate-image', verifyFirebaseToken, async (req: Auth
   if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
 
   const jobId = _veoUuid();
-  await createJobDoc(uid, jobId, prompt);
+  await createJobDoc(uid, projectId, jobId, prompt);
   // Image generation still goes through queue but doesn't consume video credits
-  await veoQueue.add('generate-image', { uid, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style });
+  await veoQueue.add('generate-image', { uid, projectId, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style });
 
   res.json({ jobId });
 });
@@ -3412,9 +3511,12 @@ app.get('/api/veo-studio/job-status/:jobId', verifyFirebaseToken, async (req: Au
 // GET /api/veo-studio/library
 app.get('/api/veo-studio/library', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
+
   try {
-    const assets = await getLibraryAssets(uid);
+    const assets = await getLibraryAssets(uid, projectId);
     res.json({ assets });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -3516,9 +3618,12 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
 // GET /api/veo-studio/brand-kit
 app.get('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
+
   try {
-    const kit = await getBrandKit(uid);
+    const kit = await getBrandKit(uid, projectId);
     res.json(kit || {});
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -3528,21 +3633,27 @@ app.get('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthReques
 // PUT /api/veo-studio/brand-kit
 app.put('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
+
   try {
-    await saveBrandKit(uid, req.body);
+    await saveBrandKit(uid, projectId, req.body);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT /api/veo-studio/default-settings (stored in Firestore)
+// PUT /api/veo-studio/default-settings
 app.put('/api/veo-studio/default-settings', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
+
   try {
-    await saveBrandKit(uid + '_settings', req.body); // reuse save utility for simplicity
+    await saveBrandKit(uid, projectId + '_settings', req.body);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

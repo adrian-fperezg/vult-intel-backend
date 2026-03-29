@@ -9,6 +9,7 @@ const MAX_POLLS = 36;             // 36 * 10s = 6 min timeout
 
 export interface VeoJobData {
   uid: string;
+  projectId: string;
   jobId: string;
   prompt: string;
   aspectRatio?: string;
@@ -47,7 +48,7 @@ async function pollOperation(ai: GoogleGenAI, operationName: string): Promise<st
 export const veoWorker = new Worker<VeoJobData>(
   'veo-generation',
   async (job: Job<VeoJobData>) => {
-    const { uid, jobId, prompt, aspectRatio, imageBase64, outputType, style, operationName } = job.data;
+    const { uid, projectId, jobId, prompt, aspectRatio, imageBase64, outputType, style } = job.data;
     const genai = process.env.GEMINI_API_KEY;
 
     if (!genai) {
@@ -124,7 +125,7 @@ export const veoWorker = new Worker<VeoJobData>(
       if (!outputUrl) throw new Error('No output URL');
 
       await updateJobStatus(jobId, 'completed', outputUrl);
-      await saveToLibrary(uid, {
+      await saveToLibrary(uid, projectId, {
         outputUrl,
         outputType,
         prompt,
@@ -132,7 +133,7 @@ export const veoWorker = new Worker<VeoJobData>(
         jobId,
       });
 
-      console.log(`[VEO QUEUE] Job ${jobId} completed for uid ${uid}`);
+      console.log(`[VEO QUEUE] Job ${jobId} completed for project ${projectId} / uid ${uid}`);
     } catch (err: any) {
       console.error(`[VEO QUEUE] Job ${jobId} failed:`, err.message);
       await updateJobStatus(jobId, 'failed');

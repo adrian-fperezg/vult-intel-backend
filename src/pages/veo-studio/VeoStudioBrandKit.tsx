@@ -33,7 +33,11 @@ const VISUAL_STYLES = [
   { id: 'muted',   label: 'Muted & Elegant' },
 ] as const;
 
-export default function VeoStudioBrandKit() {
+interface VeoStudioBrandKitProps {
+  projectId: string;
+}
+
+export default function VeoStudioBrandKit({ projectId }: VeoStudioBrandKitProps) {
   const { currentUser } = useAuth();
   const [kit, setKit] = useState<BrandKit>(DEFAULT_KIT);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,7 +51,10 @@ export default function VeoStudioBrandKit() {
       try {
         const token = await currentUser?.getIdToken();
         const res = await fetch(`${apiBase}/api/veo-studio/brand-kit`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-project-id': projectId
+          }
         });
         if (res.ok) {
           const data = await res.json();
@@ -58,7 +65,7 @@ export default function VeoStudioBrandKit() {
       }
     }
     load();
-  }, [currentUser]);
+  }, [currentUser, projectId]);
 
   const set = <K extends keyof BrandKit>(key: K) => (value: BrandKit[K]) =>
     setKit(prev => ({ ...prev, [key]: value }));
@@ -70,7 +77,11 @@ export default function VeoStudioBrandKit() {
       const token = await currentUser?.getIdToken();
       const res = await fetch(`${apiBase}/api/veo-studio/brand-kit`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        },
         body: JSON.stringify(kit),
       });
       if (!res.ok) throw new Error();

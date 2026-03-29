@@ -112,6 +112,7 @@ export async function refundVideoCredit(uid: string): Promise<void> {
  */
 export async function saveToLibrary(
   uid: string,
+  projectId: string,
   asset: {
     outputUrl: string;
     outputType: 'video' | 'image';
@@ -123,6 +124,7 @@ export async function saveToLibrary(
   const db = getFirestore();
   const docRef = await db.collection('veo_library').add({
     uid,
+    projectId,
     ...asset,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -130,12 +132,13 @@ export async function saveToLibrary(
 }
 
 /**
- * Get the user's library assets.
+ * Get the user's library assets for a specific project.
  */
-export async function getLibraryAssets(uid: string): Promise<any[]> {
+export async function getLibraryAssets(uid: string, projectId: string): Promise<any[]> {
   const db = getFirestore();
   const snap = await db.collection('veo_library')
     .where('uid', '==', uid)
+    .where('projectId', '==', projectId)
     .orderBy('createdAt', 'desc')
     .limit(100)
     .get();
@@ -155,12 +158,13 @@ export async function deleteLibraryAsset(uid: string, assetId: string): Promise<
 }
 
 /**
- * Create a generation job document in Firestore.
+ * Create a generation job document in Firestore with project scoping.
  */
-export async function createJobDoc(uid: string, jobId: string, prompt: string): Promise<void> {
+export async function createJobDoc(uid: string, projectId: string, jobId: string, prompt: string): Promise<void> {
   const db = getFirestore();
   await db.collection('veo_jobs').doc(jobId).set({
     uid,
+    projectId,
     prompt,
     status: 'processing',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -193,18 +197,19 @@ export async function getJobStatus(jobId: string): Promise<{ status: string; out
 }
 
 /**
- * Get/save Brand Kit.
+ * Get/save Brand Kit (scoped to project).
  */
-export async function getBrandKit(uid: string): Promise<any | null> {
+export async function getBrandKit(uid: string, projectId: string): Promise<any | null> {
   const db = getFirestore();
-  const snap = await db.collection('veo_brand_kits').doc(uid).get();
+  // We use a compound key or just project as the doc ID since project IDs are unique
+  const snap = await db.collection('veo_brand_kits').doc(`${uid}:${projectId}`).get();
   return snap.exists ? snap.data() : null;
 }
 
-export async function saveBrandKit(uid: string, kit: any): Promise<void> {
+export async function saveBrandKit(uid: string, projectId: string, kit: any): Promise<void> {
   const db = getFirestore();
-  await db.collection('veo_brand_kits').doc(uid).set(
-    { ...kit, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+  await db.collection('veo_brand_kits').doc(`${uid}:${projectId}`).set(
+    { ...kit, uid, projectId, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
     { merge: true }
   );
 }

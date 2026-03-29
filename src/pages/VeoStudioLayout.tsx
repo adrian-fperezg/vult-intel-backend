@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Clapperboard, Film, Library, BookOpen, Palette, Settings, Sparkles } from 'lucide-react';
+import { Loader2, Clapperboard, Film, Library, BookOpen, Palette, Settings, Sparkles, FolderSearch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useVeoStudioSubscription } from '@/hooks/useVeoStudioSubscription';
+import { useProject } from '@/contexts/ProjectContext';
 import VeoStudioUpgradeScreen from './veo-studio/VeoStudioUpgradeScreen';
 import VeoStudioCreate from './veo-studio/VeoStudioCreate';
 import VeoStudioLibrary from './veo-studio/VeoStudioLibrary';
@@ -24,6 +25,7 @@ const TABS: Array<{ id: VeoTab; label: string; icon: React.ElementType }> = [
 
 export default function VeoStudioLayout() {
   const { status, videosUsed, videosLimit, isLoading } = useVeoStudioSubscription();
+  const { activeProjectId, isLoading: projectsLoading } = useProject();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = (searchParams.get('tab') as VeoTab) || 'create';
@@ -36,11 +38,11 @@ export default function VeoStudioLayout() {
   };
 
   // ── Loading ──────────────────────────────────────────────────────────────────
-  if (isLoading) {
+  if (isLoading || projectsLoading) {
     return (
       <div className="flex-1 flex items-center justify-center gap-3 text-slate-400">
         <Loader2 className="size-5 animate-spin text-amber-400" />
-        <span className="text-sm font-medium">Checking Veo Studio subscription…</span>
+        <span className="text-sm font-medium">Loading Veo Studio…</span>
       </div>
     );
   }
@@ -48,6 +50,22 @@ export default function VeoStudioLayout() {
   // ── Paywall ──────────────────────────────────────────────────────────────────
   if (status === 'inactive' || status === 'expired' || status === 'cancelled') {
     return <VeoStudioUpgradeScreen />;
+  }
+
+  // ── No Project ───────────────────────────────────────────────────────────────
+  if (!activeProjectId) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#0d1117]">
+        <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20 mb-6">
+          <FolderSearch className="size-10 text-amber-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-2">No Project Selected</h2>
+        <p className="text-slate-400 max-w-md mb-8">
+          Veo Studio requires an active project to organize your cinematic assets and brand kits. 
+          Please select a project from the sidebar to continue.
+        </p>
+      </div>
+    );
   }
 
   // ── Full Studio ──────────────────────────────────────────────────────────────
@@ -139,7 +157,7 @@ export default function VeoStudioLayout() {
       <div className="flex-1 overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTab}
+            key={`${activeProjectId}-${activeTab}`}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
@@ -147,11 +165,11 @@ export default function VeoStudioLayout() {
             className="h-full"
           >
             <ErrorBoundary name={`VeoStudio:${activeTab}`}>
-              {activeTab === 'create'     && <VeoStudioCreate />}
-              {activeTab === 'library'    && <VeoStudioLibrary />}
-              {activeTab === 'storyboard' && <VeoStudioStoryboard />}
-              {activeTab === 'brand-kit'  && <VeoStudioBrandKit />}
-              {activeTab === 'settings'   && <VeoStudioSettings />}
+              {activeTab === 'create'     && <VeoStudioCreate projectId={activeProjectId} />}
+              {activeTab === 'library'    && <VeoStudioLibrary projectId={activeProjectId} />}
+              {activeTab === 'storyboard' && <VeoStudioStoryboard projectId={activeProjectId} />}
+              {activeTab === 'brand-kit'  && <VeoStudioBrandKit projectId={activeProjectId} />}
+              {activeTab === 'settings'   && <VeoStudioSettings projectId={activeProjectId} />}
             </ErrorBoundary>
           </motion.div>
         </AnimatePresence>

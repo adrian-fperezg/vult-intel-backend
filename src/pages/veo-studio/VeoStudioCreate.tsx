@@ -40,7 +40,11 @@ const STYLE_PRESETS: Record<StylePreset, { label: string; suffix: string }> = {
   dreamy:        { label: '✨ Dreamy',         suffix: 'dreamlike, soft focus, ethereal light, slow motion, surreal atmosphere' },
 };
 
-export default function VeoStudioCreate() {
+interface VeoStudioCreateProps {
+  projectId: string;
+}
+
+export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
   const { currentUser, isFounder } = useAuth();
   const [mode, setMode] = useState<GenerationMode>('text-to-video');
   const [prompt, setPrompt] = useState('');
@@ -73,7 +77,11 @@ export default function VeoStudioCreate() {
       const token = await currentUser?.getIdToken();
       const res = await fetch(`${apiBase}/api/veo-studio/enhance-prompt`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        },
         body: JSON.stringify({ prompt, mode, style })
       });
       if (!res.ok) throw new Error(await res.text());
@@ -112,7 +120,11 @@ export default function VeoStudioCreate() {
 
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        },
         body: JSON.stringify(body)
       });
 
@@ -141,7 +153,10 @@ export default function VeoStudioCreate() {
         const pollInterval = setInterval(async () => {
           try {
             const statusRes = await fetch(`${apiBase}/api/veo-studio/job-status/${jobId}`, {
-              headers: { 'Authorization': `Bearer ${token}` }
+              headers: { 
+                'Authorization': `Bearer ${token}`,
+                'x-project-id': projectId
+              }
             });
             const statusData = await statusRes.json();
 

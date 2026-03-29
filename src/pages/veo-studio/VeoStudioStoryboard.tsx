@@ -20,7 +20,11 @@ interface Shot {
 
 const TONE_OPTIONS = ['Inspirational', 'Mysterious', 'Energetic', 'Emotional', 'Professional', 'Playful'] as const;
 
-export default function VeoStudioStoryboard() {
+interface VeoStudioStoryboardProps {
+  projectId: string;
+}
+
+export default function VeoStudioStoryboard({ projectId }: VeoStudioStoryboardProps) {
   const { currentUser } = useAuth();
   const [brief, setBrief] = useState('');
   const [tone, setTone] = useState<string>('Inspirational');
@@ -40,7 +44,11 @@ export default function VeoStudioStoryboard() {
       const token = await currentUser?.getIdToken();
       const res = await fetch(`${apiBase}/api/veo-studio/storyboard-plan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        },
         body: JSON.stringify({ brief, tone, shotCount }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -81,7 +89,11 @@ export default function VeoStudioStoryboard() {
       const token = await currentUser?.getIdToken();
       const res = await fetch(`${apiBase}/api/veo-studio/generate-video`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`,
+          'x-project-id': projectId
+        },
         body: JSON.stringify({ prompt: shot.prompt, aspectRatio: '16:9' }),
       });
       if (!res.ok) throw new Error();
@@ -92,7 +104,10 @@ export default function VeoStudioStoryboard() {
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await fetch(`${apiBase}/api/veo-studio/job-status/${jobId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'x-project-id': projectId
+            }
           });
           const statusData = await statusRes.json();
           if (statusData.status === 'completed') {
