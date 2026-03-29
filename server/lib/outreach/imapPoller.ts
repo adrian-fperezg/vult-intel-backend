@@ -15,17 +15,29 @@ export interface ImapConfig {
 /**
  * Extracts plain text content from an email message by parsing its MIME parts.
  */
-async function extractEmailBody(msg: any): Promise<string> {
-  // Grab the full RFC2822 body part if available
-  const allBodyPart = msg.parts.find((p: any) => p.which === 'TEXT' || p.which === '');
-  if (allBodyPart?.body) {
+async function extractEmailBody(msg: imap.Message): Promise<string> {
+  // 1. Prefer the TEXT part (body content)
+  const textPart = msg.parts.find((p: any) => p.which === 'TEXT');
+  if (textPart?.body) {
     try {
-      const parsed = await simpleParser(allBodyPart.body);
+      const parsed = await simpleParser(textPart.body);
       return (parsed.text || '').toLowerCase();
-    } catch {
-      return '';
+    } catch (err) {
+      console.error(`[IMAP] Failed to parse TEXT part:`, err);
     }
   }
+
+  // 2. Fallback to the full raw message if TEXT part isn't available or fails
+  const rawPart = msg.parts.find((p: any) => p.which === '');
+  if (rawPart?.body) {
+    try {
+      const parsed = await simpleParser(rawPart.body);
+      return (parsed.text || '').toLowerCase();
+    } catch (err) {
+      console.error(`[IMAP] Failed to parse raw message part:`, err);
+    }
+  }
+
   return '';
 }
 
@@ -53,11 +65,15 @@ export async function pollImap(mailboxId: string) {
     }
   };
 
-  console.log(`[IMAP] Connecting to ${mailbox.imap_host} for ${mailbox.email}...`);
+  console.log(`[IMAP] [Mailbox: ${mailboxId}] Connecting to ${mailbox.imap_host} for ${mailbox.email}...`);
 
+  let connection: any;
   try {
-    const connection = await imap.connect(imapConfig);
+    connection = await imap.connect(imapConfig);
+    console.log(`[IMAP] [Mailbox: ${mailboxId}] Connected successfully.`);
+    
     await connection.openBox('INBOX');
+    console.log(`[IMAP] [Mailbox: ${mailboxId}] Opened INBOX.`);
 
     // Only look at messages from the past 7 days
     const delay = 7 * 24 * 3600 * 1000;
@@ -75,133 +91,151 @@ export async function pollImap(mailboxId: string) {
     };
 
     const messages = await connection.search(searchCriteria, fetchOptions);
-    console.log(`[IMAP] Found ${messages.length} unseen messages for ${mailbox.email}`);
+    console.log(`[IMAP] [Mailbox: ${mailboxId}] Found ${messages.length} UNSEEN messages since ${sinceDate.toDateString()}.`);
 
     for (const msg of messages) {
-      const headerPart = msg.parts.find((p: any) => p.which.includes('HEADER.FIELDS'));
-      const headers = headerPart?.body;
-      if (!headers) continue;
-
-      const from = headers.from?.[0];
-      const subject = headers.subject?.[0];
-      const inReplyTo = headers['in-reply-to']?.[0];
-      const references = headers['references'] || [];
-
-      // Check if this is a reply (has In-Reply-To or References)
-      const replyId = (inReplyTo || (references.length > 0 ? references[references.length - 1] : ''))
-        .replace(/[<>]/g, '').trim();
-
-      if (!replyId) {
-        // Not a reply; mark as seen and skip
-        await connection.addFlags(msg.attributes.uid, ['\\Seen']);
-        continue;
-      }
-
-      // Find the original outbound email this is a reply to
-      const originalEmail = await db.prepare(`
-        SELECT * FROM outreach_individual_emails 
-        WHERE message_id = ? OR message_id LIKE ?
-      `).get(replyId, `%${replyId}%`) as any;
-
-      if (!originalEmail || !originalEmail.contact_id) {
-        // Not a reply to one of our emails — mark as seen and move on
-        await connection.addFlags(msg.attributes.uid, ['\\Seen']);
-        continue;
-      }
-
-      console.log(`[IMAP] Detected reply from ${from} for email ${originalEmail.id} (Ref: ${replyId})`);
-
-      // Prevent duplicate processing
-      const eventExists = await db.prepare(`
-        SELECT id FROM outreach_events 
-        WHERE contact_id = ? AND type = 'email_replied' AND metadata LIKE ?
-      `).get(originalEmail.contact_id, `%${replyId}%`);
-
-      if (eventExists) {
-        // Already processed, just ensure it's marked seen
-        await connection.addFlags(msg.attributes.uid, ['\\Seen']);
-        continue;
-      }
-
-      // ── KEYWORD INTENT PARSING ──────────────────────────────────────────
-      // Check if the condition step for this sequence's email step has a keyword
-      let keywordMatched: boolean | null = null;
-      let conditionKeyword: string | null = null;
-
-      if (originalEmail.sequence_id && originalEmail.step_id) {
-        // Find the condition step that is a child of this email step
-        const conditionStep = await db.prepare(`
-          SELECT condition_keyword FROM outreach_sequence_steps
-          WHERE sequence_id = ? 
-            AND parent_step_id = ?
-            AND step_type = 'condition'
-            AND condition_type = 'replied'
-          LIMIT 1
-        `).get(originalEmail.sequence_id, originalEmail.step_id) as any;
-
-        if (conditionStep?.condition_keyword) {
-          conditionKeyword = conditionStep.condition_keyword.trim().toLowerCase();
-          // Extract reply body text for keyword search
-          const bodyText = await extractEmailBody(msg);
-          keywordMatched = bodyText.includes(conditionKeyword);
-          console.log(`[IMAP] Keyword check for "${conditionKeyword}" in reply. Match: ${keywordMatched}`);
+      const uid = msg.attributes.uid;
+      try {
+        const headerPart = msg.parts.find((p: any) => p.which.includes('HEADER.FIELDS'));
+        const headers = headerPart?.body;
+        if (!headers) {
+          console.warn(`[IMAP] [UID: ${uid}] No headers found. Skipping.`);
+          continue;
         }
-      }
 
-      console.log(`[IMAP] Reply processed. Keyword match: ${keywordMatched}`);
-      // ── END KEYWORD PARSING ─────────────────────────────────────────────
+        const from = headers.from?.[0];
+        const subject = headers.subject?.[0];
+        const inReplyTo = headers['in-reply-to']?.[0];
+        const references = headers['references'] || [];
 
-      // Record the reply event with keyword context
-      await db.prepare(`
-        INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        uuidv4(),
-        originalEmail.contact_id,
-        originalEmail.project_id,
-        originalEmail.sequence_id,
-        originalEmail.step_id,
-        'email_replied',
-        JSON.stringify({ 
-          subject,
-          from,
-          reply_id: replyId,
-          mailbox_id: mailboxId,
-          keyword: conditionKeyword,
-          keyword_matched: keywordMatched
-        })
-      );
+        console.log(`[IMAP] [UID: ${uid}] Iterating message - From: ${from}, Subject: ${subject}`);
 
-      // Determine flag behaviour based on keyword result:
-      // - keyword found (or no keyword configured) → mark as SEEN (normal behaviour)
-      // - keyword NOT found → remove \Seen so the contact stays "unread" and follow-up sequence continues
-      if (keywordMatched === false) {
-        // Keep the email UNREAD in the inbox
-        console.log(`[IMAP] Keyword "${conditionKeyword}" NOT found in reply. Keeping email UNREAD for NO-branch follow-up.`);
-        // Message was fetched with markSeen:false so \Seen is not set — we don't add the flag
-      } else {
-        // Mark as seen (keyword matched or no keyword configured)
-        await connection.addFlags(msg.attributes.uid, ['\\Seen']);
-      }
+        // Check if this is a reply (has In-Reply-To or References)
+        const replyId = (inReplyTo || (references.length > 0 ? references[references.length - 1] : ''))
+          .replace(/[<>]/g, '').trim();
 
-      // Stop sequence enrollments for this contact if stop_on_reply is set
-      // (Only stop if keyword matched or there's no keyword filter configured)
-      if (keywordMatched !== false) {
-        const result = await db.prepare(`
-          UPDATE outreach_sequence_enrollments 
-          SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
-          WHERE contact_id = ? AND status = 'active'
-          AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = 1)
-        `).run(originalEmail.contact_id);
+        if (!replyId) {
+          console.log(`[IMAP] [UID: ${uid}] No reply reference found. Marking as seen.`);
+          await connection.addFlags(uid, ['\\Seen']);
+          continue;
+        }
 
-        console.log(`[IMAP] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
-      } else {
-        console.log(`[IMAP] Keyword not matched — NOT stopping sequence. NO branch follow-up will continue.`);
+        // Find the original outbound email this is a reply to
+        const originalEmail = await db.prepare(`
+          SELECT * FROM outreach_individual_emails 
+          WHERE message_id = ? OR message_id LIKE ?
+        `).get(replyId, `%${replyId}%`) as any;
+
+        if (!originalEmail || !originalEmail.contact_id) {
+          console.log(`[IMAP] [UID: ${uid}] Not a reply to a Vult internal email (Ref: ${replyId}). Marking as seen.`);
+          await connection.addFlags(uid, ['\\Seen']);
+          continue;
+        }
+
+        console.log(`[IMAP] [UID: ${uid}] Match: Reply from ${from} for email ID ${originalEmail.id} (Ref: ${replyId})`);
+
+        // Prevent duplicate processing
+        const eventExists = await db.prepare(`
+          SELECT id FROM outreach_events 
+          WHERE contact_id = ? AND type = 'email_replied' AND metadata LIKE ?
+        `).get(originalEmail.contact_id, `%${replyId}%`);
+
+        if (eventExists) {
+          console.log(`[IMAP] [UID: ${uid}] Duplicate event detected. Skipping but marking as seen.`);
+          await connection.addFlags(uid, ['\\Seen']);
+          continue;
+        }
+
+        // ── KEYWORD INTENT PARSING ──────────────────────────────────────────
+        let keywordMatched: boolean | null = null;
+        let conditionKeyword: string | null = null;
+
+        if (originalEmail.sequence_id && originalEmail.step_id) {
+          console.log(`[IMAP] [UID: ${uid}] Checking pending condition for Sequence: ${originalEmail.sequence_id}, Parent Step: ${originalEmail.step_id}`);
+          
+          const conditionStep = await db.prepare(`
+            SELECT id, condition_keyword FROM outreach_sequence_steps
+            WHERE sequence_id = ? 
+              AND parent_step_id = ?
+              AND step_type = 'condition'
+              AND condition_type = 'replied'
+            LIMIT 1
+          `).get(originalEmail.sequence_id, originalEmail.step_id) as any;
+
+          if (conditionStep?.condition_keyword) {
+            conditionKeyword = conditionStep.condition_keyword.trim();
+            const bodyText = await extractEmailBody(msg);
+            
+            // Build a case-insensitive regex for the keyword
+            // Escaping for safety: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions#escaping
+            const escapedKeyword = conditionKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`\\b${escapedKeyword}\\b`, 'i');
+            
+            keywordMatched = regex.test(bodyText);
+            console.log(`[IMAP] [UID: ${uid}] Condition check. Keyword: '${conditionKeyword}'. Match: ${keywordMatched}`);
+            if (!keywordMatched) {
+              console.log(`[IMAP] [UID: ${uid}] (Debug) Body content checked: "${bodyText.substring(0, 100)}..."`);
+            }
+          } else {
+            console.log(`[IMAP] [UID: ${uid}] No keyword-based condition step found.`);
+          }
+        }
+
+        // Record the reply event
+        console.log(`[IMAP] [UID: ${uid}] Recording 'email_replied' event. Match: ${keywordMatched}`);
+        await db.prepare(`
+          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          uuidv4(),
+          originalEmail.contact_id,
+          originalEmail.project_id,
+          originalEmail.sequence_id,
+          originalEmail.step_id,
+          'email_replied',
+          JSON.stringify({ 
+            subject,
+            from,
+            reply_id: replyId,
+            mailbox_id: mailboxId,
+            keyword: conditionKeyword,
+            keyword_matched: keywordMatched
+          })
+        );
+
+        // Update Flag: keyword found or no keyword → \Seen. Keyword NOT found → stay UNSEEN.
+        if (keywordMatched === false) {
+          console.log(`[IMAP] [UID: ${uid}] Keyword mismatch. KEEPING message UNREAD for sequence branching.`);
+        } else {
+          console.log(`[IMAP] [UID: ${uid}] Keyword matched or no condition. Marking message as SEEN.`);
+          await connection.addFlags(uid, ['\\Seen']);
+        }
+
+        // Enrollments Termination logic
+        if (keywordMatched !== false) {
+          const result = await db.prepare(`
+            UPDATE outreach_sequence_enrollments 
+            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
+            WHERE contact_id = ? AND status = 'active'
+            AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = 1)
+          `).run(originalEmail.contact_id);
+
+          console.log(`[IMAP] [UID: ${uid}] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
+        } else {
+          console.log(`[IMAP] [UID: ${uid}] Keyword mis-match — sequence will continue normally.`);
+        }
+
+      } catch (msgErr: any) {
+        console.error(`[IMAP] [UID: ${uid}] Error processing message:`, msgErr.message);
       }
     }
 
-    connection.end();
   } catch (err: any) {
-    console.error(`[IMAP] Error polling ${mailbox.email}:`, err.message);
+    console.error(`[IMAP] [Mailbox: ${mailboxId}] Connection/Polling Error:`, err.message);
+  } finally {
+    if (connection) {
+      connection.end();
+      console.log(`[IMAP] [Mailbox: ${mailboxId}] Connection closed.`);
+    }
   }
 }
