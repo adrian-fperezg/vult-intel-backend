@@ -62,12 +62,12 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
   
   useEffect(() => {
     async function checkBrandKit() {
+      if (!projectId) return;
       try {
         const token = await currentUser?.getIdToken();
-        const res = await fetch(`${apiBase}/api/veo-studio/brand-kit`, {
+        const res = await fetch(`${apiBase}/api/veo-studio/brand-kit?projectId=${projectId}`, {
           headers: { 
-            'Authorization': `Bearer ${token}`,
-            'x-project-id': projectId
+            'Authorization': `Bearer ${token}`
           }
         });
         if (res.ok) {

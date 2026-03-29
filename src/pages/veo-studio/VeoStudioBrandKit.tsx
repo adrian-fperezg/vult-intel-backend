@@ -48,12 +48,12 @@ export default function VeoStudioBrandKit({ projectId }: VeoStudioBrandKitProps)
 
   useEffect(() => {
     async function load() {
+      if (!projectId) return;
       try {
         const token = await currentUser?.getIdToken();
-        const res = await fetch(`${apiBase}/api/veo-studio/brand-kit`, {
+        const res = await fetch(`${apiBase}/api/veo-studio/brand-kit?projectId=${projectId}`, {
           headers: { 
-            'Authorization': `Bearer ${token}`,
-            'x-project-id': projectId
+            'Authorization': `Bearer ${token}`
           }
         });
         if (res.ok) {

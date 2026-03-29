@@ -3569,9 +3569,9 @@ app.get('/api/veo-studio/job-status/:jobId', verifyFirebaseToken, async (req: Au
 // GET /api/veo-studio/library
 app.get('/api/veo-studio/library', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
-  const projectId = req.headers['x-project-id'] as string;
+  const projectId = (req.query.projectId || req.headers['x-project-id']) as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
-  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
+  if (!projectId) return res.status(400).json({ error: 'projectId query parameter (or x-project-id header) is required' });
 
   try {
     const assets = await getLibraryAssets(uid, projectId);
@@ -3676,9 +3676,9 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
 // GET /api/veo-studio/brand-kit
 app.get('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;
-  const projectId = req.headers['x-project-id'] as string;
+  const projectId = (req.query.projectId || req.headers['x-project-id']) as string;
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
-  if (!projectId) return res.status(400).json({ error: 'x-project-id header is required' });
+  if (!projectId) return res.status(400).json({ error: 'projectId query parameter (or x-project-id header) is required' });
 
   try {
     const kit = await getBrandKit(uid, projectId);

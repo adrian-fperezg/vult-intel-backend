@@ -33,13 +33,13 @@ export default function VeoStudioLibrary({ projectId }: VeoStudioLibraryProps) {
 
   useEffect(() => {
     async function load() {
+      if (!projectId) return;
       setIsLoading(true);
       try {
         const token = await currentUser?.getIdToken();
-        const res = await fetch(`${apiBase}/api/veo-studio/library`, {
+        const res = await fetch(`${apiBase}/api/veo-studio/library?projectId=${projectId}`, {
           headers: { 
-            'Authorization': `Bearer ${token}`,
-            'x-project-id': projectId
+            'Authorization': `Bearer ${token}`
           }
         });
         if (!res.ok) throw new Error('Failed to load library');
@@ -59,11 +59,10 @@ export default function VeoStudioLibrary({ projectId }: VeoStudioLibraryProps) {
     setDeletingId(id);
     try {
       const token = await currentUser?.getIdToken();
-      const res = await fetch(`${apiBase}/api/veo-studio/library/${id}`, {
+      const res = await fetch(`${apiBase}/api/veo-studio/library/${id}?projectId=${projectId}`, {
         method: 'DELETE',
         headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-project-id': projectId
+          'Authorization': `Bearer ${token}`
         }
       });
       if (!res.ok) throw new Error();
