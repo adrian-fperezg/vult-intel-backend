@@ -3575,9 +3575,10 @@ app.get('/api/veo-studio/library', verifyFirebaseToken, async (req: AuthRequest,
 
   try {
     const assets = await getLibraryAssets(uid, projectId);
-    res.json({ assets });
+    res.json({ assets: assets || [] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[VEO STUDIO] Error fetching library assets:', err);
+    res.status(500).json({ error: err.message || 'Error fetching library assets' });
   }
 });
 
@@ -3682,9 +3683,21 @@ app.get('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthReques
 
   try {
     const kit = await getBrandKit(uid, projectId);
-    res.json(kit || {});
+    if (!kit) {
+      return res.status(200).json({ 
+        active: false, 
+        primaryColors: [], 
+        visualStyle: '', 
+        colorTone: 50, 
+        lightingPreference: '', 
+        alwaysAvoid: '', 
+        customSuffix: '' 
+      });
+    }
+    res.json(kit);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[VEO STUDIO] Error fetching Brand Kit:', err);
+    res.status(500).json({ error: err.message || 'Error fetching Brand Kit' });
   }
 });
 
