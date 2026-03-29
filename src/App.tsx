@@ -16,6 +16,7 @@ import GrowthMastermind from './pages/GrowthMastermind';
 import CampaignArchitectLayout from './components/CampaignArchitectLayout';
 import PersonaStudioLayout from './components/PersonaStudioLayout';
 import OutreachLayout from './pages/OutreachLayout';
+import VeoStudioLayout from './pages/VeoStudioLayout';
 import AuthPage from './pages/AuthPage';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="growth-mastermind" element={<GrowthMastermind />} />
           <Route path="settings" element={<Settings />} />
           <Route path="outreach" element={<OutreachLayout />} />
+          <Route path="veo-studio" element={<VeoStudioLayout />} />
         </Route>
         {/* Catch-all route to redirect back to Landing or 404 */}
         <Route path="*" element={<Navigate to="/" replace />} />

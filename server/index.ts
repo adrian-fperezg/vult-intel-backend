@@ -3303,6 +3303,254 @@ app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => 
   }
 });
 
+// ─── VEO STUDIO PACK ROUTES ───────────────────────────────────────────────────
+import { veoQueue, veoWorker } from './queues/veoQueue.js';
+import {
+  checkVeoStudioAccess,
+  incrementVideoCount,
+  createJobDoc,
+  getJobStatus,
+  getLibraryAssets,
+  deleteLibraryAsset,
+  getBrandKit,
+  saveBrandKit,
+} from './lib/veoStudio/access.js';
+import { v4 as _veoUuid } from 'uuid';
+
+// GET /api/veo-studio/subscription
+app.get('/api/veo-studio/subscription', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  const email = req.user?.email;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const access = await checkVeoStudioAccess(uid, email);
+    res.json({
+      status: access.allowed ? 'active' : 'inactive',
+      reason: access.reason,
+      videosUsed: access.videosUsed,
+      videosLimit: access.videosLimit,
+      periodResetAt: access.periodResetAt,
+    });
+  } catch (err: any) {
+    console.error('[VEO] /subscription error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/veo-studio/generate-video
+app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  const email = req.user?.email;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { prompt, aspectRatio, style } = req.body;
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+  const access = await checkVeoStudioAccess(uid, email);
+  if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
+
+  await incrementVideoCount(uid);
+  const jobId = _veoUuid();
+  await createJobDoc(uid, jobId, prompt);
+  await veoQueue.add('generate-video', { uid, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+
+  res.json({ jobId });
+});
+
+// POST /api/veo-studio/animate-image
+app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  const email = req.user?.email;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { prompt, imageBase64, aspectRatio, style } = req.body;
+  if (!prompt || !imageBase64) return res.status(400).json({ error: 'prompt and imageBase64 are required' });
+
+  const access = await checkVeoStudioAccess(uid, email);
+  if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
+
+  await incrementVideoCount(uid);
+  const jobId = _veoUuid();
+  await createJobDoc(uid, jobId, prompt);
+  await veoQueue.add('animate-image', { uid, jobId, prompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+
+  res.json({ jobId });
+});
+
+// POST /api/veo-studio/generate-image (text-to-image, does NOT use video credits)
+app.post('/api/veo-studio/generate-image', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  const email = req.user?.email;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { prompt, aspectRatio, style } = req.body;
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+  const access = await checkVeoStudioAccess(uid, email);
+  if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
+
+  const jobId = _veoUuid();
+  await createJobDoc(uid, jobId, prompt);
+  // Image generation still goes through queue but doesn't consume video credits
+  await veoQueue.add('generate-image', { uid, jobId, prompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style });
+
+  res.json({ jobId });
+});
+
+// GET /api/veo-studio/job-status/:jobId
+app.get('/api/veo-studio/job-status/:jobId', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { jobId } = req.params;
+  try {
+    const status = await getJobStatus(jobId);
+    if (!status) return res.status(404).json({ error: 'Job not found' });
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/veo-studio/library
+app.get('/api/veo-studio/library', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const assets = await getLibraryAssets(uid);
+    res.json({ assets });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/veo-studio/library/:id
+app.delete('/api/veo-studio/library/:id', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  const { id } = req.params;
+  try {
+    const deleted = await deleteLibraryAsset(uid, id);
+    if (!deleted) return res.status(404).json({ error: 'Asset not found or not yours' });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/veo-studio/storyboard-plan
+app.post('/api/veo-studio/storyboard-plan', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  const email = req.user?.email;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+
+  const access = await checkVeoStudioAccess(uid, email);
+  if (!access.allowed) return res.status(403).json({ error: 'No active subscription' });
+
+  const { brief, tone, shotCount } = req.body;
+  if (!brief) return res.status(400).json({ error: 'brief is required' });
+
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (!geminiKey) return res.status(500).json({ error: 'AI not configured' });
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    const systemPrompt = `You are a professional video director and storyboard artist.
+Given a video concept, generate a structured storyboard plan.
+
+Return ONLY a valid JSON object with this structure:
+{
+  "title": "Storyboard title",
+  "shots": [
+    {
+      "shotNumber": 1,
+      "title": "Shot title",
+      "description": "Scene description for director",
+      "prompt": "Detailed AI video generation prompt for this shot",
+      "duration": "4s",
+      "cameraAngle": "Wide establishing shot"
+    }
+  ]
+}
+
+Tone: ${tone || 'Inspirational'}
+Number of shots: ${shotCount || 4}
+Brief: ${brief}`;
+
+    const result = await (ai as any).models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+    });
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Invalid AI response');
+    const plan = JSON.parse(jsonMatch[0]);
+    res.json(plan);
+  } catch (err: any) {
+    console.error('[VEO] storyboard-plan error:', err);
+    res.status(500).json({ error: err.message || 'AI planning failed' });
+  }
+});
+
+// POST /api/veo-studio/enhance-prompt
+app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { prompt, mode, style } = req.body;
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (!geminiKey) return res.status(200).json({ enhanced: prompt }); // graceful fallback
+
+  try {
+    const systemPrompt = `You are a world-class AI video director. Enhance the following prompt to make it more cinematic and detailed for ${mode || 'video'} generation in ${style || 'cinematic'} style. Return ONLY the enhanced prompt text, nothing else, no quotes, max 200 words.\n\nOriginal: ${prompt}`;
+    const result = await (new GoogleGenAI({ apiKey: geminiKey }) as any).models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+    });
+    const enhanced = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;
+    res.json({ enhanced });
+  } catch {
+    res.json({ enhanced: prompt });
+  }
+});
+
+// GET /api/veo-studio/brand-kit
+app.get('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const kit = await getBrandKit(uid);
+    res.json(kit || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/veo-studio/brand-kit
+app.put('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    await saveBrandKit(uid, req.body);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/veo-studio/default-settings (stored in Firestore)
+app.put('/api/veo-studio/default-settings', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    await saveBrandKit(uid + '_settings', req.body); // reuse save utility for simplicity
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+console.log('[VEO] Veo Studio Pack routes registered');
+
 // ─── STARTUP CHECKS ───────────────────────────────────────────────────────────
 
 const aiKeysCheck = () => {

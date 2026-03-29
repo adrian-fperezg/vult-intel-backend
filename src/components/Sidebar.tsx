@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Briefcase,
   UserCircle,
-  Target
+  Target,
+  Clapperboard
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ const navItems = [
   { icon: Briefcase, key: 'navCampaignArchitect', path: '/campaign-architect' },
   { icon: LayoutGrid, key: 'navVisualWorkflows', path: '/visual-workflows' },
   { icon: null, key: 'Outreach', path: '/outreach', teal: true },
+  { icon: Clapperboard, key: 'Veo Studio', path: '/veo-studio', amber: true },
 ];
 
 export default function Sidebar() {
@@ -99,6 +101,7 @@ export default function Sidebar() {
           {navItems.map((item) => {
             const isActive = location.pathname.startsWith(item.path);
             const isTeal = (item as any).teal;
+            const isAmber = (item as any).amber;
             return (
               <Link
                 key={item.path}
@@ -108,7 +111,9 @@ export default function Sidebar() {
                   isActive
                     ? isTeal
                       ? "bg-teal-500/10 border border-teal-500/20 text-white"
-                      : "bg-primary/10 border border-primary/20 text-white"
+                      : isAmber
+                        ? "bg-amber-500/10 border border-amber-500/20 text-white"
+                        : "bg-primary/10 border border-primary/20 text-white"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
@@ -125,6 +130,13 @@ export default function Sidebar() {
                     <path d="M22 2L11 13" />
                     <path d="M22 2L15 22l-4-9-9-4 20-7z" />
                   </svg>
+                ) : isAmber ? (
+                  <item.icon
+                    className={cn(
+                      "size-4 md:size-5 transition-colors shrink-0",
+                      isActive ? "text-amber-400" : "text-slate-500 group-hover:text-amber-400"
+                    )}
+                  />
                 ) : (
                   <item.icon
                     className={cn(
@@ -133,11 +145,18 @@ export default function Sidebar() {
                     )}
                   />
                 )}
-                <span className={cn("text-[15px] font-medium truncate", isActive && "font-semibold")}>
-                  {isTeal ? 'Outreach' : t(item.key)}
+                <span className={cn(
+                  "text-[15px] font-medium truncate",
+                  isActive && "font-semibold",
+                  isActive && isAmber && "text-amber-100"
+                )}>
+                  {isTeal ? 'Outreach' : isAmber ? 'Veo Studio' : t(item.key)}
                 </span>
                 {isActive && (
-                  <ChevronRight className={cn("size-3 ml-auto shrink-0", isTeal ? "text-teal-400/60" : "text-primary/60")} />
+                  <ChevronRight className={cn(
+                    "size-3 ml-auto shrink-0",
+                    isTeal ? "text-teal-400/60" : isAmber ? "text-amber-400/60" : "text-primary/60"
+                  )} />
                 )}
               </Link>
             );
