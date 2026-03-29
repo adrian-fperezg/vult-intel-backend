@@ -150,7 +150,7 @@ export default function OutreachLayout() {
         </AnimatePresence>
 
         {/* Module Title + Tab Bar */}
-        <div className="px-8 pt-5 pb-0">
+        <div className="px-8 pt-6 pb-0">
           <div className="flex items-center gap-3 mb-5">
             <div className="p-2 bg-teal-500/10 rounded-xl border border-teal-500/20 shadow-[0_0_20px_rgba(20,184,166,0.1)]">
               <PaperPlaneIcon className="size-5 text-teal-400" />
