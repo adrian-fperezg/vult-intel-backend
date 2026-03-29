@@ -70,16 +70,12 @@ export async function pollImap(mailboxId: string) {
   let connection: any;
   try {
     connection = await imap.connect(imapConfig);
-    console.log(`[IMAP] [Mailbox: ${mailboxId}] Connected successfully.`);
+    console.log(`[IMAP] Connected to mailbox ${mailboxId}.`);
     
     await connection.openBox('INBOX');
     console.log(`[IMAP] [Mailbox: ${mailboxId}] Opened INBOX.`);
 
-    // Only look at messages from the past 7 days
-    const delay = 7 * 24 * 3600 * 1000;
-    const sinceDate = new Date(Date.now() - delay);
-
-    const searchCriteria = ['UNSEEN', ['SINCE', sinceDate.toISOString()]];
+    const searchCriteria = ['UNSEEN'];
     const fetchOptions = {
       bodies: [
         'HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)',
@@ -91,7 +87,7 @@ export async function pollImap(mailboxId: string) {
     };
 
     const messages = await connection.search(searchCriteria, fetchOptions);
-    console.log(`[IMAP] [Mailbox: ${mailboxId}] Found ${messages.length} UNSEEN messages since ${sinceDate.toDateString()}.`);
+    console.log(`[IMAP] Mailbox ${mailboxId}: Searched INBOX. Found ${messages.length} UNSEEN messages.`);
 
     for (const msg of messages) {
       const uid = msg.attributes.uid;
@@ -108,13 +104,12 @@ export async function pollImap(mailboxId: string) {
         const inReplyTo = headers['in-reply-to']?.[0];
         const references = headers['references'] || [];
 
-        console.log(`[IMAP] [UID: ${uid}] Iterating message - From: ${from}, Subject: ${subject}`);
-
         // Check if this is a reply (has In-Reply-To or References)
         const replyId = (inReplyTo || (references.length > 0 ? references[references.length - 1] : ''))
           .replace(/[<>]/g, '').trim();
 
         if (!replyId) {
+          console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: NONE`);
           console.log(`[IMAP] [UID: ${uid}] No reply reference found. Marking as seen.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
@@ -127,12 +122,13 @@ export async function pollImap(mailboxId: string) {
         `).get(replyId, `%${replyId}%`) as any;
 
         if (!originalEmail || !originalEmail.contact_id) {
+          console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: NONE`);
           console.log(`[IMAP] [UID: ${uid}] Not a reply to a Vult internal email (Ref: ${replyId}). Marking as seen.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
 
-        console.log(`[IMAP] [UID: ${uid}] Match: Reply from ${from} for email ID ${originalEmail.id} (Ref: ${replyId})`);
+        console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: ${originalEmail.contact_id}`);
 
         // Prevent duplicate processing
         const eventExists = await db.prepare(`
@@ -151,8 +147,6 @@ export async function pollImap(mailboxId: string) {
         let conditionKeyword: string | null = null;
 
         if (originalEmail.sequence_id && originalEmail.step_id) {
-          console.log(`[IMAP] [UID: ${uid}] Checking pending condition for Sequence: ${originalEmail.sequence_id}, Parent Step: ${originalEmail.step_id}`);
-          
           const conditionStep = await db.prepare(`
             SELECT id, condition_keyword FROM outreach_sequence_steps
             WHERE sequence_id = ? 
@@ -167,12 +161,20 @@ export async function pollImap(mailboxId: string) {
             const bodyText = await extractEmailBody(msg);
             
             // Build a case-insensitive regex for the keyword
-            // Escaping for safety: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions#escaping
             const escapedKeyword = conditionKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const regex = new RegExp(`\\b${escapedKeyword}\\b`, 'i');
             
             keywordMatched = regex.test(bodyText);
-            console.log(`[IMAP] [UID: ${uid}] Condition check. Keyword: '${conditionKeyword}'. Match: ${keywordMatched}`);
+
+            // Find matching enrollment
+            const enrollment = await db.prepare(`
+              SELECT id FROM outreach_sequence_enrollments
+              WHERE contact_id = ? AND sequence_id = ? AND status = 'active'
+              LIMIT 1
+            `).get(originalEmail.contact_id, originalEmail.sequence_id) as any;
+
+            console.log(`[IMAP] Enrollment ${enrollment?.id || 'UNKNOWN'} pending condition. Checking body for keyword: '${conditionKeyword}'. Match: ${keywordMatched}`);
+            
             if (!keywordMatched) {
               console.log(`[IMAP] [UID: ${uid}] (Debug) Body content checked: "${bodyText.substring(0, 100)}..."`);
             }
