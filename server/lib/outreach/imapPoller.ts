@@ -21,7 +21,8 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
   if (textPart?.body) {
     try {
       const parsed = await simpleParser(textPart.body);
-      return (parsed.text || '').toLowerCase();
+      const text = (parsed.text || '');
+      return text;
     } catch (err) {
       console.error(`[IMAP] Failed to parse TEXT part:`, err);
     }
@@ -32,7 +33,8 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
   if (rawPart?.body) {
     try {
       const parsed = await simpleParser(rawPart.body);
-      return (parsed.text || '').toLowerCase();
+      const text = (parsed.text || '');
+      return text;
     } catch (err) {
       console.error(`[IMAP] Failed to parse raw message part:`, err);
     }
@@ -70,10 +72,10 @@ export async function pollImap(mailboxId: string) {
   let connection: any;
   try {
     connection = await imap.connect(imapConfig);
-    console.log(`[IMAP] Connected to mailbox ${mailboxId}.`);
+    console.log(`[IMAP WORKER] Connected to mailbox for ${mailbox.email}.`);
     
     await connection.openBox('INBOX');
-    console.log(`[IMAP] [Mailbox: ${mailboxId}] Opened INBOX.`);
+    console.log(`[IMAP WORKER] Opened INBOX for ${mailbox.email}. Searching for UNSEEN...`);
 
     const searchCriteria = ['UNSEEN'];
     const fetchOptions = {
@@ -87,7 +89,7 @@ export async function pollImap(mailboxId: string) {
     };
 
     const messages = await connection.search(searchCriteria, fetchOptions);
-    console.log(`[IMAP] Mailbox ${mailboxId}: Searched INBOX. Found ${messages.length} UNSEEN messages.`);
+    console.log(`[IMAP WORKER] Found ${messages.length} UNSEEN messages for ${mailbox.email}.`);
 
     for (const msg of messages) {
       const uid = msg.attributes.uid;
@@ -160,26 +162,26 @@ export async function pollImap(mailboxId: string) {
             conditionKeyword = conditionStep.condition_keyword.trim();
             const bodyText = await extractEmailBody(msg);
             
+            console.log(`[IMAP WORKER] Extracted body length: ${bodyText?.length}. Checking for keyword...`);
+
             // Build a case-insensitive regex for the keyword
-            const escapedKeyword = conditionKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(`\\b${escapedKeyword}\\b`, 'i');
-            
+            const regex = new RegExp(conditionKeyword, 'i'); 
             keywordMatched = regex.test(bodyText);
 
-            // Find matching enrollment
+            // Find matching enrollment for logging
             const enrollment = await db.prepare(`
               SELECT id FROM outreach_sequence_enrollments
               WHERE contact_id = ? AND sequence_id = ? AND status = 'active'
               LIMIT 1
             `).get(originalEmail.contact_id, originalEmail.sequence_id) as any;
 
-            console.log(`[IMAP] Enrollment ${enrollment?.id || 'UNKNOWN'} pending condition. Checking body for keyword: '${conditionKeyword}'. Match: ${keywordMatched}`);
+            console.log(`[IMAP WORKER] Enrollment ${enrollment?.id || 'UNKNOWN'} pending condition. Keyword '${conditionKeyword}' match result: ${keywordMatched}`);
             
             if (!keywordMatched) {
-              console.log(`[IMAP] [UID: ${uid}] (Debug) Body content checked: "${bodyText.substring(0, 100)}..."`);
+              console.log(`[IMAP WORKER] [UID: ${uid}] (Debug) Body content checked: "${bodyText.substring(0, 100)}..."`);
             }
           } else {
-            console.log(`[IMAP] [UID: ${uid}] No keyword-based condition step found.`);
+            console.log(`[IMAP WORKER] [UID: ${uid}] No keyword-based condition step found.`);
           }
         }
 

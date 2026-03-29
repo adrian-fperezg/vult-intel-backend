@@ -33,14 +33,21 @@ export const campaignQueue = new Queue('campaign-queue', {
 });
 
 export async function pollMailboxes() {
-  console.log('[IMAP] Starting scheduled mailbox poll...');
-  // Add LIMIT to prevent memory issues if there are hundreds of mailboxes
-  const mailboxes = await db.prepare("SELECT id FROM outreach_mailboxes WHERE connection_type = 'smtp' LIMIT 50").all() as any[];
+  console.log('[IMAP WORKER] Starting scheduled mailbox poll...');
+  // Select both ID and email for better diagnostics
+  const mailboxes = await db.prepare("SELECT id, email FROM outreach_mailboxes WHERE connection_type = 'smtp' LIMIT 50").all() as any[];
+  
+  if (mailboxes.length === 0) {
+    console.log('[IMAP WORKER] No SMTP mailboxes found for polling.');
+    return;
+  }
+
   for (const mailbox of mailboxes) {
     try {
+      console.log(`[IMAP WORKER] Connecting to mailbox for ${mailbox.email}...`);
       await pollImap(mailbox.id);
     } catch (err) {
-      console.error(`[IMAP] Failed to poll mailbox ${mailbox.id}:`, err);
+      console.error(`[IMAP WORKER] Failed to poll mailbox ${mailbox.email}:`, err);
     }
   }
 }
