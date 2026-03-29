@@ -32,7 +32,7 @@ export default function ProjectSelector({ forceShow = false }: { forceShow?: boo
                 className={cn(
                     "flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all duration-200",
                     "bg-surface-dark/50 backdrop-blur-md border-surface-border hover:border-blue-500/30",
-                    "group min-w-[200px] text-left shadow-sm"
+                    "group w-full min-w-[200px] text-left shadow-sm"
                 )}
             >
                 <div className="size-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-white/5 flex items-center justify-center shrink-0 overflow-hidden">
@@ -56,7 +56,7 @@ export default function ProjectSelector({ forceShow = false }: { forceShow?: boo
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 8 }}
                         transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-                        className="absolute top-full left-0 mt-3 w-full min-w-[280px] bg-[#111318] border border-white/10 rounded-2xl shadow-2xl z-[100] overflow-hidden"
+                        className="absolute top-full left-0 mt-3 w-full min-w-[200px] lg:min-w-[240px] bg-[#111318] border border-white/10 rounded-2xl shadow-2xl z-[100] overflow-hidden"
                     >
                         <div className="p-2 max-h-[320px] overflow-y-auto custom-scrollbar">
                             {projects.length === 0 ? (

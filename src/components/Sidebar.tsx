@@ -27,6 +27,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AuthModal from './AuthModal';
 import Logo from './Logo';
+import ProjectSelector from './ProjectSelector';
 import { formatTokens } from '@/utils/formatters';
 
 const navItems = [
@@ -88,6 +89,10 @@ export default function Sidebar() {
           >
             <X className="size-5" />
           </button>
+        </div>
+
+        <div className="px-1">
+          <ProjectSelector />
         </div>
 
         <nav className="flex flex-col gap-0.5 mt-2">

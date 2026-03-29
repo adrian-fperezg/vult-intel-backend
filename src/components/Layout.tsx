@@ -1,6 +1,5 @@
 import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import ProjectSelector from './ProjectSelector';
 import AIChatAssistant from './AIChatAssistant';
 import { useAuth } from '../contexts/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
@@ -55,8 +54,6 @@ export default function Layout() {
             <div className="lg:hidden mr-auto -ml-2">
               <Logo iconOnly className="h-14" dark={theme === 'dark'} />
             </div>
-
-            <ProjectSelector />
 
             {/* Space for future header elements (search, help, notifications) */}
             <div className="flex-1" />
