@@ -34,7 +34,20 @@ export const veoQueue = new Queue<VeoJobData>('veo-generation', {
  * Bypasses the broken SDK Operations.get() logic.
  */
 async function pollOperationREST(operationName: string): Promise<{ outputUrl?: string; error?: string }> {
-  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    throw new Error("Missing GOOGLE_APPLICATION_CREDENTIALS_JSON");
+  }
+
+  const creds = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  const auth = new GoogleAuth({
+    credentials: {
+      client_email: creds.client_email,
+      private_key: creds.private_key,
+    },
+    projectId: creds.project_id,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
+
   const client = await auth.getClient();
   const accessToken = await client.getAccessToken();
   const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
