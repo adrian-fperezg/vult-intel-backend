@@ -1178,16 +1178,32 @@ app.post("/api/outreach/sequences", async (req: AuthRequest, res) => {
 app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
+  const pId = req.projectId;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!pId) return res.status(400).json({ error: "Project ID required" });
 
   try {
-    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId) as any;
+    // 1. Fetch by ID and User only to check for legacy or mismatched project
+    let sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    // 2. Safety Migration: If legacy (no project_id), assign to current project
+    if (!sequence.project_id || sequence.project_id === '') {
+      await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", pId, id);
+      sequence.project_id = pId;
+      console.log(`[Outreach] Migrated legacy sequence ${id} to project ${pId}`);
+    }
+
+    // 3. Strict Project Check
+    if (sequence.project_id !== pId) {
+      console.warn(`[Outreach] Access denied: Sequence ${id} belongs to project ${sequence.project_id}, but requested project was ${pId}`);
+      return res.status(404).json({ error: "Sequence not found in this project" });
+    }
 
     const steps = await db.all(
       "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND project_id = ? ORDER BY step_number ASC", 
-      id, req.projectId
+      id, pId
     );
 
     const recipients = await db.all(`
