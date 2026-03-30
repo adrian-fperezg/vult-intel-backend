@@ -50,14 +50,10 @@ async function pollOperationREST(operationName: string): Promise<{ outputUrl?: s
 
   const client = await auth.getClient();
   const accessToken = await client.getAccessToken();
-  const projectId = creds.project_id;
-  const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
 
-  // The SDK returns "models/..." or "projects/.../operations/ID". 
-  // We need the strictly formatted Vertex AI REST path for the v1beta1 endpoint.
-  const operationId = operationName.split('operations/').pop();
-  const fullOperationPath = `projects/${projectId}/locations/${location}/operations/${operationId}`;
-  const url = `https://${location}-aiplatform.googleapis.com/v1beta1/${fullOperationPath}`;
+  // The SDK returns "models/veo-3.1-.../operations/ID"
+  // This belongs to the Generative Language API (Gemini/AI Studio), NOT Vertex AI.
+  const url = `https://generativelanguage.googleapis.com/v1beta/${operationName}`;
 
   for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
@@ -80,14 +76,19 @@ async function pollOperationREST(operationName: string): Promise<{ outputUrl?: s
           return { error: operation.error.message || 'Operation failed' };
         }
 
-        // Vertex AI / Veo predictions structure
-        const videoBytes = operation.response?.predictions?.[0]?.bytesBase64Encoded;
+        console.log('[VEO SUCCESS PAYLOAD]:', JSON.stringify(operation, null, 2));
+
+        // Vertex AI / Generative Language video paths can vary
+        const videoBytes = operation.response?.predictions?.[0]?.bytesBase64Encoded 
+                        || operation.response?.generatedSamples?.[0]?.video?.videoBytes
+                        || operation.response?.videoBytes;
+
         if (videoBytes) {
           console.log(`[VEO QUEUE] Operation ${operationName} finished successfully.`);
           return { outputUrl: `data:video/mp4;base64,${videoBytes}` };
         }
 
-        // Fallback for different GenAI response structures
+        // Final fallback for URI-based responses
         const videoUri = operation.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
         if (videoUri) return { outputUrl: videoUri };
 
