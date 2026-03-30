@@ -45,7 +45,10 @@ async function pollOperationREST(operationName: string): Promise<{ outputUrl?: s
       private_key: creds.private_key,
     },
     projectId: creds.project_id,
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+    scopes: [
+      'https://www.googleapis.com/auth/cloud-platform',
+      'https://www.googleapis.com/auth/generative-language.retriever'
+    ]
   });
 
   const client = await auth.getClient();
@@ -59,7 +62,10 @@ async function pollOperationREST(operationName: string): Promise<{ outputUrl?: s
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
     try {
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${accessToken.token}` }
+        headers: { 
+          'Authorization': `Bearer ${accessToken.token}`,
+          'x-goog-user-project': creds.project_id
+        }
       });
 
       if (!response.ok) {
