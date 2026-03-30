@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
-import { cleanEmailBody, matchKeyword, findOriginalEmail } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead } from './utils.js';
 
 export interface ImapConfig {
   host: string;
@@ -152,14 +152,8 @@ export async function pollImap(mailboxId: string) {
         let conditionKeyword: string | null = null;
 
         if (originalEmail.sequence_id && originalEmail.step_id) {
-          const conditionStep = await db.prepare(`
-            SELECT id, condition_keyword FROM outreach_sequence_steps
-            WHERE sequence_id = ? 
-              AND parent_step_id = ?
-              AND step_type = 'condition'
-              AND condition_type = 'replied'
-            LIMIT 1
-          `).get(originalEmail.sequence_id, originalEmail.step_id) as any;
+          const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+          const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
 
           if (conditionStep?.condition_keyword) {
             conditionKeyword = conditionStep.condition_keyword.trim();

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
-import { cleanEmailBody, matchKeyword, findOriginalEmail } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead } from './utils.js';
 
 interface GmailMessage {
   id: string;
@@ -92,14 +92,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       let conditionKeyword: string | null = null;
 
       if (originalEmail.sequence_id && originalEmail.step_id) {
-        const conditionStep = await db.prepare(`
-          SELECT id, condition_keyword FROM outreach_sequence_steps
-          WHERE sequence_id = ? 
-            AND parent_step_id = ?
-            AND step_type = 'condition'
-            AND condition_type = 'replied'
-          LIMIT 1
-        `).get(originalEmail.sequence_id, originalEmail.step_id) as any;
+        const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+        const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
 
         if (conditionStep?.condition_keyword) {
           conditionKeyword = conditionStep.condition_keyword.trim();
@@ -137,7 +131,21 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);
       
       // Stop sequence logic
-      if (keywordMatched !== false) {
+      if (keywordMatched === false) {
+        console.log(`[Gmail] Keyword mismatch. RESTORING UNREAD label for visual detection.`);
+        // Mark as Unread in Gmail
+        await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/modify`,
+          {
+            method: 'POST',
+            headers: { 
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ addLabelIds: ['UNREAD'] })
+          }
+        );
+      } else {
         const result = await db.prepare(`
           UPDATE outreach_sequence_enrollments 
           SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 

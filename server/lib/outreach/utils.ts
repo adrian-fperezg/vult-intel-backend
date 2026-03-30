@@ -63,6 +63,7 @@ export function cleanEmailBody(text: string): string {
 
 /**
  * Checks if a keyword exists in the cleaned email body using punctuation-aware word boundaries.
+ * Supports English punctuation and ensures "OK" matches in "Yes, OK!" but not in "BOOK".
  */
 export function matchKeyword(body: string, keyword: string | null): boolean | null {
   if (!keyword) return null;
@@ -71,10 +72,34 @@ export function matchKeyword(body: string, keyword: string | null): boolean | nu
   const normalizedBody = cleanBody.toLowerCase().replace(/\s+/g, ' ');
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase();
 
-  // Looks for the keyword surrounded by whitespace, start/end of string, or punctuation.
-  const regex = new RegExp(`(^|[^a-zA-Z0-9])${escaped}([^a-zA-Z0-9]|$)`, 'i');
+  // (?<![a-z0-9]) and (?![a-z0-9]) provide robust word boundaries for 
+  // alphanumeric keywords, ensuring "OK" doesn't match "BOOK".
+  const regex = new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, 'i');
 
   return regex.test(normalizedBody);
+}
+
+/**
+ * Searches the sequence DAG forward from the current step to find the nearest 
+ * "replied" condition. Traverses through "delay" steps but stops if another 
+ * "email" step is encountered (as a reply to the current email shouldn't 
+ * satisfy a condition for a later email).
+ */
+export function findRepliedConditionAhead(steps: any[], currentStepId: string): any | null {
+  const children = steps.filter(s => s.parent_step_id === currentStepId);
+
+  for (const child of children) {
+    if (child.type === 'condition' && child.condition_type === 'replied') {
+      return child;
+    }
+    // If it's a delay, we continue the search through its children
+    if (child.type === 'delay') {
+      const ahead = findRepliedConditionAhead(steps, child.id);
+      if (ahead) return ahead;
+    }
+  }
+
+  return null;
 }
 
 /**

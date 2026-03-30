@@ -596,7 +596,15 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   useEffect(() => {
     loadData();
-  }, [sequenceId]);
+  }, [sequenceId, activeProjectId]);
+
+  // Jump-out if project changes and we're in the wrong context
+  useEffect(() => {
+    if (sequence && activeProjectId && sequence.project_id !== activeProjectId) {
+      console.warn(`[SequenceBuilder] Project mismatch: Current seq belongs to ${sequence.project_id}, but active project is ${activeProjectId}. Redirecting.`);
+      onBack();
+    }
+  }, [activeProjectId, sequence, onBack]);
 
   useEffect(() => {
     // Warn about unsaved changes

@@ -803,8 +803,8 @@ app.post("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
           verification_token = ?,
           is_verified = ${db.isPostgres ? 'FALSE' : '0'},
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(token, existing.id);
+        WHERE id = ? AND project_id = ?
+      `).run(token, existing.id, project_id);
       return res.json({ ...existing, domain: cleanDomain, verification_token: token, status: 'pending' });
     }
 
@@ -823,7 +823,7 @@ app.post("/api/outreach/verified-domains", async (req: AuthRequest, res) => {
 app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, res) => {
   const { id } = req.params;
   try {
-    const domainData = await db.prepare("SELECT * FROM outreach_verified_domains WHERE id = ?").get(id) as any;
+    const domainData = await db.prepare("SELECT * FROM outreach_verified_domains WHERE id = ? AND project_id = ?").get(id, req.projectId) as any;
     if (!domainData) return res.status(404).json({ error: "Domain not found" });
 
     const result = await verifyDomainDns(domainData.domain_name, domainData.verification_token);
@@ -836,13 +836,13 @@ app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, r
          verified_at = CURRENT_TIMESTAMP, 
          dns_check_error = NULL,
          updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`
-      ).run(id);
+         WHERE id = ? AND project_id = ?`
+      ).run(id, req.projectId);
       res.json({ success: true, status: 'verified' });
     } else {
       await db.prepare(
         "UPDATE outreach_verified_domains SET dns_check_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).run(dnsError || "TXT record not found or incorrect", id);
+      ).run(dnsError || "TXT record not found or incorrect", id, req.projectId);
 
       res.status(400).json({ 
         error: dnsError || "DNS verification failed. TXT record not found or incorrect.", 
@@ -858,7 +858,7 @@ app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, r
 app.delete("/api/outreach/verified-domains/:id", async (req: AuthRequest, res) => {
   const { id } = req.params;
   try {
-    await db.prepare("DELETE FROM outreach_verified_domains WHERE id = ?").run(id);
+    await db.prepare("DELETE FROM outreach_verified_domains WHERE id = ? AND project_id = ?").run(id, req.projectId);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -995,7 +995,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
             from_email = ?,
             from_name = ?,
             updated_at = CURRENT_TIMESTAMP 
-        WHERE id = ?
+        WHERE id = ? AND project_id = ?
       `).run(
         settings.mailbox_id, 
         scheduling?.daily_limit || 50,
@@ -1004,7 +1004,8 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
         scheduling?.send_weekends ? 1 : 0,
         settings.from_email || null,
         settings.from_name || null,
-        campaignId
+        campaignId,
+        req.projectId
       );
 
       // 2. Create Sequence for this campaign (Single Step)
@@ -1029,7 +1030,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
       );
 
       // Link sequence to campaign
-      await tx.prepare("UPDATE outreach_campaigns SET sequence_id = ? WHERE id = ?").run(sequenceId, campaignId);
+      await tx.prepare("UPDATE outreach_campaigns SET sequence_id = ? WHERE id = ? AND project_id = ?").run(sequenceId, campaignId, req.projectId);
 
       // 3. Upsert Contacts and Enroll them
       const insertContactQuery = `
@@ -1405,14 +1406,14 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
     if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
 
     await db.transaction(async (tx) => {
-      await tx.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ?", id);
+      await tx.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ? AND project_id = ?", id, req.projectId);
       
       // Enroll existing recipients who are not already enrolled
       const recipients = await tx.all(`
         SELECT contact_id FROM outreach_sequence_recipients 
-        WHERE sequence_id = ? AND contact_id IS NOT NULL
-        AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ?)
-      `, id, id) as any[];
+        WHERE sequence_id = ? AND project_id = ? AND contact_id IS NOT NULL
+        AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?)
+      `, id, req.projectId, id, req.projectId) as any[];
 
       for (const r of recipients) {
         await enrollContactInSequence(project_id, id, r.contact_id, tx);
@@ -2920,10 +2921,8 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
 
 app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, campaign_id } = req.query as { project_id?: string, campaign_id?: string };
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!project_id) return res.status(400).json({ error: "project_id required" });
+  const project_id = req.projectId;
+  const { campaign_id } = req.query as { campaign_id?: string };
 
   try {
     const now = new Date();
