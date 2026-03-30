@@ -158,15 +158,15 @@ export async function pollImap(mailboxId: string) {
           if (conditionStep?.condition_keyword) {
             conditionKeyword = conditionStep.condition_keyword.trim();
             const rawBody = await extractEmailBody(msg);
-            const cleanedBody = cleanEmailBody(rawBody);
+            const cleanReply = cleanEmailBody(rawBody);
             
             console.log(`[IMAP WORKER] [UID: ${uid}] Keyword matching debugging:`);
             console.log(`- Condition Keyword: "${conditionKeyword}"`);
             console.log(`- Raw Body Length: ${rawBody?.length}`);
-            console.log(`- Cleaned Body Length: ${cleanedBody?.length}`);
-            console.log(`- Cleaned Body Preview: "${cleanedBody.substring(0, 200).replace(/\n/g, ' ')}${cleanedBody.length > 200 ? '...' : ''}"`);
+            console.log(`- Cleaned Body Length: ${cleanReply?.length}`);
+            console.log(`- Cleaned Body Preview: "${cleanReply.substring(0, 200).replace(/\n/g, ' ')}${cleanReply.length > 200 ? '...' : ''}"`);
 
-            keywordMatched = matchKeyword(cleanedBody, conditionKeyword);
+            keywordMatched = matchKeyword(cleanReply, conditionKeyword);
 
             // Find matching enrollment for logging
             const enrollment = await db.prepare(`

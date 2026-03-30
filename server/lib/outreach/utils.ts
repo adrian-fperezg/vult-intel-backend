@@ -58,7 +58,7 @@ export function cleanEmailBody(text: string): string {
     }
   }
 
-  return lines.slice(0, stopIndex).join('\n').trim();
+  return lines.slice(0, stopIndex).join('\n').trim().toLowerCase();
 }
 
 /**
@@ -69,14 +69,12 @@ export function matchKeyword(body: string, keyword: string | null): boolean | nu
   if (!keyword) return null;
 
   const cleanBody = cleanEmailBody(body);
-  const normalizedBody = cleanBody.toLowerCase().replace(/\s+/g, ' ');
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase();
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  // (?<![a-z0-9]) and (?![a-z0-9]) provide robust word boundaries for 
-  // alphanumeric keywords, ensuring "OK" doesn't match "BOOK".
-  const regex = new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, 'i');
+  // Use exact word boundary matching as requested
+  const regex = new RegExp("\\b" + escaped + "\\b", "i");
 
-  return regex.test(normalizedBody);
+  return regex.test(cleanBody);
 }
 
 /**

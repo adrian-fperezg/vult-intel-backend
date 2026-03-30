@@ -31,6 +31,7 @@ export async function resolveAttachments(attachmentsJson: string | null): Promis
 
       // 1. If it's an external Cloud URL (Firebase, S3, etc)
       if (attach.path && (attach.path.startsWith('http://') || attach.path.startsWith('https://'))) {
+        console.log(`[AttachmentResolver] Resolved URL attachment: ${attach.path}`);
         resolved.push({
           filename: attach.filename || attach.name,
           href: attach.path, // nodemailer uses 'href' for URLs instead of 'path'

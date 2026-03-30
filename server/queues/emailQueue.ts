@@ -148,6 +148,14 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           bodyHtml = bodyHtml.replace(regex, value);
         });
 
+        // Resolve attachments and log for debugging
+        const rawAttachments = JSON.parse(step.attachments || "[]");
+        console.log('[Attachments Debug] step.attachments:', rawAttachments);
+        const mappedAttachments = rawAttachments.map((file: any) => ({
+          filename: file.name || file.filename,
+          path: file.url || file.path
+        }));
+
         // Create individual email record
         const emailId = uuidv4();
         await db.prepare(`
@@ -166,7 +174,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           contact.email,
           subject,
           bodyHtml,
-          step.attachments || "[]"
+          JSON.stringify(mappedAttachments)
         );
 
         // Send via processEmail
