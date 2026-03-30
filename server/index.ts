@@ -1118,11 +1118,11 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   try {
     const sequences = await db.all(`
       SELECT s.*, 
-             (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id) as step_count,
-             (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id) as contact_count,
+             (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id AND project_id = s.project_id) as step_count,
+             (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id AND project_id = s.project_id) as contact_count,
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as total_sent,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened') as unique_opens,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied') as unique_replies
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND project_id = s.project_id AND type = 'email_opened') as unique_opens,
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND project_id = s.project_id AND type = 'email_replied') as unique_replies
       FROM outreach_sequences s
       WHERE s.user_id = ? AND s.project_id = ?
       ORDER BY s.created_at DESC
@@ -1188,10 +1188,17 @@ app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     let sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
 
-    // 2. Auto-Repair Fallback: If legacy (no project_id) or assigned to a different project, 
+    // 2. Strict Project Isolation & Legacy Auto-Repair
+    // If the sequence belongs to another project and is NOT legacy, deny access.
+    if (sequence.project_id && sequence.project_id !== pId) {
+      console.warn(`[Outreach] Blocked cross-project fetch: Sequence ${id} belongs to project "${sequence.project_id}", requested from project "${pId}"`);
+      return res.status(403).json({ error: "Access denied: This sequence belongs to another project." });
+    }
+
+    // 3. Auto-Repair Fallback: If legacy (no project_id), 
     // re-assign discovered sequence to the current projectId so it is never "lost" again.
-    if (sequence.project_id !== pId) {
-      console.log(`[Outreach] Auto-repairing sequence ${id}: re-assigning from "${sequence.project_id || 'legacy'}" to project "${pId}"`);
+    if (!sequence.project_id) {
+      console.log(`[Outreach] Auto-repairing legacy sequence ${id}: re-assigning to project "${pId}"`);
       
       // Update both sequence and its steps to maintain integrity
       await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", pId, id);
@@ -1265,22 +1272,23 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   if (Object.keys(filteredUpdates).length === 0) {
     return res.status(400).json({ error: "No valid fields provided for update" });
   }
-
-  const sets = Object.keys(filteredUpdates).map(key => `${key} = ?`).join(', ');
-  const values = Object.values(filteredUpdates);
-
   try {
     // 1. Fetch existing sequence by ID and User (ignoring project_id initially)
     const existing = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
     if (!existing) return res.status(404).json({ error: "Sequence not found" });
 
-    // 2. Auto-Repair / UPSERT logic for projectId
-    // If the sequence belongs to the user but has a different/null project_id,
-    // re-assign it to the current project during this update.
-    if (existing.project_id !== req.projectId) {
-      console.log(`[Outreach Patch] Auto-repairing sequence ${id}: Re-assigning to project ${req.projectId}`);
+    // 2. Strict Project Isolation & Legacy Auto-Repair
+    // If the sequence belongs to another project and is NOT legacy, deny update.
+    if (existing.project_id && existing.project_id !== req.projectId) {
+      console.warn(`[Outreach Patch] Blocked cross-project update: Sequence ${id} belongs to project "${existing.project_id}", requested from project "${req.projectId}"`);
+      return res.status(403).json({ error: "Access denied: This sequence belongs to another project." });
+    }
+
+    // 3. Auto-Repair Fallback: If legacy (no project_id), 
+    // re-assign discovered sequence to the current projectId during this update.
+    if (!existing.project_id) {
+      console.log(`[Outreach Patch] Auto-repairing legacy sequence ${id}: re-assigning to project "${req.projectId}"`);
       await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", req.projectId, id);
-      // Also update steps to match the sequence project assignment
       await db.run("UPDATE outreach_sequence_steps SET project_id = ? WHERE sequence_id = ?", req.projectId, id);
     }
 
@@ -1288,8 +1296,8 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     const values = Object.values(filteredUpdates);
 
     await db.run(
-      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`, 
-      ...values, id, userId
+      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND project_id = ?`, 
+      ...values, id, userId, req.projectId
     );
 
     const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
@@ -1313,14 +1321,22 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
     const existing = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
     if (!existing) return res.status(404).json({ error: "Sequence not found or unauthorized" });
 
-    // 2. Auto-Repair sequence project_id if it doesn't match the steps project_id
-    if (existing.project_id !== project_id) {
-      console.log(`[Outreach Steps] Auto-repairing sequence ${id}: Re-assigning to project ${project_id}`);
+    // 2. Strict Project Isolation & Legacy Auto-Repair
+    // If the sequence belongs to another project and is NOT legacy, deny update.
+    if (existing.project_id && existing.project_id !== project_id) {
+      console.warn(`[Outreach Steps] Blocked cross-project step update: Sequence ${id} belongs to project "${existing.project_id}", requested from project "${project_id}"`);
+      return res.status(403).json({ error: "Access denied: This sequence belongs to another project." });
+    }
+
+    // 3. Auto-Repair Fallback: If legacy (no project_id), 
+    // re-assign discovered sequence to the current projectId during this update.
+    if (!existing.project_id) {
+      console.log(`[Outreach Steps] Auto-repairing legacy sequence ${id}: re-assigning to project "${project_id}"`);
       await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", project_id, id);
     }
 
     await db.transaction(async (tx) => {
-      // 3. Create a mapping of frontend step IDs to backend UUIDs
+      // 4. Create a mapping of frontend step IDs to backend UUIDs
       const idMap = new Map<string, string>();
       for (const step of steps) {
         // If it's a real UUID, keep it. If it's "new-...", generate a new UUID.
@@ -1328,8 +1344,8 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
         idMap.set(step.id, dbId);
       }
 
-      // 2. Clear existing steps
-      await tx.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ?", id);
+      // 5. Clear existing steps (Scoping by sequence_id is sufficient, but adding project_id for safety)
+      await tx.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ? AND project_id = ?", id, project_id);
 
       // 3. Insert new steps, resolving parent_step_id using the map
       for (const [index, step] of steps.entries()) {
@@ -1373,32 +1389,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
   }
 });
 
-// DELETE /api/outreach/sequences/:id/recipients/:contactId
-app.delete("/api/outreach/sequences/:id/recipients/:contactId", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { id, contactId } = req.params;
 
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-
-  try {
-    // 1. Remove from source recipients table
-    await db.run(
-      "DELETE FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?",
-      id, contactId
-    );
-
-    // 2. Remove from active enrollments
-    await db.run(
-      "DELETE FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?",
-      id, contactId
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Failed to remove sequence recipient:", error);
-    res.status(500).json({ error: "Failed to remove recipient" });
-  }
-});
 
 // POST /api/outreach/sequences/:id/activate
 app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) => {
@@ -1444,6 +1435,13 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
+    // 1. Verify sequence ownership first
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, project_id) as any;
+    if (!sequence) {
+      console.warn(`[Outreach Recipients] Blocked cross-project recipient add: Sequence ${id} belongs to another project or user.`);
+      return res.status(403).json({ error: "Access denied: This sequence belongs to another project." });
+    }
+
     const list = Array.isArray(recipients) ? recipients : [];
     const addedContacts: any[] = [];
     
@@ -1627,8 +1625,8 @@ app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) 
 
       // 3. Fetch steps
       const steps = await tx.all<any>(
-        "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?",
-        id
+        "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND project_id = ?",
+        id, req.projectId
       );
 
       // 4. Deep clone steps with ID mapping
@@ -2715,11 +2713,12 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
+    // 1. Verify sequence ownership first
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId);
+    if (!sequence) return res.status(403).json({ error: "Access denied: This sequence belongs to another project." });
+
     // Aggregate from outreach_events using correct event type names:
-    // - 'sent': recorded by Gmail path
-    // - 'email_opened', 'email_clicked': written by tracking pixel route
-    // - 'email_replied': written by IMAP poller
-    const events = await db.prepare(`
+    const events = await db.all(`
       SELECT 
         step_id,
         count(CASE WHEN type = 'sent' THEN 1 END) as sent_gmail,
@@ -2727,10 +2726,10 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
         count(DISTINCT CASE WHEN type = 'email_clicked' THEN contact_id END) as clicks,
         count(DISTINCT CASE WHEN type = 'email_replied' THEN contact_id END) as replies
       FROM outreach_events 
-      WHERE sequence_id = ?
+      WHERE sequence_id = ? AND project_id = ?
       AND step_id IS NOT NULL
       GROUP BY step_id
-    `).all(id) as any[];
+    `, id, req.projectId) as any[];
 
     // Also count SMTP-sent emails directly from outreach_individual_emails
     const smtpSent = await db.prepare(`
@@ -2820,13 +2819,13 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
     const totals = await db.prepare(`
       SELECT 
         (SELECT count(*) FROM outreach_individual_emails WHERE sequence_id = ?) as total_sent,
-        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_opened') as unique_opens,
-        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_replied') as unique_replies,
-        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND type = 'email_clicked') as unique_clicks,
-        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ?) as total_recipients,
-        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'active') as active_enrollments,
-        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'completed') as completed_enrollments
-    `).get(id, id, id, id, id, id, id) as any;
+        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND project_id = ? AND type = 'email_opened') as unique_opens,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND project_id = ? AND type = 'email_replied') as unique_replies,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND project_id = ? AND type = 'email_clicked') as unique_clicks,
+        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?) as total_recipients,
+        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ? AND status = 'active') as active_enrollments,
+        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ? AND status = 'completed') as completed_enrollments
+    `).get(id, id, projectId, id, projectId, id, projectId, id, projectId, id, projectId, id, projectId) as any;
 
     const totalSent = parseInt(totals.total_sent) || 0;
     const openRate = totalSent > 0 ? ((parseInt(totals.unique_opens) || 0) / totalSent) * 100 : 0;

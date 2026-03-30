@@ -81,6 +81,7 @@ export function useOutreachApi() {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
+          'x-project-id': activeProjectId,
           // Don't set Content-Type, fetch will set it with the correct boundary
         },
         body: formData,

@@ -635,6 +635,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
     if (!activeProjectId) {
       toast.error('No project selected');
+      console.error('[Outreach] Error: Cannot save sequence because activeProjectId is missing from state.');
       return;
     }
     if (!sequence) {
@@ -668,9 +669,15 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       setLastSavedTime(new Date());
       toast.success('Sequence saved successfully');
     } catch (err: any) {
-      const errorMsg = err.message || 'Failed to save changes';
-      toast.error(errorMsg);
       console.error('Save error:', err);
+      
+      // Detailed error handling for project isolation
+      if (err.status === 403 || err.message?.includes('403')) {
+        toast.error('Access Denied: This sequence belongs to another project.');
+      } else {
+        const errorMsg = err.response?.data?.error || err.message || 'Failed to save changes';
+        toast.error(errorMsg);
+      }
     } finally {
       setIsSaving(false);
     }
