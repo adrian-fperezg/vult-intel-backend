@@ -1236,7 +1236,13 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
           console.warn(`[Sequence Settings Update] Warning: Field "${field}" received an object instead of a primitive. Skipping.`, val);
         }
       } else {
-        filteredUpdates[field] = val;
+        // Handle boolean values. SQLite requires 1/0 instead of true/false
+        // PostgreSQL can handle native booleans (through pg pg-pool), but 1/0 is broadly safe for mapped numeric booleans in sqlite
+        if (typeof val === 'boolean' && !db.isPostgres) {
+          filteredUpdates[field] = val ? 1 : 0;
+        } else {
+          filteredUpdates[field] = val;
+        }
       }
     }
   }
