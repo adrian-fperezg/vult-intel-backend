@@ -24,8 +24,8 @@ export const veoQueue = new Queue<VeoJobData>('veo-generation', {
   connection: redis,
   defaultJobOptions: {
     attempts: 1,
-    removeOnComplete: 50,
-    removeOnFail: 100,
+    removeOnComplete: true,
+    removeOnFail: false,
   }
 });
 
@@ -33,7 +33,7 @@ export const veoQueue = new Queue<VeoJobData>('veo-generation', {
  * Polls Vertex AI operation status via directed REST API call.
  * Bypasses the broken SDK Operations.get() logic.
  */
-async function pollOperationREST(operationName: string): Promise<{ outputUrl?: string; error?: string }> {
+async function checkVideoJobStatus(operationName: string): Promise<{ outputUrl?: string; error?: string }> {
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     throw new Error("Missing GOOGLE_APPLICATION_CREDENTIALS_JSON");
   }
@@ -182,7 +182,7 @@ export const veoWorker = new Worker<VeoJobData>(
         console.log(`[VEO QUEUE] Started job ${jobId} (Operation: ${op.name})`);
 
         // Poll for completion via REST
-        const pollResult = await pollOperationREST(op.name);
+        const pollResult = await checkVideoJobStatus(op.name);
         
         if (pollResult.error) {
           throw new Error(pollResult.error);

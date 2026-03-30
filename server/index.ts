@@ -3488,7 +3488,7 @@ app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: Auth
   await incrementVideoCount(uid);
   const jobId = _veoUuid();
   await createJobDoc(uid, projectId, jobId, finalPrompt);
-  await veoQueue.add('generate-video', { uid, projectId, jobId, prompt: finalPrompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+  await veoQueue.add('generate-video', { uid, projectId, jobId, prompt: finalPrompt, aspectRatio: aspectRatio || '16:9', outputType: 'video', style }, { attempts: 1 });
 
   res.json({ jobId });
 });
@@ -3523,7 +3523,7 @@ app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthR
   await incrementVideoCount(uid);
   const jobId = _veoUuid();
   await createJobDoc(uid, projectId, jobId, finalPrompt);
-  await veoQueue.add('animate-image', { uid, projectId, jobId, prompt: finalPrompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style });
+  await veoQueue.add('animate-image', { uid, projectId, jobId, prompt: finalPrompt, imageBase64, aspectRatio: aspectRatio || '16:9', outputType: 'video', style }, { attempts: 1 });
 
   res.json({ jobId });
 });
@@ -3558,7 +3558,7 @@ app.post('/api/veo-studio/generate-image', verifyFirebaseToken, async (req: Auth
   const jobId = _veoUuid();
   await createJobDoc(uid, projectId, jobId, finalPrompt);
   // Image generation still goes through queue but doesn't consume video credits
-  await veoQueue.add('generate-image', { uid, projectId, jobId, prompt: finalPrompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style });
+  await veoQueue.add('generate-image', { uid, projectId, jobId, prompt: finalPrompt, aspectRatio: aspectRatio || '16:9', outputType: 'image', style }, { attempts: 1 });
 
   res.json({ jobId });
 });

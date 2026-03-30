@@ -44,6 +44,67 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
 }
 
 /**
+ * Strips HTML tags and removes quoted reply history from email body.
+ */
+export function cleanEmailBody(text: string): string {
+  if (!text) return '';
+
+  // 1. Basic HTML stripping (just in case simpleParser missed any)
+  let clean = text.replace(/<[^>]*>?/gm, '');
+
+  // 2. Common reply delimiters
+  const delimiters = [
+    /^On\s.*?\swrote:$/im,                  // On Mon, Jan 1, 2024 at 10:00 AM User wrote:
+    /^From:\s.*?\sSent:\s.*$/im,            // From: User <user@example.com> Sent: Monday...
+    /^-----Original Message-----$/im,       // Standard Outlook
+    /^---+\s*Original\s*Message\s*---+$/im, // Variations of the above
+    /^--+\s*$/m,                            // Typical signature/history separator
+    /^\s*Sent from my .*/im                 // "Sent from my iPhone/Android"
+  ];
+
+  let lines = clean.split(/\r?\n/);
+  let stopIndex = lines.length;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Check for "On ... wrote:" or "From:" type headers
+    if (delimiters.some(d => d.test(line))) {
+      stopIndex = i;
+      break;
+    }
+
+    // Check for blocks of quoted lines starting with '>'
+    // If we hit a line starting with '>', we assume the rest is history
+    if (line.startsWith('>')) {
+      stopIndex = i;
+      break;
+    }
+  }
+
+  // Joint back the lines before the stop index
+  clean = lines.slice(0, stopIndex).join('\n').trim();
+
+  return clean;
+}
+
+/**
+ * Performs a robust, case-insensitive keyword match using word boundaries.
+ */
+export function matchKeyword(body: string, keyword: string): boolean {
+  if (!body || !keyword) return false;
+
+  // Escape special regex characters in keyword
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
+  // Use word boundaries (\b) to ensure exact word matches
+  // 'i' flag for case-insensitive
+  const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+
+  return regex.test(body);
+}
+
+/**
  * Polls an IMAP server for new messages and detects replies.
  * If a condition step has a keyword configured:
  *   - keyword found in body  → mark as SEEN, record reply with keyword_matched:true
@@ -160,13 +221,16 @@ export async function pollImap(mailboxId: string) {
 
           if (conditionStep?.condition_keyword) {
             conditionKeyword = conditionStep.condition_keyword.trim();
-            const bodyText = await extractEmailBody(msg);
+            const rawBody = await extractEmailBody(msg);
+            const cleanedBody = cleanEmailBody(rawBody);
             
-            console.log(`[IMAP WORKER] Extracted body length: ${bodyText?.length}. Checking for keyword...`);
+            console.log(`[IMAP WORKER] [UID: ${uid}] Keyword matching debugging:`);
+            console.log(`- Condition Keyword: "${conditionKeyword}"`);
+            console.log(`- Raw Body Length: ${rawBody?.length}`);
+            console.log(`- Cleaned Body Length: ${cleanedBody?.length}`);
+            console.log(`- Cleaned Body Preview: "${cleanedBody.substring(0, 200).replace(/\n/g, ' ')}${cleanedBody.length > 200 ? '...' : ''}"`);
 
-            // Build a case-insensitive regex for the keyword
-            const regex = new RegExp(conditionKeyword, 'i'); 
-            keywordMatched = regex.test(bodyText);
+            keywordMatched = matchKeyword(cleanedBody, conditionKeyword);
 
             // Find matching enrollment for logging
             const enrollment = await db.prepare(`
@@ -175,10 +239,14 @@ export async function pollImap(mailboxId: string) {
               LIMIT 1
             `).get(originalEmail.contact_id, originalEmail.sequence_id) as any;
 
-            console.log(`[IMAP WORKER] Enrollment ${enrollment?.id || 'UNKNOWN'} pending condition. Keyword '${conditionKeyword}' match result: ${keywordMatched}`);
+            console.log(`[IMAP WORKER] [UID: ${uid}] Enrollment ${enrollment?.id || 'UNKNOWN'} result: ${keywordMatched ? 'MATCHED' : 'NO MATCH'}`);
             
             if (!keywordMatched) {
-              console.log(`[IMAP WORKER] [UID: ${uid}] (Debug) Body content checked: "${bodyText.substring(0, 100)}..."`);
+              // Check if keyword exists in raw body but NOT in cleaned body (false positive in history)
+              const matchedInRaw = matchKeyword(rawBody, conditionKeyword);
+              if (matchedInRaw) {
+                console.log(`[IMAP WORKER] [UID: ${uid}] (Safety) Keyword found in HISTORY but not in NEW reply. Correctly ignoring.`);
+              }
             }
           } else {
             console.log(`[IMAP WORKER] [UID: ${uid}] No keyword-based condition step found.`);
