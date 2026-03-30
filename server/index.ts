@@ -1188,17 +1188,16 @@ app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     let sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
 
-    // 2. Safety Migration: If legacy (no project_id), assign to current project
-    if (!sequence.project_id || sequence.project_id === '') {
-      await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", pId, id);
-      sequence.project_id = pId;
-      console.log(`[Outreach] Migrated legacy sequence ${id} to project ${pId}`);
-    }
-
-    // 3. Strict Project Check
+    // 2. Auto-Repair Fallback: If legacy (no project_id) or assigned to a different project, 
+    // re-assign discovered sequence to the current projectId so it is never "lost" again.
     if (sequence.project_id !== pId) {
-      console.warn(`[Outreach] Access denied: Sequence ${id} belongs to project ${sequence.project_id}, but requested project was ${pId}`);
-      return res.status(404).json({ error: "Sequence not found in this project" });
+      console.log(`[Outreach] Auto-repairing sequence ${id}: re-assigning from "${sequence.project_id || 'legacy'}" to project "${pId}"`);
+      
+      // Update both sequence and its steps to maintain integrity
+      await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", pId, id);
+      await db.run("UPDATE outreach_sequence_steps SET project_id = ? WHERE sequence_id = ?", pId, id);
+      
+      sequence.project_id = pId;
     }
 
     const steps = await db.all(
