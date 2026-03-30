@@ -282,6 +282,11 @@ export function useOutreachApi() {
     [post]
   );
 
+  const launchSequence = useCallback(
+    (id: string, data: any) => post<any>(`/sequences/${id}/launch`, data),
+    [post]
+  );
+
   const addSequenceRecipients = useCallback(
     (id: string, data: { contact_ids?: string[], recipients?: any[], project_id: string }) => 
       post<any>(`/sequences/${id}/recipients`, data),
@@ -549,6 +554,7 @@ export function useOutreachApi() {
     duplicateSequence,
     updateSequence,
     updateSequenceSteps,
+    launchSequence,
     deleteSequence,
     activateSequence,
     fetchStepAnalytics,

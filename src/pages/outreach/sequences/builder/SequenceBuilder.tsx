@@ -629,7 +629,18 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
 
   const handleSaveAll = async () => {
-    if (!sequenceId || !activeProjectId || !sequence) return;
+    if (!sequenceId) {
+      toast.error('Sequence ID is missing');
+      return;
+    }
+    if (!activeProjectId) {
+      toast.error('No project selected');
+      return;
+    }
+    if (!sequence) {
+      toast.error('Sequence data not loaded');
+      return;
+    }
     
     setIsSaving(true);
     try {
@@ -656,8 +667,9 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       setHasUnsavedChanges(false);
       setLastSavedTime(new Date());
       toast.success('Sequence saved successfully');
-    } catch (err) {
-      toast.error('Failed to save changes');
+    } catch (err: any) {
+      const errorMsg = err.message || 'Failed to save changes';
+      toast.error(errorMsg);
       console.error('Save error:', err);
     } finally {
       setIsSaving(false);

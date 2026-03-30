@@ -105,20 +105,14 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
       // Create sequence template
       const seq = await api.createSequence(name || 'New Sequence', nodes);
       
-      // Call custom launch API
-      const res = await fetch(`/api/outreach/sequences/${seq.id}/launch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name || 'New Sequence',
-          steps: nodes,
-          contacts,
-          columnMapping,
-          scheduling
-        })
+      // Call custom launch API via hook helper
+      await api.launchSequence(seq.id, {
+        name: name || 'New Sequence',
+        steps: nodes,
+        contacts,
+        columnMapping,
+        scheduling
       });
-
-      if (!res.ok) throw new Error('Failed to launch');
       
       toast.success('Sequence launched successfully!');
       onComplete();

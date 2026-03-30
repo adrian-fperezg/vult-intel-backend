@@ -1270,15 +1270,33 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const values = Object.values(filteredUpdates);
 
   try {
+    // 1. Fetch existing sequence by ID and User (ignoring project_id initially)
+    const existing = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
+    if (!existing) return res.status(404).json({ error: "Sequence not found" });
+
+    // 2. Auto-Repair / UPSERT logic for projectId
+    // If the sequence belongs to the user but has a different/null project_id,
+    // re-assign it to the current project during this update.
+    if (existing.project_id !== req.projectId) {
+      console.log(`[Outreach Patch] Auto-repairing sequence ${id}: Re-assigning to project ${req.projectId}`);
+      await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", req.projectId, id);
+      // Also update steps to match the sequence project assignment
+      await db.run("UPDATE outreach_sequence_steps SET project_id = ? WHERE sequence_id = ?", req.projectId, id);
+    }
+
+    const sets = Object.keys(filteredUpdates).map(key => `${key} = ?`).join(', ');
+    const values = Object.values(filteredUpdates);
+
     await db.run(
-      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND project_id = ?`, 
-      ...values, id, userId, req.projectId
+      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`, 
+      ...values, id, userId
     );
-    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND project_id = ?", id, req.projectId);
+
+    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
     res.json(updated);
   } catch (error) {
     console.error('[Sequence Settings Update Error]:', error);
-    res.status(500).json({ error: "Failed up update sequence settings. Check server logs." });
+    res.status(500).json({ error: "Failed to update sequence settings." });
   }
 });
 
@@ -1291,9 +1309,18 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
+    // 1. Verify sequence ownership first
+    const existing = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
+    if (!existing) return res.status(404).json({ error: "Sequence not found or unauthorized" });
+
+    // 2. Auto-Repair sequence project_id if it doesn't match the steps project_id
+    if (existing.project_id !== project_id) {
+      console.log(`[Outreach Steps] Auto-repairing sequence ${id}: Re-assigning to project ${project_id}`);
+      await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", project_id, id);
+    }
+
     await db.transaction(async (tx) => {
-      // 1. Create a mapping of frontend step IDs to backend UUIDs
-      // This is CRITICAL for resolving parent_step_id for newly created steps
+      // 3. Create a mapping of frontend step IDs to backend UUIDs
       const idMap = new Map<string, string>();
       for (const step of steps) {
         // If it's a real UUID, keep it. If it's "new-...", generate a new UUID.
