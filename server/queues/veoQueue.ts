@@ -50,10 +50,14 @@ async function pollOperationREST(operationName: string): Promise<{ outputUrl?: s
 
   const client = await auth.getClient();
   const accessToken = await client.getAccessToken();
+  const projectId = creds.project_id;
   const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
 
-  // Ensure the URL is correctly constructed
-  const url = `https://${location}-aiplatform.googleapis.com/v1beta1/${operationName}`;
+  // The SDK returns "models/..." or "projects/.../operations/ID". 
+  // We need the strictly formatted Vertex AI REST path for the v1beta1 endpoint.
+  const operationId = operationName.split('operations/').pop();
+  const fullOperationPath = `projects/${projectId}/locations/${location}/operations/${operationId}`;
+  const url = `https://${location}-aiplatform.googleapis.com/v1beta1/${fullOperationPath}`;
 
   for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
