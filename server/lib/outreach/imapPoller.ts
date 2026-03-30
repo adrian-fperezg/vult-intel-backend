@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
+import { cleanEmailBody, matchKeyword, findOriginalEmail } from './utils.js';
 
 export interface ImapConfig {
   host: string;
@@ -43,66 +44,7 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
   return '';
 }
 
-/**
- * Strips HTML tags and removes quoted reply history from email body.
- */
-export function cleanEmailBody(text: string): string {
-  if (!text) return '';
-
-  // 1. Basic HTML stripping (just in case simpleParser missed any)
-  let clean = text.replace(/<[^>]*>?/gm, '');
-
-  // 2. Common reply delimiters
-  const delimiters = [
-    /^On\s.*?\swrote:$/im,                  // On Mon, Jan 1, 2024 at 10:00 AM User wrote:
-    /^From:\s.*?\sSent:\s.*$/im,            // From: User <user@example.com> Sent: Monday...
-    /^-----Original Message-----$/im,       // Standard Outlook
-    /^---+\s*Original\s*Message\s*---+$/im, // Variations of the above
-    /^--+\s*$/m,                            // Typical signature/history separator
-    /^\s*Sent from my .*/im                 // "Sent from my iPhone/Android"
-  ];
-
-  let lines = clean.split(/\r?\n/);
-  let stopIndex = lines.length;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    // Check for "On ... wrote:" or "From:" type headers
-    if (delimiters.some(d => d.test(line))) {
-      stopIndex = i;
-      break;
-    }
-
-    // Check for blocks of quoted lines starting with '>'
-    // If we hit a line starting with '>', we assume the rest is history
-    if (line.startsWith('>')) {
-      stopIndex = i;
-      break;
-    }
-  }
-
-  // Joint back the lines before the stop index
-  clean = lines.slice(0, stopIndex).join('\n').trim();
-
-  return clean;
-}
-
-/**
- * Performs a robust, case-insensitive keyword match using word boundaries.
- */
-export function matchKeyword(body: string, keyword: string): boolean {
-  if (!body || !keyword) return false;
-
-  // Escape special regex characters in keyword
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  
-  // Use word boundaries (\b) to ensure exact word matches
-  // 'i' flag for case-insensitive
-  const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-
-  return regex.test(body);
-}
+// Redundant local cleanEmailBody and matchKeyword removed - now using shared utils.js
 
 /**
  * Polls an IMAP server for new messages and detects replies.
@@ -165,28 +107,28 @@ export async function pollImap(mailboxId: string) {
         const from = headers.from?.[0];
         const subject = headers.subject?.[0];
         const inReplyTo = headers['in-reply-to']?.[0];
-        const references = headers['references'] || [];
+        const referencesRaw = headers['references'] || [];
+        const references = Array.isArray(referencesRaw) ? referencesRaw : [referencesRaw];
 
-        // Check if this is a reply (has In-Reply-To or References)
-        const replyId = (inReplyTo || (references.length > 0 ? references[references.length - 1] : ''))
-          .replace(/[<>]/g, '').trim();
+        // Collect all potential message IDs to match against
+        const potentialMessageIds = [
+          inReplyTo,
+          ...references
+        ].filter(Boolean).map(id => id.replace(/[<>]/g, '').trim());
 
-        if (!replyId) {
-          console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: NONE`);
-          console.log(`[IMAP] [UID: ${uid}] No reply reference found. Marking as seen.`);
+        if (potentialMessageIds.length === 0) {
+          console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. No reply headers found. Marking as seen.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
 
+        console.log(`[IMAP] [UID: ${uid}] Searching for original email with IDs: ${potentialMessageIds.join(', ')}`);
+
         // Find the original outbound email this is a reply to
-        const originalEmail = await db.prepare(`
-          SELECT * FROM outreach_individual_emails 
-          WHERE message_id = ? OR message_id LIKE ?
-        `).get(replyId, `%${replyId}%`) as any;
+        const originalEmail = await findOriginalEmail(potentialMessageIds);
 
         if (!originalEmail || !originalEmail.contact_id) {
-          console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: NONE`);
-          console.log(`[IMAP] [UID: ${uid}] Not a reply to a Vult internal email (Ref: ${replyId}). Marking as seen.`);
+          console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: NONE. Not a reply to a Vult internal email.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
@@ -197,7 +139,7 @@ export async function pollImap(mailboxId: string) {
         const eventExists = await db.prepare(`
           SELECT id FROM outreach_events 
           WHERE contact_id = ? AND type = 'email_replied' AND metadata LIKE ?
-        `).get(originalEmail.contact_id, `%${replyId}%`);
+        `).get(originalEmail.contact_id, `%${potentialMessageIds[0]}%`);
 
         if (eventExists) {
           console.log(`[IMAP] [UID: ${uid}] Duplicate event detected. Skipping but marking as seen.`);
@@ -268,8 +210,8 @@ export async function pollImap(mailboxId: string) {
           JSON.stringify({ 
             subject,
             from,
-            reply_id: replyId,
-            mailbox_id: mailboxId,
+            reply_id: potentialMessageIds[0],
+            mailbox_id: mailbox.id,
             keyword: conditionKeyword,
             keyword_matched: keywordMatched
           })
