@@ -10,6 +10,7 @@ initializeFirebase();
 
 export interface AuthRequest extends Request {
   user?: admin.auth.DecodedIdToken;
+  projectId?: string;
   body: any;
   query: any;
   params: any;

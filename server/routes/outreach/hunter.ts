@@ -358,9 +358,15 @@ router.get("/saved-searches", async (req: AuthRequest, res) => {
 
 router.get("/saved-searches/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  if (!userId) return res.status(401).json({ error: "Auth required" });
+  const { project_id, projectId } = req.query as { project_id?: string, projectId?: string };
+  const pId = project_id || projectId || req.headers['x-project-id'];
+
+  if (!userId || !pId) return res.status(401).json({ error: "Auth and Project ID required" });
 
   try {
+    const search = await db.get(`SELECT id FROM outreach_saved_searches WHERE id = ? AND project_id = ?`, req.params.id, pId);
+    if (!search) return res.status(404).json({ error: "Search not found or unauthorized" });
+
     const leads = await db.all(`
       SELECT * FROM outreach_saved_search_leads 
       WHERE search_id = ?

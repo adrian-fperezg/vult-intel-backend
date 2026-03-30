@@ -413,6 +413,12 @@ app.get("/api/tracking/open", async (req, res) => {
 
 app.use("/api/outreach", verifyFirebaseToken as any);
 
+app.use("/api/outreach", (req: any, res, next) => {
+  const pId = req.headers["x-project-id"] || req.query.project_id || req.query.projectId || req.body?.project_id || req.body?.projectId;
+  req.projectId = pId;
+  next();
+});
+
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
 
 app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {
@@ -864,7 +870,7 @@ app.delete("/api/outreach/verified-domains/:id", async (req: AuthRequest, res) =
 // GET /api/outreach/campaigns?project_id=xxx
 app.get("/api/outreach/campaigns", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id } = req.query as { project_id?: string };
+  const project_id = req.projectId;
 
   if (!project_id) return res.json([]); // No project = empty
 
@@ -884,7 +890,8 @@ app.get("/api/outreach/campaigns", async (req: AuthRequest, res) => {
 // POST /api/outreach/campaigns
 app.post("/api/outreach/campaigns", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { name, type, settings, project_id } = req.body;
+  const { name, type, settings } = req.body;
+  const project_id = req.projectId;
 
   if (!project_id)
     return res.status(400).json({ error: "project_id is required" });
@@ -905,8 +912,8 @@ app.post("/api/outreach/campaigns", async (req: AuthRequest, res) => {
   );
 
   const campaign = await db
-    .prepare("SELECT * FROM outreach_campaigns WHERE id = ?")
-    .get(id);
+    .prepare("SELECT * FROM outreach_campaigns WHERE id = ? AND project_id = ?")
+    .get(id, project_id);
   res.status(201).json(campaign);
 });
 
@@ -932,15 +939,15 @@ app.patch("/api/outreach/campaigns/:id", async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "Nothing to update" });
 
   fields.push("updated_at = CURRENT_TIMESTAMP");
-  values.push(id, userId);
+  values.push(id, userId, req.projectId);
 
   await db.prepare(
-    `UPDATE outreach_campaigns SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+    `UPDATE outreach_campaigns SET ${fields.join(", ")} WHERE id = ? AND user_id = ? AND project_id = ?`,
   ).run(...values);
 
   const campaign = await db
-    .prepare("SELECT * FROM outreach_campaigns WHERE id = ?")
-    .get(id);
+    .prepare("SELECT * FROM outreach_campaigns WHERE id = ? AND project_id = ?")
+    .get(id, req.projectId);
   res.json(campaign);
 });
 // DELETE /api/outreach/campaigns/:id
@@ -949,8 +956,8 @@ app.delete("/api/outreach/campaigns/:id", async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const result = await db
-    .prepare("DELETE FROM outreach_campaigns WHERE id = ? AND user_id = ?")
-    .run(id, userId);
+    .prepare("DELETE FROM outreach_campaigns WHERE id = ? AND user_id = ? AND project_id = ?")
+    .run(id, userId, req.projectId);
 
   if (result.changes === 0)
     return res.status(404).json({ error: "Campaign not found" });
@@ -972,7 +979,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const campaign = await db.prepare("SELECT project_id FROM outreach_campaigns WHERE id = ?").get(campaignId) as any;
+    const campaign = await db.prepare("SELECT project_id FROM outreach_campaigns WHERE id = ? AND project_id = ?").get(campaignId, req.projectId) as any;
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
     await db.transaction(async (tx) => {
@@ -1089,7 +1096,7 @@ app.get("/api/outreach/campaigns/:id/delivery-estimate", async (req: AuthRequest
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
-  const enrollmentCount = await db.prepare("SELECT COUNT(*) as count FROM outreach_campaign_enrollments WHERE campaign_id = ?").get(id) as any;
+  const enrollmentCount = await db.prepare("SELECT COUNT(*) as count FROM outreach_campaign_enrollments ce JOIN outreach_campaigns c ON ce.campaign_id = c.id WHERE ce.campaign_id = ? AND c.project_id = ?").get(id, req.projectId) as any;
   
   // Basic math: 200 emails per day limit
   const days = Math.ceil((enrollmentCount?.count || 0) / 200);
@@ -1175,12 +1182,12 @@ app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
 
     const steps = await db.all(
-      "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? ORDER BY step_number ASC", 
-      id
+      "SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND project_id = ? ORDER BY step_number ASC", 
+      id, req.projectId
     );
 
     const recipients = await db.all(`
@@ -1243,10 +1250,10 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
 
   try {
     await db.run(
-      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`, 
-      ...values, id, userId
+      `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND project_id = ?`, 
+      ...values, id, userId, req.projectId
     );
-    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
+    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND project_id = ?", id, req.projectId);
     res.json(updated);
   } catch (error) {
     console.error('[Sequence Settings Update Error]:', error);
@@ -1354,7 +1361,7 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId) as any;
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
     if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
 
@@ -1399,7 +1406,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
 
         if (typeof item === 'object' && item.email) {
           // Manual contact upsert
-          const existing = await tx.get("SELECT * FROM outreach_contacts WHERE email = ? AND user_id = ?", item.email, userId) as any;
+          const existing = await tx.get("SELECT * FROM outreach_contacts WHERE email = ? AND user_id = ? AND project_id = ?", item.email, userId, project_id) as any;
           if (existing) {
             contact_id = existing.id;
             contactObj = existing;
@@ -1421,7 +1428,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
         } else if (typeof item === 'object' && item.id) {
           // Existing contact ID
           contact_id = item.id;
-          contactObj = await tx.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ?", contact_id, userId);
+          contactObj = await tx.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?", contact_id, userId, project_id);
         } else if (typeof item === 'object' && item.list_id) {
             // It's a list - expand it and add its members
             const listMembers = await tx.all("SELECT contact_id FROM contact_list_members WHERE list_id = ?", item.list_id) as any[];
@@ -1486,7 +1493,7 @@ app.delete("/api/outreach/sequences/:id/recipients/:contactId", async (req: Auth
 
   try {
     // Check ownership
-    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId);
+    const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId);
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
 
     await db.run("DELETE FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, contactId);
@@ -1522,7 +1529,7 @@ app.delete("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const result = await db.run("DELETE FROM outreach_sequences WHERE id = ? AND user_id = ?", id, userId);
+    const result = await db.run("DELETE FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId);
     if (result.changes === 0) return res.status(404).json({ error: "Sequence not found" });
     res.json({ success: true });
   } catch (error) {
@@ -1541,8 +1548,8 @@ app.post("/api/outreach/sequences/:id/duplicate", async (req: AuthRequest, res) 
     const result = await db.transaction(async (tx) => {
       // 1. Fetch original sequence
       const original = await tx.get<any>(
-        "SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ?",
-        id, userId
+        "SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?",
+        id, userId, req.projectId
       );
       if (!original) throw new Error("Original sequence not found");
 
@@ -1954,14 +1961,14 @@ app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
   if (fields.length === 0)
     return res.status(400).json({ error: "Nothing to update" });
 
-  values.push(id, userId);
+  values.push(id, userId, req.projectId);
   await db.prepare(
-    `UPDATE outreach_contacts SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+    `UPDATE outreach_contacts SET ${fields.join(", ")} WHERE id = ? AND user_id = ? AND project_id = ?`,
   ).run(...values);
 
   const contact = await db
-    .prepare("SELECT * FROM outreach_contacts WHERE id = ?")
-    .get(id);
+    .prepare("SELECT * FROM outreach_contacts WHERE id = ? AND project_id = ?")
+    .get(id, req.projectId);
   res.json(contact);
 });
 
@@ -2000,8 +2007,8 @@ app.delete("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const result = await db
-    .prepare("DELETE FROM outreach_contacts WHERE id = ? AND user_id = ?")
-    .run(id, userId);
+    .prepare("DELETE FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?")
+    .run(id, userId, req.projectId);
 
   if (result.changes === 0)
     return res.status(404).json({ error: "Contact not found" });
@@ -2288,9 +2295,9 @@ app.get("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
 
   const email = await db
     .prepare(
-      "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
+      "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ? AND project_id = ?",
     )
-    .get(id, userId);
+    .get(id, userId, req.projectId);
 
   if (!email) return res.status(404).json({ error: "Email not found" });
   res.json(email);
@@ -2349,8 +2356,8 @@ app.post("/api/outreach/compose", upload.array('attachments', 5), async (req: Au
   );
 
   const email = await db
-    .prepare("SELECT * FROM outreach_individual_emails WHERE id = ?")
-    .get(id);
+    .prepare("SELECT * FROM outreach_individual_emails WHERE id = ? AND project_id = ?")
+    .get(id, project_id);
   res.status(201).json(email);
 });
 
@@ -2432,15 +2439,15 @@ app.patch("/api/outreach/compose/:id", upload.array('attachments', 5), async (re
     return res.status(400).json({ error: "Nothing to update" });
 
   fields.push("updated_at = CURRENT_TIMESTAMP");
-  values.push(id, userId);
+  values.push(id, userId, req.projectId);
 
   await db.prepare(
-    `UPDATE outreach_individual_emails SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+    `UPDATE outreach_individual_emails SET ${fields.join(", ")} WHERE id = ? AND user_id = ? AND project_id = ?`,
   ).run(...values);
 
   const email = await db
-    .prepare("SELECT * FROM outreach_individual_emails WHERE id = ?")
-    .get(id);
+    .prepare("SELECT * FROM outreach_individual_emails WHERE id = ? AND project_id = ?")
+    .get(id, req.projectId);
   res.json(email);
 });
 
@@ -2453,9 +2460,9 @@ app.delete("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
 
   const result = await db
     .prepare(
-      "DELETE FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
+      "DELETE FROM outreach_individual_emails WHERE id = ? AND user_id = ? AND project_id = ?",
     )
-    .run(id, userId);
+    .run(id, userId, req.projectId);
 
   if (result.changes === 0)
     return res.status(404).json({ error: "Email not found" });
@@ -2477,8 +2484,8 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
     console.log(`[OUTREACH] Attempting to send email. id=${id}, userId=${userId}`);
 
     const email = await db.prepare(
-      "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ?",
-    ).get(id, userId) as any;
+      "SELECT * FROM outreach_individual_emails WHERE id = ? AND user_id = ? AND project_id = ?",
+    ).get(id, userId, req.projectId) as any;
 
     if (!email) {
       console.error(`[OUTREACH ERROR] Email ${id} not found for user ${userId}`);

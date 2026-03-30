@@ -220,6 +220,7 @@ export async function pollImap(mailboxId: string) {
         // Update Flag: keyword found or no keyword → \Seen. Keyword NOT found → stay UNSEEN.
         if (keywordMatched === false) {
           console.log(`[IMAP] [UID: ${uid}] Keyword mismatch. KEEPING message UNREAD for sequence branching.`);
+          await connection.delFlags(uid, ['\\Seen']);
         } else {
           console.log(`[IMAP] [UID: ${uid}] Keyword matched or no condition. Marking message as SEEN.`);
           await connection.addFlags(uid, ['\\Seen']);
