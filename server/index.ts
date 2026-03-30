@@ -2349,6 +2349,27 @@ app.get("/api/outreach/compose/:id", async (req: AuthRequest, res) => {
   res.json(email);
 });
 
+// POST /api/outreach/upload
+app.post("/api/outreach/upload", upload.single('file'), async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.projectId;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID required" });
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  res.json({
+    success: true,
+    filename: req.file.originalname,
+    path: req.file.path, // This is the relative path from process.cwd()
+    size: req.file.size,
+    mimetype: req.file.mimetype
+  });
+});
+
 // POST /api/outreach/compose
 app.post("/api/outreach/compose", upload.array('attachments', 5), async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

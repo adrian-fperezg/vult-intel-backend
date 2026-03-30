@@ -90,6 +90,8 @@ function StepNode({
   setActiveStepId,
   analytics
 }: StepNodeProps) {
+  const { uploadFile } = useOutreachApi();
+  const [isUploading, setIsUploading] = useState(false);
   const isExpanded = activeStepId === step.id;
   
   const children = allSteps.filter(s => s.parent_step_id === step.id);
@@ -97,16 +99,31 @@ function StepNode({
   const noChild = children.find(c => c.branch_path === 'no');
   const defaultChild = children.find(c => c.branch_path === 'default');
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const newAttachment = {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      id: `att-${Date.now()}`
-    };
-    onUpdate(step.id, { attachments: [...(step.attachments || []), newAttachment] });
+    
+    setIsUploading(true);
+    try {
+      const response = await uploadFile(file);
+      const newAttachment = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        id: `att-${Date.now()}`,
+        path: response.path,
+        filename: response.filename
+      };
+      onUpdate(step.id, { attachments: [...(step.attachments || []), newAttachment] });
+      toast.success('File uploaded successfully');
+    } catch (error) {
+      console.error('File upload failed:', error);
+      toast.error('Failed to upload file');
+    } finally {
+      setIsUploading(false);
+      // Reset input
+      e.target.value = '';
+    }
   };
 
   const removeAttachment = (id: string) => {
@@ -295,6 +312,13 @@ function StepNode({
                     className="hidden"
                     onChange={handleFileUpload}
                   />
+                  
+                  {isUploading && (
+                    <div className="mt-2 flex items-center gap-2 text-[10px] text-teal-400 font-bold animate-pulse">
+                      <div className="size-3 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
+                      Uploading attachment...
+                    </div>
+                  )}
                   
                   {step.attachments && step.attachments.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">

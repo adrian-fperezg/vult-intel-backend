@@ -32,9 +32,9 @@ export async function resolveAttachments(attachmentsJson: string | null): Promis
       // 1. If it's an external Cloud URL (Firebase, S3, etc)
       if (attach.path && (attach.path.startsWith('http://') || attach.path.startsWith('https://'))) {
         resolved.push({
-          filename: attach.filename,
+          filename: attach.filename || attach.name,
           href: attach.path, // nodemailer uses 'href' for URLs instead of 'path'
-          contentType: attach.mimetype || attach.contentType
+          contentType: attach.mimetype || attach.contentType || attach.type
         });
         continue;
       }
@@ -42,12 +42,12 @@ export async function resolveAttachments(attachmentsJson: string | null): Promis
       // 2. If it is already provided as an href or base64 or raw content (or embedded)
       if (attach.href || attach.content) {
         resolved.push({
-          filename: attach.filename,
+          filename: attach.filename || attach.name,
           path: attach.path,
           href: attach.href,
           content: attach.content,
           encoding: attach.encoding,
-          contentType: attach.mimetype || attach.contentType
+          contentType: attach.mimetype || attach.contentType || attach.type
         });
         continue;
       }
@@ -63,9 +63,9 @@ export async function resolveAttachments(attachmentsJson: string | null): Promis
         await fs.promises.access(localPath, fs.constants.R_OK);
         // File exists physically on disk and is readable
         resolved.push({
-          filename: attach.filename,
+          filename: attach.filename || attach.name,
           path: localPath,
-          contentType: attach.mimetype || attach.contentType
+          contentType: attach.mimetype || attach.contentType || attach.type
         });
       } catch (err) {
         console.warn(`[AttachmentResolver] Missing local file: ${localPath}. It may have been wiped by ephemeral storage redeployment. Stripping from email to prevent crash.`);

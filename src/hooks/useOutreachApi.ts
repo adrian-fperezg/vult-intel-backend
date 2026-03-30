@@ -539,6 +539,15 @@ export function useOutreachApi() {
     [post]
   );
 
+  const uploadFile = useCallback(
+    (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return postFormData<{ success: true, filename: string, path: string, size: number, mimetype: string }>('/upload', formData);
+    },
+    [postFormData]
+  );
+
   return {
     activeProjectId,
     // Campaigns
@@ -583,6 +592,7 @@ export function useOutreachApi() {
     updateIndividualEmail,
     deleteIndividualEmail,
     sendIndividualEmail,
+    uploadFile,
     // Mailboxes / OAuth
     fetchMailboxes,
     disconnectMailbox,
