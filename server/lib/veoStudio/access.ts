@@ -20,15 +20,26 @@ export interface AccessResult {
   videosUsed: number;
   videosLimit: number;
   periodResetAt: string | null;
+  isFounder?: boolean;
+  status?: string;
 }
 
 /**
  * Check if a user has an active Veo Studio Pack subscription and available credits.
- * Reads from Firestore customers/{uid} document.
+ * Priority check: Founder bypass using verified email from Auth token.
  */
 export async function checkVeoStudioAccess(uid: string, email?: string): Promise<AccessResult> {
-  if (email && isFounderEmail(email)) {
-    return { allowed: true, videosUsed: 0, videosLimit: 9999, periodResetAt: null };
+  const FOUNDER_EMAIL = 'adrianfperezg@gmail.com';
+  
+  if (email === FOUNDER_EMAIL || (email && isFounderEmail(email))) {
+    return { 
+      allowed: true, 
+      status: 'active',
+      videosUsed: 0, 
+      videosLimit: 9999, // Represents 'Unlimited' in the UI
+      isFounder: true, 
+      periodResetAt: null 
+    };
   }
 
   const db = getFirestore();

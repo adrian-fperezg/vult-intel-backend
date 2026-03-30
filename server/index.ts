@@ -3470,7 +3470,10 @@ app.post('/api/veo-studio/generate-video', verifyFirebaseToken, async (req: Auth
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const access = await checkVeoStudioAccess(uid, email);
-  if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
+  if (!access.allowed) {
+    console.log('[VEO 403] Denied for:', email);
+    return res.status(403).json({ error: access.reason || 'No active subscription' });
+  }
 
   // Handle Brand Kit injection
   let finalPrompt = prompt;
@@ -3502,7 +3505,10 @@ app.post('/api/veo-studio/animate-image', verifyFirebaseToken, async (req: AuthR
   if (!prompt || !imageBase64) return res.status(400).json({ error: 'prompt and imageBase64 are required' });
 
   const access = await checkVeoStudioAccess(uid, email);
-  if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
+  if (!access.allowed) {
+    console.log('[VEO 403] Denied for animation:', email);
+    return res.status(403).json({ error: access.reason || 'No active subscription' });
+  }
 
   // Handle Brand Kit injection
   let finalPrompt = prompt;
@@ -3534,7 +3540,10 @@ app.post('/api/veo-studio/generate-image', verifyFirebaseToken, async (req: Auth
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
   const access = await checkVeoStudioAccess(uid, email);
-  if (!access.allowed) return res.status(403).json({ error: access.reason || 'No active subscription' });
+  if (!access.allowed) {
+    console.log('[VEO 403] Denied for:', email);
+    return res.status(403).json({ error: access.reason || 'No active subscription' });
+  }
 
   // Handle Brand Kit injection
   let finalPrompt = prompt;
@@ -3603,7 +3612,10 @@ app.post('/api/veo-studio/storyboard-plan', verifyFirebaseToken, async (req: Aut
   if (!uid) return res.status(401).json({ error: 'Unauthorized' });
 
   const access = await checkVeoStudioAccess(uid, email);
-  if (!access.allowed) return res.status(403).json({ error: 'No active subscription' });
+  if (!access.allowed) {
+    console.log('[VEO 403] Denied for storyboard plan:', email);
+    return res.status(403).json({ error: 'No active subscription' });
+  }
 
   const { brief, tone, shotCount } = req.body;
   if (!brief) return res.status(400).json({ error: 'brief is required' });
