@@ -44,11 +44,7 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
     to: emailData.to,
     subject: emailData.subject,
     html: emailData.bodyHtml,
-    attachments: (emailData.attachments || []).map(a => ({
-      filename: a.filename,
-      path: a.path,
-      contentType: a.mimetype
-    }))
+    attachments: emailData.attachments || [] // Pre-resolved and verified by resolveAttachments()
   });
 
   console.log(`[SMTP] Email sent successfully. Message ID: ${info.messageId}`);

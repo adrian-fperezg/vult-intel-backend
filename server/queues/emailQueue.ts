@@ -6,6 +6,7 @@ import { getValidGmailClient } from '../oauth.js';
 import redis from '../redis.js';
 import { sendSmtpMessage } from '../lib/outreach/smtpMailer.js';
 import { pollImap } from '../lib/outreach/imapPoller.js';
+import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 // @ts-ignore
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
@@ -334,7 +335,8 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const trackingPixel = `\n<img src="${backendUrl || "http://localhost:8080"}/api/tracking/open?emailId=${emailId}" width="1" height="1" style="display:none;" alt="" />`;
   const bodyWithTracking = (email.body_html || "") + trackingPixel;
 
-  const attachments = email.attachments ? JSON.parse(email.attachments) : [];
+  // Use resilient attachment resolver to handle missing files on ephemeral hosts
+  const attachments = await resolveAttachments(email.attachments);
 
   if (mailbox.connection_type === 'smtp') {
     // Hard check for SMTP credentials before even calling sendSmtpMessage
@@ -376,11 +378,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     to: to,
     subject: subject,
     html: bodyWithTracking,
-    attachments: attachments.map((a: any) => ({
-      filename: a.filename,
-      path: a.path,
-      contentType: a.mimetype
-    }))
+    attachments: attachments // Pre-resolved and verified by resolveAttachments()
   };
 
   const mail = new MailComposer(mailOptions);
