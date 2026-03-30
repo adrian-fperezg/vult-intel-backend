@@ -2,12 +2,14 @@ import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import AIChatAssistant from './AIChatAssistant';
 import { useAuth } from '../contexts/AuthContext';
+import { useProject } from '../contexts/ProjectContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { useSettings } from '../contexts/SettingsContext';
 import { cn } from '../lib/utils';
 
 export default function Layout() {
   const { currentUser, isAdmin, isTester, isFounder } = useAuth();
+  const { activeProjectId } = useProject();
   const { hasActiveSubscription, loading } = useSubscription();
   const { theme } = useSettings();
 
@@ -47,7 +49,7 @@ export default function Layout() {
         <div className="lg:hidden h-16 w-full shrink-0" />
 
         {/* Page Content */}
-        <div className="flex-1 w-full overflow-y-auto relative z-0">
+        <div className="flex-1 w-full overflow-y-auto relative z-0" key={activeProjectId || 'no-project'}>
           <Outlet />
         </div>
       </main>
