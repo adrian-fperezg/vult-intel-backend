@@ -33,7 +33,7 @@ export const veoQueue = new Queue<VeoJobData>('veo-generation', {
  * Polls Vertex AI operation status via directed REST API call.
  * Bypasses the broken SDK Operations.get() logic.
  */
-async function pollOperationREST(operationName: string): Promise<string | null> {
+async function pollOperationREST(operationName: string): Promise<{ outputUrl?: string; error?: string }> {
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
   const client = await auth.getClient();
   const accessToken = await client.getAccessToken();
@@ -59,33 +59,33 @@ async function pollOperationREST(operationName: string): Promise<string | null> 
       
       if (operation.done) {
         if (operation.error) {
-          console.error(`[VEO QUEUE] Operation failed:`, operation.error.message);
-          return null;
+          console.error('[VEO VERTEX ERROR RESPONSE]:', JSON.stringify(operation, null, 2));
+          return { error: operation.error.message || 'Operation failed' };
         }
 
         // Vertex AI / Veo predictions structure
         const videoBytes = operation.response?.predictions?.[0]?.bytesBase64Encoded;
         if (videoBytes) {
           console.log(`[VEO QUEUE] Operation ${operationName} finished successfully.`);
-          return `data:video/mp4;base64,${videoBytes}`;
+          return { outputUrl: `data:video/mp4;base64,${videoBytes}` };
         }
 
         // Fallback for different GenAI response structures
         const videoUri = operation.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-        if (videoUri) return videoUri;
+        if (videoUri) return { outputUrl: videoUri };
 
         console.error(`[VEO QUEUE] Operation done but no video data found in response:`, JSON.stringify(operation.response));
-        return null;
+        return { error: 'No video data found in response' };
       }
 
       console.log(`[VEO QUEUE] Operation ${operationName} still pending (${i + 1}/${MAX_POLLS})...`);
     } catch (e: any) {
-      console.error('[VEO QUEUE] Poll unexpected error:', e.message);
+      console.error('[VEO VERTEX FETCH ERROR]:', e);
     }
   }
 
   console.error(`[VEO QUEUE] Polling timeout for ${operationName} after ${MAX_POLLS} attempts.`);
-  return null; // timeout
+  return { error: 'Polling timeout' };
 }
 
 export const veoWorker = new Worker<VeoJobData>(
@@ -158,11 +158,12 @@ export const veoWorker = new Worker<VeoJobData>(
         console.log(`[VEO QUEUE] Started job ${jobId} (Operation: ${op.name})`);
 
         // Poll for completion via REST
-        outputUrl = await pollOperationREST(op.name);
+        const pollResult = await pollOperationREST(op.name);
         
-        if (!outputUrl) {
-          throw new Error('Video generation failed or timed out during polling');
+        if (pollResult.error) {
+          throw new Error(pollResult.error);
         }
+        outputUrl = pollResult.outputUrl || null;
       }
 
       if (!outputUrl) throw new Error('No output URL generated');
@@ -179,7 +180,7 @@ export const veoWorker = new Worker<VeoJobData>(
       console.log(`[VEO QUEUE] Job ${jobId} completed successfully for uid ${uid}`);
     } catch (err: any) {
       console.error(`[VEO QUEUE] Job ${jobId} execution error:`, err.message);
-      await updateJobStatus(jobId, 'failed');
+      await updateJobStatus(jobId, 'failed', undefined, err.message);
       // Only refund if it was a video job (image jobs don't consume video credits)
       if (outputType === 'video') {
         await refundVideoCredit(uid);

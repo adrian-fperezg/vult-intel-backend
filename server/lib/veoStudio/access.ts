@@ -183,11 +183,13 @@ export async function createJobDoc(uid: string, projectId: string, jobId: string
 export async function updateJobStatus(
   jobId: string,
   status: 'processing' | 'completed' | 'failed',
-  outputUrl?: string
+  outputUrl?: string,
+  error?: string
 ): Promise<void> {
   const db = getFirestore();
   const update: Record<string, any> = { status, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
   if (outputUrl) update.outputUrl = outputUrl;
+  if (error) update.error = error;
   await db.collection('veo_jobs').doc(jobId).update(update);
 }
 
