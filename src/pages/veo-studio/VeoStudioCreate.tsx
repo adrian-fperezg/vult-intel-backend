@@ -62,9 +62,9 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
   
   useEffect(() => {
     async function checkBrandKit() {
-      if (!projectId) return;
+      if (!projectId || !currentUser) return;
       try {
-        const token = await currentUser?.getIdToken();
+        const token = await currentUser.getIdToken();
         const res = await fetch(`${apiBase}/api/veo-studio/brand-kit?projectId=${projectId}`, {
           headers: { 
             'Authorization': `Bearer ${token}`
@@ -72,12 +72,7 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
         });
         if (res.ok) {
           const data = await res.json();
-          // Default to true only if the kit exists and is explicitly active
-          if (data && data.isActive) {
-            setUseBrandKit(true);
-          } else {
-            setUseBrandKit(false);
-          }
+          setUseBrandKit(!!(data && data.isActive));
         } else {
           setUseBrandKit(false);
         }
@@ -104,6 +99,8 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
     setIsEnhancing(true);
     try {
       const token = await currentUser?.getIdToken();
+      if (!token) throw new Error('Authentication required. Please refresh.');
+
       const res = await fetch(`${apiBase}/api/veo-studio/enhance-prompt`, {
         method: 'POST',
         headers: { 
@@ -133,6 +130,8 @@ export default function VeoStudioCreate({ projectId }: VeoStudioCreateProps) {
 
     try {
       const token = await currentUser?.getIdToken();
+      if (!token) throw new Error('Authentication required. Please refresh.');
+
       const endpoint = mode === 'text-to-image'
         ? `${apiBase}/api/veo-studio/generate-image`
         : mode === 'image-to-video'

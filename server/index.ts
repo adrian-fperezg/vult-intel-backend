@@ -3716,6 +3716,30 @@ app.put('/api/veo-studio/brand-kit', verifyFirebaseToken, async (req: AuthReques
   }
 });
 
+// GET /api/veo-studio/default-settings
+app.get('/api/veo-studio/default-settings', verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const uid = req.user?.uid;
+  const projectId = (req.query.projectId || req.headers['x-project-id']) as string;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  if (!projectId) return res.status(400).json({ error: 'projectId query parameter (or x-project-id header) is required' });
+
+  try {
+    const settings = await getBrandKit(uid, projectId + '_settings');
+    if (!settings) {
+      return res.status(200).json({
+        aspectRatio: '16:9',
+        resolution: '720p',
+        style: 'cinematic',
+        autoEnhance: true,
+      });
+    }
+    res.json(settings);
+  } catch (err: any) {
+    console.error('[VEO STUDIO] Error fetching default settings:', err);
+    res.status(500).json({ error: err.message || 'Error fetching default settings' });
+  }
+});
+
 // PUT /api/veo-studio/default-settings
 app.put('/api/veo-studio/default-settings', verifyFirebaseToken, async (req: AuthRequest, res) => {
   const uid = req.user?.uid;

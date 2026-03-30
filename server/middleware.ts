@@ -19,6 +19,7 @@ export const verifyFirebaseToken = async (req: AuthRequest, res: Response, next:
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('[AUTH ERROR] No Bearer token provided in Authorization header');
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
   }
 
@@ -26,6 +27,7 @@ export const verifyFirebaseToken = async (req: AuthRequest, res: Response, next:
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
+    console.log(`[AUTH SUCCESS] Valid token for uid: ${decodedToken.uid} (${decodedToken.email})`);
     req.user = decodedToken;
     next();
   } catch (error: any) {

@@ -48,9 +48,9 @@ export default function VeoStudioBrandKit({ projectId }: VeoStudioBrandKitProps)
 
   useEffect(() => {
     async function load() {
-      if (!projectId) return;
+      if (!projectId || !currentUser) return;
       try {
-        const token = await currentUser?.getIdToken();
+        const token = await currentUser.getIdToken();
         const res = await fetch(`${apiBase}/api/veo-studio/brand-kit?projectId=${projectId}`, {
           headers: { 
             'Authorization': `Bearer ${token}`
@@ -75,6 +75,8 @@ export default function VeoStudioBrandKit({ projectId }: VeoStudioBrandKitProps)
     setSavedOk(false);
     try {
       const token = await currentUser?.getIdToken();
+      if (!token) throw new Error('Authentication required');
+
       const res = await fetch(`${apiBase}/api/veo-studio/brand-kit`, {
         method: 'PUT',
         headers: { 

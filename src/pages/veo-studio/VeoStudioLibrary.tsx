@@ -33,10 +33,10 @@ export default function VeoStudioLibrary({ projectId }: VeoStudioLibraryProps) {
 
   useEffect(() => {
     async function load() {
-      if (!projectId) return;
+      if (!projectId || !currentUser) return;
       setIsLoading(true);
       try {
-        const token = await currentUser?.getIdToken();
+        const token = await currentUser.getIdToken();
         const res = await fetch(`${apiBase}/api/veo-studio/library?projectId=${projectId}`, {
           headers: { 
             'Authorization': `Bearer ${token}`
@@ -59,6 +59,8 @@ export default function VeoStudioLibrary({ projectId }: VeoStudioLibraryProps) {
     setDeletingId(id);
     try {
       const token = await currentUser?.getIdToken();
+      if (!token) throw new Error('Authentication required');
+
       const res = await fetch(`${apiBase}/api/veo-studio/library/${id}?projectId=${projectId}`, {
         method: 'DELETE',
         headers: { 

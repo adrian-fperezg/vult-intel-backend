@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings, Save, Loader2, ExternalLink, CheckCircle2, Film } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -33,6 +33,28 @@ export default function VeoStudioSettings({ projectId }: VeoStudioSettingsProps)
   });
   const [isSaving, setIsSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
+  const apiBase = import.meta.env.VITE_OUTREACH_API_URL || 'http://localhost:3001';
+
+  useEffect(() => {
+    async function load() {
+      if (!projectId || !currentUser) return;
+      try {
+        const token = await currentUser.getIdToken();
+        const res = await fetch(`${apiBase}/api/veo-studio/default-settings?projectId=${projectId}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSettings(data);
+        }
+      } catch (err) {
+        console.error('Failed to load settings:', err);
+      }
+    }
+    load();
+  }, [currentUser, projectId, apiBase]);
 
   const set = <K extends keyof DefaultSettings>(key: K, value: DefaultSettings[K]) =>
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -42,8 +64,9 @@ export default function VeoStudioSettings({ projectId }: VeoStudioSettingsProps)
     setSavedOk(false);
     try {
       const token = await currentUser?.getIdToken();
-      const apiBase = import.meta.env.VITE_OUTREACH_API_URL || 'http://localhost:3001';
-      await fetch(`${apiBase}/api/veo-studio/default-settings`, {
+      if (!token) throw new Error('Authentication required');
+
+      const res = await fetch(`${apiBase}/api/veo-studio/default-settings`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json', 
@@ -52,6 +75,8 @@ export default function VeoStudioSettings({ projectId }: VeoStudioSettingsProps)
         },
         body: JSON.stringify(settings),
       });
+      if (!res.ok) throw new Error('Failed to save');
+      
       setSavedOk(true);
       toast.success('Settings saved!');
       setTimeout(() => setSavedOk(false), 3000);
