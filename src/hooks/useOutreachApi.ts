@@ -597,6 +597,11 @@ export function useOutreachApi() {
     fetchMailboxes,
     disconnectMailbox,
     connectGmail,
+    // Snippets
+    fetchSnippets: () => get<any[]>('/snippets'),
+    createSnippet: (data: { name: string; body: string; vars?: string[] }) => post<any>('/snippets', data),
+    updateSnippet: (id: string, data: { name?: string; body?: string; vars?: string[] }) => patch<any>(`/snippets/${id}`, data),
+    deleteSnippet: (id: string) => del(`/snippets/${id}`),
     // Analytics
     fetchAnalytics,
     // Contact Lists & Suppression

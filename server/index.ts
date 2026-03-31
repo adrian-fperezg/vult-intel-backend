@@ -3843,6 +3843,107 @@ app.put('/api/veo-studio/default-settings', verifyFirebaseToken, async (req: Aut
 
 console.log('[VEO] Veo Studio Pack routes registered');
 
+// ─── SNIPPETS ─────────────────────────────────────────────────────────────────
+
+// GET /api/outreach/snippets
+app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID required" });
+
+  try {
+    const snippets = await db.all("SELECT * FROM outreach_snippets WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC", userId, projectId);
+    res.json(snippets);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/outreach/snippets
+app.post("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID required" });
+
+  const { name, body, vars } = req.body;
+  if (!name || !body) return res.status(400).json({ error: "Name and body are required" });
+
+  const id = uuidv4();
+  try {
+    await db.prepare(`
+      INSERT INTO outreach_snippets (id, user_id, project_id, name, body, vars)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, userId, projectId, name, body, JSON.stringify(vars || []));
+
+    const newSnippet = await db.get("SELECT * FROM outreach_snippets WHERE id = ?", id);
+    res.status(201).json(newSnippet);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/outreach/snippets/:id
+app.patch("/api/outreach/snippets/:id", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
+  const { id } = req.params;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID required" });
+
+  const { name, body, vars } = req.body;
+  
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (name !== undefined) {
+    fields.push("name = ?");
+    values.push(name);
+  }
+  if (body !== undefined) {
+    fields.push("body = ?");
+    values.push(body);
+  }
+  if (vars !== undefined) {
+    fields.push("vars = ?");
+    values.push(JSON.stringify(vars));
+  }
+
+  if (fields.length === 0) return res.status(400).json({ error: "No fields to update" });
+
+  fields.push("updated_at = CURRENT_TIMESTAMP");
+  values.push(id, userId, projectId);
+
+  try {
+    const result = await db.prepare(`UPDATE outreach_snippets SET ${fields.join(', ')} WHERE id = ? AND user_id = ? AND project_id = ?`).run(...values);
+    if (result.changes === 0) return res.status(404).json({ error: "Snippet not found" });
+
+    const updated = await db.get("SELECT * FROM outreach_snippets WHERE id = ?", id);
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/outreach/snippets/:id
+app.delete("/api/outreach/snippets/:id", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
+  const { id } = req.params;
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID required" });
+
+  try {
+    const result = await db.prepare("DELETE FROM outreach_snippets WHERE id = ? AND user_id = ? AND project_id = ?").run(id, userId, projectId);
+    if (result.changes === 0) return res.status(404).json({ error: "Snippet not found" });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 // ─── STARTUP CHECKS ───────────────────────────────────────────────────────────
 
 const aiKeysCheck = () => {

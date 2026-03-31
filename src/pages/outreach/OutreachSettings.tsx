@@ -12,8 +12,16 @@ import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { DomainAliasCard } from './components/DomainAliasCard';
 import DomainVerificationManager from './components/DomainVerificationManager';
+import TipTapEditor from './components/TipTapEditor';
 
 type SettingsTab = 'mailboxes' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications';
+
+const extractVars = (html: string) => {
+  const matches = html.match(/\{\{([^}]+)\}\}/g);
+  if (!matches) return [];
+  // removing {{ and }}
+  return [...new Set(matches.map(m => m.replace(/^{{|}}$/g, '')))];
+};
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<any> }> = [
   { id: 'mailboxes',     label: 'Mailboxes',     icon: Mail },
@@ -41,11 +49,7 @@ interface Mailbox {
   provider?: 'gmail' | 'smtp'; // Added provider for AliasManager
 }
 
-const SNIPPETS = [
-  { id: 'sn1', name: 'Value Proposition', body: 'We help {{company_type}} companies reduce {{pain_point}} by 40% in 90 days...', vars: ['company_type', 'pain_point'] },
-  { id: 'sn2', name: 'Meeting Request CTA', body: 'Would you be open to a 20-minute call this week? Here is my calendar: {{cal_link}}', vars: ['cal_link'] },
-  { id: 'sn3', name: 'Case Study Teaser', body: 'We recently helped {{similar_company}} achieve {{result}}. Happy to share the full case study.', vars: ['similar_company', 'result'] },
-];
+
 
 const MOCK_API_KEY = 'vlt_live_9f4e2b7c3d1a8e6f0b5c9a2d7f4e1b8c3d6a9f2e5b8c1d4f7a0e3b6c9d2f5a8';
 
@@ -64,6 +68,15 @@ export default function OutreachSettings() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+
+  // Snippets States
+  const [snippets, setSnippets] = useState<any[]>([]);
+  const [snippetsLoading, setSnippetsLoading] = useState(false);
+  const [showSnippetModal, setShowSnippetModal] = useState(false);
+  const [editingSnippet, setEditingSnippet] = useState<any>(null);
+  const [snippetName, setSnippetName] = useState('');
+  const [snippetBody, setSnippetBody] = useState('');
+  const [snippetSaving, setSnippetSaving] = useState(false);
 
   // Integration States
   const [hunterKeyInput, setHunterKeyInput] = useState('');
@@ -104,7 +117,71 @@ export default function OutreachSettings() {
     if (activeTab === 'integrations' && api.activeProjectId) {
       loadIntegrationStatus();
     }
+    if (activeTab === 'snippets' && api.activeProjectId) {
+      loadSnippets();
+    }
   }, [activeTab]);
+
+  const loadSnippets = async () => {
+    if (!api.activeProjectId) return;
+    setSnippetsLoading(true);
+    try {
+      const data = await api.fetchSnippets();
+      setSnippets(data || []);
+    } catch(err) {
+      toast.error("Failed to load snippets");
+    } finally {
+      setSnippetsLoading(false);
+    }
+  };
+
+  const handleSaveSnippet = async () => {
+    if (!snippetName.trim()) {
+      toast.error('Snippet name is required');
+      return;
+    }
+    if (!snippetBody.replace(/<[^>]*>?/gm, '').trim()) {
+      toast.error('Snippet body is required');
+      return;
+    }
+
+    setSnippetSaving(true);
+    try {
+      const vars = extractVars(snippetBody);
+      if (editingSnippet) {
+        await api.updateSnippet(editingSnippet.id, {
+          name: snippetName.trim(),
+          body: snippetBody,
+          vars
+        });
+        toast.success('Snippet updated');
+      } else {
+        await api.createSnippet({
+          name: snippetName.trim(),
+          body: snippetBody,
+          vars
+        });
+        toast.success('Snippet created');
+      }
+      setShowSnippetModal(false);
+      loadSnippets();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save snippet');
+    } finally {
+      setSnippetSaving(false);
+    }
+  };
+
+  const handleDeleteSnippet = async (id: string) => {
+    if (!window.confirm('Delete this snippet?')) return;
+    try {
+      await api.deleteSnippet(id);
+      toast.success('Snippet deleted');
+      loadSnippets();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete snippet');
+    }
+  };
 
   // When the active project changes: clear ALL stale data immediately, then reload
   useEffect(() => {
@@ -591,34 +668,86 @@ export default function OutreachSettings() {
 
         {/* ── SNIPPETS ── */}
         {activeTab === 'snippets' && (
-          <div className="space-y-6 w-full">
+          <div className="space-y-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">Email Snippets</h2>
                 <p className="text-sm text-slate-400 mt-0.5">Save reusable text blocks with variable placeholders</p>
               </div>
-              <TealButton size="sm"><Plus className="size-4" /> New Snippet</TealButton>
+              <TealButton 
+                size="sm" 
+                onClick={() => {
+                  setEditingSnippet(null);
+                  setSnippetName('');
+                  setSnippetBody('');
+                  setShowSnippetModal(true);
+                }}
+                disabled={!api.activeProjectId}
+              >
+                <Plus className="size-4" /> New Snippet
+              </TealButton>
             </div>
-            <div className="space-y-3">
-              {SNIPPETS.map(snippet => (
-                <div key={snippet.id} className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 group hover:border-white/15 transition-colors">
-                  <div className="flex items-start justify-between gap-4 mb-3">
-                    <h3 className="font-semibold text-white text-sm">{snippet.name}</h3>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"><Copy className="size-3.5" /></button>
-                      <button className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"><MoreHorizontal className="size-3.5" /></button>
+            
+            {!api.activeProjectId ? (
+              <OutreachEmptyState
+                icon={<Code2 />}
+                title="No project selected"
+                description="Select a project to view and manage your snippets."
+              />
+            ) : snippetsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+              </div>
+            ) : snippets.length === 0 ? (
+              <OutreachEmptyState
+                icon={<Code2 />}
+                title="No snippets found"
+                description="Create your first snippet to reuse content across emails."
+              />
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {snippets.map(snippet => (
+                  <div key={snippet.id} className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 group hover:border-white/15 transition-colors flex flex-col">
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <h3 className="font-semibold text-white text-sm">{snippet.name}</h3>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => {
+                            setEditingSnippet(snippet);
+                            setSnippetName(snippet.name);
+                            setSnippetBody(snippet.body);
+                            setShowSnippetModal(true);
+                          }}
+                          className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
+                          title="Edit"
+                        >
+                          <Settings2 className="size-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteSnippet(snippet.id)}
+                          className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+                          title="Delete"
+                        >
+                          <XCircle className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-sm text-slate-400 leading-relaxed mb-3 bg-black/20 rounded-lg px-4 py-3 flex-1 overflow-y-auto max-h-32 custom-scrollbar ProseMirror" 
+                         dangerouslySetInnerHTML={{ __html: snippet.body }} />
+                    <div className="flex items-center gap-2 mt-auto pt-2 border-t border-white/5">
+                      <p className="text-[10px] text-slate-600 uppercase tracking-wider shrink-0">Variables:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {snippet.vars?.length > 0 ? snippet.vars.map((v: string) => (
+                          <span key={v} className="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-500/10 border border-teal-500/20 text-teal-400">{`{{${v}}}`}</span>
+                        )) : (
+                          <span className="text-xs text-slate-600 italic">None</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <p className="text-sm text-slate-400 leading-relaxed mb-3 font-mono bg-black/20 rounded-lg px-4 py-3">{snippet.body}</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-[10px] text-slate-600 uppercase tracking-wider">Variables:</p>
-                    {snippet.vars.map(v => (
-                      <span key={v} className="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-500/10 border border-teal-500/20 text-teal-400">{`{{${v}}}`}</span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1188,6 +1317,74 @@ export default function OutreachSettings() {
                     </TealButton>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+        {/* SNIPPET MODAL */}
+        {showSnippetModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSnippetModal(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-2xl bg-[#0d1117] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-[#0d1117]">
+                <div>
+                  <h2 className="text-xl font-bold text-white tracking-tight">
+                    {editingSnippet ? 'Edit Snippet' : 'Create Snippet'}
+                  </h2>
+                </div>
+                <button 
+                  onClick={() => setShowSnippetModal(false)}
+                  className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  <XCircle className="size-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 bg-[#0d1117]">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Snippet Name / Tag</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. Value Props" 
+                    className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-teal-500/50 focus:outline-none"
+                    value={snippetName}
+                    onChange={(e) => setSnippetName(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500 mt-2">A short, recognizable name for this snippet.</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Body & Variables</label>
+                  <TipTapEditor 
+                    value={snippetBody} 
+                    onChange={setSnippetBody} 
+                    placeholder="Use {{variable_name}} to add dynamic fields automatically extracted below..."
+                    className="min-h-[300px]"
+                  />
+                  <div className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-3 mt-3">
+                    <div className="flex items-start gap-2">
+                       <Zap className="size-4 text-teal-400 shrink-0 mt-0.5" />
+                       <div className="text-xs text-teal-300">
+                         <strong>Auto Extractor enabled:</strong> Any text enclosed in double curly braces like <code className="bg-black/30 px-1 rounded mx-1">{'{{first_name}}'}</code> will be extracted properly as variables when used in the composer.
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-6 border-t border-white/5 bg-[#0d1117] shrink-0">
+                <TealButton 
+                  className="w-full py-4 text-md" 
+                  onClick={handleSaveSnippet}
+                  loading={snippetSaving}
+                >
+                  {editingSnippet ? 'Save Changes' : 'Create Snippet'}
+                </TealButton>
               </div>
             </motion.div>
           </div>

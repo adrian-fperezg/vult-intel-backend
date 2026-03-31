@@ -888,6 +888,20 @@ export const initDb = async () => {
         }
       }
 
+    // 21. Snippets
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_snippets (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        body TEXT NOT NULL,
+        vars TEXT DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Backfill current_step_id for enrollments
     const unmigratedEnrollments = await db.all("SELECT id FROM outreach_sequence_enrollments WHERE current_step_id IS NULL LIMIT 1");
     if (unmigratedEnrollments.length > 0) {
