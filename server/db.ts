@@ -90,7 +90,7 @@ export class DbWrapper {
 
   prepare(sql: string) {
     const convertedSql = this.convertSql(sql);
-    
+
     return {
       run: async (...params: any[]) => {
         if (this.isPostgres) {
@@ -141,7 +141,7 @@ export class DbWrapper {
     if (this.isPostgres) {
       const client = await this.pgPool!.connect();
       const tx = new DbWrapper(this.pgPool);
-      tx.client = client; 
+      tx.client = client;
       try {
         await client.query('BEGIN');
         const result = await cb(tx);
@@ -161,7 +161,7 @@ export class DbWrapper {
         return result;
       } catch (err) {
         // Rollback only if we're actually in a transaction to avoid errors
-        try { this.sqlite.prepare('ROLLBACK').run(); } catch(e) {}
+        try { this.sqlite.prepare('ROLLBACK').run(); } catch (e) { }
         throw err;
       }
     }
@@ -194,7 +194,7 @@ export const db = new DbWrapper();
 export const runMigrations = async () => {
   console.log('[DB] Checking for pending migrations...');
   const migrationsDir = path.resolve(__dirname, 'migrations');
-  
+
   // Ensure migrations log table exists
   await db.run(`
     CREATE TABLE IF NOT EXISTS migrations_log (
@@ -216,7 +216,7 @@ export const runMigrations = async () => {
     if (!appliedMigrations.includes(file)) {
       console.log(`[DB] Running migration: ${file}`);
       const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
-      
+
       try {
         await db.exec(sql);
         await db.run('INSERT INTO migrations_log (migration_name) VALUES (?)', file);
@@ -876,35 +876,35 @@ export const initDb = async () => {
       )
     `);
 
-      const missingEnrollCols = [
-        { name: 'current_step_id', type: 'TEXT' },
-        { name: 'next_step_id', type: 'TEXT' },
-        { name: 'scheduled_at', type: 'TIMESTAMP' },
-        { name: 'last_error', type: 'TEXT' },
-        { name: 'last_executed_at', type: 'TIMESTAMP' },
-        { name: 'opened', type: 'BOOLEAN DEFAULT FALSE' },
-        { name: 'completed_at', type: 'TIMESTAMP' }
-      ];
+    const missingEnrollCols = [
+      { name: 'current_step_id', type: 'TEXT' },
+      { name: 'next_step_id', type: 'TEXT' },
+      { name: 'scheduled_at', type: 'TIMESTAMP' },
+      { name: 'last_error', type: 'TEXT' },
+      { name: 'last_executed_at', type: 'TIMESTAMP' },
+      { name: 'opened', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'completed_at', type: 'TIMESTAMP' }
+    ];
 
-      if (db.isPostgres) {
-        for (const col of missingEnrollCols) {
-          try {
-            await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-          } catch (err) {
-            console.warn(`[DB] PG Migration for enrollment column ${col.name} failed:`, (err as Error).message);
-          }
-        }
-      } else {
-        const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
-        const enrollColNames = (enrollCols || []).map((c: any) => c.name);
-        
-        for (const col of missingEnrollCols) {
-          if (!enrollColNames.includes(col.name)) {
-            console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_enrollments`);
-            await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN ${col.name} ${col.type}`);
-          }
+    if (db.isPostgres) {
+      for (const col of missingEnrollCols) {
+        try {
+          await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`[DB] PG Migration for enrollment column ${col.name} failed:`, (err as Error).message);
         }
       }
+    } else {
+      const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
+      const enrollColNames = (enrollCols || []).map((c: any) => c.name);
+
+      for (const col of missingEnrollCols) {
+        if (!enrollColNames.includes(col.name)) {
+          console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_enrollments`);
+          await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN ${col.name} ${col.type}`);
+        }
+      }
+    }
 
     // 21. Snippets
     await db.run(`
@@ -950,7 +950,7 @@ export const initDb = async () => {
       const allSteps = await db.all<{ id: string, sequence_id: string, step_number: number }>(
         "SELECT id, sequence_id, step_number FROM outreach_sequence_steps ORDER BY sequence_id, step_number"
       );
-      
+
       let prevId: string | null = null;
       let prevSeqId: string | null = null;
 
