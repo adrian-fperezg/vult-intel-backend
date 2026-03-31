@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Users, Plus, Trash2, ArrowRight, Settings, 
+import {
+  Users, Plus, Trash2, ArrowRight, Settings,
   Search, Filter, Mail, ChevronRight, X,
   Save, Clock, Paperclip, AlertCircle, Check, FileText,
   Mailbox, Globe, ShieldCheck, UserPlus, Play, Pause, ArrowLeft,
@@ -76,16 +76,16 @@ interface StepNodeProps {
   analytics?: Record<string, any>;
 }
 
-function StepNode({ 
-  step, 
-  allSteps, 
-  isFirst, 
-  onUpdate, 
-  onUpdateConfig, 
-  onRemove, 
-  onAddStep, 
+function StepNode({
+  step,
+  allSteps,
+  isFirst,
+  onUpdate,
+  onUpdateConfig,
+  onRemove,
+  onAddStep,
   onAddCondition,
-  isOptimizing, 
+  isOptimizing,
   handleOptimizeStep,
   activeStepId,
   setActiveStepId,
@@ -94,7 +94,7 @@ function StepNode({
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
   const isExpanded = activeStepId === step.id;
-  
+
   const children = allSteps.filter(s => s.parent_step_id === step.id);
   const yesChild = children.find(c => c.branch_path === 'yes');
   const noChild = children.find(c => c.branch_path === 'no');
@@ -103,7 +103,7 @@ function StepNode({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     setIsUploading(true);
     try {
       const response = await uploadFile(file);
@@ -144,8 +144,8 @@ function StepNode({
         animate={{ opacity: 1, y: 0 }}
         className={cn(
           "group relative w-full flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
-          step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02] p-3" : 
-          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
+          step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02] p-3" :
+            isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
         )}
       >
         <div className={cn(
@@ -156,13 +156,13 @@ function StepNode({
             <div className={cn(
               "rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
               isExpanded ? "size-10" : "size-8",
-              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" : 
-              step.step_type === 'condition' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
-              "bg-white/5 border-white/10 text-slate-400"
+              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" :
+                step.step_type === 'condition' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
+                  "bg-white/5 border-white/10 text-slate-400"
             )}>
-              {step.step_type === 'email' ? <Mail className={cn(isExpanded ? "size-5" : "size-4")} /> : 
-               step.step_type === 'condition' ? <Filter className={cn(isExpanded ? "size-5" : "size-4")} /> :
-               <Clock className={cn(isExpanded ? "size-5" : "size-4")} />}
+              {step.step_type === 'email' ? <Mail className={cn(isExpanded ? "size-5" : "size-4")} /> :
+                step.step_type === 'condition' ? <Filter className={cn(isExpanded ? "size-5" : "size-4")} /> :
+                  <Clock className={cn(isExpanded ? "size-5" : "size-4")} />}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
@@ -201,7 +201,7 @@ function StepNode({
               </div>
             )}
             {!isExpanded && <FileText className="size-3.5 text-slate-500" />}
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); onRemove(step.id); }}
               className="p-2 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
             >
@@ -209,7 +209,7 @@ function StepNode({
             </button>
           </div>
         </div>
-        
+
         {/* Expanded Analytics Row */}
         {isExpanded && step.step_type === 'email' && (
           <div className="mt-4 grid grid-cols-4 gap-2">
@@ -222,7 +222,7 @@ function StepNode({
                 <span className="text-xs font-bold text-white leading-none mt-0.5">{analytics?.[step.id]?.sent ?? 0}</span>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
               <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 group-hover/pill:bg-blue-500/20 transition-colors">
                 <Eye className="size-3.5" />
@@ -290,8 +290,8 @@ function StepNode({
 
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Subject Line</label>
-                  <input 
-                    value={step.config.subject || ''} 
+                  <input
+                    value={step.config.subject || ''}
                     onChange={e => onUpdateConfig(step.id, { subject: e.target.value })}
                     placeholder="Enter subject..."
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-teal-500/40 transition-all"
@@ -300,34 +300,34 @@ function StepNode({
 
                 <div className="flex-1 flex flex-col min-h-[300px]">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Email Content</label>
-                  <TipTapEditor 
-                    value={step.config.body_html || ''} 
+                  <TipTapEditor
+                    value={step.config.body_html || ''}
                     onChange={val => onUpdateConfig(step.id, { body_html: val })}
                     onOptimize={() => handleOptimizeStep(step.id)}
                     isOptimizing={isOptimizing}
                     onAttachFile={() => document.getElementById(`file-upload-${step.id}`)?.click()}
                   />
-                  <input 
+                  <input
                     type="file"
                     id={`file-upload-${step.id}`}
                     className="hidden"
                     onChange={handleFileUpload}
                   />
-                  
+
                   {isUploading && (
                     <div className="mt-2 flex items-center gap-2 text-[10px] text-teal-400 font-bold animate-pulse">
                       <div className="size-3 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
                       Uploading attachment...
                     </div>
                   )}
-                  
+
                   {step.attachments && step.attachments.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {step.attachments.map((file: any) => (
                         <div key={file.id} className="flex items-center gap-2 px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] text-slate-400">
                           <Paperclip className="size-3 text-teal-400" />
                           <span className="truncate max-w-[150px]">{file.name}</span>
-                          <button 
+                          <button
                             onClick={() => removeAttachment(file.id)}
                             className="hover:text-red-400 transition-colors"
                           >
@@ -339,9 +339,9 @@ function StepNode({
                   )}
                 </div>
               </div>
-              
+
               <div className="pt-2 flex justify-center">
-                <button 
+                <button
                   onClick={() => onAddCondition(step.id)}
                   className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 text-purple-400 rounded-xl border border-purple-500/20 hover:bg-purple-500/20 transition-all text-[10px] font-bold uppercase tracking-widest"
                 >
@@ -397,7 +397,7 @@ function StepNode({
                     />
                   </div>
                   <p className="text-[9px] text-slate-600 leading-relaxed">
-                    If set, the reply body will be scanned for this keyword.<br/>
+                    If set, the reply body will be scanned for this keyword.<br />
                     ✅ <span className="text-green-500/60">Found</span> → YES branch · ❌ <span className="text-red-500/60">Not found</span> → NO branch &amp; email stays unread
                   </p>
                 </div>
@@ -422,9 +422,9 @@ function StepNode({
             </div>
             <div className="ml-6 pl-4 border-l-2 border-green-500/20 mt-2">
               {yesChild ? (
-                <StepNode 
-                  step={yesChild} 
-                  allSteps={allSteps} 
+                <StepNode
+                  step={yesChild}
+                  allSteps={allSteps}
                   isFirst={true}
                   onUpdate={onUpdate}
                   onUpdateConfig={onUpdateConfig}
@@ -438,7 +438,7 @@ function StepNode({
                   analytics={analytics}
                 />
               ) : (
-                <button 
+                <button
                   onClick={() => onAddStep(step.id, 'yes')}
                   className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
                 >
@@ -457,9 +457,9 @@ function StepNode({
             </div>
             <div className="ml-6 pl-4 border-l-2 border-red-500/20 mt-2">
               {noChild ? (
-                <StepNode 
-                  step={noChild} 
-                  allSteps={allSteps} 
+                <StepNode
+                  step={noChild}
+                  allSteps={allSteps}
                   isFirst={true}
                   onUpdate={onUpdate}
                   onUpdateConfig={onUpdateConfig}
@@ -473,7 +473,7 @@ function StepNode({
                   analytics={analytics}
                 />
               ) : (
-                <button 
+                <button
                   onClick={() => onAddStep(step.id, 'no')}
                   className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
                 >
@@ -488,9 +488,9 @@ function StepNode({
       ) : (
         <div className="flex flex-col items-center w-full">
           {defaultChild && (
-            <StepNode 
-              step={defaultChild} 
-              allSteps={allSteps} 
+            <StepNode
+              step={defaultChild}
+              allSteps={allSteps}
               isFirst={false}
               onUpdate={onUpdate}
               onUpdateConfig={onUpdateConfig}
@@ -507,7 +507,7 @@ function StepNode({
           {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
             <div className="flex flex-col items-center w-full">
               <div className="h-5 w-px bg-white/10" />
-              <button 
+              <button
                 onClick={() => onAddStep(step.id, 'default')}
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold"
               >
@@ -535,7 +535,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = (searchParams.get('view') as 'builder' | 'settings' | 'recipients' | 'analytics') || 'analytics';
-  
+
   const setActiveView = (view: 'builder' | 'settings' | 'recipients' | 'analytics') => {
     setSearchParams(prev => {
       const newParams = new URLSearchParams(prev);
@@ -547,12 +547,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
 
-  
+
   // DAG States & Scroll Persistence
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
-  
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -646,7 +646,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       }
       setMailboxes(mailboxData);
       setIdentities(identityData);
-      
+
       // Load Analytics
       try {
         const analyticsData = await api.fetchStepAnalytics(sequenceId);
@@ -676,36 +676,37 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       toast.error('Sequence data not loaded');
       return;
     }
-    
+
     setIsSaving(true);
     try {
       // 1. Update sequence basic info
-      await api.updateSequence(sequenceId, { 
+      await api.updateSequence(sequenceId, {
         name: sequence.name,
         mailbox_id: sequence.mailbox_id,
         daily_send_limit: sequence.daily_send_limit,
         stop_on_reply: sequence.stop_on_reply,
+        smart_intent_bypass: sequence.smart_intent_bypass,
         smart_send_min_delay: sequence.smart_send_min_delay,
         smart_send_max_delay: sequence.smart_send_max_delay,
         from_email: sequence.from_email,
         from_name: sequence.from_name,
-        custom_intent_logic: sequence.custom_intent_logic
+        custom_intent_logic: (sequence as any).custom_intent_logic
       });
-      
+
       // 2. Update all steps - ensure attachments are stringified
       const stepsToSave = steps.map(s => ({
         ...s,
         attachments: JSON.stringify(s.attachments)
       }));
-      
+
       await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
-      
+
       setHasUnsavedChanges(false);
       setLastSavedTime(new Date());
       toast.success('Sequence saved successfully');
     } catch (err: any) {
       console.error('Save error:', err);
-      
+
       // Detailed error handling for project isolation
       if (err.status === 403 || err.message?.includes('403')) {
         toast.error('Access Denied: This sequence belongs to another project.');
@@ -757,7 +758,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   const handleSelectCondition = (conditionType: 'opened' | 'clicked' | 'replied') => {
     if (!pendingConditionParentId) return;
-    
+
     const newStep: Step = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       step_number: steps.length + 1,
@@ -785,7 +786,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
 
   const handleUpdateStepConfig = (stepId: string, updates: any) => {
-    setSteps(steps.map(s => 
+    setSteps(steps.map(s =>
       s.id === stepId ? { ...s, config: { ...s.config, ...updates } } : s
     ));
     setHasUnsavedChanges(true);
@@ -815,22 +816,22 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       toast.error('Please write some content first.');
       return;
     }
-    
+
     setIsOptimizing(true);
     try {
       const response = await fetch(`${import.meta.env.VITE_OUTREACH_API_URL || ''}/api/outreach/ai/optimize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           content: step.config.body_html,
           subject: step.config.subject
         }),
       });
       if (!response.ok) throw new Error('Failed to optimize');
       const data = await response.json();
-      
-      setSteps(prev => prev.map(s => s.id === stepId 
-        ? { ...s, config: { ...s.config, body_html: data.optimizedContent } } 
+
+      setSteps(prev => prev.map(s => s.id === stepId
+        ? { ...s, config: { ...s.config, body_html: data.optimizedContent } }
         : s
       ));
       setHasUnsavedChanges(true);
@@ -877,16 +878,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   const handleAssignRecipients = async (recipients: any[]) => {
     if (!sequenceId || !activeProjectId) return;
-    
+
     // Determine if these are manual contact objects or just IDs
     const isManual = recipients.length > 0 && typeof recipients[0] === 'object';
-    const payload = isManual 
+    const payload = isManual
       ? { recipients, project_id: activeProjectId }
       : { contact_ids: recipients, project_id: activeProjectId };
 
     try {
       const result = await api.addSequenceRecipients(sequenceId, payload);
-      
+
       if (result.success && result.addedContacts) {
         setSequence(prev => {
           if (!prev) return prev;
@@ -937,7 +938,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       {/* Top Navigation Bar */}
       <header className="h-14 border-b border-white/5 bg-[#161b22]/50 backdrop-blur-md flex items-center justify-between px-4 z-20">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={onBack}
             className="p-2 hover:bg-white/5 rounded-lg transition-colors text-slate-400 hover:text-white"
           >
@@ -945,8 +946,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           </button>
           <div className="h-4 w-px bg-white/10" />
           <div className="flex flex-col">
-            <input 
-              value={sequence?.name || ''} 
+            <input
+              value={sequence?.name || ''}
               onChange={e => { setSequence(prev => prev ? { ...prev, name: e.target.value } : null); setHasUnsavedChanges(true); }}
               className="bg-transparent border-none outline-none font-bold text-white text-sm focus:ring-0 p-0"
               placeholder="Sequence Name"
@@ -971,26 +972,26 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             ))}
           </div>
           <div className="h-4 w-px bg-white/10 mx-1" />
-          
+
           <div className="flex items-center gap-2">
-             {hasUnsavedChanges ? (
-               <div className="flex items-center gap-1.5 px-3 h-[34px] bg-red-500/10 border border-red-500/20 rounded-xl animate-in fade-in duration-300">
-                 <AlertCircle className="size-3 text-[#E24B4A]" />
-                 <span className="text-[10px] font-black uppercase tracking-widest text-[#E24B4A] whitespace-nowrap">
-                   ⚠️ Unsaved Changes
-                 </span>
-               </div>
-             ) : (
-               <div className="flex items-center gap-1.5 px-3 h-[34px] bg-emerald-500/5 rounded-xl border border-white/5">
-                 <Check className="size-3 text-emerald-500/40" />
-                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
-                   All changes saved
-                 </span>
-               </div>
-             )}
+            {hasUnsavedChanges ? (
+              <div className="flex items-center gap-1.5 px-3 h-[34px] bg-red-500/10 border border-red-500/20 rounded-xl animate-in fade-in duration-300">
+                <AlertCircle className="size-3 text-[#E24B4A]" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#E24B4A] whitespace-nowrap">
+                  ⚠️ Unsaved Changes
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 h-[34px] bg-emerald-500/5 rounded-xl border border-white/5">
+                <Check className="size-3 text-emerald-500/40" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
+                  All changes saved
+                </span>
+              </div>
+            )}
           </div>
           <div className="h-6 w-px bg-white/10" />
-          
+
           <button
             onClick={refreshAnalytics}
             className="p-2 hover:bg-white/5 rounded-xl text-slate-500 hover:text-teal-400 transition-all mr-2"
@@ -1008,11 +1009,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             <Save className="size-3.5" />
             Save Sequence
           </TealButton>
-          
+
           {sequence?.status === 'active' && (
             <div className="flex items-center gap-3">
               <OutreachBadge variant="green" dot className="h-[34px] px-4 flex items-center">Active</OutreachBadge>
-              <button 
+              <button
                 onClick={() => handleToggleStatus('paused')}
                 className="flex items-center gap-2 h-[34px] px-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 transition-all text-[10px] font-black uppercase tracking-widest"
               >
@@ -1025,8 +1026,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           {sequence?.status === 'paused' && (
             <div className="flex items-center gap-3">
               <OutreachBadge variant="yellow" dot className="h-[34px] px-4 flex items-center">Paused</OutreachBadge>
-              <TealButton 
-                className="h-[34px] px-6 text-[10px] font-black uppercase tracking-widest rounded-xl" 
+              <TealButton
+                className="h-[34px] px-6 text-[10px] font-black uppercase tracking-widest rounded-xl"
                 onClick={() => handleToggleStatus('active')}
               >
                 <Play className="size-3.5" /> Resume Sequence
@@ -1035,8 +1036,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           )}
 
           {sequence?.status === 'draft' && (
-            <TealButton 
-              className="h-[34px] px-6 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-teal-500/5" 
+            <TealButton
+              className="h-[34px] px-6 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-teal-500/5"
               onClick={handleActivate}
             >
               <Play className="size-3.5" /> Launch
@@ -1047,16 +1048,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
       <main className="flex-1 overflow-hidden">
         {activeView === 'builder' && (
-          <div 
+          <div
             ref={canvasRef}
             onScroll={onScroll}
             className="h-full overflow-y-auto overflow-x-hidden bg-[#0d1117] relative custom-scrollbar"
           >
             <div className="w-full max-w-2xl mx-auto py-8 px-6">
               {rootStep ? (
-                <StepNode 
-                  step={rootStep} 
-                  allSteps={steps} 
+                <StepNode
+                  step={rootStep}
+                  allSteps={steps}
                   isFirst={true}
                   onUpdate={handleUpdateStep}
                   onUpdateConfig={handleUpdateStepConfig}
@@ -1078,7 +1079,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   <p className="text-sm text-slate-500 max-w-sm mb-8 text-center">
                     Start by adding your first email step. You can later add conditions and branches to automate your outreach.
                   </p>
-                  <button 
+                  <button
                     onClick={() => addStep(null, 'default')}
                     className="flex items-center justify-center gap-2 w-full max-w-xs py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
                   >
@@ -1101,13 +1102,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   </h3>
                   <p className="text-sm text-slate-500 mt-1">Choose which mailbox will send the emails for this sequence.</p>
                 </div>
-                
+
                 <div className="grid grid-cols-1 gap-3">
                   {identities.map((ident, idx) => (
                     <button
                       key={`${ident.mailbox_id}-${ident.email}-${idx}`}
-                      onClick={() => setSequence(prev => prev ? { 
-                        ...prev, 
+                      onClick={() => setSequence(prev => prev ? {
+                        ...prev,
                         mailbox_id: ident.mailbox_id,
                         from_email: ident.email,
                         from_name: ident.name
@@ -1115,7 +1116,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                       className={cn(
                         "flex items-center justify-between p-4 rounded-2xl border transition-all text-left",
                         sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id
-                          ? "bg-teal-500/10 border-teal-500/30" 
+                          ? "bg-teal-500/10 border-teal-500/30"
                           : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/10"
                       )}
                     >
@@ -1148,10 +1149,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     </button>
                   ))}
                   {identities.length === 0 && (
-                     <div className="p-8 rounded-2xl border-2 border-dashed border-white/5 text-center bg-white/[0.02]">
-                        <p className="text-sm text-slate-500 mb-4">No mailboxes connected to this project.</p>
-                        <TealButton variant="outline" size="sm" onClick={() => (window as any).location.href = '/outreach/mailboxes'}>Connect Mailbox</TealButton>
-                     </div>
+                    <div className="p-8 rounded-2xl border-2 border-dashed border-white/5 text-center bg-white/[0.02]">
+                      <p className="text-sm text-slate-500 mb-4">No mailboxes connected to this project.</p>
+                      <TealButton variant="outline" size="sm" onClick={() => (window as any).location.href = '/outreach/mailboxes'}>Connect Mailbox</TealButton>
+                    </div>
                   )}
                 </div>
               </section>
@@ -1168,7 +1169,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Daily Send Limit</label>
                     <div className="relative">
-                      <input 
+                      <input
                         type="number"
                         value={sequence?.daily_send_limit || 50}
                         onChange={e => setSequence(prev => prev ? { ...prev, daily_send_limit: parseInt(e.target.value) } : null)}
@@ -1178,43 +1179,43 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     </div>
                   </div>
                   <div className="space-y-4">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sequence Behavior</label>
-                     <button
-                        onClick={() => setSequence(prev => prev ? { ...prev, stop_on_reply: !prev.stop_on_reply } : null)}
-                        className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
-                     >
-                        <span className="text-sm text-slate-300">Stop on Reply</span>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sequence Behavior</label>
+                    <button
+                      onClick={() => setSequence(prev => prev ? { ...prev, stop_on_reply: !prev.stop_on_reply } : null)}
+                      className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
+                    >
+                      <span className="text-sm text-slate-300">Stop on Reply</span>
+                      <div className={cn(
+                        "w-10 h-5 rounded-full relative transition-colors p-1",
+                        sequence?.stop_on_reply ? "bg-teal-600" : "bg-white/10"
+                      )}>
                         <div className={cn(
-                           "w-10 h-5 rounded-full relative transition-colors p-1",
-                           sequence?.stop_on_reply ? "bg-teal-600" : "bg-white/10"
-                        )}>
-                           <div className={cn(
-                              "size-3 rounded-full bg-white transition-all shadow-sm",
-                              sequence?.stop_on_reply ? "translate-x-5" : "translate-x-0"
-                           )} />
-                        </div>
-                     </button>
+                          "size-3 rounded-full bg-white transition-all shadow-sm",
+                          sequence?.stop_on_reply ? "translate-x-5" : "translate-x-0"
+                        )} />
+                      </div>
+                    </button>
                   </div>
                   <div className="space-y-4">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Intelligent Flow</label>
-                     <button
-                        onClick={() => setSequence(prev => prev ? { ...prev, smart_intent_bypass: !prev.smart_intent_bypass } : null)}
-                        className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
-                     >
-                        <div className="flex flex-col items-start gap-0.5">
-                           <span className="text-sm text-slate-300">Smart Intent Bypass</span>
-                           <span className="text-[10px] text-slate-500">Keep sequence active if no keyword match is found</span>
-                        </div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Intelligent Flow</label>
+                    <button
+                      onClick={() => setSequence(prev => prev ? { ...prev, smart_intent_bypass: !prev.smart_intent_bypass } : null)}
+                      className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
+                    >
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span className="text-sm text-slate-300">Smart Intent Bypass</span>
+                        <span className="text-[10px] text-slate-500">Keep sequence active if no keyword match is found</span>
+                      </div>
+                      <div className={cn(
+                        "w-10 h-5 rounded-full relative transition-colors p-1",
+                        sequence?.smart_intent_bypass ? "bg-purple-600" : "bg-white/10"
+                      )}>
                         <div className={cn(
-                           "w-10 h-5 rounded-full relative transition-colors p-1",
-                           sequence?.smart_intent_bypass ? "bg-purple-600" : "bg-white/10"
-                        )}>
-                           <div className={cn(
-                              "size-3 rounded-full bg-white transition-all shadow-sm",
-                              sequence?.smart_intent_bypass ? "translate-x-5" : "translate-x-0"
-                           )} />
-                        </div>
-                     </button>
+                          "size-3 rounded-full bg-white transition-all shadow-sm",
+                          sequence?.smart_intent_bypass ? "translate-x-5" : "translate-x-0"
+                        )} />
+                      </div>
+                    </button>
                   </div>
                 </div>
               </section>
@@ -1224,81 +1225,81 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
         {activeView === 'recipients' && sequence && (
           <div className="h-full overflow-y-auto p-12 bg-[#0d1117] custom-scrollbar">
-             <div className="max-w-5xl mx-auto space-y-8">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Users className="size-5 text-teal-400" /> Active Audience
-                    <OutreachBadge variant="teal" className="ml-2">{(sequence as any)?.recipients?.length || 0}</OutreachBadge>
-                  </h3>
-                  <div className="flex gap-3">
-                    <TealButton variant="solid" size="md" onClick={() => setIsRecipientModalOpen(true)} className="rounded-xl">
-                      <UserPlus className="size-4" /> Add Recipients
-                    </TealButton>
+            <div className="max-w-5xl mx-auto space-y-8">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Users className="size-5 text-teal-400" /> Active Audience
+                  <OutreachBadge variant="teal" className="ml-2">{(sequence as any)?.recipients?.length || 0}</OutreachBadge>
+                </h3>
+                <div className="flex gap-3">
+                  <TealButton variant="solid" size="md" onClick={() => setIsRecipientModalOpen(true)} className="rounded-xl">
+                    <UserPlus className="size-4" /> Add Recipients
+                  </TealButton>
+                </div>
+              </div>
+
+              {((sequence as any)?.recipients?.length || 0) > 0 ? (
+                <div className="bg-[#161b22] border border-white/5 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/5 bg-white/5">
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Name</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Status</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {(sequence as any).recipients.map((r: any) => (
+                        <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
+                          <td className="px-6 py-4">
+                            <span className="text-sm font-medium text-white">{r.email}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-slate-300">{r.first_name} {r.last_name}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-slate-400 italic opacity-70">{r.company || '—'}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {r.enrollment_status ? (
+                              <OutreachBadge variant={r.enrollment_status === 'active' ? 'green' : 'gray'}>
+                                {r.enrollment_status}
+                              </OutreachBadge>
+                            ) : (
+                              <span className="text-xs text-slate-600 font-medium">Pending</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => handleRemoveRecipient(r.contact_id)}
+                              className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-20 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.01] text-center">
+                  <div className="size-20 rounded-3xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-6">
+                    <Users className="size-8 text-teal-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">Build Your Audience</h3>
+                  <p className="text-sm text-slate-500 max-w-sm mb-8">
+                    No recipients added yet. Add contacts to this sequence to start your outreach campaign.
+                  </p>
+                  <div className="flex gap-4">
+                    <TealButton variant="outline" onClick={() => setIsRecipientModalOpen(true)}><UserPlus className="size-4" /> Add from CRM</TealButton>
+                    <TealButton variant="ghost" onClick={() => setIsRecipientModalOpen(true)}>Bulk Import</TealButton>
                   </div>
                 </div>
-
-                {((sequence as any)?.recipients?.length || 0) > 0 ? (
-                  <div className="bg-[#161b22] border border-white/5 rounded-2xl overflow-hidden">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-white/5 bg-white/5">
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Name</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Status</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {(sequence as any).recipients.map((r: any) => (
-                          <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
-                            <td className="px-6 py-4">
-                              <span className="text-sm font-medium text-white">{r.email}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-sm text-slate-300">{r.first_name} {r.last_name}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-sm text-slate-400 italic opacity-70">{r.company || '—'}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              {r.enrollment_status ? (
-                                <OutreachBadge variant={r.enrollment_status === 'active' ? 'green' : 'gray'}>
-                                  {r.enrollment_status}
-                                </OutreachBadge>
-                              ) : (
-                                <span className="text-xs text-slate-600 font-medium">Pending</span>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <button 
-                                onClick={() => handleRemoveRecipient(r.contact_id)}
-                                className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-20 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.01] text-center">
-                    <div className="size-20 rounded-3xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-6">
-                      <Users className="size-8 text-teal-400" />
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Build Your Audience</h3>
-                    <p className="text-sm text-slate-500 max-w-sm mb-8">
-                      No recipients added yet. Add contacts to this sequence to start your outreach campaign.
-                    </p>
-                    <div className="flex gap-4">
-                      <TealButton variant="outline" onClick={() => setIsRecipientModalOpen(true)}><UserPlus className="size-4" /> Add from CRM</TealButton>
-                      <TealButton variant="ghost" onClick={() => setIsRecipientModalOpen(true)}>Bulk Import</TealButton>
-                    </div>
-                  </div>
-                )}
-             </div>
+              )}
+            </div>
           </div>
         )}
 
