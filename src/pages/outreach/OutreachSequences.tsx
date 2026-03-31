@@ -26,6 +26,7 @@ interface Sequence {
   open_rate: number;
   reply_rate: number;
   created_at: string;
+  smart_intent_bypass: boolean;
 }
 
 export default function OutreachSequences() {
@@ -37,7 +38,7 @@ export default function OutreachSequences() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
   const [globalStats, setGlobalStats] = useState<any>(null);
-  
+
   const [searchParams, setSearchParams] = useSearchParams();
   const editingId = searchParams.get('seqId');
 
@@ -145,10 +146,10 @@ export default function OutreachSequences() {
             <p className="text-sm text-slate-500 mt-1">Automated multi-channel outreach workflows.</p>
           </div>
           <div className="flex items-center gap-3">
-             <button
+            <button
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all group"
             >
-              <Sparkles className="size-4 text-teal-400 group-hover:scale-110 transition-transform" /> 
+              <Sparkles className="size-4 text-teal-400 group-hover:scale-110 transition-transform" />
               AI Assistant
             </button>
             <TealButton onClick={handleCreate}>
@@ -159,7 +160,7 @@ export default function OutreachSequences() {
 
         {/* AI Insight Engine Banner */}
         {globalStats?.insight && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-teal-500/5 border border-teal-500/20 rounded-2xl p-4 flex items-start gap-4"
@@ -182,26 +183,26 @@ export default function OutreachSequences() {
 
         {/* Stats Bar */}
         <div className="grid grid-cols-4 gap-4">
-          <OutreachMetricCard 
-            label="Daily Send Velocity" 
-            value={`${globalStats?.dailySendVelocity || 0} / 100`} 
+          <OutreachMetricCard
+            label="Daily Send Velocity"
+            value={`${globalStats?.dailySendVelocity || 0} / 100`}
             sub="Global Project Limit"
             teal={(globalStats?.dailySendVelocity || 0) > 0}
             icon={<Zap className="size-4" />}
           />
-          <OutreachMetricCard 
-            label="Active Sequences" 
-            value={globalStats?.activeSequences || 0} 
+          <OutreachMetricCard
+            label="Active Sequences"
+            value={globalStats?.activeSequences || 0}
             icon={<Play className="size-4" />}
           />
-          <OutreachMetricCard 
-            label="Total Recipients" 
-            value={globalStats?.totalRecipients || 0} 
+          <OutreachMetricCard
+            label="Total Recipients"
+            value={globalStats?.totalRecipients || 0}
             icon={<Mail className="size-4" />}
           />
-          <OutreachMetricCard 
-            label="Overall Open Rate" 
-            value={globalStats?.overallOpenRate || "0.0%"} 
+          <OutreachMetricCard
+            label="Overall Open Rate"
+            value={globalStats?.overallOpenRate || "0.0%"}
             icon={<BarChart3 className="size-4" />}
           />
         </div>
@@ -224,7 +225,7 @@ export default function OutreachSequences() {
           </div>
           <div className="flex-1 max-w-md relative group">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
-            <input 
+            <input
               type="text"
               placeholder="Search sequences..."
               value={searchTerm}
@@ -262,26 +263,26 @@ export default function OutreachSequences() {
                   onClick={() => setEditingId(seq.id)}
                 >
                   <div className="absolute top-0 left-0 w-1 h-full bg-teal-500 scale-y-0 group-hover:scale-y-100 transition-transform origin-top duration-300" />
-                  
+
                   <div className="flex items-start justify-between mb-4">
                     <OutreachBadge variant={seq.status === 'active' ? 'green' : 'gray'} dot={seq.status === 'active'}>
                       {seq.status}
                     </OutreachBadge>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                         onClick={(e) => { e.stopPropagation(); handleDuplicate(seq.id); }}
-                         disabled={!!isDuplicating}
-                         className={cn(
-                           "p-1.5 rounded-lg text-slate-600 transition-colors",
-                           isDuplicating === seq.id ? "bg-teal-500/10 text-teal-400" : "hover:bg-teal-500/10 hover:text-teal-400"
-                         )}
-                         title="Duplicate Sequence"
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDuplicate(seq.id); }}
+                        disabled={!!isDuplicating}
+                        className={cn(
+                          "p-1.5 rounded-lg text-slate-600 transition-colors",
+                          isDuplicating === seq.id ? "bg-teal-500/10 text-teal-400" : "hover:bg-teal-500/10 hover:text-teal-400"
+                        )}
+                        title="Duplicate Sequence"
                       >
                         {isDuplicating === seq.id ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
                       </button>
-                      <button 
-                         onClick={(e) => { e.stopPropagation(); setDeleteDialog(seq.id); }}
-                         className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors"
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteDialog(seq.id); }}
+                        className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors"
                       >
                         <Trash2 className="size-4" />
                       </button>
@@ -291,7 +292,7 @@ export default function OutreachSequences() {
                   <h3 className="text-lg font-bold text-white mb-2 group-hover:text-teal-400 transition-colors truncate">
                     {seq.name}
                   </h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4 mt-6">
                     <div className="space-y-1">
                       <p className="text-[10px] uppercase tracking-widest font-bold text-slate-600">Steps</p>

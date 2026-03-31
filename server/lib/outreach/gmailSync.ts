@@ -42,7 +42,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
   if (!mailbox) throw new Error("Mailbox not found");
 
   const accessToken = await getAccessToken(mailboxId);
-  
+
   // 1. List recent messages (last 24h)
   const response = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=after:${Math.floor(Date.now() / 1000) - 86400}`,
@@ -76,7 +76,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const fromHeader = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
     const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
     const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || '';
-    
+
     const emailMatch = fromHeader.match(/<(.+)>/) || [null, fromHeader.trim()];
     const fromEmail = emailMatch[1];
     if (!fromEmail) continue;
@@ -92,7 +92,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       await db.run("UPDATE outreach_individual_emails SET is_reply = 1 WHERE id = ?", originalEmail.id);
 
       // 4. Fetch Sequence Settings
-      const sequenceSettings = originalEmail.sequence_id 
+      const sequenceSettings = originalEmail.sequence_id
         ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
         : null;
 
@@ -104,10 +104,10 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       let intentResult = { branched: false, keyword: null as string | null, matched: false };
       if (originalEmail.sequence_id) {
         intentResult = await evaluateIntent(
-          mailbox.project_id, 
-          originalEmail.sequence_id, 
-          originalEmail.contact_id, 
-          rawBody, 
+          mailbox.project_id,
+          originalEmail.sequence_id,
+          originalEmail.contact_id,
+          rawBody,
           originalEmail
         );
         branchingHandled = intentResult.branched;
@@ -149,36 +149,44 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           // We DO NOT stop the enrollment; we let it continue its natural flow.
           console.log(`[Gmail] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. KEEPING enrollment ACTIVE (Bypass enabled).`);
         } else if (stop_on_reply) {
-          // Standard stop-on-reply behavior
-          const result = await db.prepare(`
-            UPDATE outreach_sequence_enrollments 
-            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
-            WHERE contact_id = ? AND status = 'active'
-            AND sequence_id = ?
-          `).run(originalEmail.contact_id, originalEmail.sequence_id);
-          
-          if (result.changes > 0) {
-            console.log(`[Gmail] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
+          // 6. Handle reply behavior (Smart Bypass Logic)
+          // Primero verificamos si la secuencia tiene activado el bypass inteligente
+          const seqSettings = (await db.get(`SELECT smart_intent_bypass FROM outreach_sequences WHERE id = ?`, [originalEmail.sequence_id])) as any;
+
+          // Si el bypass está encendido (es true o 1), NO detenemos la secuencia
+          if (seqSettings?.smart_intent_bypass || seqSettings?.smart_intent_bypass === 1) {
+            console.log(`[Gmail] Smart Intent Bypass is ON for sequence ${originalEmail.sequence_id}. Evaluating keyword instead of stopping.`);
+          } else {
+            // Comportamiento estándar: Detener la secuencia al recibir respuesta
+            const result = await db.prepare(`
+      UPDATE outreach_sequence_enrollments
+      SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
+      WHERE contact_id = ? AND status = 'active'
+      AND sequence_id = ?
+    `).run(originalEmail.contact_id, originalEmail.sequence_id);
+
+            if (result.changes > 0) {
+              console.log(`[Gmail] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
+            }
           }
         }
+        // 7. ALWAYS mark as read to prevent polling loops
+        await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
+          }
+        );
+
+        newCount++;
       }
-
-      // 7. ALWAYS mark as read to prevent polling loops
-      await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`,
-        {
-          method: 'POST',
-          headers: { 
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
-        }
-      );
-
-      newCount++;
     }
-  }
 
-  return newCount;
+    return newCount;
+  }
 }
