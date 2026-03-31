@@ -74,13 +74,26 @@ export async function getValidGmailClient(mailboxId: string) {
 
   console.log(`[OAuth] Diagnosing mailbox ${mailboxId}: email=${mailbox.email}, status=${mailbox.status}, hasExpiresAt=${!!mailbox.expires_at}`);
 
-  const accessToken = decryptToken(mailbox.access_token);
-  const refreshToken = decryptToken(mailbox.refresh_token);
+  let accessToken: string | null = null;
+  let refreshToken: string | null = null;
 
-  console.log(`[OAuth] Token existence after decryption: hasAccessToken=${!!accessToken}, hasRefreshToken=${!!refreshToken}`);
+  try {
+    accessToken = decryptToken(mailbox.access_token);
+    refreshToken = decryptToken(mailbox.refresh_token);
+  } catch (err: any) {
+    console.error(`[OAuth] ENCRYPTION_ERROR for mailbox ${mailboxId}: ${err.message}`);
+  }
 
   if (!accessToken && !refreshToken) {
-    console.error(`[OAuth] Decryption failed for mailbox ${mailboxId}. Token fields may be malformed or key changed.`);
+    console.error(`[OAuth] Decryption failed for mailbox ${mailboxId}. Token fields may be malformed or key changed. AUTO-WIPING TOKENS.`);
+    
+    // Wipe corrupted tokens so user is forced to re-auth instead of getting stuck in a loop
+    await db.run(`
+      UPDATE outreach_mailboxes 
+      SET access_token = NULL, refresh_token = NULL, expires_at = NULL, status = 'reconnect' 
+      WHERE id = ?
+    `, mailboxId);
+
     throw new Error("DECRYPTION_FAILED");
   }
 
@@ -157,11 +170,25 @@ export async function getValidAccessToken(mailboxId: string): Promise<string> {
     throw new Error("MAILBOX_NOT_FOUND");
   }
 
-  const accessToken = decryptToken(mailbox.access_token);
-  const refreshToken = decryptToken(mailbox.refresh_token);
+  let accessToken: string | null = null;
+  let refreshToken: string | null = null;
+
+  try {
+    accessToken = decryptToken(mailbox.access_token);
+    refreshToken = decryptToken(mailbox.refresh_token);
+  } catch (err: any) {
+    console.error(`[OAuth] getValidAccessToken: ENCRYPTION_ERROR for mailbox ${mailboxId}: ${err.message}`);
+  }
 
   if (!accessToken && !refreshToken) {
-    console.error(`[OAuth] getValidAccessToken: Decryption failed for mailbox ${mailboxId}`);
+    console.error(`[OAuth] getValidAccessToken: Decryption failed for mailbox ${mailboxId}. AUTO-WIPING TOKENS.`);
+    
+    await db.run(`
+      UPDATE outreach_mailboxes 
+      SET access_token = NULL, refresh_token = NULL, expires_at = NULL, status = 'reconnect' 
+      WHERE id = ?
+    `, mailboxId);
+
     throw new Error("DECRYPTION_FAILED");
   }
 
