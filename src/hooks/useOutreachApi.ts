@@ -395,7 +395,7 @@ export function useOutreachApi() {
 
   const fetchIcp = useCallback(() => get<any>('/icp'), [get]);
   const updateIcp = useCallback((data: any) => post<any>('/icp', data), [post]);
-  const deleteIcp = useCallback(() => del(`/icp?project_id=${activeProjectId}`), [del, activeProjectId]);
+  const deleteIcp = useCallback(() => del('/icp'), [del]);
 
   // ── Contact Lists ────────────────────────────────────────────────────────
 
@@ -467,8 +467,8 @@ export function useOutreachApi() {
   }, [get]);
 
   const disconnectMailbox = useCallback(
-    (id: string) => del(`/mailboxes/${id}?project_id=${activeProjectId}`),
-    [del, activeProjectId],
+    (id: string) => del(`/mailboxes/${id}`),
+    [del],
   );
 
   /**
