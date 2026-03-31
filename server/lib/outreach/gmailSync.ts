@@ -89,7 +89,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
 
       // Mark original email as replied
-      await db.run("UPDATE outreach_individual_emails SET is_reply = true WHERE id = ?", originalEmail.id);
+      await db.run("UPDATE outreach_individual_emails SET is_reply = true::boolean WHERE id = ?", originalEmail.id);
 
       // 4. Fetch Sequence Settings
       const sequenceSettings = originalEmail.sequence_id
@@ -99,7 +99,24 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       const { stop_on_reply, smart_intent_bypass, bypass_keyword } = sequenceSettings || { stop_on_reply: true, smart_intent_bypass: false, bypass_keyword: 'Khania' };
       const rawBody = getGmailBody(msg.payload);
       let branchingHandled = false;
+      // 5. Lógica de Smart Intent Bypass
+      const bypassActive = smart_intent_bypass === true;
+      const keyword = (bypass_keyword || 'Khania').toLowerCase();
+      const bodyText = (rawBody || '').toLowerCase();
 
+      if (bypassActive && !bodyText.includes(keyword)) {
+        // BYPASS ACTIVO: Botón ON y la palabra (Khania) NO está en el texto.
+        // NO marcamos como is_reply para que la secuencia SIGA viva.
+        console.log(`[POLLER] Smart bypass activo: "${keyword}" no encontrada. Continuando secuencia.`);
+      } else {
+        // COMPORTAMIENTO NORMAL: Si encontró la palabra o el botón está OFF.
+        // Marcamos como respondido y la secuencia se detendrá (o irá al YES).
+        await db.run(
+          "UPDATE outreach_individual_emails SET is_reply = true::boolean WHERE id = ?",
+          originalEmail.id
+        );
+        console.log(`[POLLER] Secuencia procesada como respuesta normal.`);
+      }
       // 5. Intent Evaluation
       let intentResult = { branched: false, keyword: null as string | null, matched: false };
       if (originalEmail.sequence_id) {
@@ -148,7 +165,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           // Check if the reply contains the bypass keyword (indicating a real positive intent)
           const cleanBody = cleanEmailBody(rawBody);
           const hasBypassKeyword = matchKeyword(cleanBody, bypass_keyword || 'Khania');
-          
+
           if (hasBypassKeyword) {
             // STOP enrollment (Positive intent detected)
             const result = await db.prepare(`
