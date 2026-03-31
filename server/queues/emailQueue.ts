@@ -33,23 +33,63 @@ export const campaignQueue = new Queue('campaign-queue', {
   }
 });
 
-export async function pollMailboxes() {
-  console.log('[IMAP WORKER] Starting scheduled mailbox poll...');
-  // Select both ID and email for better diagnostics
-  const mailboxes = await db.prepare("SELECT id, email FROM outreach_mailboxes WHERE connection_type = 'smtp' LIMIT 50").all() as any[];
-  
-  if (mailboxes.length === 0) {
-    console.log('[IMAP WORKER] No SMTP mailboxes found for polling.');
-    return;
-  }
+import { syncMailbox } from '../lib/outreach/gmailSync.js';
+import { getValidAccessToken } from '../oauth.js';
 
-  for (const mailbox of mailboxes) {
-    try {
-      console.log(`[IMAP WORKER] Connecting to mailbox for ${mailbox.email}...`);
-      await pollImap(mailbox.id);
-    } catch (err) {
-      console.error(`[IMAP WORKER] Failed to poll mailbox ${mailbox.email}:`, err);
+export async function pollMailboxes() {
+  console.log('[POLLER] Starting scheduled mailbox poll cycle...');
+  
+  try {
+    // 1. Fetch all unique project IDs that have at least one enabled mailbox
+    const projects = await db.all("SELECT DISTINCT project_id FROM outreach_mailboxes WHERE enabled = 1") as any[];
+    
+    if (projects.length === 0) {
+      console.log('[POLLER] No projects with enabled mailboxes found for polling.');
+      return;
     }
+
+    console.log(`[POLLER] Iterating through ${projects.length} projects...`);
+
+    for (const project of projects) {
+      const projectId = project.project_id;
+      
+      try {
+        // 2. Fetch mailboxes for this specific project that are active and enabled
+        const mailboxes = await db.all(`
+          SELECT id, email, connection_type 
+          FROM outreach_mailboxes 
+          WHERE project_id = ? AND enabled = 1 AND isPollingActive = 1
+        `, projectId) as any[];
+
+        if (mailboxes.length === 0) {
+          console.log(`[POLLER] Skipping Project: ${projectId} (No active mailboxes for polling)`);
+          continue;
+        }
+
+        console.log(`[POLLER] Polling ${mailboxes.length} mailboxes for Project: ${projectId}`);
+
+        for (const mailbox of mailboxes) {
+          try {
+            if (mailbox.connection_type === 'smtp') {
+              console.log(`[IMAP] Polling: ${mailbox.email} (Project: ${projectId})`);
+              await pollImap(mailbox.id);
+            } else if (mailbox.connection_type === 'gmail_oauth') {
+              console.log(`[Gmail] Syncing: ${mailbox.email} (Project: ${projectId})`);
+              await syncMailbox(mailbox.id, async (id) => {
+                return await getValidAccessToken(id);
+              });
+            }
+          } catch (mailboxErr: any) {
+            console.error(`[POLLER] ERROR for mailbox ${mailbox.email} (Project: ${projectId}):`, mailboxErr.message);
+          }
+        }
+      } catch (projectErr: any) {
+        console.error(`[POLLER] FATAL error while processing Project: ${projectId}:`, projectErr.message);
+      }
+    }
+    console.log('[POLLER] Mailbox poll cycle complete.');
+  } catch (err: any) {
+    console.error('[POLLER] CRITICAL poll cycle failure:', err.message);
   }
 }
 

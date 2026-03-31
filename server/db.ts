@@ -471,6 +471,8 @@ export const initDb = async () => {
         expires_at TIMESTAMP,
         scope TEXT,
         status TEXT DEFAULT 'active',
+        enabled BOOLEAN DEFAULT TRUE,
+        isPollingActive BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, project_id, email)
@@ -506,7 +508,9 @@ export const initDb = async () => {
       { name: 'imap_password', type: 'TEXT' },
       { name: 'display_name', type: 'TEXT' },
       { name: 'provider', type: 'TEXT' },
-      { name: 'aliases', type: db.isPostgres ? "JSONB DEFAULT '[]'" : "TEXT DEFAULT '[]'" }
+      { name: 'aliases', type: db.isPostgres ? "JSONB DEFAULT '[]'" : "TEXT DEFAULT '[]'" },
+      { name: 'enabled', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'isPollingActive', type: 'BOOLEAN DEFAULT TRUE' }
     ];
 
     if (db.isPostgres) {
