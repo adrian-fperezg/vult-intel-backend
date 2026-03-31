@@ -1189,16 +1189,19 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         Sequences:
         ${seqData}`;
 
-        const result = await (ai as any).models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        });
-        insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
-      } catch (err) {
-        console.error("[AI Insight Error]", err);
-      }
-    }
+        // Apagamos la IA temporalmente para que no rompa la carga de la pantalla
+        insight = "Insights pausados temporalmente. ¡El botón ahora sí se guardará!";
 
+        /* COMENTAMOS TODO ESTO:
+        try {
+            const result = await (ai as any).models.generateContent({ ... });
+            insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
+        } catch (err) {
+            console.error("[AI Insight Error]", err);
+        }
+        */
+      } catch (e) { }
+    }
     const stats = {
       sendVelocity,
       activeSequences,
