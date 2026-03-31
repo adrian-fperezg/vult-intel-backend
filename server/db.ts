@@ -39,6 +39,17 @@ export class DbWrapper {
     return sql.replace(/\?/g, () => `$${count++}`);
   }
 
+  /**
+   * Returns the database-specific boolean literal (TRUE/FALSE for PG, 1/0 for SQLite)
+   */
+  bool(val: boolean | number | string): string {
+    const isTrue = val === true || val === 1 || val === '1' || val === 'true' || val === 'TRUE';
+    if (this.isPostgres) {
+      return isTrue ? 'TRUE' : 'FALSE';
+    }
+    return isTrue ? '1' : '0';
+  }
+
   async exec(sql: string) {
     if (this.isPostgres) {
       await this.pgConn.query(sql);

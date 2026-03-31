@@ -41,7 +41,7 @@ export async function pollMailboxes() {
   
   try {
     // 1. Fetch all unique project IDs that have at least one enabled mailbox
-    const projects = await db.all("SELECT DISTINCT project_id FROM outreach_mailboxes WHERE enabled = 1") as any[];
+    const projects = await db.all(`SELECT DISTINCT project_id FROM outreach_mailboxes WHERE enabled = ${db.bool(true)}`) as any[];
     
     if (projects.length === 0) {
       console.log('[POLLER] No projects with enabled mailboxes found for polling.');
@@ -58,7 +58,7 @@ export async function pollMailboxes() {
         const mailboxes = await db.all(`
           SELECT id, email, connection_type 
           FROM outreach_mailboxes 
-          WHERE project_id = ? AND enabled = 1 AND isPollingActive = 1
+          WHERE project_id = ? AND enabled = ${db.bool(true)} AND isPollingActive = ${db.bool(true)}
         `, projectId) as any[];
 
         if (mailboxes.length === 0) {

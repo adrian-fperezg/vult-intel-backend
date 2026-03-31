@@ -226,7 +226,7 @@ export async function pollImap(mailboxId: string) {
             UPDATE outreach_sequence_enrollments 
             SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
             WHERE contact_id = ? AND status = 'active'
-            AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = 1)
+            AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
           `).run(originalEmail.contact_id);
 
           console.log(`[IMAP] [UID: ${uid}] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);

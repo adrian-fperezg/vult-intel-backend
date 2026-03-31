@@ -150,7 +150,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           UPDATE outreach_sequence_enrollments 
           SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
           WHERE contact_id = ? AND status = 'active'
-          AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = 1)
+          AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
         `).run(originalEmail.contact_id);
         
         if (result.changes > 0) {
