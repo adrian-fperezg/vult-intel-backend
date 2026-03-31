@@ -1138,23 +1138,36 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
 
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // Calculate fixed calendar day start (00:00:00)
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStr = todayStart.toISOString();
 
     const [
       { sendVelocity },
       { activeSequences },
       { totalRecipients },
       { totalSentCount },
-      { uniqueOpensCount }
+      { totalOpenedCount },
+      { totalRepliedCount },
+      { sentToday },
+      { openedToday },
+      { repliedToday }
     ] = await Promise.all([
-      db.get("SELECT COUNT(*) as sendVelocity FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, yesterday),
+      db.get("SELECT COUNT(*) as sendVelocity FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, todayStr),
       db.get("SELECT COUNT(*) as activeSequences FROM outreach_sequences WHERE project_id = ? AND status = 'active'", projectId),
       db.get("SELECT COUNT(DISTINCT contact_id) as totalRecipients FROM outreach_sequence_enrollments WHERE project_id = ?", projectId),
       db.get("SELECT COUNT(*) as totalSentCount FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent'", projectId),
-      db.get("SELECT COUNT(DISTINCT contact_id) as uniqueOpensCount FROM outreach_events WHERE project_id = ? AND type = 'email_opened'", projectId)
+      db.get("SELECT COUNT(DISTINCT contact_id) as totalOpenedCount FROM outreach_events WHERE project_id = ? AND type = 'email_opened'", projectId),
+      db.get("SELECT COUNT(DISTINCT contact_id) as totalRepliedCount FROM outreach_events WHERE project_id = ? AND type = 'email_replied'", projectId),
+      // Today specific aggregates
+      db.get("SELECT COUNT(*) as sentToday FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, todayStr),
+      db.get("SELECT COUNT(DISTINCT contact_id) as openedToday FROM outreach_events WHERE project_id = ? AND type = 'email_opened' AND created_at >= ?", projectId, todayStr),
+      db.get("SELECT COUNT(DISTINCT contact_id) as repliedToday FROM outreach_events WHERE project_id = ? AND type = 'email_replied' AND created_at >= ?", projectId, todayStr)
     ]) as any[];
 
-    const overallOpenRate = totalSentCount > 0 ? (uniqueOpensCount / totalSentCount) * 100 : 0;
+    const overallOpenRate = totalSentCount > 0 ? (totalOpenedCount / totalSentCount) * 100 : 0;
+    const overallReplyRate = totalSentCount > 0 ? (totalRepliedCount / totalSentCount) * 100 : 0;
 
     // AI Insight Engine
     let insight = "No data available for AI analysis yet. Keep sending!";
@@ -1171,7 +1184,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const seqData = activeSeqs.map(s => `${s.name}: Sent ${s.sent}, Opened ${s.opened}, Replied ${s.replied}`).join("\n");
-        const prompt = `Analyze these outreach sequences for the last project period and provide a 1-2 sentence minimalist insight. Identify the top performer and why it might be winning (mention if it's high open rates or replies). Be concise and professional.
+        const prompt = `Analyze these outreach sequences and provide exactly ONE sentence of minimalist, high-impact performance insight. Identify the top performer and the core reason (open rate vs reply rate) for its success. Be extremely concise.
         
         Sequences:
         ${seqData}`;
@@ -1187,10 +1200,17 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
     }
 
     const stats = {
-      sendVelocity,
+      sendVelocity, 
       activeSequences,
       totalRecipients,
+      totalSentCount,
+      totalOpenedCount,
+      totalRepliedCount,
+      sentToday,
+      openedToday,
+      repliedToday,
       overallOpenRate: Math.round(overallOpenRate * 10) / 10,
+      overallReplyRate: Math.round(overallReplyRate * 10) / 10,
       insight
     };
 

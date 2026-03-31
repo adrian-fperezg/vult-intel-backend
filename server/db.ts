@@ -580,6 +580,8 @@ export const initDb = async () => {
         sent_at TIMESTAMP,
         thread_id TEXT,
         message_id TEXT,
+        is_reply BOOLEAN DEFAULT FALSE,
+        error_code TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -591,7 +593,9 @@ export const initDb = async () => {
       { name: 'attachments', type: "TEXT DEFAULT '[]'" },
       { name: 'sequence_id', type: 'TEXT' },
       { name: 'step_id', type: 'TEXT' },
-      { name: 'opened_at', type: 'TIMESTAMP' }
+      { name: 'opened_at', type: 'TIMESTAMP' },
+      { name: 'is_reply', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'error_code', type: 'TEXT' }
     ];
 
     if (db.isPostgres) {

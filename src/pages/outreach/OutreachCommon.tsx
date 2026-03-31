@@ -56,13 +56,14 @@ interface OutreachMetricCardProps {
   label: string;
   value: string | number;
   sub?: string;
+  today?: string | number;
   teal?: boolean;
   icon?: React.ReactNode;
   trend?: 'up' | 'down' | 'neutral';
   trendValue?: string;
 }
 
-export function OutreachMetricCard({ label, value, sub, teal, icon, trend, trendValue }: OutreachMetricCardProps) {
+export function OutreachMetricCard({ label, value, sub, today, teal, icon, trend, trendValue }: OutreachMetricCardProps) {
   return (
     <div className={cn(
       'rounded-2xl border p-5 flex flex-col gap-2 transition-colors',
@@ -74,9 +75,19 @@ export function OutreachMetricCard({ label, value, sub, teal, icon, trend, trend
         <p className="text-[11px] uppercase tracking-widest font-bold text-slate-500">{label}</p>
         {icon && <span className={cn('opacity-60', teal ? 'text-teal-400' : 'text-slate-500')}>{icon}</span>}
       </div>
-      <p className={cn('text-3xl font-bold tabular-nums tracking-tight', teal ? 'text-teal-400' : 'text-white')}>
-        {value}
-      </p>
+      <div className="flex items-baseline gap-2.5">
+        <p className={cn('text-3xl font-bold tabular-nums tracking-tight', teal ? 'text-teal-400' : 'text-white')}>
+          {value}
+        </p>
+        {today !== undefined && (
+          <span className={cn(
+            "text-sm font-bold opacity-80",
+            teal ? "text-teal-500" : "text-teal-400"
+          )}>
+            (+{today})
+          </span>
+        )}
+      </div>
       {(sub || trend) && (
         <div className="flex items-center gap-2 mt-1">
           {trend && trendValue && (

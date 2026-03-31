@@ -136,6 +136,9 @@ export async function pollImap(mailboxId: string) {
 
         console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: ${originalEmail.contact_id}`);
 
+        // Mark original email as replied
+        await db.run("UPDATE outreach_individual_emails SET is_reply = 1 WHERE id = ?", originalEmail.id);
+
         // Prevent duplicate processing
         const eventExists = await db.prepare(`
           SELECT id FROM outreach_events 

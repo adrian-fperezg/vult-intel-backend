@@ -88,6 +88,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     if (originalEmail) {
       console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
 
+      // Mark original email as replied
+      await db.run("UPDATE outreach_individual_emails SET is_reply = 1 WHERE id = ?", originalEmail.id);
+
       // 4. Fetch Sequence Settings
       const sequenceSettings = originalEmail.sequence_id 
         ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
@@ -142,9 +145,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       } else if (sequenceSettings) {
         if (smart_intent_bypass) {
           // SMART INTENT BYPASS: 
-          // If we reach here, no keyword matched.
+          // If we reach here, it means we didn't match a keyword AND bypass is enabled.
           // We DO NOT stop the enrollment; we let it continue its natural flow.
-          console.log(`[Gmail] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. Keeping enrollment ACTIVE.`);
+          console.log(`[Gmail] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. KEEPING enrollment ACTIVE (Bypass enabled).`);
         } else if (stop_on_reply) {
           // Standard stop-on-reply behavior
           const result = await db.prepare(`
