@@ -1,6 +1,7 @@
 import db, { DbWrapper } from '../../db.js';
-import { emailQueue } from '../../queues/emailQueue.js';
+import { emailQueue, processEmail } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
+import { handleSequenceIntent, matchKeyword, findRepliedConditionAhead } from './utils.js';
 
 export interface SequenceStep {
   id: string;
@@ -241,4 +242,61 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
   }
 
   return { stepId: null, branchPath: 'default', isCompleted: true };
+}
+
+/**
+ * Evaluates the intent of a reply and potentially advances the sequence branch.
+ */
+export async function evaluateIntent(projectId: string, sequenceId: string, contactId: string, rawBody: string, originalEmail: any) {
+  console.log(`[SequenceEngine] Evaluating intent for contact ${contactId} in sequence ${sequenceId}...`);
+
+  // 1. Check for Synthetic "YES" intent (Global Keyword)
+  const intent = await handleSequenceIntent(originalEmail, rawBody);
+  
+  if (intent.hijacked && intent.yesStepId) {
+    console.log(`[SequenceEngine] Synthetic Intent Match! Branching to YES for contact ${contactId}.`);
+    
+    await db.run(`
+      INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, uuidv4(), contactId, projectId, sequenceId, intent.parentStepId, 'sequence_condition_evaluated', JSON.stringify({
+      parentStepId: intent.parentStepId,
+      evaluatedBranch: 'yes',
+      result: true,
+      reason: `Global keyword match: '${intent.keyword}'`
+    }));
+
+    await scheduleNextStep(projectId, sequenceId, contactId, intent.parentStepId, 'yes');
+    return { branched: true, matched: true, keyword: intent.keyword };
+  }
+
+  // 2. Check for "Condition" steps ahead (Replied Branching)
+  if (originalEmail.step_id) {
+    const steps = await db.all("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?", sequenceId) as any[];
+    const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
+
+    if (conditionStep?.condition_keyword) {
+      const keywordMatched = matchKeyword(rawBody, conditionStep.condition_keyword);
+      
+      if (keywordMatched) {
+        console.log(`[SequenceEngine] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionStep.condition_keyword}". Advancing to YES branch.`);
+        
+        await db.run(`
+          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, uuidv4(), contactId, projectId, sequenceId, conditionStep.id, 'sequence_condition_evaluated', JSON.stringify({ 
+          parentStepId: conditionStep.id,
+          evaluatedBranch: 'yes',
+          result: true,
+          reason: `Step keyword match: '${conditionStep.condition_keyword}'`
+        }));
+
+        await scheduleNextStep(projectId, sequenceId, contactId, conditionStep.id, 'yes');
+        return { branched: true, matched: true, keyword: conditionStep.condition_keyword };
+      }
+    }
+  }
+
+  console.log(`[SequenceEngine] No branching intent found for contact ${contactId}.`);
+  return { branched: false, matched: false, keyword: null };
 }

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
 import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent } from './utils.js';
-import { scheduleNextStep } from './sequenceEngine.js';
+import { scheduleNextStep, evaluateIntent } from './sequenceEngine.js';
 
 interface GmailMessage {
   id: string;
@@ -89,65 +89,25 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
 
       // 4. Fetch Sequence Settings
-      let sequenceSettings: any = null;
-      if (originalEmail.sequence_id) {
-        sequenceSettings = await db.prepare("SELECT stop_on_reply, custom_intent_logic FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id);
-      }
+      const sequenceSettings = originalEmail.sequence_id 
+        ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
+        : null;
 
-      // 5. Keyword Intent Parsing
-      let keywordMatched: boolean | null = null;
-      let conditionKeyword: string | null = null;
-      let hijackSuccessful = false;
+      const { stop_on_reply, smart_intent_bypass } = sequenceSettings || { stop_on_reply: true, smart_intent_bypass: false };
+      const rawBody = getGmailBody(msg.payload);
       let branchingHandled = false;
 
+      // 5. Intent Evaluation
+      let intentResult = { branched: false, keyword: null as string | null, matched: false };
       if (originalEmail.sequence_id) {
-        const rawBody = getGmailBody(msg.payload);
-        const intent = await handleSequenceIntent(originalEmail, rawBody);
-        
-        if (intent.keyword) {
-          conditionKeyword = intent.keyword;
-          keywordMatched = intent.matched;
-          hijackSuccessful = intent.hijacked;
-        }
-
-        if (!hijackSuccessful && originalEmail.step_id) {
-          const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
-          const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
-
-          if (conditionStep?.condition_keyword) {
-            conditionKeyword = conditionStep.condition_keyword.trim();
-            keywordMatched = matchKeyword(rawBody, conditionKeyword);
-            
-            if (keywordMatched) {
-              console.log(`[Gmail] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionKeyword}". Advancing to YES branch.`);
-              
-              // 1. Record evaluation event
-              await db.prepare(`
-                INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-              `).run(
-                uuidv4(),
-                originalEmail.contact_id,
-                mailbox.project_id,
-                originalEmail.sequence_id,
-                conditionStep.id,
-                'sequence_condition_evaluated',
-                JSON.stringify({ 
-                  parentStepId: conditionStep.id,
-                  evaluatedBranch: 'yes',
-                  result: true,
-                  reason: `Keyword match: '${conditionKeyword}'`
-                })
-              );
-
-              // 2. Advance to the next step on the YES branch immediately
-              await scheduleNextStep(mailbox.project_id, originalEmail.sequence_id, originalEmail.contact_id, conditionStep.id, 'yes');
-              branchingHandled = true;
-            } else {
-              console.log(`[Gmail] Condition Step Keyword check: "${conditionKeyword}" -> NO MATCH`);
-            }
-          }
-        }
+        intentResult = await evaluateIntent(
+          mailbox.project_id, 
+          originalEmail.sequence_id, 
+          originalEmail.contact_id, 
+          rawBody, 
+          originalEmail
+        );
+        branchingHandled = intentResult.branched;
       }
 
       // 5. Record standardized event
@@ -167,8 +127,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           gmail_message_id: msg.id,
           gmail_thread_id: msg.threadId,
           reply_id: messageId || msg.id,
-          keyword: conditionKeyword,
-          keyword_matched: keywordMatched
+          keyword: intentResult.keyword,
+          keyword_matched: intentResult.matched
         }),
         new Date(parseInt(msg.internalDate)).toISOString()
       );
@@ -177,14 +137,12 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);
 
       // 6. Stop sequence logic (if not branched)
-      if (hijackSuccessful || branchingHandled) {
-        console.log(`[Gmail] Sequence branched/hijacked for contact ${originalEmail.contact_id}. Skipping termination.`);
+      if (branchingHandled) {
+        console.log(`[Gmail] Sequence branched for contact ${originalEmail.contact_id}. Skipping termination.`);
       } else if (sequenceSettings) {
-        const { stop_on_reply, smart_intent_bypass } = sequenceSettings;
-
         if (smart_intent_bypass) {
           // SMART INTENT BYPASS: 
-          // If we reach here, no keyword matched and no hijack occurred.
+          // If we reach here, no keyword matched.
           // We DO NOT stop the enrollment; we let it continue its natural flow.
           console.log(`[Gmail] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. Keeping enrollment ACTIVE.`);
         } else if (stop_on_reply) {
