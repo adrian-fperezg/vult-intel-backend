@@ -4143,3 +4143,4 @@ startServer().catch(err => {
   console.error('[FATAL] Server failed to start:', err);
   process.exit(1);
 });
+// Force fresh build 2026-03-31
