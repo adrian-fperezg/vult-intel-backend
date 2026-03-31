@@ -52,7 +52,7 @@ interface Sequence {
   from_email?: string;
   from_name?: string;
   recipients?: any[];
-  custom_intent_logic: boolean;
+  smart_intent_bypass: boolean;
 }
 
 interface SequenceBuilderProps {
@@ -1198,7 +1198,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   <div className="space-y-4">
                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Intelligent Flow</label>
                      <button
-                        onClick={() => setSequence(prev => prev ? { ...prev, custom_intent_logic: !prev.custom_intent_logic } : null)}
+                        onClick={() => setSequence(prev => prev ? { ...prev, smart_intent_bypass: !prev.smart_intent_bypass } : null)}
                         className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
                      >
                         <div className="flex flex-col items-start gap-0.5">
@@ -1207,11 +1207,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                         </div>
                         <div className={cn(
                            "w-10 h-5 rounded-full relative transition-colors p-1",
-                           sequence?.custom_intent_logic ? "bg-purple-600" : "bg-white/10"
+                           sequence?.smart_intent_bypass ? "bg-purple-600" : "bg-white/10"
                         )}>
                            <div className={cn(
                               "size-3 rounded-full bg-white transition-all shadow-sm",
-                              sequence?.custom_intent_logic ? "translate-x-5" : "translate-x-0"
+                              sequence?.smart_intent_bypass ? "translate-x-5" : "translate-x-0"
                            )} />
                         </div>
                      </button>

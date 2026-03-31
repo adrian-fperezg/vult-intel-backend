@@ -1135,25 +1135,38 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   if (!userId || !project_id) return res.json([]);
 
   try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStr = todayStart.toISOString();
+
     const sequences = await db.all(`
       SELECT s.*, 
              (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id AND project_id = s.project_id) as step_count,
              (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id AND project_id = s.project_id) as contact_count,
+             
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as total_sent,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND project_id = s.project_id AND type = 'email_opened') as unique_opens,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND project_id = s.project_id AND type = 'email_replied') as unique_replies
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at >= ?) as sent_today,
+             
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened') as total_opened,
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened' AND created_at >= ?) as opened_today,
+             
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied') as total_replies,
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied' AND created_at >= ?) as replied_today,
+             
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced') as total_bounced,
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND updated_at >= ?) as bounced_today
       FROM outreach_sequences s
       WHERE s.user_id = ? AND s.project_id = ?
       ORDER BY s.created_at DESC
-    `, userId, project_id);
+    `, todayStr, todayStr, todayStr, todayStr, userId, project_id);
 
     // Calculate rates in JS for cleaner query
     const mappedSequences = sequences.map((s: any) => {
       const totalSent = parseInt(s.total_sent) || 0;
       return {
         ...s,
-        open_rate: totalSent > 0 ? parseFloat(((parseInt(s.unique_opens) || 0) / totalSent * 100).toFixed(1)) : 0,
-        reply_rate: totalSent > 0 ? parseFloat(((parseInt(s.unique_replies) || 0) / totalSent * 100).toFixed(1)) : 0
+        open_rate: totalSent > 0 ? parseFloat(((parseInt(s.total_opened) || 0) / totalSent * 100).toFixed(1)) : 0,
+        reply_rate: totalSent > 0 ? parseFloat(((parseInt(s.total_replies) || 0) / totalSent * 100).toFixed(1)) : 0
       };
     });
     
@@ -1260,7 +1273,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const allowedFields = [
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end', 
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
-    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic'
+    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic', 'smart_intent_bypass'
   ];
 
   const filteredUpdates: Record<string, any> = {};

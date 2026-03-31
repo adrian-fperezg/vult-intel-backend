@@ -180,9 +180,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       if (hijackSuccessful || branchingHandled) {
         console.log(`[Gmail] Sequence branched/hijacked for contact ${originalEmail.contact_id}. Skipping termination.`);
       } else if (sequenceSettings) {
-        const { stop_on_reply, custom_intent_logic } = sequenceSettings;
+        const { stop_on_reply, smart_intent_bypass } = sequenceSettings;
 
-        if (custom_intent_logic) {
+        if (smart_intent_bypass) {
           // SMART INTENT BYPASS: 
           // If we reach here, no keyword matched and no hijack occurred.
           // We DO NOT stop the enrollment; we let it continue its natural flow.

@@ -241,9 +241,9 @@ export async function pollImap(mailboxId: string) {
           console.log(`[IMAP] [UID: ${uid}] Sequence branched/hijacked for contact ${originalEmail.contact_id}. Skipping termination.`);
           await connection.addFlags(uid, ['\\Seen']);
         } else if (sequenceSettings) {
-          const { stop_on_reply, custom_intent_logic } = sequenceSettings;
+          const { stop_on_reply, smart_intent_bypass } = sequenceSettings;
 
-          if (custom_intent_logic) {
+          if (smart_intent_bypass) {
             // SMART INTENT BYPASS:
             // No keyword match found. Keep the enrollment active.
             console.log(`[IMAP] [UID: ${uid}] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. Keeping enrollment ACTIVE.`);
