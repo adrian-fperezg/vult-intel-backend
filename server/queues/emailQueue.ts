@@ -550,25 +550,36 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
   console.log(`Processing campaign: ${campaignId}`);
 
   const campaign = await db.prepare(`
-    SELECT c.*, s.steps as sequence_steps 
+    SELECT c.* 
     FROM outreach_campaigns c
-    LEFT JOIN outreach_sequences s ON c.sequence_id = s.id
     WHERE c.id = ?
   `).get(campaignId) as any;
 
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
-  if (!campaign.sequence_steps) {
-    console.warn(`Campaign ${campaignId} has no sequence steps. Skipping.`);
+
+  // Fetch the first step (root step) using the modern steps table
+  const firstStep = await db.prepare(`
+    SELECT * FROM outreach_sequence_steps 
+    WHERE sequence_id = ? AND parent_step_id IS NULL
+    LIMIT 1
+  `).get(campaign.sequence_id) as any;
+
+  if (!firstStep || firstStep.step_type !== 'email') {
+    console.warn(`Campaign ${campaignId} has no root email step in sequence ${campaign.sequence_id}. Skipping.`);
     return;
   }
 
-  const steps = JSON.parse(campaign.sequence_steps);
-  const firstStep = steps[0];
+  // Parse step config if needed (sqlite might return string)
+  const stepConfig = typeof firstStep.config === 'string' ? JSON.parse(firstStep.config) : firstStep.config;
+  
+  // Prepare attachments standard mapping
+  const rawAttachments = JSON.parse(firstStep.attachments || "[]");
+  const mappedAttachments = rawAttachments.map((file: any) => ({
+    filename: file.name || file.filename,
+    path: file.url || file.path
+  }));
+  const attachmentsJson = JSON.stringify(mappedAttachments);
 
-  if (!firstStep || firstStep.type !== 'email') {
-    console.warn(`Campaign ${campaignId} first step is not an email. Skipping.`);
-    return;
-  }
 
   // Find pending enrollments - added LIMIT 50 to prevent OOM
   const enrollments = await db.prepare(`
@@ -588,8 +599,8 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         const emailId = uuidv4();
         
         // Handle variable replacement in subject and body
-        let subject = firstStep.subject || "";
-        let bodyHtml = firstStep.body_html || "";
+        let subject = stepConfig.subject || "";
+        let bodyHtml = stepConfig.body_html || "";
         
         const variables = {
           first_name: enrollment.first_name || "",
@@ -604,21 +615,29 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           bodyHtml = bodyHtml.replace(regex, value);
         });
 
+
         await tx.prepare(`
-          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, from_email, from_name, to_email, subject, body_html, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+          INSERT INTO outreach_individual_emails (
+            id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id,
+            from_email, from_name, to_email, subject, body_html, attachments, status
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
         `).run(
           emailId,
           campaign.user_id,
           campaign.project_id,
           campaign.mailbox_id,
           enrollment.contact_id,
+          campaign.sequence_id,
+          firstStep.id,
           campaign.from_email,
           campaign.from_name,
           enrollment.contact_email,
           subject,
-          bodyHtml
+          bodyHtml,
+          attachmentsJson
         );
+
 
         // Update enrollment
         await tx.prepare(`
