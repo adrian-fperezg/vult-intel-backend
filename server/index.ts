@@ -31,6 +31,17 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
     console.error('[REDIS] Flush failed on startup:', err);
   }
   await initializeGlobalMailer();
+  
+  // Custom verification for Outreach Emergency (Matches user request)
+  try {
+    const count = await (db as any).mailbox.count();
+    console.log("DB_CHECK: Total mailboxes in DB is: " + count);
+    if (count > 0) {
+      console.warn("⚠️ [DB_CHECK] Mailboxes still exist! Purge may have failed.");
+    }
+  } catch (err) {
+    console.error("❌ [DB_CHECK] Fatal error during mailbox count check:", err);
+  }
 })();
 import { v4 as uuidv4 } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";

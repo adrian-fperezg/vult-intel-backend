@@ -179,6 +179,18 @@ export class DbWrapper {
 
 export const db = new DbWrapper();
 
+// Matching user mental model (Prisma-like)
+(db as any).mailbox = {
+  count: async () => {
+    try {
+      const res = await db.get('SELECT COUNT(*) as c FROM outreach_mailboxes') as any;
+      return res?.c || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+};
+
 export const runMigrations = async () => {
   console.log('[DB] Checking for pending migrations...');
   const migrationsDir = path.resolve(__dirname, 'migrations');
