@@ -7,14 +7,14 @@ const ALGORITHM = 'aes-256-cbc';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 if (!ENCRYPTION_KEY) {
-  console.error("CRITICAL: ENCRYPTION_KEY environment variable is not set.");
-  // We don't exit process here because it might be fine for non-outreach parts,
-  // but we should warn loudly.
+  console.error("❌ [CRITICAL] ENCRYPTION_KEY environment variable is missing. Fatal shutdown.");
+  process.exit(1);
 }
 
 function getKey(): Buffer {
   if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
-    throw new Error(`CRITICAL: ENCRYPTION_KEY must be exactly 32 characters long. Current length: ${ENCRYPTION_KEY?.length || 0}`);
+    console.error(`❌ [CRITICAL] ENCRYPTION_KEY length is invalid (${ENCRYPTION_KEY?.length || 0}). Expected 32 characters. Fatal shutdown.`);
+    process.exit(1);
   }
   return Buffer.from(ENCRYPTION_KEY, 'utf8');
 }

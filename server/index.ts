@@ -23,6 +23,13 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
 
 // Initialize global SMTP mailer
 (async () => {
+  try {
+    const { redis } = await import("./redis.js"); // Dynamic import to ensure redis is ready
+    await redis.flushall();
+    console.log('[REDIS] Cache flushed on startup');
+  } catch (err) {
+    console.error('[REDIS] Flush failed on startup:', err);
+  }
   await initializeGlobalMailer();
 })();
 import { v4 as uuidv4 } from "uuid";
