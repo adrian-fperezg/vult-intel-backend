@@ -89,14 +89,14 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
 
       // Mark original email as replied
-      await db.run("UPDATE outreach_individual_emails SET is_reply = 1 WHERE id = ?", originalEmail.id);
+      await db.run("UPDATE outreach_individual_emails SET is_reply = true WHERE id = ?", originalEmail.id);
 
       // 4. Fetch Sequence Settings
       const sequenceSettings = originalEmail.sequence_id
-        ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
+        ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass, bypass_keyword FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
         : null;
 
-      const { stop_on_reply, smart_intent_bypass } = sequenceSettings || { stop_on_reply: true, smart_intent_bypass: false };
+      const { stop_on_reply, smart_intent_bypass, bypass_keyword } = sequenceSettings || { stop_on_reply: true, smart_intent_bypass: false, bypass_keyword: 'Khania' };
       const rawBody = getGmailBody(msg.payload);
       let branchingHandled = false;
 
@@ -144,30 +144,36 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         console.log(`[Gmail] Sequence branched for contact ${originalEmail.contact_id}. Skipping termination.`);
       } else if (sequenceSettings) {
         if (smart_intent_bypass) {
-          // SMART INTENT BYPASS: 
-          // If we reach here, it means we didn't match a keyword AND bypass is enabled.
-          // We DO NOT stop the enrollment; we let it continue its natural flow.
-          console.log(`[Gmail] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. KEEPING enrollment ACTIVE (Bypass enabled).`);
-        } else if (stop_on_reply) {
-          // 6. Handle reply behavior (Smart Bypass Logic)
-          // Primero verificamos si la secuencia tiene activado el bypass inteligente
-          const seqSettings = (await db.get(`SELECT smart_intent_bypass FROM outreach_sequences WHERE id = ?`, [originalEmail.sequence_id])) as any;
-
-          // Si el bypass está encendido (es true o 1), NO detenemos la secuencia
-          if (seqSettings?.smart_intent_bypass || seqSettings?.smart_intent_bypass === 1) {
-            console.log(`[Gmail] Smart Intent Bypass is ON for sequence ${originalEmail.sequence_id}. Evaluating keyword instead of stopping.`);
-          } else {
-            // Comportamiento estándar: Detener la secuencia al recibir respuesta
+          // SMART INTENT BYPASS:
+          // Check if the reply contains the bypass keyword (indicating a real positive intent)
+          const cleanBody = cleanEmailBody(rawBody);
+          const hasBypassKeyword = matchKeyword(cleanBody, bypass_keyword || 'Khania');
+          
+          if (hasBypassKeyword) {
+            // STOP enrollment (Positive intent detected)
             const result = await db.prepare(`
-      UPDATE outreach_sequence_enrollments
-      SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
-      WHERE contact_id = ? AND status = 'active'
-      AND sequence_id = ?
-    `).run(originalEmail.contact_id, originalEmail.sequence_id);
+              UPDATE outreach_sequence_enrollments
+              SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
+              WHERE contact_id = ? AND status = 'active' AND sequence_id = ?
+            `).run(originalEmail.contact_id, originalEmail.sequence_id);
 
             if (result.changes > 0) {
-              console.log(`[Gmail] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
+              console.log(`[Gmail] [Smart Intent] Bypass keyword matched. Stopping enrollment for contact ${originalEmail.contact_id}.`);
             }
+          } else {
+            // KEEP enrollment ACTIVE (No real intent detected, just a bypassable reply)
+            console.log(`[Gmail] [Smart Intent] No bypass keyword found. Keeping enrollment ACTIVE for contact ${originalEmail.contact_id}.`);
+          }
+        } else if (stop_on_reply) {
+          // Standard behavior: Stop the sequence upon receiving any reply
+          const result = await db.prepare(`
+            UPDATE outreach_sequence_enrollments
+            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
+            WHERE contact_id = ? AND status = 'active' AND sequence_id = ?
+          `).run(originalEmail.contact_id, originalEmail.sequence_id);
+
+          if (result.changes > 0) {
+            console.log(`[Gmail] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
           }
         }
         // 7. ALWAYS mark as read to prevent polling loops

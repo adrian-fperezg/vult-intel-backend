@@ -154,7 +154,7 @@ export async function pollImap(mailboxId: string) {
         // 4. Fetch Sequence Settings
         let sequenceSettings: any = null;
         if (originalEmail.sequence_id) {
-          sequenceSettings = await db.prepare("SELECT stop_on_reply, custom_intent_logic FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id);
+          sequenceSettings = await db.prepare("SELECT stop_on_reply, smart_intent_bypass, bypass_keyword FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id);
         }
 
         // ── KEYWORD INTENT PARSING ──────────────────────────────────────────
@@ -244,12 +244,30 @@ export async function pollImap(mailboxId: string) {
           console.log(`[IMAP] [UID: ${uid}] Sequence branched/hijacked for contact ${originalEmail.contact_id}. Skipping termination.`);
           await connection.addFlags(uid, ['\\Seen']);
         } else if (sequenceSettings) {
-          const { stop_on_reply, smart_intent_bypass } = sequenceSettings;
+          const { stop_on_reply, smart_intent_bypass, bypass_keyword } = sequenceSettings;
 
           if (smart_intent_bypass) {
             // SMART INTENT BYPASS:
-            // No keyword match found. Keep the enrollment active.
-            console.log(`[IMAP] [UID: ${uid}] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. Keeping enrollment ACTIVE.`);
+            // Check if the reply contains the bypass keyword (indicating a real positive intent)
+            const rawBody = await extractEmailBody(msg);
+            const hasBypassKeyword = matchKeyword(rawBody, bypass_keyword || 'Khania');
+
+            if (hasBypassKeyword) {
+              // STOP enrollment (Positive intent detected)
+              const result = await db.prepare(`
+                UPDATE outreach_sequence_enrollments 
+                SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
+                WHERE contact_id = ? AND status = 'active'
+                AND sequence_id = ?
+              `).run(originalEmail.contact_id, originalEmail.sequence_id);
+
+              if (result.changes > 0) {
+                console.log(`[IMAP] [UID: ${uid}] [Smart Intent] Bypass keyword matched. Stopping enrollment for contact ${originalEmail.contact_id}.`);
+              }
+            } else {
+              // KEEP enrollment ACTIVE (No real intent detected, just a bypassable reply)
+              console.log(`[IMAP] [UID: ${uid}] [Smart Intent] No bypass keyword found. Keeping enrollment ACTIVE for contact ${originalEmail.contact_id}.`);
+            }
           } else if (stop_on_reply) {
             // Standard stop-on-reply behavior
             const result = await db.prepare(`
@@ -264,7 +282,8 @@ export async function pollImap(mailboxId: string) {
             }
           }
           await connection.addFlags(uid, ['\\Seen']);
-        } else {
+        }
+ else {
           // No sequence info, just mark as seen
           await connection.addFlags(uid, ['\\Seen']);
         }

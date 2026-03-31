@@ -1,32 +1,22 @@
-import Database from 'better-sqlite3';
 import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.resolve(__dirname, '../outreach.db');
 const DATABASE_URL = process.env.DATABASE_URL;
 
 export class DbWrapper {
-  private sqlite?: any;
   private pgPool?: pg.Pool;
   private client?: pg.PoolClient;
   public isPostgres: boolean;
 
-  constructor(pgPool?: pg.Pool, sqlite?: any) {
-    this.isPostgres = !!DATABASE_URL;
-    if (this.isPostgres) {
-      this.pgPool = pgPool || new pg.Pool({
-        connectionString: DATABASE_URL,
-        ssl: DATABASE_URL && DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
-      });
-    } else {
-      this.sqlite = sqlite || new Database(dbPath);
-      if (!sqlite) {
-        this.sqlite.pragma('journal_mode = WAL');
-      }
-    }
+  constructor(pgPool?: pg.Pool) {
+    this.isPostgres = true; // Always Postgres after driver cleanup
+    this.pgPool = pgPool || new pg.Pool({
+      connectionString: DATABASE_URL,
+      ssl: DATABASE_URL && DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
+    });
   }
 
   private get pgConn(): pg.Pool | pg.PoolClient {
@@ -34,58 +24,38 @@ export class DbWrapper {
   }
 
   private convertSql(sql: string): string {
-    if (!this.isPostgres) return sql;
     let count = 1;
     return sql.replace(/\?/g, () => `$${count++}`);
   }
 
   /**
-   * Returns the database-specific boolean literal (TRUE/FALSE for PG, 1/0 for SQLite)
+   * Returns the database-specific boolean literal (TRUE/FALSE for PG)
    */
   bool(val: boolean | number | string): string {
     const isTrue = val === true || val === 1 || val === '1' || val === 'true' || val === 'TRUE';
-    if (this.isPostgres) {
-      return isTrue ? 'TRUE' : 'FALSE';
-    }
-    return isTrue ? '1' : '0';
+    return isTrue ? 'TRUE' : 'FALSE';
   }
 
   async exec(sql: string) {
-    if (this.isPostgres) {
-      await this.pgConn.query(sql);
-    } else {
-      this.sqlite.exec(sql);
-    }
+    await this.pgConn.query(sql);
   }
 
   async run(sql: string, ...params: any[]) {
     const convertedSql = this.convertSql(sql);
-    if (this.isPostgres) {
-      const res = await this.pgConn.query(convertedSql, params);
-      return { lastInsertRowid: null, changes: res.rowCount };
-    } else {
-      return this.sqlite.prepare(sql).run(...params);
-    }
+    const res = await this.pgConn.query(convertedSql, params);
+    return { lastInsertRowid: null, changes: res.rowCount || 0 };
   }
 
   async get<T>(sql: string, ...params: any[]): Promise<T | undefined> {
     const convertedSql = this.convertSql(sql);
-    if (this.isPostgres) {
-      const res = await this.pgConn.query(convertedSql, params);
-      return res.rows[0];
-    } else {
-      return this.sqlite.prepare(sql).get(...params);
-    }
+    const res = await this.pgConn.query(convertedSql, params);
+    return res.rows[0];
   }
 
   async all<T>(sql: string, ...params: any[]): Promise<T[]> {
     const convertedSql = this.convertSql(sql);
-    if (this.isPostgres) {
-      const res = await this.pgConn.query(convertedSql, params);
-      return res.rows;
-    } else {
-      return this.sqlite.prepare(sql).all(...params);
-    }
+    const res = await this.pgConn.query(convertedSql, params);
+    return res.rows || [];
   }
 
   prepare(sql: string) {
@@ -93,37 +63,22 @@ export class DbWrapper {
 
     return {
       run: async (...params: any[]) => {
-        if (this.isPostgres) {
-          const res = await this.pgConn.query(convertedSql, params);
-          return { lastInsertRowid: null, changes: res.rowCount };
-        } else {
-          return this.sqlite.prepare(sql).run(...params);
-        }
+        const res = await this.pgConn.query(convertedSql, params);
+        return { lastInsertRowid: null, changes: res.rowCount || 0 };
       },
       get: async <T>(...params: any[]): Promise<T | undefined> => {
-        if (this.isPostgres) {
-          const res = await this.pgConn.query(convertedSql, params);
-          return res.rows[0];
-        } else {
-          return this.sqlite.prepare(sql).get(...params);
-        }
+        const res = await this.pgConn.query(convertedSql, params);
+        return res.rows[0];
       },
       all: async <T>(...params: any[]): Promise<T[]> => {
-        if (this.isPostgres) {
-          const res = await this.pgConn.query(convertedSql, params);
-          return res.rows || [];
-        } else {
-          return this.sqlite.prepare(sql).all(...params);
-        }
+        const res = await this.pgConn.query(convertedSql, params);
+        return res.rows || [];
       },
     };
   }
 
   // SQLite PRAGMA compatibility
   async pragma(sql: string) {
-    if (!this.isPostgres) {
-      return this.sqlite.pragma(sql);
-    }
     if (sql.startsWith('table_info')) {
       const parts = sql.match(/table_info\((.*)\)/);
       const tableName = parts ? parts[1] : '';
@@ -138,41 +93,24 @@ export class DbWrapper {
 
   // Robust async transaction wrapper
   async transaction(cb: (tx: DbWrapper) => Promise<any>): Promise<any> {
-    if (this.isPostgres) {
-      const client = await this.pgPool!.connect();
-      const tx = new DbWrapper(this.pgPool);
-      tx.client = client;
-      try {
-        await client.query('BEGIN');
-        const result = await cb(tx);
-        await client.query('COMMIT');
-        return result;
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
-    } else {
-      try {
-        this.sqlite.prepare('BEGIN').run();
-        const result = await cb(this);
-        this.sqlite.prepare('COMMIT').run();
-        return result;
-      } catch (err) {
-        // Rollback only if we're actually in a transaction to avoid errors
-        try { this.sqlite.prepare('ROLLBACK').run(); } catch (e) { }
-        throw err;
-      }
+    const client = await this.pgPool!.connect();
+    const tx = new DbWrapper(this.pgPool);
+    tx.client = client;
+    try {
+      await client.query('BEGIN');
+      const result = await cb(tx);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
 
   async close() {
-    if (this.isPostgres) {
-      await this.pgPool!.end();
-    } else {
-      this.sqlite.close();
-    }
+    await this.pgPool!.end();
   }
 
 }
@@ -198,7 +136,7 @@ export const runMigrations = async () => {
   // Ensure migrations log table exists
   await db.run(`
     CREATE TABLE IF NOT EXISTS migrations_log (
-      id ${db.isPostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${db.isPostgres ? '' : 'AUTOINCREMENT'},
+      id SERIAL PRIMARY KEY,
       migration_name TEXT NOT NULL UNIQUE,
       applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -271,22 +209,11 @@ export const initDb = async () => {
       { name: 'from_name', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of campaignColsMigration) {
-        try {
-          await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for campaign ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const campCols = await db.pragma('table_info(outreach_campaigns)');
-      const campColNames = (campCols || []).map((c: any) => c.name);
-      for (const col of campaignColsMigration) {
-        if (!campColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_campaigns`);
-          await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of campaignColsMigration) {
+      try {
+        await db.run(`ALTER TABLE outreach_campaigns ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for campaign ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -320,6 +247,7 @@ export const initDb = async () => {
         from_email TEXT,
         from_name TEXT,
         intent_keyword TEXT,
+        bypass_keyword TEXT DEFAULT 'Khania',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -344,25 +272,15 @@ export const initDb = async () => {
       { name: 'from_email', type: 'TEXT' },
       { name: 'from_name', type: 'TEXT' },
       { name: 'steps', type: 'TEXT' },
-      { name: 'intent_keyword', type: 'TEXT' }
+      { name: 'intent_keyword', type: 'TEXT' },
+      { name: 'bypass_keyword', type: "TEXT DEFAULT 'Khania'" }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newSeqCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_sequences ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for sequence column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const seqColumns = await db.pragma('table_info(outreach_sequences)');
-      const seqColumnNames = (seqColumns || []).map((c: any) => c.name);
-      for (const col of newSeqCols) {
-        if (!seqColumnNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_sequences`);
-          await db.run(`ALTER TABLE outreach_sequences ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newSeqCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_sequences ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for sequence column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -413,22 +331,11 @@ export const initDb = async () => {
       { name: 'job_title', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newContactCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_contacts ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for contact ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const contactCols = await db.pragma('table_info(outreach_contacts)');
-      const contactColNames = (contactCols || []).map((c: any) => c.name);
-      for (const col of newContactCols) {
-        if (!contactColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_contacts`);
-          await db.run(`ALTER TABLE outreach_contacts ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newContactCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_contacts ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for contact ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -453,22 +360,11 @@ export const initDb = async () => {
       { name: 'step_id', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newEventCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_events ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for event column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const eventCols = await db.pragma('table_info(outreach_events)');
-      const eventColNames = (eventCols || []).map((c: any) => c.name);
-      for (const col of newEventCols) {
-        if (!eventColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_events`);
-          await db.run(`ALTER TABLE outreach_events ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newEventCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_events ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for event column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -535,27 +431,16 @@ export const initDb = async () => {
       { name: 'imap_password', type: 'TEXT' },
       { name: 'display_name', type: 'TEXT' },
       { name: 'provider', type: 'TEXT' },
-      { name: 'aliases', type: db.isPostgres ? "JSONB DEFAULT '[]'" : "TEXT DEFAULT '[]'" },
+      { name: 'aliases', type: "JSONB DEFAULT '[]'" },
       { name: 'enabled', type: 'BOOLEAN DEFAULT TRUE' },
       { name: 'isPollingActive', type: 'BOOLEAN DEFAULT TRUE' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newMailboxCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for mailbox column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const mailboxCols = await db.pragma('table_info(outreach_mailboxes)');
-      const mailboxColNames = (mailboxCols || []).map((c: any) => c.name);
-      for (const col of newMailboxCols) {
-        if (!mailboxColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_mailboxes`);
-          await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newMailboxCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for mailbox column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -598,22 +483,11 @@ export const initDb = async () => {
       { name: 'error_code', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newEmailCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for email column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const emailCols = await db.pragma('table_info(outreach_individual_emails)');
-      const emailColNames = (emailCols || []).map((c: any) => c.name);
-      for (const col of newEmailCols) {
-        if (!emailColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_individual_emails`);
-          await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newEmailCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_individual_emails ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for email column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -634,22 +508,11 @@ export const initDb = async () => {
       { name: 'pdl_api_key', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newSettingsCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_settings ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for settings column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const settingsCols = await db.pragma('table_info(outreach_settings)');
-      const settingsColNames = (settingsCols || []).map((c: any) => c.name);
-      for (const col of newSettingsCols) {
-        if (!settingsColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_settings`);
-          await db.run(`ALTER TABLE outreach_settings ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newSettingsCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_settings ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for settings column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -722,22 +585,11 @@ export const initDb = async () => {
       { name: 'step_id', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newTrackCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_individual_email_events ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for tracking event column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const trackCols = await db.pragma('table_info(outreach_individual_email_events)');
-      const trackColNames = (trackCols || []).map((c: any) => c.name);
-      for (const col of newTrackCols) {
-        if (!trackColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_individual_email_events`);
-          await db.run(`ALTER TABLE outreach_individual_email_events ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newTrackCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_individual_email_events ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for tracking event column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -812,22 +664,11 @@ export const initDb = async () => {
       { name: 'attachments', type: 'TEXT' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of newStepCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for step column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const stepCols = await db.pragma('table_info(outreach_sequence_steps)');
-      const stepColNames = (stepCols || []).map((c: any) => c.name);
-      for (const col of newStepCols) {
-        if (!stepColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_steps`);
-          await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of newStepCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_sequence_steps ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for step column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -886,23 +727,11 @@ export const initDb = async () => {
       { name: 'completed_at', type: 'TIMESTAMP' }
     ];
 
-    if (db.isPostgres) {
-      for (const col of missingEnrollCols) {
-        try {
-          await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-        } catch (err) {
-          console.warn(`[DB] PG Migration for enrollment column ${col.name} failed:`, (err as Error).message);
-        }
-      }
-    } else {
-      const enrollCols = await db.pragma('table_info(outreach_sequence_enrollments)');
-      const enrollColNames = (enrollCols || []).map((c: any) => c.name);
-
-      for (const col of missingEnrollCols) {
-        if (!enrollColNames.includes(col.name)) {
-          console.log(`[DB] Adding missing column ${col.name} to outreach_sequence_enrollments`);
-          await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN ${col.name} ${col.type}`);
-        }
+    for (const col of missingEnrollCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_sequence_enrollments ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for enrollment column ${col.name} failed:`, (err as Error).message);
       }
     }
 
@@ -920,8 +749,8 @@ export const initDb = async () => {
       )
     `);
 
-    const snippetCols = await db.pragma('table_info(outreach_snippets)');
-    const snippetColNames = (snippetCols || []).map((c: any) => c.name);
+    const res = await db.all("SELECT column_name as name FROM information_schema.columns WHERE table_name = 'outreach_snippets'");
+    const snippetColNames = (res || []).map((c: any) => c.name);
     if (!snippetColNames.includes('type')) {
       console.log("[DB] Adding 'type' column to outreach_snippets");
       await db.run(`ALTER TABLE outreach_snippets ADD COLUMN type TEXT DEFAULT 'standard'`);
