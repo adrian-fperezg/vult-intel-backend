@@ -13,9 +13,10 @@ if (!ENCRYPTION_KEY) {
 }
 
 function getKey(): Buffer {
-  const raw = ENCRYPTION_KEY || '';
-  // Pad / trim to exactly 32 bytes
-  return Buffer.from(raw.padEnd(32, '0').slice(0, 32), 'utf8');
+  if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
+    throw new Error(`CRITICAL: ENCRYPTION_KEY must be exactly 32 characters long. Current length: ${ENCRYPTION_KEY?.length || 0}`);
+  }
+  return Buffer.from(ENCRYPTION_KEY, 'utf8');
 }
 
 export function encryptToken(plain: string): string {
