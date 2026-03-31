@@ -4,6 +4,7 @@ import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
 import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent } from './utils.js';
+import { scheduleNextStep } from './sequenceEngine.js';
 
 export interface ImapConfig {
   host: string;
@@ -151,6 +152,7 @@ export async function pollImap(mailboxId: string) {
         let keywordMatched: boolean | null = null;
         let conditionKeyword: string | null = null;
         let hijackSuccessful = false;
+        let branchingHandled = false;
 
         if (originalEmail.sequence_id) {
           const rawBody = await extractEmailBody(msg);
@@ -171,6 +173,35 @@ export async function pollImap(mailboxId: string) {
               conditionKeyword = conditionStep.condition_keyword.trim();
               const cleanReply = cleanEmailBody(rawBody);
               keywordMatched = matchKeyword(cleanReply, conditionKeyword);
+              
+              if (keywordMatched) {
+                console.log(`[IMAP] [UID: ${uid}] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionKeyword}". Advancing to YES branch.`);
+                
+                // 1. Record evaluation event
+                await db.prepare(`
+                  INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                  uuidv4(),
+                  originalEmail.contact_id,
+                  originalEmail.project_id,
+                  originalEmail.sequence_id,
+                  conditionStep.id,
+                  'sequence_condition_evaluated',
+                  JSON.stringify({ 
+                    parentStepId: conditionStep.id,
+                    evaluatedBranch: 'yes',
+                    result: true,
+                    reason: `Keyword match: '${conditionKeyword}'`
+                  })
+                );
+
+                // 2. Advance to the next step on the YES branch immediately
+                await scheduleNextStep(originalEmail.project_id, originalEmail.sequence_id, originalEmail.contact_id, conditionStep.id, 'yes');
+                branchingHandled = true;
+              } else {
+                console.log(`[IMAP] [UID: ${uid}] Condition Step Keyword check: "${conditionKeyword}" -> NO MATCH`);
+              }
             }
           }
         }
@@ -197,19 +228,27 @@ export async function pollImap(mailboxId: string) {
           })
         );
 
-        // Update Flag: keyword found or no keyword → \Seen. Keyword NOT found → stay UNSEEN.
-        if (keywordMatched === false) {
-          console.log(`[IMAP] [UID: ${uid}] Keyword mismatch. KEEPING message UNREAD for sequence branching.`);
-          await connection.delFlags(uid, ['\\Seen']);
-        } else {
-          console.log(`[IMAP] [UID: ${uid}] Keyword matched or no condition. Marking message as SEEN.`);
-          await connection.addFlags(uid, ['\\Seen']);
-        }
+        // Update Flag: Moved to termination logic for consistency
 
         // Enrollments Termination logic
-        if (hijackSuccessful) {
-          console.log(`[IMAP] [UID: ${uid}] Sequence was hijacked to YES path. NOT stopping the enrollment.`);
-        } else if (keywordMatched !== false) {
+        if (hijackSuccessful || branchingHandled) {
+          console.log(`[IMAP] [UID: ${uid}] Sequence branched/hijacked. Skipping termination.`);
+          await connection.addFlags(uid, ['\\Seen']);
+        } else if (keywordMatched === false && conditionKeyword) {
+          console.log(`[IMAP] [UID: ${uid}] Keyword mismatch for "${conditionKeyword}". Terminating sequence.`);
+          
+          // 1. Stop enrollment anyway because they replied but didn't say the keyword
+          await db.prepare(`
+            UPDATE outreach_sequence_enrollments 
+            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
+            WHERE contact_id = ? AND status = 'active'
+            AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
+          `).run(originalEmail.contact_id);
+
+          // 2. Mark as SEEN to prevent loop
+          await connection.addFlags(uid, ['\\Seen']);
+        } else {
+          // Default stop-on-reply behavior (no keywords or standard reply)
           const result = await db.prepare(`
             UPDATE outreach_sequence_enrollments 
             SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
@@ -217,9 +256,10 @@ export async function pollImap(mailboxId: string) {
             AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
           `).run(originalEmail.contact_id);
 
-          console.log(`[IMAP] [UID: ${uid}] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
-        } else {
-          console.log(`[IMAP] [UID: ${uid}] Keyword mis-match — sequence will continue normally.`);
+          if (result.changes > 0) {
+            console.log(`[IMAP] [UID: ${uid}] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
+          }
+          await connection.addFlags(uid, ['\\Seen']);
         }
 
       } catch (msgErr: any) {

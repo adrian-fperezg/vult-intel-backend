@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
 import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent } from './utils.js';
+import { scheduleNextStep } from './sequenceEngine.js';
 
 interface GmailMessage {
   id: string;
@@ -91,6 +92,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       let keywordMatched: boolean | null = null;
       let conditionKeyword: string | null = null;
       let hijackSuccessful = false;
+      let branchingHandled = false;
 
       if (originalEmail.sequence_id) {
         const rawBody = getGmailBody(msg.payload);
@@ -109,7 +111,35 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           if (conditionStep?.condition_keyword) {
             conditionKeyword = conditionStep.condition_keyword.trim();
             keywordMatched = matchKeyword(rawBody, conditionKeyword);
-            console.log(`[Gmail] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionKeyword}" -> ${keywordMatched}`);
+            
+            if (keywordMatched) {
+              console.log(`[Gmail] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionKeyword}". Advancing to YES branch.`);
+              
+              // 1. Record evaluation event
+              await db.prepare(`
+                INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                uuidv4(),
+                originalEmail.contact_id,
+                mailbox.project_id,
+                originalEmail.sequence_id,
+                conditionStep.id,
+                'sequence_condition_evaluated',
+                JSON.stringify({ 
+                  parentStepId: conditionStep.id,
+                  evaluatedBranch: 'yes',
+                  result: true,
+                  reason: `Keyword match: '${conditionKeyword}'`
+                })
+              );
+
+              // 2. Advance to the next step on the YES branch immediately
+              await scheduleNextStep(mailbox.project_id, originalEmail.sequence_id, originalEmail.contact_id, conditionStep.id, 'yes');
+              branchingHandled = true;
+            } else {
+              console.log(`[Gmail] Condition Step Keyword check: "${conditionKeyword}" -> NO MATCH`);
+            }
           }
         }
       }
@@ -139,25 +169,11 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
       // Update contact status
       await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);
-      
-      // Stop sequence logic
-      if (hijackSuccessful) {
-        console.log(`[Gmail] Sequence hijacked to YES branch. Skipping termination.`);
-      } else if (keywordMatched === false) {
-        console.log(`[Gmail] Keyword mismatch. RESTORING UNREAD label for visual detection.`);
-        // Mark as Unread in Gmail
-        await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/modify`,
-          {
-            method: 'POST',
-            headers: { 
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ addLabelIds: ['UNREAD'] })
-          }
-        );
+      // 6. Stop sequence logic (if not branched)
+      if (hijackSuccessful || branchingHandled) {
+        console.log(`[Gmail] Sequence branched/hijacked. Skipping termination.`);
       } else {
+        // Default stop-on-reply behavior
         const result = await db.prepare(`
           UPDATE outreach_sequence_enrollments 
           SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
@@ -169,6 +185,19 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           console.log(`[Gmail] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
         }
       }
+
+      // 7. ALWAYS mark as read to prevent polling loops
+      await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`,
+        {
+          method: 'POST',
+          headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
+        }
+      );
 
       newCount++;
     }
