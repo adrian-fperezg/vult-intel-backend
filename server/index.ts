@@ -1127,6 +1127,81 @@ app.get("/api/outreach/campaigns/:id/delivery-estimate", async (req: AuthRequest
 import { enrollContactInSequence } from './lib/outreach/sequenceEngine.js';
 import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
 
+// GET /api/outreach/stats
+app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.headers['x-project-id'] as string;
+  if (!userId || !projectId) return res.status(400).json({ error: "Missing auth or project_id" });
+
+  const cacheKey = `outreach:stats:${projectId}`;
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json(JSON.parse(cached));
+
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const [
+      { sendVelocity },
+      { activeSequences },
+      { totalRecipients },
+      { totalSentCount },
+      { uniqueOpensCount }
+    ] = await Promise.all([
+      db.get("SELECT COUNT(*) as sendVelocity FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, yesterday),
+      db.get("SELECT COUNT(*) as activeSequences FROM outreach_sequences WHERE project_id = ? AND status = 'active'", projectId),
+      db.get("SELECT COUNT(DISTINCT contact_id) as totalRecipients FROM outreach_sequence_enrollments WHERE project_id = ?", projectId),
+      db.get("SELECT COUNT(*) as totalSentCount FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent'", projectId),
+      db.get("SELECT COUNT(DISTINCT contact_id) as uniqueOpensCount FROM outreach_events WHERE project_id = ? AND type = 'email_opened'", projectId)
+    ]) as any[];
+
+    const overallOpenRate = totalSentCount > 0 ? (uniqueOpensCount / totalSentCount) * 100 : 0;
+
+    // AI Insight Engine
+    let insight = "No data available for AI analysis yet. Keep sending!";
+    const activeSeqs = await db.all<{ name: string; sent: number; opened: number; replied: number }>(`
+      SELECT name, 
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as sent,
+             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened') as opened,
+             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied') as replied
+      FROM outreach_sequences s WHERE project_id = ? AND status = 'active'
+    `, projectId);
+
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (geminiKey && activeSeqs.length > 0) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const seqData = activeSeqs.map(s => `${s.name}: Sent ${s.sent}, Opened ${s.opened}, Replied ${s.replied}`).join("\n");
+        const prompt = `Analyze these outreach sequences for the last project period and provide a 1-2 sentence minimalist insight. Identify the top performer and why it might be winning (mention if it's high open rates or replies). Be concise and professional.
+        
+        Sequences:
+        ${seqData}`;
+
+        const result = await (ai as any).models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+        insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
+      } catch (err) {
+        console.error("[AI Insight Error]", err);
+      }
+    }
+
+    const stats = {
+      sendVelocity,
+      activeSequences,
+      totalRecipients,
+      overallOpenRate: Math.round(overallOpenRate * 10) / 10,
+      insight
+    };
+
+    await redis.setex(cacheKey, 300, JSON.stringify(stats));
+    res.json(stats);
+  } catch (error: any) {
+    console.error("GET /api/outreach/stats Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/outreach/sequences
 app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

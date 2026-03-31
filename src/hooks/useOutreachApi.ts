@@ -309,6 +309,11 @@ export function useOutreachApi() {
     [get]
   );
 
+  const fetchGlobalStats = useCallback(
+    () => get<any>('/stats'),
+    [get]
+  );
+
   const deleteSequence = useCallback(
     (id: string) => del(`/sequences/${id}`),
     [del],
@@ -573,6 +578,7 @@ export function useOutreachApi() {
     removeSequenceRecipient: (sequenceId: string, contactId: string) => 
       del(`/sequences/${sequenceId}/recipients/${contactId}`),
     getGlobalLimitStatus,
+    fetchGlobalStats,
     // Contacts
     fetchContacts,
     createContact,

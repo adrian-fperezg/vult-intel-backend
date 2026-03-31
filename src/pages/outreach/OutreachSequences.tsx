@@ -18,8 +18,11 @@ interface Sequence {
   step_count: number;
   contact_count: number;
   total_sent: number;
-  unique_opens: number;
-  unique_replies: number;
+  sent_today: number;
+  total_opened: number;
+  opened_today: number;
+  total_replies: number;
+  replied_today: number;
   open_rate: number;
   reply_rate: number;
   created_at: string;
@@ -33,6 +36,7 @@ export default function OutreachSequences() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
+  const [globalStats, setGlobalStats] = useState<any>(null);
   
   const [searchParams, setSearchParams] = useSearchParams();
   const editingId = searchParams.get('seqId');
@@ -56,12 +60,14 @@ export default function OutreachSequences() {
     if (!activeProjectId) return;
     setIsLoading(true);
     try {
-      const [seqs, limits] = await Promise.all([
+      const [seqs, limits, stats] = await Promise.all([
         api.fetchSequences(),
-        api.getGlobalLimitStatus(activeProjectId)
+        api.getGlobalLimitStatus(activeProjectId),
+        api.fetchGlobalStats()
       ]);
       setSequences(seqs || []);
       setLimitStatus(limits);
+      setGlobalStats(stats);
     } catch (error) {
       console.error('Error fetching sequences:', error);
     } finally {
@@ -151,32 +157,51 @@ export default function OutreachSequences() {
           </div>
         </div>
 
+        {/* AI Insight Engine Banner */}
+        {globalStats?.insight && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-teal-500/5 border border-teal-500/20 rounded-2xl p-4 flex items-start gap-4"
+          >
+            <div className="p-2 rounded-xl bg-teal-500/10">
+              <Sparkles className="size-5 text-teal-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-teal-500">AI Performance Insight</span>
+                <div className="h-1 w-1 rounded-full bg-teal-500" />
+                <span className="text-[10px] text-slate-500 font-bold">GEMINI 2.0 FLASH</span>
+              </div>
+              <p className="text-sm text-slate-300 leading-relaxed italic">
+                "{globalStats.insight}"
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         {/* Stats Bar */}
         <div className="grid grid-cols-4 gap-4">
           <OutreachMetricCard 
             label="Daily Send Velocity" 
-            value={`${limitStatus?.total_sent_today || 0} / 100`} 
+            value={`${globalStats?.dailySendVelocity || 0} / 100`} 
             sub="Global Project Limit"
-            teal={limitStatus?.total_sent_today > 0}
+            teal={(globalStats?.dailySendVelocity || 0) > 0}
             icon={<Zap className="size-4" />}
           />
           <OutreachMetricCard 
             label="Active Sequences" 
-            value={sequences.filter(s => s.status === 'active').length} 
+            value={globalStats?.activeSequences || 0} 
             icon={<Play className="size-4" />}
           />
           <OutreachMetricCard 
             label="Total Recipients" 
-            value={sequences.reduce((acc, s) => acc + (s.contact_count || 0), 0)} 
+            value={globalStats?.totalRecipients || 0} 
             icon={<Mail className="size-4" />}
           />
           <OutreachMetricCard 
             label="Overall Open Rate" 
-            value={(() => {
-              const totalSent = sequences.reduce((acc, s) => acc + (s.total_sent || 0), 0);
-              const totalOpened = sequences.reduce((acc, s) => acc + (s.unique_opens || 0), 0);
-              return totalSent > 0 ? `${((totalOpened / totalSent) * 100).toFixed(1)}%` : "0.0%";
-            })()} 
+            value={globalStats?.overallOpenRate || "0.0%"} 
             icon={<BarChart3 className="size-4" />}
           />
         </div>
@@ -282,12 +307,22 @@ export default function OutreachSequences() {
                     <div className="flex items-center gap-3">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-bold text-slate-600 uppercase">Open Rate</span>
-                        <span className="text-xs font-bold text-teal-500/80">38.2%</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs font-bold text-teal-500/80">{seq.open_rate}%</span>
+                          {seq.opened_today > 0 && (
+                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-teal-500/10 text-teal-400">+{seq.opened_today}</span>
+                          )}
+                        </div>
                       </div>
                       <div className="h-6 w-px bg-white/5" />
                       <div className="flex flex-col">
                         <span className="text-[10px] font-bold text-slate-600 uppercase">Reply Rate</span>
-                        <span className="text-xs font-bold text-white/80">4.5%</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs font-bold text-white/80">{seq.reply_rate}%</span>
+                          {seq.replied_today > 0 && (
+                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">+{seq.replied_today}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="p-2 rounded-xl bg-white/5 group-hover:bg-teal-500/10 transition-colors">
