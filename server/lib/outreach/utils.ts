@@ -128,56 +128,33 @@ export async function findOriginalEmail(potentialIds: string[], threadId?: strin
 }
 
 /**
- * Handles the logic for matching an intent keyword and hijacking the sequence to the YES branch.
+ * Handles the logic for matching an intent keyword and returning the decision.
+ * Does NOT perform side effects like recording events or updating enrollments.
  */
 export async function handleSequenceIntent(originalEmail: any, rawBody: string) {
   if (!originalEmail.sequence_id) return { matched: false, hijacked: false };
 
   const sequence = await db.prepare("SELECT * FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any;
-  if (!sequence?.intent_keyword) return { matched: false, hijacked: false };
+  if (!sequence?.intent_keyword) return { matched: false, hijacked: false, keyword: null };
 
   const conditionKeyword = sequence.intent_keyword.trim();
   const cleanReply = cleanEmailBody(rawBody);
   const matched = matchKeyword(cleanReply, conditionKeyword);
 
   if (matched) {
-    console.log(`[Sequence Intent] Match found: "${conditionKeyword}". Hijacking to YES branch.`);
-
     const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
     const yesStep = steps.find(s => s.branch_path === 'yes');
 
     if (yesStep) {
-      const parentConditionId = yesStep.parent_step_id || 'synthetic-condition';
-
-      // 1. Inject synthetic condition evaluation event
-      await db.prepare(`
-        INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        uuidv4(),
-        originalEmail.contact_id,
-        originalEmail.project_id,
-        originalEmail.sequence_id,
-        parentConditionId,
-        'sequence_condition_evaluated',
-        JSON.stringify({ 
-          parentStepId: parentConditionId,
-          evaluatedBranch: 'yes',
-          result: true,
-          reason: `Sequence intent match: '${conditionKeyword}'`
-        })
-      );
-
-      // 2. Hijack enrollment
-      await db.prepare(`
-        UPDATE outreach_sequence_enrollments 
-        SET next_step_id = ?, status = 'active', scheduled_at = CURRENT_TIMESTAMP
-        WHERE contact_id = ? AND sequence_id = ? AND status = 'active'
-      `).run(yesStep.id, originalEmail.contact_id, originalEmail.sequence_id);
-
-      return { matched: true, hijacked: true, keyword: conditionKeyword };
+      return { 
+        matched: true, 
+        hijacked: true, 
+        keyword: conditionKeyword, 
+        yesStepId: yesStep.id, 
+        parentStepId: yesStep.parent_step_id || 'synthetic-condition' 
+      };
     } else {
-      console.warn(`[Sequence Intent] Match found but NO 'yes' branch step exists.`);
+      console.warn(`[Sequence Intent] Match found for "${conditionKeyword}" but NO 'yes' branch step exists.`);
       return { matched: true, hijacked: false, keyword: conditionKeyword };
     }
   }
