@@ -150,42 +150,77 @@ export async function pollImap(mailboxId: string) {
         // ── KEYWORD INTENT PARSING ──────────────────────────────────────────
         let keywordMatched: boolean | null = null;
         let conditionKeyword: string | null = null;
+        let hijackSuccessful = false;
 
-        if (originalEmail.sequence_id && originalEmail.step_id) {
-          const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
-          const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
-
-          if (conditionStep?.condition_keyword) {
-            conditionKeyword = conditionStep.condition_keyword.trim();
+        if (originalEmail.sequence_id) {
+          const sequence = await db.prepare("SELECT * FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any;
+          
+          if (sequence?.intent_keyword) {
+            conditionKeyword = sequence.intent_keyword.trim();
             const rawBody = await extractEmailBody(msg);
             const cleanReply = cleanEmailBody(rawBody);
             
-            console.log(`[IMAP WORKER] [UID: ${uid}] Keyword matching debugging:`);
-            console.log(`- Condition Keyword: "${conditionKeyword}"`);
-            console.log(`- Raw Body Length: ${rawBody?.length}`);
-            console.log(`- Cleaned Body Length: ${cleanReply?.length}`);
-            console.log(`- Cleaned Body Preview: "${cleanReply.substring(0, 200).replace(/\n/g, ' ')}${cleanReply.length > 200 ? '...' : ''}"`);
-
-            keywordMatched = matchKeyword(cleanReply, conditionKeyword);
-
-            // Find matching enrollment for logging
-            const enrollment = await db.prepare(`
-              SELECT id FROM outreach_sequence_enrollments
-              WHERE contact_id = ? AND sequence_id = ? AND status = 'active'
-              LIMIT 1
-            `).get(originalEmail.contact_id, originalEmail.sequence_id) as any;
-
-            console.log(`[IMAP WORKER] [UID: ${uid}] Enrollment ${enrollment?.id || 'UNKNOWN'} result: ${keywordMatched ? 'MATCHED' : 'NO MATCH'}`);
+            console.log(`[IMAP WORKER] [UID: ${uid}] Sequence Intent Keyword debugging:`);
+            console.log(`- Intent Keyword: "${conditionKeyword}"`);
             
-            if (!keywordMatched) {
-              // Check if keyword exists in raw body but NOT in cleaned body (false positive in history)
-              const matchedInRaw = matchKeyword(rawBody, conditionKeyword);
-              if (matchedInRaw) {
-                console.log(`[IMAP WORKER] [UID: ${uid}] (Safety) Keyword found in HISTORY but not in NEW reply. Correctly ignoring.`);
+            keywordMatched = matchKeyword(cleanReply, conditionKeyword);
+            
+            if (keywordMatched) {
+              console.log(`[IMAP WORKER] [UID: ${uid}] Intent MATCHED! Hijacking to YES branch.`);
+              
+              const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+              const yesStep = steps.find(s => s.branch_path === 'yes');
+              
+              if (yesStep) {
+                const parentConditionId = yesStep.parent_step_id || 'synthetic-condition';
+
+                // Inject synthetic condition evaluation event
+                await db.prepare(`
+                  INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                  uuidv4(),
+                  originalEmail.contact_id,
+                  originalEmail.project_id,
+                  originalEmail.sequence_id,
+                  parentConditionId,
+                  'sequence_condition_evaluated',
+                  JSON.stringify({ 
+                    parentStepId: parentConditionId,
+                    evaluatedBranch: 'yes',
+                    result: true,
+                    reason: `Sequence intent match: '${conditionKeyword}'`
+                  })
+                );
+
+                // Hijack enrollment
+                await db.prepare(`
+                  UPDATE outreach_sequence_enrollments 
+                  SET next_step_id = ?, status = 'active', scheduled_at = CURRENT_TIMESTAMP
+                  WHERE contact_id = ? AND sequence_id = ? AND status = 'active'
+                `).run(yesStep.id, originalEmail.contact_id, originalEmail.sequence_id);
+
+                hijackSuccessful = true;
+                console.log(`[IMAP WORKER] [UID: ${uid}] Sequence advanced to YES branch step: ${yesStep.id}`);
+              } else {
+                console.log(`[IMAP WORKER] [UID: ${uid}] WARNING: Intent MATCHED but NO YES branch found.`);
               }
+            } else {
+              console.log(`[IMAP WORKER] [UID: ${uid}] NO MATCH for sequence intent.`);
             }
           } else {
-            console.log(`[IMAP WORKER] [UID: ${uid}] No keyword-based condition step found.`);
+            // Fallback to local condition logic if no sequence intent keyword is found
+            if (originalEmail.step_id) {
+              const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+              const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
+
+              if (conditionStep?.condition_keyword) {
+                conditionKeyword = conditionStep.condition_keyword.trim();
+                const rawBody = await extractEmailBody(msg);
+                const cleanReply = cleanEmailBody(rawBody);
+                keywordMatched = matchKeyword(cleanReply, conditionKeyword);
+              }
+            }
           }
         }
 
@@ -221,7 +256,9 @@ export async function pollImap(mailboxId: string) {
         }
 
         // Enrollments Termination logic
-        if (keywordMatched !== false) {
+        if (hijackSuccessful) {
+          console.log(`[IMAP] [UID: ${uid}] Sequence was hijacked to YES path. NOT stopping the enrollment.`);
+        } else if (keywordMatched !== false) {
           const result = await db.prepare(`
             UPDATE outreach_sequence_enrollments 
             SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP

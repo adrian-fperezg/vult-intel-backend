@@ -10,6 +10,8 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 // @ts-ignore
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
+import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
+
 dotenv.config();
 
 // ─── QUEUES ──────────────────────────────────────────────────────────────────
@@ -168,69 +170,115 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       const step = await db.prepare('SELECT * FROM outreach_sequence_steps WHERE id = ?').get(stepId) as any;
       if (!step) throw new Error('Step not found');
 
+      // --- STRICT IDEMPOTENCY CHECK ---
+      // Check if this step has already been marked as EXECUTED in outreach_events
+      const existingEvent = await db.prepare(`
+        SELECT id FROM outreach_events 
+        WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_step_executed'
+      `).get(contactId, sequenceId, stepId);
+
+      if (existingEvent) {
+        console.warn(`[Sequence] [Idempotency] Step ${stepId} already executed for contact ${contactId}. Advancing sequence.`);
+        // Ensure enrollment is synced even if skip
+        await db.run(
+          `UPDATE outreach_sequence_enrollments SET current_step_id = ? WHERE sequence_id = ? AND contact_id = ?`,
+          step.id, sequenceId, contactId
+        );
+        // Advance
+        await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
+        return;
+      }
+      // ---------------------------------
+
       if (step.step_type === 'email') {
         const contact = await db.prepare('SELECT * FROM outreach_contacts WHERE id = ?').get(contactId) as any;
         const config = typeof step.config === 'string' ? JSON.parse(step.config) : step.config;
 
-        // Resolve variables
-        let subject = config.subject || "";
-        let bodyHtml = config.body_html || "";
-        const variables = {
-          first_name: contact.first_name || "",
-          last_name: contact.last_name || "",
-          company: contact.company || "",
-          email: contact.email || ""
-        };
+        // --- EMAIL DEDUPLICATION CHECK ---
+        // Check if an email has already been RECORDED for this step
+        let existingEmail = await db.prepare(`
+          SELECT id, status FROM outreach_individual_emails 
+          WHERE contact_id = ? AND sequence_id = ? AND step_id = ?
+        `).get(contactId, sequenceId, stepId) as any;
 
-        Object.entries(variables).forEach(([key, value]) => {
-          const regex = new RegExp(`{{${key}}}`, 'g');
-          subject = subject.replace(regex, value);
-          bodyHtml = bodyHtml.replace(regex, value);
-        });
+        let emailId: string;
+        
+        if (existingEmail) {
+          emailId = existingEmail.id;
+          if (existingEmail.status === 'sent') {
+            console.log(`[Sequence] [Deduplication] Email already sent for step ${stepId} (EmailID: ${emailId}). Skipping to event log.`);
+          } else {
+            console.log(`[Sequence] [Deduplication] Retrying existing email ${emailId} (Status: ${existingEmail.status})`);
+            await processEmail(emailId);
+          }
+        } else {
+          // Resolve variables
+          let subject = config.subject || "";
+          let bodyHtml = config.body_html || "";
+          const variables = {
+            first_name: contact.first_name || "",
+            last_name: contact.last_name || "",
+            company: contact.company || "",
+            email: contact.email || ""
+          };
 
-        // Resolve attachments and log for debugging
-        const rawAttachments = JSON.parse(step.attachments || "[]");
-        console.log('[Attachments Debug] step.attachments:', rawAttachments);
-        const mappedAttachments = rawAttachments.map((file: any) => ({
-          filename: file.name || file.filename,
-          path: file.url || file.path
-        }));
+          Object.entries(variables).forEach(([key, value]) => {
+            const regex = new RegExp(`{{${key}}}`, 'g');
+            subject = subject.replace(regex, value);
+            bodyHtml = bodyHtml.replace(regex, value);
+          });
 
-        // Create individual email record
-        const emailId = uuidv4();
-        await db.prepare(`
-          INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body_html, status, attachments)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
-        `).run(
-          emailId,
-          sequence.user_id,
-          projectId,
-          sequence.mailbox_id,
-          contactId,
-          sequenceId,
-          stepId,
-          sequence.from_email,
-          sequence.from_name,
-          contact.email,
-          subject,
-          bodyHtml,
-          JSON.stringify(mappedAttachments)
-        );
+          // Resolve attachments and log for debugging
+          const rawAttachments = JSON.parse(step.attachments || "[]");
+          console.log('[Attachments Debug] step.attachments:', rawAttachments);
+          const mappedAttachments = rawAttachments.map((file: any) => ({
+            filename: file.name || file.filename,
+            path: file.url || file.path
+          }));
 
-        // Send via processEmail
-        try {
-          await processEmail(emailId);
-        } catch (procErr: any) {
-          console.error(`[Sequence] processEmail failed for ${emailId}:`, procErr);
-          await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
-          throw procErr; // Re-throw to be caught by the outer sequence catch block
+          // Create individual email record
+          emailId = uuidv4();
+          await db.prepare(`
+            INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body_html, status, attachments)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+          `).run(
+            emailId,
+            sequence.user_id,
+            projectId,
+            sequence.mailbox_id,
+            contactId,
+            sequenceId,
+            stepId,
+            sequence.from_email,
+            sequence.from_name,
+            contact.email,
+            subject,
+            bodyHtml,
+            JSON.stringify(mappedAttachments)
+          );
+
+          // Send via processEmail
+          try {
+            await processEmail(emailId);
+          } catch (procErr: any) {
+            console.error(`[Sequence] processEmail failed for ${emailId}:`, procErr);
+            await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(emailId);
+            throw procErr; // Re-throw to be caught by the outer sequence catch block
+          }
         }
         
-        // Record event
-        await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+        // --- RECORD EVENT (ONLY IF NOT ALREADY DONE) ---
+        // Double-check just before insert to be extra safe in high concurrency (unlikely with jobId but good practice)
+        const safetyCheck = await db.prepare(`
+          SELECT id FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_step_executed'
+        `).get(contactId, sequenceId, stepId);
+
+        if (!safetyCheck) {
+          await db.prepare(`
+            INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type, emailId }));
+        }
 
         // Schedule next step (default path)
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
@@ -246,15 +294,32 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         );
         console.log(`[Sequence] [Heartbeat] Step ${stepId} executed successfully for contact ${contactId}`);
       } else if (step.step_type === 'condition') {
+        // --- IDEMPOTENCY CHECK FOR CONDITION ---
+        const existingEval = await db.prepare(`
+          SELECT metadata FROM outreach_events 
+          WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_condition_evaluated'
+        `).get(contactId, sequenceId, stepId) as any;
+
+        if (existingEval) {
+          try {
+            const meta = typeof existingEval.metadata === 'string' ? JSON.parse(existingEval.metadata) : existingEval.metadata;
+            const branchPath = meta.result || 'no';
+            console.warn(`[Sequence] [Idempotency] Step ${stepId} already evaluated to '${branchPath}'. Skipping evaluation.`);
+            await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
+            return;
+          } catch (e) {
+            console.error('[Sequence] [Idempotency] Failed to parse existing condition metadata. Re-evaluating.');
+          }
+        }
+
         // Evaluation Engine Logic
         const parentEmailStepId = step.parent_step_id;
         if (!parentEmailStepId) {
           console.error(`[Sequence] Condition step ${stepId} has no parent email step`);
           return;
         }
-
-        // Check for events related to the parent email step for this contact
-        // We look for 'email_opened', 'email_clicked', or 'email_replied' based on condition_type
+        
+        // ... (rest of logic) ...
         const eventTypeMapping: Record<string, string> = {
           'opened': 'email_opened',
           'clicked': 'email_clicked',
@@ -271,19 +336,14 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         let branchPath = event ? 'yes' : 'no';
 
-        // For 'replied' conditions with a keyword configured, also check keyword_matched
-        // The IMAP poller sets keyword_matched: false if the keyword was NOT found in the reply.
         if (branchPath === 'yes' && step.condition_type === 'replied' && step.condition_keyword && event?.metadata) {
           try {
             const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
-            // If keyword_matched is explicitly false, route to NO branch
             if (meta.keyword_matched === false) {
               branchPath = 'no';
               console.log(`[Sequence] Keyword "${step.condition_keyword}" not found in reply. Routing to NO branch.`);
             }
-          } catch {
-            // If metadata can't be parsed, fall back to 'yes' (event exists)
-          }
+          } catch { }
         }
 
         console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);
@@ -306,16 +366,19 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
            WHERE sequence_id = ? AND contact_id = ?`,
           step.id, sequenceId, contactId
         );
-        console.log(`[Sequence] [Heartbeat] Condition step ${stepId} evaluated to '${branchPath}' for contact ${contactId}`);
       } else {
-        // Handle delay, task, or other step types - just pass through to next step
-        console.log(`[Sequence] Executing ${step.step_type} step ${stepId}. Continuing to next step.`);
-        
-        // Record execution
-        await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+        // Handle delay, task, or other step types
+        const existingEvent = await db.prepare(`
+          SELECT id FROM outreach_events 
+          WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_step_executed'
+        `).get(contactId, sequenceId, stepId);
+
+        if (!existingEvent) {
+          await db.prepare(`
+            INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_step_executed', JSON.stringify({ sequenceId, stepId, stepNumber, stepType: step.step_type }));
+        }
 
         await scheduleNextStep(projectId, sequenceId, contactId, step.id, 'default');
       }
@@ -627,42 +690,68 @@ export async function sequenceWatchdog() {
   console.log('[SequenceWatchdog] Starting safety-net poll...');
   
   try {
-    // Find active enrollments that are overdue
-    // We check for enrollments where scheduled_at is in the past
-    const overdueEnrollments = await db.all(`
+    // 1. Find active enrollments that are overdue OR missing next_step_id
+    const activeEnrollments = await db.all(`
       SELECT e.*, s.project_id
       FROM outreach_sequence_enrollments e
       JOIN outreach_sequences s ON e.sequence_id = s.id
       WHERE e.status = 'active' 
-        AND e.scheduled_at <= CURRENT_TIMESTAMP
-        AND e.next_step_id IS NOT NULL
         AND s.status = 'active'
-      LIMIT 50
+      LIMIT 100
     `) as any[];
 
-    if (overdueEnrollments.length === 0) {
-      console.log('[SequenceWatchdog] No overdue enrollments found.');
+    if (activeEnrollments.length === 0) {
+      console.log('[SequenceWatchdog] No active enrollments to audit.');
       return;
     }
 
-    console.log(`[SequenceWatchdog] Found ${overdueEnrollments.length} overdue enrollments. Verifying queue status...`);
+    console.log(`[SequenceWatchdog] Auditing ${activeEnrollments.length} enrollments...`);
 
-    for (const enrollment of overdueEnrollments) {
+    for (const enrollment of activeEnrollments) {
       try {
-        const jobId = `seq-${enrollment.sequence_id}-contact-${enrollment.contact_id}-step-${enrollment.next_step_id}`;
-        
-        // Check if job already exists in 'waiting' or 'delayed' state
+        // Reconstruction: Find the "True" next step based on event history
+        const { stepId, isCompleted } = await getTrueNextStep(
+          enrollment.project_id, 
+          enrollment.sequence_id, 
+          enrollment.contact_id
+        );
+
+        if (isCompleted) {
+          console.log(`[SequenceWatchdog] Enrollment ${enrollment.id} is actually completed. Updating DB.`);
+          await db.run(
+            "UPDATE outreach_sequence_enrollments SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            enrollment.id
+          );
+          continue;
+        }
+
+        if (!stepId) continue;
+
+        // If DB state is out of sync with history, fix it
+        if (enrollment.next_step_id !== stepId) {
+          console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} out of sync. DB says next is ${enrollment.next_step_id}, History says ${stepId}. Healing.`);
+          await db.run(
+            "UPDATE outreach_sequence_enrollments SET next_step_id = ?, scheduled_at = CURRENT_TIMESTAMP WHERE id = ?",
+            stepId, enrollment.id
+          );
+        }
+
+        // Job verification
+        const jobId = `seq-${enrollment.sequence_id}-contact-${enrollment.contact_id}-step-${stepId}`;
         const job = await emailQueue.getJob(jobId);
         
-        if (!job) {
-          console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} is overdue but has NO job in queue. Recovering...`);
+        // If job is missing AND it's "overdue" (scheduled_at <= now), re-queue
+        const now = new Date();
+        const scheduledAt = new Date(enrollment.scheduled_at || now);
+        
+        if (!job && scheduledAt <= now) {
+          console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} step ${stepId} is due/overdue but NO job in queue. Recovering...`);
           
-          // Re-queue the job
           await emailQueue.add('execute-sequence-step', {
             projectId: enrollment.project_id,
             sequenceId: enrollment.sequence_id,
             contactId: enrollment.contact_id,
-            stepId: enrollment.next_step_id,
+            stepId: stepId,
             isRecovery: true
           }, {
             jobId: jobId,
@@ -671,11 +760,12 @@ export async function sequenceWatchdog() {
           });
 
           console.log(`[SequenceWatchdog] Recovered enrollment ${enrollment.id} (contact ${enrollment.contact_id})`);
-        } else {
-          // Job exists, let BullMQ handle it
-          // Note: If scheduled_at is long ago, BullMQ should have already picked it up unless stalled
-          const jobState = await job.getState();
-          console.log(`[SequenceWatchdog] Enrollment ${enrollment.id} in queue with state: ${jobState}`);
+        } else if (job) {
+          const state = await job.getState();
+          if (state === 'failed' || state === 'completed') {
+             // If the deterministic jobId is completed/failed, BullMQ won't let us add it again under same ID.
+             // Our worker idempotency deals with "already executed" logic if a job with same ID runs.
+          }
         }
       } catch (innerErr) {
         console.error(`[SequenceWatchdog] Failed to process enrollment ${enrollment.id}:`, innerErr);

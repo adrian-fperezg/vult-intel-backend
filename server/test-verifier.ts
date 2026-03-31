@@ -23,7 +23,7 @@ async function test() {
 
   console.log('Testing with email:', testEmails[0]);
   try {
-    const result = await verifyEmailWaterfall(testEmails[0], 1, settings);
+    const result = await verifyEmailWaterfall(testEmails[0], "1", "1");
     console.log('Result:', result);
   } catch (err) {
     console.error('Test failed:', err);

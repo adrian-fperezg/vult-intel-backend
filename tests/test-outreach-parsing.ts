@@ -1,4 +1,4 @@
-import { cleanEmailBody, matchKeyword } from '../server/lib/outreach/imapPoller.js';
+import { cleanEmailBody, matchKeyword } from '../server/lib/outreach/utils.js';
 
 const testCases = [
   {

@@ -306,6 +306,7 @@ export const initDb = async () => {
         mailbox_id TEXT REFERENCES outreach_mailboxes(id),
         from_email TEXT,
         from_name TEXT,
+        intent_keyword TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -328,7 +329,8 @@ export const initDb = async () => {
       { name: 'mailbox_id', type: 'TEXT' },
       { name: 'from_email', type: 'TEXT' },
       { name: 'from_name', type: 'TEXT' },
-      { name: 'steps', type: 'TEXT' }
+      { name: 'steps', type: 'TEXT' },
+      { name: 'intent_keyword', type: 'TEXT' }
     ];
 
     if (db.isPostgres) {

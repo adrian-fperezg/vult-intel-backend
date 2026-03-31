@@ -19,7 +19,7 @@ export async function verifyEmailWaterfall(email: string, projectId: string, use
   if (zbKey) {
     try {
       const balance = await getZeroBounceCredits(zbKey);
-      if (balance.credits && balance.credits > 0) {
+      if (typeof balance === 'number' && balance > 0) {
         const url = `https://api.zerobounce.net/v2/validate?api_key=${zbKey}&email=${encodeURIComponent(email)}&ip_address=`;
         const res = await fetch(url);
         const data = await res.json();

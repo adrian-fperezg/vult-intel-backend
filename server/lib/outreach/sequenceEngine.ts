@@ -138,3 +138,61 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
 
   console.log(`[SequenceEngine] Queued step ${step.id} for contact ${contactId} at ${scheduledAt.toISOString()}`);
 }
+
+/**
+ * Reconstructs the current state of an enrollment by walking the sequence tree
+ * against the recorded events. This is the ultimate source of truth for
+ * sequence progress.
+ */
+export async function getTrueNextStep(projectId: string, sequenceId: string, contactId: string): Promise<{ stepId: string | null; branchPath: string; isCompleted: boolean }> {
+  console.log(`[SequenceEngine] Reconstructing state for sequence ${sequenceId}, contact ${contactId}`);
+  
+  // 1. Get sequence root step
+  let currentStep = await db.get<SequenceStep>(
+    'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL',
+    sequenceId
+  );
+
+  if (!currentStep) return { stepId: null, branchPath: 'default', isCompleted: true };
+
+  let branchPath = 'default';
+
+  while (currentStep) {
+    // Check if THIS step has been executed or evaluated
+    const executionEvent = await db.get<any>(
+      "SELECT type, metadata FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type IN ('sequence_step_executed', 'sequence_condition_evaluated') ORDER BY created_at DESC LIMIT 1",
+      contactId, sequenceId, currentStep.id
+    );
+
+    if (!executionEvent) {
+      // This is the first step that HASN'T been executed. This is our next step!
+      return { stepId: currentStep.id, branchPath, isCompleted: false };
+    }
+
+    // Step was executed, find the next one
+    if (currentStep.step_type === 'condition') {
+      try {
+        const meta = typeof executionEvent.metadata === 'string' ? JSON.parse(executionEvent.metadata) : executionEvent.metadata;
+        branchPath = meta.result || 'no';
+      } catch (e) {
+        branchPath = 'no';
+      }
+    } else {
+      branchPath = 'default';
+    }
+
+    const nextStep = await db.get<SequenceStep>(
+      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
+      sequenceId, currentStep.id, branchPath
+    );
+
+    if (!nextStep) {
+      // Sequence completed on this branch
+      return { stepId: null, branchPath, isCompleted: true };
+    }
+
+    currentStep = nextStep;
+  }
+
+  return { stepId: null, branchPath: 'default', isCompleted: true };
+}
