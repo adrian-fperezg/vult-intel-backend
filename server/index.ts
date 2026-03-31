@@ -1421,7 +1421,10 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
       await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", req.projectId, id);
       await db.run("UPDATE outreach_sequence_steps SET project_id = ? WHERE sequence_id = ?", req.projectId, id);
     }
-
+    // Inyección forzada para guardar el estado del botón Bypass
+    if (req.body.smart_intent_bypass !== undefined) {
+      (filteredUpdates as any)['smart_intent_bypass'] = req.body.smart_intent_bypass ? 1 : 0;
+    }
     const sets = Object.keys(filteredUpdates).map(key => `${key} = ?`).join(', ');
     const values = Object.values(filteredUpdates);
 
