@@ -902,6 +902,14 @@ export const initDb = async () => {
       )
     `);
 
+    const snippetCols = await db.pragma('table_info(outreach_snippets)');
+    const snippetColNames = (snippetCols || []).map((c: any) => c.name);
+    if (!snippetColNames.includes('type')) {
+      console.log("[DB] Adding 'type' column to outreach_snippets");
+      await db.run(`ALTER TABLE outreach_snippets ADD COLUMN type TEXT DEFAULT 'standard'`);
+      await db.run(`UPDATE outreach_snippets SET type = 'standard' WHERE type IS NULL OR type = ''`);
+    }
+
     // Backfill current_step_id for enrollments
     const unmigratedEnrollments = await db.all("SELECT id FROM outreach_sequence_enrollments WHERE current_step_id IS NULL LIMIT 1");
     if (unmigratedEnrollments.length > 0) {

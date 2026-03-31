@@ -72,11 +72,16 @@ export default function OutreachSettings() {
   // Snippets States
   const [snippets, setSnippets] = useState<any[]>([]);
   const [snippetsLoading, setSnippetsLoading] = useState(false);
-  const [showSnippetModal, setShowSnippetModal] = useState(false);
+  const [snippetModalType, setSnippetModalType] = useState<'standard' | 'signature' | null>(null);
   const [editingSnippet, setEditingSnippet] = useState<any>(null);
   const [snippetName, setSnippetName] = useState('');
   const [snippetBody, setSnippetBody] = useState('');
   const [snippetSaving, setSnippetSaving] = useState(false);
+
+  const standardSnippets = snippets.filter(s => s.type !== 'signature');
+  const signatureSnippets = snippets.filter(s => s.type === 'signature');
+
+  const slugify = (text: string) => text.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^\w-]+/g, '');
 
   // Integration States
   const [hunterKeyInput, setHunterKeyInput] = useState('');
@@ -147,23 +152,41 @@ export default function OutreachSettings() {
 
     setSnippetSaving(true);
     try {
-      const vars = extractVars(snippetBody);
+      let finalName = snippetName.trim();
+      let finalBody = snippetBody;
+      const type = snippetModalType || 'standard';
+
+      if (type === 'signature') {
+        const slug = slugify(finalName);
+        if (!slug) {
+          toast.error('Signature name is invalid');
+          return;
+        }
+        finalName = slug.startsWith('sig_') ? slug : `sig_${slug}`;
+      } else {
+        // For standard snippets, we strip HTML if any was pasted/inserted
+        finalBody = finalBody.replace(/<[^>]*>?/gm, '');
+      }
+
+      const vars = extractVars(finalBody);
       if (editingSnippet) {
         await api.updateSnippet(editingSnippet.id, {
-          name: snippetName.trim(),
-          body: snippetBody,
-          vars
+          name: finalName,
+          body: finalBody,
+          vars,
+          type
         });
-        toast.success('Snippet updated');
+        toast.success('Updated');
       } else {
         await api.createSnippet({
-          name: snippetName.trim(),
-          body: snippetBody,
-          vars
+          name: finalName,
+          body: finalBody,
+          vars,
+          type
         });
-        toast.success('Snippet created');
+        toast.success('Created');
       }
-      setShowSnippetModal(false);
+      setSnippetModalType(null);
       loadSnippets();
     } catch (err: any) {
       toast.error(err.message || 'Failed to save snippet');
@@ -668,86 +691,141 @@ export default function OutreachSettings() {
 
         {/* ── SNIPPETS ── */}
         {activeTab === 'snippets' && (
-          <div className="space-y-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Email Snippets</h2>
-                <p className="text-sm text-slate-400 mt-0.5">Save reusable text blocks with variable placeholders</p>
-              </div>
-              <TealButton 
-                size="sm" 
-                onClick={() => {
-                  setEditingSnippet(null);
-                  setSnippetName('');
-                  setSnippetBody('');
-                  setShowSnippetModal(true);
-                }}
-                disabled={!api.activeProjectId}
-              >
-                <Plus className="size-4" /> New Snippet
-              </TealButton>
-            </div>
+          <div className="space-y-12 w-full animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
             
-            {!api.activeProjectId ? (
-              <OutreachEmptyState
-                icon={<Code2 />}
-                title="No project selected"
-                description="Select a project to view and manage your snippets."
-              />
-            ) : snippetsLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+            {/* ── STANDARD SNIPPETS ── */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Standard Snippets</h2>
+                  <p className="text-sm text-slate-400 mt-0.5">Plain-text reusable blocks for your emails</p>
+                </div>
+                <TealButton 
+                  size="sm" 
+                  onClick={() => {
+                    setEditingSnippet(null);
+                    setSnippetName('');
+                    setSnippetBody('');
+                    setSnippetModalType('standard');
+                  }}
+                  disabled={!api.activeProjectId}
+                >
+                  <Plus className="size-4" /> New Snippet
+                </TealButton>
               </div>
-            ) : snippets.length === 0 ? (
-              <OutreachEmptyState
-                icon={<Code2 />}
-                title="No snippets found"
-                description="Create your first snippet to reuse content across emails."
-              />
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {snippets.map(snippet => (
-                  <div key={snippet.id} className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 group hover:border-white/15 transition-colors flex flex-col">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <h3 className="font-semibold text-white text-sm">{snippet.name}</h3>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => {
-                            setEditingSnippet(snippet);
-                            setSnippetName(snippet.name);
-                            setSnippetBody(snippet.body);
-                            setShowSnippetModal(true);
-                          }}
-                          className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
-                          title="Edit"
-                        >
-                          <Settings2 className="size-3.5" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteSnippet(snippet.id)}
-                          className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
-                          title="Delete"
-                        >
-                          <XCircle className="size-3.5" />
-                        </button>
+              
+              {!api.activeProjectId ? (
+                <OutreachEmptyState icon={<Code2 />} title="No project selected" description="Select a project to manage snippets." />
+              ) : snippetsLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-teal-500 animate-spin" /></div>
+              ) : standardSnippets.length === 0 ? (
+                <div className="p-8 border border-dashed border-white/10 rounded-2xl text-center">
+                  <p className="text-sm text-slate-500 italic">No standard snippets found.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {standardSnippets.map(snippet => (
+                    <div key={snippet.id} className="bg-white/[0.02] border border-white/8 rounded-2xl p-5 group hover:border-white/15 transition-colors flex flex-col">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex items-center gap-2">
+                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/5 border border-white/10 text-slate-400 uppercase tracking-tighter">Plain Text</span>
+                           <h3 className="font-semibold text-white text-sm">{snippet.name}</h3>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => {
+                              setEditingSnippet(snippet);
+                              setSnippetName(snippet.name);
+                              setSnippetBody(snippet.body);
+                              setSnippetModalType('standard');
+                            }}
+                            className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
+                          >
+                            <Settings2 className="size-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteSnippet(snippet.id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors">
+                            <XCircle className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-sm text-slate-400 leading-relaxed mb-3 bg-black/20 rounded-lg px-4 py-3 flex-1 overflow-y-auto max-h-32 custom-scrollbar font-mono whitespace-pre-wrap">
+                        {snippet.body}
+                      </div>
+                      <div className="flex items-center gap-2 mt-auto pt-2 border-t border-white/5">
+                        <p className="text-[10px] text-slate-600 uppercase tracking-wider shrink-0">Tag:</p>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-500/10 border border-teal-500/20 text-teal-400">{`{{${snippet.name}}}`}</span>
                       </div>
                     </div>
-                    <div className="text-sm text-slate-400 leading-relaxed mb-3 bg-black/20 rounded-lg px-4 py-3 flex-1 overflow-y-auto max-h-32 custom-scrollbar ProseMirror" 
-                         dangerouslySetInnerHTML={{ __html: snippet.body }} />
-                    <div className="flex items-center gap-2 mt-auto pt-2 border-t border-white/5">
-                      <p className="text-[10px] text-slate-600 uppercase tracking-wider shrink-0">Variables:</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {snippet.vars?.length > 0 ? snippet.vars.map((v: string) => (
-                          <span key={v} className="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-500/10 border border-teal-500/20 text-teal-400">{`{{${v}}}`}</span>
-                        )) : (
-                          <span className="text-xs text-slate-600 italic">None</span>
-                        )}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+            {/* ── EMAIL SIGNATURES ── */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Email Signatures</h2>
+                  <p className="text-sm text-slate-400 mt-0.5">Rich-text signatures with HTML support</p>
+                </div>
+                <TealButton 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    setEditingSnippet(null);
+                    setSnippetName('');
+                    setSnippetBody('');
+                    setSnippetModalType('signature');
+                  }}
+                  disabled={!api.activeProjectId}
+                >
+                  <Plus className="size-4" /> Create Signature
+                </TealButton>
+              </div>
+              
+              {api.activeProjectId && !snippetsLoading && signatureSnippets.length === 0 ? (
+                <div className="p-8 border border-dashed border-white/10 rounded-2xl text-center bg-teal-500/[0.02]">
+                  <p className="text-sm text-slate-500 italic">No signatures created yet. Create one to use in your sequences.</p>
+                </div>
+              ) : signatureSnippets.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {signatureSnippets.map(snippet => (
+                    <div key={snippet.id} className="bg-teal-500/[0.03] border border-teal-500/10 rounded-2xl p-5 group hover:border-teal-500/20 transition-colors flex flex-col">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex items-center gap-2">
+                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-500/20 border border-teal-500/30 text-teal-400 uppercase tracking-tighter">Signature</span>
+                           <h3 className="font-semibold text-white text-sm">{snippet.name}</h3>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => {
+                              setEditingSnippet(snippet);
+                              setSnippetName(snippet.name.replace(/^sig_/, ''));
+                              setSnippetBody(snippet.body);
+                              setSnippetModalType('signature');
+                            }}
+                            className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
+                          >
+                            <Settings2 className="size-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteSnippet(snippet.id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors">
+                            <XCircle className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-sm text-slate-300 leading-relaxed mb-3 bg-black/40 rounded-lg px-4 py-3 flex-1 overflow-y-auto max-h-32 custom-scrollbar ProseMirror" 
+                           dangerouslySetInnerHTML={{ __html: snippet.body }} />
+                      <div className="flex items-center gap-2 mt-auto pt-2 border-t border-white/5">
+                        <p className="text-[10px] text-slate-600 uppercase tracking-wider shrink-0">Snippet Tag:</p>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-500/10 border border-teal-500/20 text-teal-400">{`{{${snippet.name}}}`}</span>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1322,9 +1400,9 @@ export default function OutreachSettings() {
           </div>
         )}
         {/* SNIPPET MODAL */}
-        {showSnippetModal && (
+        {snippetModalType && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSnippetModal(false)} />
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSnippetModalType(null)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1334,11 +1412,11 @@ export default function OutreachSettings() {
               <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-[#0d1117]">
                 <div>
                   <h2 className="text-xl font-bold text-white tracking-tight">
-                    {editingSnippet ? 'Edit Snippet' : 'Create Snippet'}
+                    {editingSnippet ? `Edit ${snippetModalType === 'signature' ? 'Signature' : 'Snippet'}` : `Create ${snippetModalType === 'signature' ? 'Signature' : 'Snippet'}`}
                   </h2>
                 </div>
                 <button 
-                  onClick={() => setShowSnippetModal(false)}
+                  onClick={() => setSnippetModalType(null)}
                   className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
                 >
                   <XCircle className="size-5" />
@@ -1347,30 +1425,46 @@ export default function OutreachSettings() {
 
               <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 bg-[#0d1117]">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Snippet Name / Tag</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                    {snippetModalType === 'signature' ? 'Signature Name' : 'Snippet Name / Tag'}
+                  </label>
                   <input 
                     type="text" 
-                    placeholder="e.g. Value Props" 
+                    placeholder={snippetModalType === 'signature' ? "e.g. Founder" : "e.g. Value Props"}
                     className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-teal-500/50 focus:outline-none"
                     value={snippetName}
                     onChange={(e) => setSnippetName(e.target.value)}
                   />
-                  <p className="text-xs text-slate-500 mt-2">A short, recognizable name for this snippet.</p>
+                  <p className="text-xs text-slate-500 mt-2">
+                    {snippetModalType === 'signature' 
+                      ? "This will automatically generate tag {{sig_" + slugify(snippetName || 'name') + "}}"
+                      : "A short name. Will be used as tag {{name}}."}
+                  </p>
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Body & Variables</label>
-                  <TipTapEditor 
-                    value={snippetBody} 
-                    onChange={setSnippetBody} 
-                    placeholder="Use {{variable_name}} to add dynamic fields automatically extracted below..."
-                    className="min-h-[300px]"
-                  />
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Content</label>
+                  {snippetModalType === 'signature' ? (
+                    <TipTapEditor 
+                      value={snippetBody} 
+                      onChange={setSnippetBody} 
+                      placeholder="Enter your rich text signature here..."
+                      className="min-h-[250px]"
+                    />
+                  ) : (
+                    <textarea
+                      value={snippetBody}
+                      onChange={(e) => setSnippetBody(e.target.value)}
+                      placeholder="Enter plain text snippet..."
+                      className="w-full h-48 bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-teal-500/50 focus:outline-none resize-none font-mono"
+                    />
+                  )}
+                  
                   <div className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-3 mt-3">
                     <div className="flex items-start gap-2">
                        <Zap className="size-4 text-teal-400 shrink-0 mt-0.5" />
                        <div className="text-xs text-teal-300">
-                         <strong>Auto Extractor enabled:</strong> Any text enclosed in double curly braces like <code className="bg-black/30 px-1 rounded mx-1">{'{{first_name}}'}</code> will be extracted properly as variables when used in the composer.
+                         <strong>Auto Extractor enabled:</strong> Variables like <code className="bg-black/30 px-1 rounded mx-1">{'{{first_name}}'}</code> are automatically detected.
                        </div>
                     </div>
                   </div>
@@ -1383,7 +1477,7 @@ export default function OutreachSettings() {
                   onClick={handleSaveSnippet}
                   loading={snippetSaving}
                 >
-                  {editingSnippet ? 'Save Changes' : 'Create Snippet'}
+                  {editingSnippet ? 'Save Changes' : 'Create'}
                 </TealButton>
               </div>
             </motion.div>

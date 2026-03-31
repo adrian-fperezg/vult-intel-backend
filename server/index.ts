@@ -3867,15 +3867,15 @@ app.post("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest,
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!projectId) return res.status(400).json({ error: "Project ID required" });
 
-  const { name, body, vars } = req.body;
+  const { name, body, vars, type } = req.body;
   if (!name || !body) return res.status(400).json({ error: "Name and body are required" });
 
   const id = uuidv4();
   try {
     await db.prepare(`
-      INSERT INTO outreach_snippets (id, user_id, project_id, name, body, vars)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, userId, projectId, name, body, JSON.stringify(vars || []));
+      INSERT INTO outreach_snippets (id, user_id, project_id, name, body, vars, type)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, projectId, name, body, JSON.stringify(vars || []), type || 'standard');
 
     const newSnippet = await db.get("SELECT * FROM outreach_snippets WHERE id = ?", id);
     res.status(201).json(newSnippet);
@@ -3892,7 +3892,7 @@ app.patch("/api/outreach/snippets/:id", verifyFirebaseToken, async (req: AuthReq
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!projectId) return res.status(400).json({ error: "Project ID required" });
 
-  const { name, body, vars } = req.body;
+  const { name, body, vars, type } = req.body;
   
   const fields: string[] = [];
   const values: any[] = [];
@@ -3908,6 +3908,10 @@ app.patch("/api/outreach/snippets/:id", verifyFirebaseToken, async (req: AuthReq
   if (vars !== undefined) {
     fields.push("vars = ?");
     values.push(JSON.stringify(vars));
+  }
+  if (type !== undefined) {
+    fields.push("type = ?");
+    values.push(type);
   }
 
   if (fields.length === 0) return res.status(400).json({ error: "No fields to update" });
