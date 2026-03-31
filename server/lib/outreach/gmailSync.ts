@@ -88,7 +88,13 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     if (originalEmail) {
       console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
 
-      // 4. Keyword Intent Parsing
+      // 4. Fetch Sequence Settings
+      let sequenceSettings: any = null;
+      if (originalEmail.sequence_id) {
+        sequenceSettings = await db.prepare("SELECT stop_on_reply, custom_intent_logic FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id);
+      }
+
+      // 5. Keyword Intent Parsing
       let keywordMatched: boolean | null = null;
       let conditionKeyword: string | null = null;
       let hijackSuccessful = false;
@@ -169,20 +175,30 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
       // Update contact status
       await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);
+
       // 6. Stop sequence logic (if not branched)
       if (hijackSuccessful || branchingHandled) {
-        console.log(`[Gmail] Sequence branched/hijacked. Skipping termination.`);
-      } else {
-        // Default stop-on-reply behavior
-        const result = await db.prepare(`
-          UPDATE outreach_sequence_enrollments 
-          SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
-          WHERE contact_id = ? AND status = 'active'
-          AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
-        `).run(originalEmail.contact_id);
-        
-        if (result.changes > 0) {
-          console.log(`[Gmail] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
+        console.log(`[Gmail] Sequence branched/hijacked for contact ${originalEmail.contact_id}. Skipping termination.`);
+      } else if (sequenceSettings) {
+        const { stop_on_reply, custom_intent_logic } = sequenceSettings;
+
+        if (custom_intent_logic) {
+          // SMART INTENT BYPASS: 
+          // If we reach here, no keyword matched and no hijack occurred.
+          // We DO NOT stop the enrollment; we let it continue its natural flow.
+          console.log(`[Gmail] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. Keeping enrollment ACTIVE.`);
+        } else if (stop_on_reply) {
+          // Standard stop-on-reply behavior
+          const result = await db.prepare(`
+            UPDATE outreach_sequence_enrollments 
+            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
+            WHERE contact_id = ? AND status = 'active'
+            AND sequence_id = ?
+          `).run(originalEmail.contact_id, originalEmail.sequence_id);
+          
+          if (result.changes > 0) {
+            console.log(`[Gmail] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
+          }
         }
       }
 

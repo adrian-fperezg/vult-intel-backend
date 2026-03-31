@@ -50,7 +50,20 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   console.log(`[SequenceEngine] Scheduling next step for sequence ${sequenceId}, contact ${contactId}. Parent: ${parentStepId}, Path: ${branchPath}`);
   const d = tx || db;
   
-  // 1. Get sequence and step info
+  // 0. Verify Enrollment is still active before scheduling next step
+  const enrollment = await d.get<any>(
+    'SELECT status FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
+    sequenceId, contactId
+  );
+  if (!enrollment || enrollment.status !== 'active') {
+    console.warn(`[SequenceEngine] Enrollment for contact ${contactId} in sequence ${sequenceId} is no longer active (status: ${enrollment?.status || 'missing'}). Aborting schedule.`);
+    return;
+  }
+
+  // 1. Cancel any existing pending jobs and clear next_step_id for safety
+  await cancelPendingSequenceJobs(sequenceId, contactId);
+
+  // 2. Get sequence and step info
   const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', sequenceId);
   if (!sequence) throw new Error('Sequence not found');
 
@@ -137,6 +150,39 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   });
 
   console.log(`[SequenceEngine] Queued step ${step.id} for contact ${contactId} at ${scheduledAt.toISOString()}`);
+}
+
+/**
+ * Robustly cancels any pending sequence jobs for a contact using deterministic job IDs.
+ */
+export async function cancelPendingSequenceJobs(sequenceId: string, contactId: string) {
+  // Use DB to find the 'next_step_id' which represents what's CURRENTLY in the queue
+  const enrollment = await db.get<any>(
+    'SELECT next_step_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
+    sequenceId,
+    contactId
+  );
+
+  if (enrollment?.next_step_id) {
+    const jobId = `seq-${sequenceId}-contact-${contactId}-step-${enrollment.next_step_id}`;
+    try {
+      const job = await emailQueue.getJob(jobId);
+      if (job) {
+        await job.remove();
+        console.log(`[SequenceEngine] Successfully removed pending job from queue: ${jobId}`);
+      }
+    } catch (err: any) {
+      console.warn(`[SequenceEngine] Failed to resolve/remove job ${jobId} from queue:`, err.message);
+    }
+  }
+
+  // Also clear any 'scheduled' individual emails associated with this contact if they are inside a sequence
+  // This is a safety measure to prevent rogue emails if the job was already being processed by a worker
+  await db.run(
+    "UPDATE outreach_individual_emails SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ? AND status = 'scheduled'",
+    sequenceId,
+    contactId
+  );
 }
 
 /**

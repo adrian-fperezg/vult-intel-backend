@@ -147,6 +147,12 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         return;
       }
 
+      // Secondary Safety Check: Is this step still the one we expect?
+      if (enrollment.next_step_id !== stepId) {
+        console.warn(`[Sequence] Skipping STALE step execution for contact ${contactId}. Job step: ${stepId}, DB next step: ${enrollment.next_step_id}`);
+        return;
+      }
+
       // Check Parent Sequence Status (Handle Pause)
       const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
       if (!sequence || sequence.status !== 'active') {

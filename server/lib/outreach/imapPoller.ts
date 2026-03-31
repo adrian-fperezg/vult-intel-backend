@@ -148,6 +148,12 @@ export async function pollImap(mailboxId: string) {
           continue;
         }
 
+        // 4. Fetch Sequence Settings
+        let sequenceSettings: any = null;
+        if (originalEmail.sequence_id) {
+          sequenceSettings = await db.prepare("SELECT stop_on_reply, custom_intent_logic FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id);
+        }
+
         // ── KEYWORD INTENT PARSING ──────────────────────────────────────────
         let keywordMatched: boolean | null = null;
         let conditionKeyword: string | null = null;
@@ -232,33 +238,31 @@ export async function pollImap(mailboxId: string) {
 
         // Enrollments Termination logic
         if (hijackSuccessful || branchingHandled) {
-          console.log(`[IMAP] [UID: ${uid}] Sequence branched/hijacked. Skipping termination.`);
+          console.log(`[IMAP] [UID: ${uid}] Sequence branched/hijacked for contact ${originalEmail.contact_id}. Skipping termination.`);
           await connection.addFlags(uid, ['\\Seen']);
-        } else if (keywordMatched === false && conditionKeyword) {
-          console.log(`[IMAP] [UID: ${uid}] Keyword mismatch for "${conditionKeyword}". Terminating sequence.`);
-          
-          // 1. Stop enrollment anyway because they replied but didn't say the keyword
-          await db.prepare(`
-            UPDATE outreach_sequence_enrollments 
-            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
-            WHERE contact_id = ? AND status = 'active'
-            AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
-          `).run(originalEmail.contact_id);
+        } else if (sequenceSettings) {
+          const { stop_on_reply, custom_intent_logic } = sequenceSettings;
 
-          // 2. Mark as SEEN to prevent loop
+          if (custom_intent_logic) {
+            // SMART INTENT BYPASS:
+            // No keyword match found. Keep the enrollment active.
+            console.log(`[IMAP] [UID: ${uid}] [Smart Intent] No keyword match found for contact ${originalEmail.contact_id}. Keeping enrollment ACTIVE.`);
+          } else if (stop_on_reply) {
+            // Standard stop-on-reply behavior
+            const result = await db.prepare(`
+              UPDATE outreach_sequence_enrollments 
+              SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP 
+              WHERE contact_id = ? AND status = 'active'
+              AND sequence_id = ?
+            `).run(originalEmail.contact_id, originalEmail.sequence_id);
+
+            if (result.changes > 0) {
+              console.log(`[IMAP] [UID: ${uid}] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
+            }
+          }
           await connection.addFlags(uid, ['\\Seen']);
         } else {
-          // Default stop-on-reply behavior (no keywords or standard reply)
-          const result = await db.prepare(`
-            UPDATE outreach_sequence_enrollments 
-            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
-            WHERE contact_id = ? AND status = 'active'
-            AND sequence_id IN (SELECT id FROM outreach_sequences WHERE stop_on_reply = ${db.bool(true)})
-          `).run(originalEmail.contact_id);
-
-          if (result.changes > 0) {
-            console.log(`[IMAP] [UID: ${uid}] Stopped ${result.changes} sequence enrollment(s) for contact ${originalEmail.contact_id}`);
-          }
+          // No sequence info, just mark as seen
           await connection.addFlags(uid, ['\\Seen']);
         }
 
