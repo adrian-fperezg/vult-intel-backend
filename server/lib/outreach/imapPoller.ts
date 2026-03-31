@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
-import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent } from './utils.js';
 
 export interface ImapConfig {
   host: string;
@@ -153,73 +153,24 @@ export async function pollImap(mailboxId: string) {
         let hijackSuccessful = false;
 
         if (originalEmail.sequence_id) {
-          const sequence = await db.prepare("SELECT * FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any;
+          const rawBody = await extractEmailBody(msg);
+          const intent = await handleSequenceIntent(originalEmail, rawBody);
           
-          if (sequence?.intent_keyword) {
-            conditionKeyword = sequence.intent_keyword.trim();
-            const rawBody = await extractEmailBody(msg);
-            const cleanReply = cleanEmailBody(rawBody);
-            
-            console.log(`[IMAP WORKER] [UID: ${uid}] Sequence Intent Keyword debugging:`);
-            console.log(`- Intent Keyword: "${conditionKeyword}"`);
-            
-            keywordMatched = matchKeyword(cleanReply, conditionKeyword);
-            
-            if (keywordMatched) {
-              console.log(`[IMAP WORKER] [UID: ${uid}] Intent MATCHED! Hijacking to YES branch.`);
-              
-              const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
-              const yesStep = steps.find(s => s.branch_path === 'yes');
-              
-              if (yesStep) {
-                const parentConditionId = yesStep.parent_step_id || 'synthetic-condition';
+          if (intent.keyword) {
+            conditionKeyword = intent.keyword;
+            keywordMatched = intent.matched;
+            hijackSuccessful = intent.hijacked;
+          }
 
-                // Inject synthetic condition evaluation event
-                await db.prepare(`
-                  INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)
-                `).run(
-                  uuidv4(),
-                  originalEmail.contact_id,
-                  originalEmail.project_id,
-                  originalEmail.sequence_id,
-                  parentConditionId,
-                  'sequence_condition_evaluated',
-                  JSON.stringify({ 
-                    parentStepId: parentConditionId,
-                    evaluatedBranch: 'yes',
-                    result: true,
-                    reason: `Sequence intent match: '${conditionKeyword}'`
-                  })
-                );
+          if (!hijackSuccessful && originalEmail.step_id) {
+            // Fallback to local condition logic if no sequence-level intent hijack occurred
+            const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+            const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
 
-                // Hijack enrollment
-                await db.prepare(`
-                  UPDATE outreach_sequence_enrollments 
-                  SET next_step_id = ?, status = 'active', scheduled_at = CURRENT_TIMESTAMP
-                  WHERE contact_id = ? AND sequence_id = ? AND status = 'active'
-                `).run(yesStep.id, originalEmail.contact_id, originalEmail.sequence_id);
-
-                hijackSuccessful = true;
-                console.log(`[IMAP WORKER] [UID: ${uid}] Sequence advanced to YES branch step: ${yesStep.id}`);
-              } else {
-                console.log(`[IMAP WORKER] [UID: ${uid}] WARNING: Intent MATCHED but NO YES branch found.`);
-              }
-            } else {
-              console.log(`[IMAP WORKER] [UID: ${uid}] NO MATCH for sequence intent.`);
-            }
-          } else {
-            // Fallback to local condition logic if no sequence intent keyword is found
-            if (originalEmail.step_id) {
-              const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
-              const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
-
-              if (conditionStep?.condition_keyword) {
-                conditionKeyword = conditionStep.condition_keyword.trim();
-                const rawBody = await extractEmailBody(msg);
-                const cleanReply = cleanEmailBody(rawBody);
-                keywordMatched = matchKeyword(cleanReply, conditionKeyword);
-              }
+            if (conditionStep?.condition_keyword) {
+              conditionKeyword = conditionStep.condition_keyword.trim();
+              const cleanReply = cleanEmailBody(rawBody);
+              keywordMatched = matchKeyword(cleanReply, conditionKeyword);
             }
           }
         }

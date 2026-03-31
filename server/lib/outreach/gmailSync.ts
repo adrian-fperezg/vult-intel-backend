@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
-import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent } from './utils.js';
 
 interface GmailMessage {
   id: string;
@@ -90,17 +90,27 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       // 4. Keyword Intent Parsing
       let keywordMatched: boolean | null = null;
       let conditionKeyword: string | null = null;
+      let hijackSuccessful = false;
 
-      if (originalEmail.sequence_id && originalEmail.step_id) {
-        const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
-        const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
+      if (originalEmail.sequence_id) {
+        const rawBody = getGmailBody(msg.payload);
+        const intent = await handleSequenceIntent(originalEmail, rawBody);
+        
+        if (intent.keyword) {
+          conditionKeyword = intent.keyword;
+          keywordMatched = intent.matched;
+          hijackSuccessful = intent.hijacked;
+        }
 
-        if (conditionStep?.condition_keyword) {
-          conditionKeyword = conditionStep.condition_keyword.trim();
-          const rawBody = getGmailBody(msg.payload);
-          keywordMatched = matchKeyword(rawBody, conditionKeyword);
-          
-          console.log(`[Gmail] Keyword matching for step ${conditionStep.id}: "${conditionKeyword}" -> ${keywordMatched}`);
+        if (!hijackSuccessful && originalEmail.step_id) {
+          const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+          const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
+
+          if (conditionStep?.condition_keyword) {
+            conditionKeyword = conditionStep.condition_keyword.trim();
+            keywordMatched = matchKeyword(rawBody, conditionKeyword);
+            console.log(`[Gmail] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionKeyword}" -> ${keywordMatched}`);
+          }
         }
       }
 
@@ -131,7 +141,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);
       
       // Stop sequence logic
-      if (keywordMatched === false) {
+      if (hijackSuccessful) {
+        console.log(`[Gmail] Sequence hijacked to YES branch. Skipping termination.`);
+      } else if (keywordMatched === false) {
         console.log(`[Gmail] Keyword mismatch. RESTORING UNREAD label for visual detection.`);
         // Mark as Unread in Gmail
         await fetch(
