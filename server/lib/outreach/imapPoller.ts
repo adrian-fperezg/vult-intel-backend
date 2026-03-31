@@ -77,7 +77,7 @@ export async function pollImap(mailboxId: string) {
   try {
     connection = await imap.connect(imapConfig);
     console.log(`[IMAP WORKER] Connected to mailbox for ${mailbox.email}.`);
-    
+
     await connection.openBox('INBOX');
     console.log(`[IMAP WORKER] Opened INBOX for ${mailbox.email}. Searching for UNSEEN...`);
 
@@ -137,7 +137,7 @@ export async function pollImap(mailboxId: string) {
         console.log(`[IMAP] Processing msg UID ${uid}. From: ${from}. Matched Contact ID: ${originalEmail.contact_id}`);
 
         // Mark original email as replied
-        await db.run("UPDATE outreach_individual_emails SET is_reply = 1 WHERE id = ?", originalEmail.id);
+        await db.run("UPDATE outreach_individual_emails SET is_reply = true WHERE id = ?", originalEmail.id);
 
         // Prevent duplicate processing
         const eventExists = await db.prepare(`
@@ -166,7 +166,7 @@ export async function pollImap(mailboxId: string) {
         if (originalEmail.sequence_id) {
           const rawBody = await extractEmailBody(msg);
           const intent = await handleSequenceIntent(originalEmail, rawBody);
-          
+
           if (intent.keyword) {
             conditionKeyword = intent.keyword;
             keywordMatched = intent.matched;
@@ -182,10 +182,10 @@ export async function pollImap(mailboxId: string) {
               conditionKeyword = conditionStep.condition_keyword.trim();
               const cleanReply = cleanEmailBody(rawBody);
               keywordMatched = matchKeyword(cleanReply, conditionKeyword);
-              
+
               if (keywordMatched) {
                 console.log(`[IMAP] [UID: ${uid}] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionKeyword}". Advancing to YES branch.`);
-                
+
                 // 1. Record evaluation event
                 await db.prepare(`
                   INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
@@ -197,7 +197,7 @@ export async function pollImap(mailboxId: string) {
                   originalEmail.sequence_id,
                   conditionStep.id,
                   'sequence_condition_evaluated',
-                  JSON.stringify({ 
+                  JSON.stringify({
                     parentStepId: conditionStep.id,
                     evaluatedBranch: 'yes',
                     result: true,
@@ -227,7 +227,7 @@ export async function pollImap(mailboxId: string) {
           originalEmail.sequence_id,
           originalEmail.step_id,
           'email_replied',
-          JSON.stringify({ 
+          JSON.stringify({
             subject,
             from,
             reply_id: potentialMessageIds[0],
