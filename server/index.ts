@@ -1553,31 +1553,48 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
 
     await db.transaction(async (tx) => {
       // Find the first step to check for a scheduled start time
-      const firstStep = await tx.get("SELECT scheduled_start_at FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL LIMIT 1", id) as any;
+      const firstStep = await tx.get("SELECT id, scheduled_start_at FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL LIMIT 1", id) as any;
       
       let newStatus = 'active';
+      let delay = 0;
+
       if (firstStep?.scheduled_start_at) {
         const startTime = new Date(firstStep.scheduled_start_at).getTime();
         if (startTime > Date.now()) {
           newStatus = 'scheduled';
-          console.log(`[Outreach] Sequence ${id} scheduled for future start: ${firstStep.scheduled_start_at}`);
+          delay = startTime - Date.now();
+          console.log(`[Outreach] Sequence ${id} scheduled for future start: ${firstStep.scheduled_start_at} | Delay: ${delay}ms`);
         }
       }
 
       await tx.run("UPDATE outreach_sequences SET status = ? WHERE id = ? AND project_id = ?", newStatus, id, req.projectId);
 
-      // Enroll existing recipients who are not already enrolled
-      const recipients = await tx.all(`
-        SELECT contact_id FROM outreach_sequence_recipients 
-        WHERE sequence_id = ? AND project_id = ? AND contact_id IS NOT NULL
-        AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?)
-      `, id, req.projectId, id, req.projectId) as any[];
+      if (newStatus === 'scheduled') {
+        // Queue a job to wake up the sequence at the target time
+        await emailQueue.add('start-sequence', {
+          projectId: req.projectId,
+          sequenceId: id
+        }, {
+          delay: delay,
+          jobId: `start-seq-${id}` // Deterministic ID to avoid duplicates
+        });
+        
+        console.log(`[Outreach] Queued start-sequence job for ${id} with ${delay}ms delay.`);
+        res.json({ success: true, status: newStatus, enrolledCount: 0, message: "Sequence scheduled for future start." });
+      } else {
+        // Enroll existing recipients who are not already enrolled (only for ACTIVE sequences)
+        const recipients = await tx.all(`
+          SELECT contact_id FROM outreach_sequence_recipients 
+          WHERE sequence_id = ? AND project_id = ? AND contact_id IS NOT NULL
+          AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?)
+        `, id, req.projectId, id, req.projectId) as any[];
 
-      for (const r of recipients) {
-        await enrollContactInSequence(project_id, id, r.contact_id, tx);
+        for (const r of recipients) {
+          await enrollContactInSequence(req.projectId, id, r.contact_id, tx);
+        }
+
+        res.json({ success: true, status: newStatus, enrolledCount: recipients.length });
       }
-
-      res.json({ success: true, status: newStatus, enrolledCount: recipients.length });
     });
   } catch (error) {
     console.error("Failed to activate sequence:", error);

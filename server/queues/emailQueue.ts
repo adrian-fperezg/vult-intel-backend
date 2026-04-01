@@ -114,12 +114,12 @@ export async function resetRepeatableJobs() {
       console.log(`[QUEUE] Removed stale repeatable job: ${job.key} (name: ${job.name})`);
     }
 
-    // Add fresh job with 1-minute interval
+    // Add fresh job with 24-hour interval
     await emailQueue.add('poll-mailboxes', {}, { 
-      repeat: { every: 60000 },
-      removeOnComplete: true
+      repeat: { every: 86400000 }, // 24 hours
+      jobId: 'poll-mailboxes-repeat'
     });
-    console.log('[QUEUE] Re-added poll-mailboxes with 1-minute interval.');
+    console.log('[QUEUE] Re-added poll-mailboxes with 24-hour interval.');
   } catch (err) {
     console.error('[QUEUE] Error resetting repeatable jobs:', err);
   }
@@ -217,10 +217,10 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         return;
       }
 
-      // Check Parent Sequence Status (Handle Pause)
+      // Check Parent Sequence Status (Handle Pause / Scheduled)
       const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
       if (!sequence || sequence.status !== 'active') {
-        console.log(`[Sequence] Skipping execution for sequence ${sequenceId}: Sequence status is ${sequence?.status || 'missing'}`);
+        console.log(`[Sequence] Skipping execution for sequence ${sequenceId}: Sequence status is ${sequence?.status || 'missing'}. (Step ${stepId} for contact ${contactId})`);
         return;
       }
 

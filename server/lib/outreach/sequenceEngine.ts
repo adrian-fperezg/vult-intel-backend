@@ -109,7 +109,7 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
     // Absolute scheduling for Step 1
     const startTime = new Date(step.scheduled_start_at).getTime();
     delayMs = Math.max(0, startTime - Date.now());
-    console.log(`[SequenceEngine] Step 1 has absolute schedule: ${step.scheduled_start_at}. Calculated delay: ${delayMs}ms`);
+    console.log(`[SequenceEngine] Step 1 has absolute schedule: ${step.scheduled_start_at} (UTC: ${new Date(startTime).toUTCString()}). Calculated delay: ${delayMs}ms`);
   } else {
     // Relative scheduling for subsequent steps or if Step 1 has no absolute date
     const amount = step.delay_amount || (parentStepId === null ? 0 : 2);
