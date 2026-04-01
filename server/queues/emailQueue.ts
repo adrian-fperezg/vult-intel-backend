@@ -11,6 +11,7 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
 import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
+import { recordOutreachEvent } from '../lib/outreach/utils.js';
 
 dotenv.config();
 
@@ -590,6 +591,22 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       WHERE id = ?
     `).run(result.messageId, emailId);
 
+    // Record sent event with atomic counter increment
+    await recordOutreachEvent({
+      project_id: email.project_id,
+      sequence_id: email.sequence_id,
+      step_id: email.step_id,
+      contact_id: email.contact_id,
+      email_id: emailId,
+      event_type: 'sent',
+      event_key: `sent:${emailId}`,
+      metadata: { message_id: result.messageId, subject: email.subject }
+    });
+
+    if (email.contact_id) {
+      await db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
+    }
+
     return { success: true, messageId: result.messageId };
   }
 
@@ -636,13 +653,19 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       WHERE id = ?
     `).run(result.id, result.threadId, emailId);
 
+    // Record sent event with atomic counter increment
+    await recordOutreachEvent({
+      project_id: email.project_id,
+      sequence_id: email.sequence_id,
+      step_id: email.step_id,
+      contact_id: email.contact_id,
+      email_id: emailId,
+      event_type: 'sent',
+      event_key: `sent:${emailId}`,
+      metadata: { message_id: result.id, subject: email.subject }
+    });
+
     if (email.contact_id) {
-      // Record sent event
-      await db.prepare(`
-        INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-        VALUES (?, ?, ?, ?, ?, 'sent', ?)
-      `).run(uuidv4(), email.contact_id, email.project_id, email.sequence_id, email.step_id, JSON.stringify({ email_id: emailId, subject: email.subject, message_id: result.id }));
-      
       await db.prepare("UPDATE outreach_contacts SET last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(email.contact_id);
     }
 

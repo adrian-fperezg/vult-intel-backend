@@ -63,6 +63,7 @@ import {
   syncMailboxesFromRedis,
   fetchGmailAliases,
 } from "./oauth.js";
+import { recordOutreachEvent } from "./lib/outreach/utils.js";
 import { encryptToken, decryptToken } from "./lib/outreach/encrypt.js";
 import { syncMailbox, setupGmailWatch, syncMailboxHistory } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
@@ -1166,13 +1167,13 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
       db.get("SELECT COUNT(*) as sendVelocity FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, todayStr),
       db.get("SELECT COUNT(*) as activeSequences FROM outreach_sequences WHERE project_id = ? AND status = 'active'", projectId),
       db.get("SELECT COUNT(DISTINCT contact_id) as totalRecipients FROM outreach_sequence_enrollments WHERE project_id = ?", projectId),
-      db.get("SELECT COUNT(*) as totalSentCount FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent'", projectId),
-      db.get("SELECT COUNT(DISTINCT contact_id) as totalOpenedCount FROM outreach_events WHERE project_id = ? AND type = 'email_opened'", projectId),
-      db.get("SELECT COUNT(DISTINCT contact_id) as totalRepliedCount FROM outreach_events WHERE project_id = ? AND type = 'email_replied'", projectId),
+      db.get("SELECT COALESCE(SUM(sent_count), 0) as totalSentCount FROM outreach_sequences WHERE project_id = ?", projectId),
+      db.get("SELECT COALESCE(SUM(opened_count), 0) as totalOpenedCount FROM outreach_sequences WHERE project_id = ?", projectId),
+      db.get("SELECT COALESCE(SUM(replied_count), 0) as totalRepliedCount FROM outreach_sequences WHERE project_id = ?", projectId),
       // Today specific aggregates
       db.get("SELECT COUNT(*) as sentToday FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, todayStr),
-      db.get("SELECT COUNT(DISTINCT contact_id) as openedToday FROM outreach_events WHERE project_id = ? AND type = 'email_opened' AND created_at >= ?", projectId, todayStr),
-      db.get("SELECT COUNT(DISTINCT contact_id) as repliedToday FROM outreach_events WHERE project_id = ? AND type = 'email_replied' AND created_at >= ?", projectId, todayStr)
+      db.get("SELECT COUNT(*) as openedToday FROM outreach_events WHERE project_id = ? AND type = 'opened' AND created_at >= ?", projectId, todayStr),
+      db.get("SELECT COUNT(*) as repliedToday FROM outreach_events WHERE project_id = ? AND type = 'replied' AND created_at >= ?", projectId, todayStr)
     ]) as any[];
 
     const overallOpenRate = totalSentCount > 0 ? (totalOpenedCount / totalSentCount) * 100 : 0;
@@ -1182,10 +1183,10 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
     let insight = "No data available for AI analysis yet. Keep sending!";
     const activeSeqs = await db.all<{ name: string; sent: number; opened: number; replied: number }>(`
       SELECT name, 
-             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as sent,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened') as opened,
-             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied') as replied
-      FROM outreach_sequences s WHERE project_id = ? AND status = 'active'
+             sent_count as sent,
+             opened_count as opened,
+             replied_count as replied
+      FROM outreach_sequences WHERE project_id = ? AND status = 'active'
     `, projectId);
 
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -1251,16 +1252,16 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
              (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id AND project_id = s.project_id) as step_count,
              (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id AND project_id = s.project_id) as contact_count,
              
-             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as total_sent,
+             s.sent_count as total_sent,
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at >= ?) as sent_today,
              
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened') as total_opened,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_opened' AND created_at >= ?) as opened_today,
+             s.opened_count as total_opened,
+             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'opened' AND created_at >= ?) as opened_today,
              
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied') as total_replies,
-             (SELECT COUNT(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = s.id AND type = 'email_replied' AND created_at >= ?) as replied_today,
+             s.replied_count as total_replies,
+             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'replied' AND created_at >= ?) as replied_today,
              
-             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced') as total_bounced,
+             s.bounced_count as total_bounced,
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND updated_at >= ?) as bounced_today
       FROM outreach_sequences s
       WHERE s.user_id = ? AND s.project_id = ?
@@ -2830,17 +2831,24 @@ app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
   try {
     const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
     if (email) {
+      // 1. Record raw pixel hit
       await db.prepare(`
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
         VALUES (?, ?, 'open', ?, ?)
       `).run(uuidv4(), emailId, String(ip), String(userAgent));
 
-      if (email.contact_id) {
-        await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?, 'opened', ?)
-        `).run(uuidv4(), email.contact_id, email.project_id, email.sequence_id, email.step_id, JSON.stringify({ email_id: emailId }));
-      }
+      // 2. Record standardized 'opened' event with atomic counter increment
+      // We use 'opened:${emailId}' as the key to ensure we only count the first open per email
+      await recordOutreachEvent({
+        project_id: email.project_id,
+        sequence_id: email.sequence_id,
+        step_id: email.step_id,
+        contact_id: email.contact_id,
+        email_id: emailId,
+        event_type: 'opened',
+        event_key: `opened:${emailId}`,
+        metadata: { ip, userAgent }
+      });
     }
   } catch (err) {
     console.error("Tracking pixel error:", err);

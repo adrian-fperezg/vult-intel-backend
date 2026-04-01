@@ -252,6 +252,10 @@ export const initDb = async () => {
         intent_keyword TEXT,
         bypass_keyword TEXT DEFAULT 'Khania',
         scheduled_start_at TIMESTAMP WITH TIME ZONE,
+        sent_count INTEGER DEFAULT 0,
+        opened_count INTEGER DEFAULT 0,
+        replied_count INTEGER DEFAULT 0,
+        bounced_count INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -278,7 +282,11 @@ export const initDb = async () => {
       { name: 'steps', type: 'TEXT' },
       { name: 'intent_keyword', type: 'TEXT' },
       { name: 'bypass_keyword', type: "TEXT DEFAULT 'Khania'" },
-      { name: 'scheduled_start_at', type: 'TIMESTAMP WITH TIME ZONE' }
+      { name: 'scheduled_start_at', type: 'TIMESTAMP WITH TIME ZONE' },
+      { name: 'sent_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'opened_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'replied_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'bounced_count', type: 'INTEGER DEFAULT 0' }
     ];
 
     for (const col of newSeqCols) {
@@ -355,6 +363,7 @@ export const initDb = async () => {
         step_id TEXT REFERENCES outreach_sequence_steps(id),
         type TEXT NOT NULL,
         metadata TEXT,
+        event_key TEXT UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -362,7 +371,8 @@ export const initDb = async () => {
     // Migration for outreach_events
     const newEventCols = [
       { name: 'sequence_id', type: 'TEXT' },
-      { name: 'step_id', type: 'TEXT' }
+      { name: 'step_id', type: 'TEXT' },
+      { name: 'event_key', type: 'TEXT UNIQUE' }
     ];
 
     for (const col of newEventCols) {

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
-import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, evaluateSmartIntent } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, evaluateSmartIntent, recordOutreachEvent, isBounce } from './utils.js';
 import { scheduleNextStep, evaluateIntent } from './sequenceEngine.js';
 import { google } from "googleapis";
 
@@ -78,6 +78,30 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
     const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || '';
 
+    // ── BOUNCE DETECTION ───────────────────────────────────────────────
+    if (isBounce(fromHeader, subject)) {
+      console.log(`[Gmail] ⚠️ Bounce detected from ${fromHeader} for Subject: ${subject}`);
+      // Try to find the original mapping via Thread or headers
+      const original = await findOriginalEmail([messageId].filter(Boolean), msg.threadId);
+      if (original) {
+        await recordOutreachEvent({
+          project_id: mailbox.project_id,
+          sequence_id: original.sequence_id,
+          step_id: original.step_id,
+          contact_id: original.contact_id,
+          email_id: original.id,
+          event_type: 'bounced',
+          event_key: `bounced:${msg.id}`,
+          metadata: { from: fromHeader, subject, gmail_id: msg.id }
+        });
+        
+        // Mark contact as bounced to stop further emails
+        await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", original.contact_id);
+        await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?", original.sequence_id, original.contact_id);
+      }
+      continue;
+    }
+
     const emailMatch = fromHeader.match(/<(.+)>/) || [null, fromHeader.trim()];
     const fromEmail = emailMatch[1];
     if (!fromEmail) continue;
@@ -140,18 +164,16 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         branchingHandled = intentResult.branched;
       }
 
-      // 5. Record standardized event
-      await db.prepare(`
-        INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        uuidv4(),
-        originalEmail.contact_id,
-        mailbox.project_id,
-        originalEmail.sequence_id,
-        originalEmail.step_id,
-        'email_replied',
-        JSON.stringify({
+      // 5. Record standardized event with atomic counter increment
+      await recordOutreachEvent({
+        project_id: mailbox.project_id,
+        sequence_id: originalEmail.sequence_id,
+        step_id: originalEmail.step_id,
+        contact_id: originalEmail.contact_id,
+        email_id: originalEmail.id,
+        event_type: 'replied',
+        event_key: `replied:${msg.id}`, // Idempotent per Gmail message ID
+        metadata: {
           from: fromHeader,
           subject: subject,
           gmail_message_id: msg.id,
@@ -159,9 +181,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           reply_id: messageId || msg.id,
           keyword: intentResult.keyword,
           keyword_matched: intentResult.matched
-        }),
-        new Date(parseInt(msg.internalDate)).toISOString()
-      );
+        }
+      });
 
       // Update contact status
       await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);

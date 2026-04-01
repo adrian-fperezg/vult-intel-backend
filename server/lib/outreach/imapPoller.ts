@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
-import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, evaluateSmartIntent } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, evaluateSmartIntent, recordOutreachEvent, isBounce } from './utils.js';
 import { scheduleNextStep } from './sequenceEngine.js';
 
 export interface ImapConfig {
@@ -105,9 +105,35 @@ export async function pollImap(mailboxId: string) {
           continue;
         }
 
-        const from = headers.from?.[0];
-        const subject = headers.subject?.[0];
+        const from = (headers.from?.[0] || '').toString();
+        const subject = (headers.subject?.[0] || '').toString();
+        const messageId = (headers['message-id']?.[0] || '').toString();
         const inReplyTo = headers['in-reply-to']?.[0];
+
+        // ── BOUNCE DETECTION ───────────────────────────────────────────────
+        if (isBounce(from, subject)) {
+          console.log(`[IMAP] ⚠️ Bounce detected from ${from} for Subject: ${subject}`);
+          const original = await findOriginalEmail([messageId || uid].filter(Boolean));
+          if (original) {
+            await recordOutreachEvent({
+              project_id: mailbox.project_id,
+              sequence_id: original.sequence_id,
+              step_id: original.step_id,
+              contact_id: original.contact_id,
+              email_id: original.id,
+              event_type: 'bounced',
+              event_key: `bounced:imap:${uid}`,
+              metadata: { from, subject, imap_uid: uid }
+            });
+            
+            // Mark contact as bounced to stop further emails
+            await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", original.contact_id);
+            await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?", original.sequence_id, original.contact_id);
+          }
+          await connection.addFlags(uid, ['\\Seen']);
+          continue;
+        }
+
         const referencesRaw = headers['references'] || [];
         const references = Array.isArray(referencesRaw) ? referencesRaw : [referencesRaw];
 
@@ -215,27 +241,25 @@ export async function pollImap(mailboxId: string) {
           }
         }
 
-        // Record the reply event
-        console.log(`[IMAP] [UID: ${uid}] Recording 'email_replied' event. Match: ${keywordMatched}`);
-        await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          uuidv4(),
-          originalEmail.contact_id,
-          originalEmail.project_id,
-          originalEmail.sequence_id,
-          originalEmail.step_id,
-          'email_replied',
-          JSON.stringify({
+        // Record standardized event with atomic counter increment
+        console.log(`[IMAP] [UID: ${uid}] Recording 'replied' event. Match: ${keywordMatched}`);
+        await recordOutreachEvent({
+          project_id: originalEmail.project_id,
+          sequence_id: originalEmail.sequence_id,
+          step_id: originalEmail.step_id,
+          contact_id: originalEmail.contact_id,
+          email_id: originalEmail.id,
+          event_type: 'replied',
+          event_key: `replied:${potentialMessageIds[0] || uid}`, // Idempotent per IMAP message ID or UID
+          metadata: {
             subject,
             from,
-            reply_id: potentialMessageIds[0],
+            reply_id: potentialMessageIds[0] || uid,
             mailbox_id: mailbox.id,
             keyword: conditionKeyword,
             keyword_matched: keywordMatched
-          })
-        );
+          }
+        });
 
         // Update Flag: Moved to termination logic for consistency
 

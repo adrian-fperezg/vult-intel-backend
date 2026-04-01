@@ -194,3 +194,95 @@ export function evaluateSmartIntent(params: {
   return { status: 'active', matched: false };
 }
 
+/**
+ * Records an outreach event (sent, opened, replied, bounced) and atomically 
+ * increments the corresponding counter in the outreach_sequences table.
+ * Enforces idempotency using the event_key UNIQUE constraint.
+ * 
+ * @returns The recorded event or undefined if it was a duplicate.
+ */
+export async function recordOutreachEvent(params: {
+  project_id: string;
+  sequence_id: string | null;
+  step_id?: string | null;
+  contact_id?: string | null;
+  email_id?: string | null;
+  event_type: 'sent' | 'opened' | 'replied' | 'bounced';
+  event_key: string;
+  metadata?: any;
+}) {
+  const { project_id, sequence_id, step_id, contact_id, email_id, event_type, event_key, metadata } = params;
+
+  // Ensure metadata includes email_id if provided
+  const finalMetadata = {
+    ...(metadata || {}),
+    ...(email_id ? { email_id } : {})
+  };
+
+  return await db.transaction(async (tx) => {
+    // 1. Record the event (idempotent via event_key)
+    // The table uses column 'type' for the event type.
+    const event = await tx.prepare(`
+      INSERT INTO outreach_events (
+        id, project_id, sequence_id, step_id, contact_id, type, event_key, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (event_key) DO NOTHING
+      RETURNING id, type
+    `).get<{ id: string, type: string }>(
+      uuidv4(), 
+      project_id, 
+      sequence_id || null, 
+      step_id || null, 
+      contact_id || null, 
+      event_type, 
+      event_key, 
+      Object.keys(finalMetadata).length > 0 ? JSON.stringify(finalMetadata) : null
+    );
+
+    // 2. If row was inserted AND we have a sequence_id, increment the counter
+    if (event?.id && sequence_id) {
+      const counterColumn = `${event_type}_count`;
+      await tx.prepare(`
+        UPDATE outreach_sequences 
+        SET ${counterColumn} = ${counterColumn} + 1 
+        WHERE id = ?
+      `).run(sequence_id);
+    }
+
+    return event;
+  });
+}
+
+/**
+ * Identifies if an email is an automated bounce notification (DSN).
+ * Uses common sender and subject patterns for Mailer-Daemon and Postmaster.
+ */
+export function isBounce(from: string, subject: string): boolean {
+  const f = from.toLowerCase();
+  const s = subject.toLowerCase();
+
+  const bounceSenders = [
+    'mailer-daemon',
+    'postmaster',
+    'mda@',
+    'delivery-status-notification',
+    'failure@'
+  ];
+
+  const bounceSubjects = [
+    'undelivered mail returned',
+    'delivery status notification',
+    'failure notice',
+    'returned mail',
+    'non-delivery',
+    'could not be delivered',
+    'message not delivered',
+    'permanent failure'
+  ];
+
+  return (
+    bounceSenders.some(sender => f.includes(sender)) ||
+    bounceSubjects.some(sub => s.includes(sub))
+  );
+}
+
