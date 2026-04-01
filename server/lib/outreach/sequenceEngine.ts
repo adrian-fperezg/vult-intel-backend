@@ -1,5 +1,5 @@
 import db, { DbWrapper } from '../../db.js';
-import { emailQueue, processEmail } from '../../queues/emailQueue.js';
+import { emailQueue } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
 import { handleSequenceIntent, matchKeyword, findRepliedConditionAhead } from './utils.js';
 
@@ -16,308 +16,247 @@ export interface SequenceStep {
 }
 
 /**
- * Enrolls a contact into a sequence.
+ * Inscribe un contacto en la secuencia.
  */
 export async function enrollContactInSequence(projectId: string, sequenceId: string, contactId: string, tx?: DbWrapper) {
   const enrollmentId = uuidv4();
   const d = tx || db;
 
   try {
+    // Usamos sintaxis limpia para Postgres
     await d.run(
       `INSERT INTO outreach_sequence_enrollments 
       (id, sequence_id, contact_id, project_id, status) 
       VALUES (?, ?, ?, ?, 'active')`,
-      enrollmentId,
-      sequenceId,
-      contactId,
-      projectId
+      [enrollmentId, sequenceId, contactId, projectId]
     );
 
-    // Trigger the first step (Root step has no parent)
+    // Arrancamos el paso 1
     await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx);
 
     return { success: true, enrollmentId };
   } catch (error: any) {
-    if (error.message?.includes('UNIQUE constraint failed')) {
-      return { success: false, error: 'Contact already enrolled in this sequence' };
+    if (error.message?.includes('unique') || error.message?.includes('UNIQUE')) {
+      return { success: false, error: 'Contact already enrolled' };
     }
     throw error;
   }
 }
 
 /**
- * Schedules the next step for an enrolled contact.
+ * Programa el siguiente paso. 
+ * Si es un Match de Intención (YES), se puede configurar para ser instantáneo.
  */
-export async function scheduleNextStep(projectId: string, sequenceId: string, contactId: string, parentStepId: string | null = null, branchPath: string = 'default', tx?: DbWrapper) {
-  console.log(`[SequenceEngine] Scheduling next step for sequence ${sequenceId}, contact ${contactId}. Parent: ${parentStepId}, Path: ${branchPath}`);
+export async function scheduleNextStep(
+  projectId: string,
+  sequenceId: string,
+  contactId: string,
+  parentStepId: string | null = null,
+  branchPath: string = 'default',
+  tx?: DbWrapper,
+  isIntentMatch: boolean = false // Nuevo flag para envíos urgentes
+) {
   const d = tx || db;
-  
-  // 0. Verify Enrollment is still active before scheduling next step
+
+  // 0. Verificamos que el contacto deba seguir recibiendo correos
   const enrollment = await d.get<any>(
     'SELECT status FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
-    sequenceId, contactId
+    [sequenceId, contactId]
   );
+
+  // Adrian: Permitimos 'active' (flujo normal) y 'replied' (cuando entra el YES)
   if (!enrollment || (enrollment.status !== 'active' && enrollment.status !== 'replied')) {
-    console.warn(`[SequenceEngine] Enrollment for contact ${contactId} in sequence ${sequenceId} is no longer active (status: ${enrollment?.status || 'missing'}). Aborting schedule.`);
+    console.log(`[SequenceEngine] Flujo detenido para contacto ${contactId} (Status: ${enrollment?.status})`);
     return;
   }
 
-  // 1. Cancel any existing pending jobs and clear next_step_id for safety
+  // 1. Limpiamos cualquier trabajo pendiente para evitar duplicados
   await cancelPendingSequenceJobs(sequenceId, contactId);
 
-  // 2. Get sequence and step info
-  const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', sequenceId);
+  const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]);
   if (!sequence) throw new Error('Sequence not found');
 
-  // Find the child step of parentStepId with matching branchPath
+  // 2. Buscamos el siguiente paso en la rama correcta (YES, NO o DEFAULT)
   let step: SequenceStep | undefined;
   if (parentStepId === null) {
-    // Root step
     step = await d.get<SequenceStep>(
       'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL',
-      sequenceId
+      [sequenceId]
     );
   } else {
     step = await d.get<SequenceStep>(
       'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
-      sequenceId,
-      parentStepId,
-      branchPath
+      [sequenceId, parentStepId, branchPath]
     );
   }
 
   if (!step) {
-    // No more steps in this branch or sequence completed
-    console.log(`[SequenceEngine] No more steps found for sequence ${sequenceId} after parent ${parentStepId} on path ${branchPath}`);
-    // Only mark as completed if we are not at the start and there are truly no more steps
     if (parentStepId !== null) {
       await d.run(
         'UPDATE outreach_sequence_enrollments SET status = \'completed\', completed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?',
-        sequenceId,
-        contactId
+        [sequenceId, contactId]
       );
     }
     return;
   }
 
-  console.log(`[SequenceEngine] Found step: ${step.id} (${step.step_type})`);
-
-  // 2. Calculate delay/timing
+  // 3. CÁLCULO DE TIEMPO
   let delayMs = 0;
-  
-  if (parentStepId === null) {
+
+  if (isIntentMatch) {
+    // Si Adrian detectó un match de palabra clave, mandamos el YES en 5 segundos (casi instantáneo)
+    delayMs = 5000;
+    console.log(`[SequenceEngine] INTENT MATCH! Programando respuesta YES inmediata.`);
+  } else if (parentStepId === null) {
     if (step.scheduled_start_at) {
-      // Absolute scheduling for Step 1
       const startTime = new Date(step.scheduled_start_at).getTime();
       delayMs = Math.max(0, startTime - Date.now());
-      console.log(`[SequenceEngine] Step 1 has absolute schedule: ${step.scheduled_start_at} (UTC: ${new Date(startTime).toUTCString()}). Calculated delay: ${delayMs}ms`);
-    } else {
-      // Root step defaults to immediate dispatch
-      delayMs = 0;
-      console.log(`[SequenceEngine] Step 1 (Root) starting immediately (no absolute schedule). Delay set to 0ms.`);
     }
   } else {
-    // Relative scheduling for subsequent steps
     const amount = step.delay_amount || 2;
     const unit = step.delay_unit || 'days';
-    
     if (unit === 'minutes') delayMs = amount * 60 * 1000;
     else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
-    else delayMs = amount * 24 * 60 * 60 * 1000; // 'days'
-    
-    console.log(`[SequenceEngine] Step ${step.id} has relative delay: ${amount} ${unit}. Calculated delay: ${delayMs}ms`);
+    else delayMs = amount * 24 * 60 * 60 * 1000;
   }
 
-  // 3. Queue the work
-  const smartMin = sequence.smart_send_min_delay || 0;
-  const smartMax = sequence.smart_send_max_delay || 0;
-  const smartDelayMs = (Math.floor(Math.random() * (smartMax - smartMin + 1)) + smartMin) * 1000;
-  
-  const totalDelay = delayMs + (step.step_type === 'email' ? smartDelayMs : 0);
+  // Smart Send (Variación humana)
+  const smartDelayMs = isIntentMatch ? 0 : (Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000);
+  const totalDelay = delayMs + smartDelayMs;
   const scheduledAt = new Date(Date.now() + totalDelay);
 
-  console.log(`[SequenceEngine] Final Total Delay: ${totalDelay}ms (Base: ${delayMs}ms + Max Smart: ${smartDelayMs}ms)`);
-  console.log(`[SequenceEngine] Scheduled dispatch time: ${scheduledAt.toISOString()}`);
-
-  // Update enrollment to next step and scheduled time BEFORE adding to queue
-  // This ensures the database is the source of truth if Redis fails
+  // 4. ACTUALIZACIÓN Y COLA
   await d.run(
     `UPDATE outreach_sequence_enrollments 
-     SET next_step_id = ?, 
-         scheduled_at = ?, 
-         last_error = NULL 
+     SET next_step_id = ?, scheduled_at = ?, last_error = NULL 
      WHERE sequence_id = ? AND contact_id = ?`,
-    step.id,
-    scheduledAt.toISOString(),
-    sequenceId,
-    contactId
+    [step.id, scheduledAt.toISOString(), sequenceId, contactId]
   );
 
   const jobId = `seq-${sequenceId}-contact-${contactId}-step-${step.id}`;
 
   await emailQueue.add('execute-sequence-step', {
-    projectId,
-    sequenceId,
-    contactId,
-    stepId: step.id,
-    stepNumber: step.step_number
+    projectId, sequenceId, contactId, stepId: step.id, stepNumber: step.step_number
   }, {
     delay: totalDelay,
     attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000
-    },
-    jobId: jobId // Deterministic ID to prevent double-queuing
+    backoff: { type: 'exponential', delay: 5000 },
+    jobId: jobId
   });
 
-  console.log(`[SequenceEngine] Queued step ${step.id} for contact ${contactId} | Job ID: ${jobId}`);
+  console.log(`[SequenceEngine] Paso ${step.id} en cola (${totalDelay}ms) para contacto ${contactId}`);
 }
 
 /**
- * Robustly cancels any pending sequence jobs for a contact using deterministic job IDs.
+ * Cancela trabajos pendientes.
  */
 export async function cancelPendingSequenceJobs(sequenceId: string, contactId: string) {
-  // Use DB to find the 'next_step_id' which represents what's CURRENTLY in the queue
   const enrollment = await db.get<any>(
     'SELECT next_step_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
-    sequenceId,
-    contactId
+    [sequenceId, contactId]
   );
 
   if (enrollment?.next_step_id) {
     const jobId = `seq-${sequenceId}-contact-${contactId}-step-${enrollment.next_step_id}`;
     try {
       const job = await emailQueue.getJob(jobId);
-      if (job) {
-        await job.remove();
-        console.log(`[SequenceEngine] Successfully removed pending job from queue: ${jobId}`);
-      }
+      if (job) await job.remove();
     } catch (err: any) {
-      console.warn(`[SequenceEngine] Failed to resolve/remove job ${jobId} from queue:`, err.message);
+      console.warn(`[SequenceEngine] Limpieza de Job fallida: ${jobId}`);
     }
   }
 
-  // Also clear any 'scheduled' individual emails associated with this contact if they are inside a sequence
-  // This is a safety measure to prevent rogue emails if the job was already being processed by a worker
   await db.run(
-    "UPDATE outreach_individual_emails SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ? AND status = 'scheduled'",
-    sequenceId,
-    contactId
+    "UPDATE outreach_individual_emails SET status = 'cancelled' WHERE sequence_id = ? AND contact_id = ? AND status = 'scheduled'",
+    [sequenceId, contactId]
   );
 }
 
 /**
- * Reconstructs the current state of an enrollment by walking the sequence tree
- * against the recorded events. This is the ultimate source of truth for
- * sequence progress.
- */
-export async function getTrueNextStep(projectId: string, sequenceId: string, contactId: string): Promise<{ stepId: string | null; branchPath: string; isCompleted: boolean }> {
-  console.log(`[SequenceEngine] Reconstructing state for sequence ${sequenceId}, contact ${contactId}`);
-  
-  // 1. Get sequence root step
-  let currentStep = await db.get<SequenceStep>(
-    'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL',
-    sequenceId
-  );
-
-  if (!currentStep) return { stepId: null, branchPath: 'default', isCompleted: true };
-
-  let branchPath = 'default';
-
-  while (currentStep) {
-    // Check if THIS step has been executed or evaluated
-    const executionEvent = await db.get<any>(
-      "SELECT type, metadata FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type IN ('sequence_step_executed', 'sequence_condition_evaluated') ORDER BY created_at DESC LIMIT 1",
-      contactId, sequenceId, currentStep.id
-    );
-
-    if (!executionEvent) {
-      // This is the first step that HASN'T been executed. This is our next step!
-      return { stepId: currentStep.id, branchPath, isCompleted: false };
-    }
-
-    // Step was executed, find the next one
-    if (currentStep.step_type === 'condition') {
-      try {
-        const meta = typeof executionEvent.metadata === 'string' ? JSON.parse(executionEvent.metadata) : executionEvent.metadata;
-        branchPath = meta.result || 'no';
-      } catch (e) {
-        branchPath = 'no';
-      }
-    } else {
-      branchPath = 'default';
-    }
-
-    const nextStep = await db.get<SequenceStep>(
-      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
-      sequenceId, currentStep.id, branchPath
-    );
-
-    if (!nextStep) {
-      // Sequence completed on this branch
-      return { stepId: null, branchPath, isCompleted: true };
-    }
-
-    currentStep = nextStep;
-  }
-
-  return { stepId: null, branchPath: 'default', isCompleted: true };
-}
-
-/**
- * Evaluates the intent of a reply and potentially advances the sequence branch.
+ * EVALUADOR DE INTENCIONES (El Cerebro de Adrian)
  */
 export async function evaluateIntent(projectId: string, sequenceId: string, contactId: string, rawBody: string, originalEmail: any) {
-  console.log(`[SequenceEngine] Evaluating intent for contact ${contactId} in sequence ${sequenceId}...`);
+  console.log(`[SequenceEngine] Analizando respuesta del contacto ${contactId}...`);
 
-  // 1. Check for Synthetic "YES" intent (Global Keyword)
+  // 1. Verificamos palabra clave GLOBAL (La del Sequence Builder)
   const intent = await handleSequenceIntent(originalEmail, rawBody);
-  
+
   if (intent.hijacked && intent.yesStepId) {
-    console.log(`[SequenceEngine] Synthetic Intent Match! Branching to YES for contact ${contactId}.`);
-    
+    console.log(`[SequenceEngine] MATCH GLOBAL detectado: "${intent.keyword}". Saltando a rama YES.`);
+
     await db.run(`
       INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, uuidv4(), contactId, projectId, sequenceId, intent.parentStepId, 'sequence_condition_evaluated', JSON.stringify({
-      parentStepId: intent.parentStepId,
+    `, [uuidv4(), contactId, projectId, sequenceId, intent.parentStepId, 'sequence_condition_evaluated', JSON.stringify({
       evaluatedBranch: 'yes',
       result: true,
-      reason: `Global keyword match: '${intent.keyword}'`
-    }));
+      reason: `Match palabra clave: '${intent.keyword}'`
+    })]);
 
-    await scheduleNextStep(projectId, sequenceId, contactId, intent.parentStepId, 'yes');
+    // Mandamos el YES inmediatamente (usando isIntentMatch: true)
+    await scheduleNextStep(projectId, sequenceId, contactId, intent.parentStepId, 'yes', undefined, true);
     return { branched: true, matched: true, keyword: intent.keyword };
   }
 
-  // 2. Check for "Condition" steps ahead (Replied Branching)
+  // 2. Verificamos si hay pasos de CONDICIÓN específicos adelante
   if (originalEmail.step_id) {
-    const steps = await db.all("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?", sequenceId) as any[];
+    const steps = await db.all("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?", [sequenceId]) as any[];
     const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
 
     if (conditionStep?.condition_keyword) {
       const keywordMatched = matchKeyword(rawBody, conditionStep.condition_keyword);
-      
+
       if (keywordMatched) {
-        console.log(`[SequenceEngine] Condition Step Keyword matched for step ${conditionStep.id}: "${conditionStep.condition_keyword}". Advancing to YES branch.`);
-        
+        console.log(`[SequenceEngine] Match en paso de condición: "${conditionStep.condition_keyword}".`);
+
         await db.run(`
           INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
           VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, uuidv4(), contactId, projectId, sequenceId, conditionStep.id, 'sequence_condition_evaluated', JSON.stringify({ 
-          parentStepId: conditionStep.id,
+        `, [uuidv4(), contactId, projectId, sequenceId, conditionStep.id, 'sequence_condition_evaluated', JSON.stringify({
           evaluatedBranch: 'yes',
-          result: true,
-          reason: `Step keyword match: '${conditionStep.condition_keyword}'`
-        }));
+          result: true
+        })]);
 
-        await scheduleNextStep(projectId, sequenceId, contactId, conditionStep.id, 'yes');
+        await scheduleNextStep(projectId, sequenceId, contactId, conditionStep.id, 'yes', undefined, true);
         return { branched: true, matched: true, keyword: conditionStep.condition_keyword };
       }
     }
   }
 
-  console.log(`[SequenceEngine] No branching intent found for contact ${contactId}.`);
   return { branched: false, matched: false, keyword: null };
+}
+
+/**
+ * Reconstrucción del estado (para el Dashboard)
+ */
+export async function getTrueNextStep(projectId: string, sequenceId: string, contactId: string) {
+  let currentStep = await db.get<SequenceStep>(
+    'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL',
+    [sequenceId]
+  );
+  if (!currentStep) return { stepId: null, branchPath: 'default', isCompleted: true };
+
+  let branchPath = 'default';
+  while (currentStep) {
+    const executionEvent = await db.get<any>(
+      "SELECT type, metadata FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type IN ('sequence_step_executed', 'sequence_condition_evaluated') ORDER BY created_at DESC LIMIT 1",
+      [contactId, sequenceId, currentStep.id]
+    );
+    if (!executionEvent) return { stepId: currentStep.id, branchPath, isCompleted: false };
+
+    if (currentStep.step_type === 'condition') {
+      try {
+        const meta = typeof executionEvent.metadata === 'string' ? JSON.parse(executionEvent.metadata) : executionEvent.metadata;
+        branchPath = meta.result || 'no';
+      } catch (e) { branchPath = 'no'; }
+    } else { branchPath = 'default'; }
+
+    const nextStep = await db.get<SequenceStep>(
+      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
+      [sequenceId, currentStep.id, branchPath]
+    );
+    if (!nextStep) return { stepId: null, branchPath, isCompleted: true };
+    currentStep = nextStep;
+  }
+  return { stepId: null, branchPath: 'default', isCompleted: true };
 }

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
-import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, evaluateSmartIntent, recordOutreachEvent, isBounce } from './utils.js';
+import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, recordOutreachEvent, isBounce } from './utils.js';
 import { scheduleNextStep, evaluateIntent } from './sequenceEngine.js';
 import { google } from "googleapis";
 
@@ -17,9 +17,6 @@ interface GmailMessage {
   internalDate: string;
 }
 
-/**
- * Extracts and decodes the plain text body from a Gmail message payload.
- */
 function getGmailBody(payload: any): string {
   if (payload.body?.data) {
     return Buffer.from(payload.body.data, 'base64').toString('utf-8');
@@ -44,7 +41,6 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
   const accessToken = await getAccessToken(mailboxId);
 
-  // 1. List recent messages (last 24h)
   const response = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=after:${Math.floor(Date.now() / 1000) - 86400}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -61,11 +57,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
   let newCount = 0;
 
   for (const msgRef of messages) {
-    // Check if we already processed this message
     const existing = await db.prepare("SELECT id FROM outreach_events WHERE type = 'email_replied' AND metadata LIKE ?").get(`%${msgRef.id}%`);
     if (existing) continue;
 
-    // 2. Get full message
     const msgRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -78,10 +72,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
     const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || '';
 
-    // ── BOUNCE DETECTION ───────────────────────────────────────────────
     if (isBounce(fromHeader, subject)) {
-      console.log(`[Gmail] ⚠️ Bounce detected from ${fromHeader} for Subject: ${subject}`);
-      // Try to find the original mapping via Thread or headers
       const original = await findOriginalEmail([messageId].filter(Boolean), msg.threadId);
       if (original) {
         await recordOutreachEvent({
@@ -94,8 +85,6 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           event_key: `bounced:${msg.id}`,
           metadata: { from: fromHeader, subject, gmail_id: msg.id }
         });
-        
-        // Mark contact as bounced to stop further emails
         await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", original.contact_id);
         await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?", original.sequence_id, original.contact_id);
       }
@@ -106,52 +95,13 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const fromEmail = emailMatch[1];
     if (!fromEmail) continue;
 
-    // 3. Try to find the original outbound email by message_id or thread_id
     const potentialIds = [messageId].filter(Boolean);
     const originalEmail = await findOriginalEmail(potentialIds, msg.threadId);
 
     if (originalEmail) {
-      console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
-
-      // 4. Fetch Sequence Settings
-      const sequenceSettings = originalEmail.sequence_id
-        ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass, bypass_keyword FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
-        : null;
-
-      const { stop_on_reply, smart_intent_bypass, bypass_keyword } = sequenceSettings || { stop_on_reply: true, smart_intent_bypass: false, bypass_keyword: 'Khania' };
       const rawBody = getGmailBody(msg.payload);
-      let branchingHandled = false;
-      // 5. Lógica de Smart Intent Bypass (Versión: Enviar YES o Pausar)
 
-      // 4. Smart Intent Bypass Logic
-      // @CRITICAL: THIS IS THE SINGLE SOURCE OF TRUTH FOR SMART INTENT BYPASS. 
-      // DO NOT RE-IMPLEMENT OR ADD GHOST LOGS.
-      const keyword = (bypass_keyword || 'Khania').trim();
-      const keywordMatch = matchKeyword(rawBody, keyword);
-
-      const { status, matched } = evaluateSmartIntent({
-        smart_intent_bypass,
-        stop_on_reply,
-        keywordMatch
-      });
-
-      if (status !== 'active') {
-        const updateTable = "outreach_sequence_enrollments";
-        await db.run(
-          `UPDATE ${updateTable} SET status = ? WHERE sequence_id = ? AND contact_id = ?`,
-          [status, originalEmail.sequence_id, originalEmail.contact_id]
-        );
-        console.log(`[POLLER] Smart Intent: Enrollment status set to "${status}" (Match: ${matched}).`);
-        branchingHandled = true;
-      } else {
-        // Standard path if status remains 'active' (Bypass is OFF)
-        await db.run(
-          "UPDATE outreach_individual_emails SET is_reply = true::boolean WHERE id = ?",
-          originalEmail.id
-        );
-        console.log(`[POLLER] Respuesta normal detectada. Siguiendo flujo estándar de ramas.`);
-      }
-      // 5. Intent Evaluation
+      // 1. EVALUACIÓN DE INTENCIÓN (El Cerebro de Adrian)
       let intentResult = { branched: false, keyword: null as string | null, matched: false };
       if (originalEmail.sequence_id) {
         intentResult = await evaluateIntent(
@@ -161,10 +111,29 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           rawBody,
           originalEmail
         );
-        branchingHandled = intentResult.branched;
       }
 
-      // 5. Record standardized event with atomic counter increment
+      // 2. LÓGICA DE DECISIÓN ÚNICA
+      if (intentResult.matched) {
+        // MATCH: Pausamos rama principal (NO) y el motor del YES ya se activó en evaluateIntent
+        await db.run(
+          "UPDATE outreach_sequence_enrollments SET status = 'replied', last_executed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?",
+          [originalEmail.sequence_id, originalEmail.contact_id]
+        );
+        console.log(`[Cerebro] MATCH: Rama YES activa para "${intentResult.keyword}".`);
+      } else {
+        // NO MATCH: Sigue ACTIVA para que le llegue el siguiente correo de seguimiento (NO)
+        await db.run(
+          "UPDATE outreach_sequence_enrollments SET status = 'active' WHERE sequence_id = ? AND contact_id = ?",
+          [originalEmail.sequence_id, originalEmail.contact_id]
+        );
+        console.log(`[Cerebro] NO MATCH: El contacto sigue en el flujo principal.`);
+      }
+
+      // 3. Update individual email record (Postgres syntax)
+      await db.run("UPDATE outreach_individual_emails SET is_reply = True WHERE id = ?", originalEmail.id);
+
+      // 4. Record Event
       await recordOutreachEvent({
         project_id: mailbox.project_id,
         sequence_id: originalEmail.sequence_id,
@@ -172,60 +141,23 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         contact_id: originalEmail.contact_id,
         email_id: originalEmail.id,
         event_type: 'replied',
-        event_key: `replied:${msg.id}`, // Idempotent per Gmail message ID
-        metadata: {
-          from: fromHeader,
-          subject: subject,
-          gmail_message_id: msg.id,
-          gmail_thread_id: msg.threadId,
-          reply_id: messageId || msg.id,
-          keyword: intentResult.keyword,
-          keyword_matched: intentResult.matched
-        }
+        event_key: `replied:${msg.id}`,
+        metadata: { matched: intentResult.matched, keyword: intentResult.keyword }
       });
 
-      // Update contact status
-      await db.prepare("UPDATE outreach_contacts SET status = 'replied', last_contacted_at = CURRENT_TIMESTAMP WHERE id = ?").run(originalEmail.contact_id);
+      // 5. Mark as read
+      await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
+      });
 
-      // 6. Stop sequence logic (if not branched)
-      if (branchingHandled) {
-        console.log(`[Gmail] Sequence branched for contact ${originalEmail.contact_id}. Skipping termination.`);
-      } else if (sequenceSettings) {
-        if (stop_on_reply) {
-          // Standard behavior: Stop the sequence upon receiving any reply
-          const result = await db.prepare(`
-            UPDATE outreach_sequence_enrollments
-            SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP
-            WHERE contact_id = ? AND status = 'active' AND sequence_id = ?
-          `).run(originalEmail.contact_id, originalEmail.sequence_id);
-
-          if (result.changes > 0) {
-            console.log(`[Gmail] Stopped sequence enrollment for contact ${originalEmail.contact_id} due to 'Stop on Reply' setting.`);
-          }
-        }
-        // 7. ALWAYS mark as read to prevent polling loops
-        await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
-          }
-        );
-
-        newCount++;
-      }
+      newCount++;
     }
-  }
+  } // <--- Cierre del loop FOR
   return newCount;
-}
+} // <--- Cierre de syncMailbox
 
-/**
- * Activates the Gmail Watch (Pub/Sub notifications).
- */
 export async function setupGmailWatch(mailboxId: string, getAccessToken: (id: string) => Promise<string>) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("Mailbox not found");
@@ -233,91 +165,36 @@ export async function setupGmailWatch(mailboxId: string, getAccessToken: (id: st
   const accessToken = await getAccessToken(mailboxId);
   const topicName = `projects/${process.env.GCP_PROJECT_ID}/topics/${process.env.GCP_PUBSUB_TOPIC}`;
 
-  console.log(`[GmailWatch] Setting up watch for ${mailbox.email} on topic ${topicName}`);
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/watch', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topicName, labelIds: ['INBOX', 'UNREAD'], labelFilterAction: 'include' })
+  });
 
-  const response = await fetch(
-    'https://gmail.googleapis.com/gmail/v1/users/me/watch',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        topicName,
-        labelIds: ['INBOX', 'UNREAD'],
-        labelFilterAction: 'include'
-      })
-    }
-  );
+  if (!response.ok) throw new Error(`Gmail Watch error: ${await response.text()}`);
 
-  if (!response.ok) {
-    const err = await response.text();
-    console.error(`[GmailWatch] Failed to setup watch for ${mailbox.email}:`, err);
-    throw new Error(`Gmail Watch error: ${err}`);
-  }
-
-  const result = await response.json() as { historyId: string, expiration: string };
-
-  await db.prepare("UPDATE outreach_mailboxes SET gmail_history_id = ? WHERE id = ?")
-    .run(result.historyId, mailboxId);
-
-  console.log(`[GmailWatch] Watch active for ${mailbox.email}. Initial HistoryId: ${result.historyId}`);
+  const result = await response.json() as { historyId: string };
+  await db.prepare("UPDATE outreach_mailboxes SET gmail_history_id = ? WHERE id = ?").run(result.historyId, mailboxId);
   return result;
 }
 
-/**
- * Performs an incremental sync using the history API.
- */
 export async function syncMailboxHistory(mailboxId: string, historyId: number, getAccessToken: (id: string) => Promise<string>) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("Mailbox not found");
 
   const accessToken = await getAccessToken(mailboxId);
-
   const startHistoryId = (mailbox.gmail_history_id && parseInt(mailbox.gmail_history_id) > historyId)
     ? mailbox.gmail_history_id
     : historyId.toString();
 
-  console.log(`[GmailSync] Performing incremental sync for ${mailbox.email} from historyId ${startHistoryId}`);
+  const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
 
-  const response = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    if (err.includes("404") || err.includes("too old")) {
-      console.warn(`[GmailSync] HistoryId ${startHistoryId} is too old. Falling back to full sync.`);
-      return syncMailbox(mailboxId, getAccessToken);
-    }
-    throw new Error(`Gmail History API error: ${err}`);
-  }
+  if (!response.ok) return syncMailbox(mailboxId, getAccessToken);
 
   const data = await response.json() as any;
-  const historyRecords = data.history || [];
+  if (!data.history || data.history.length === 0) return 0;
 
-  if (historyRecords.length === 0) {
-    console.log(`[GmailSync] No new history records for ${mailbox.email}.`);
-    return 0;
-  }
-
-  // Extract message IDs from history
-  const newMessageIds = new Set<string>();
-  for (const record of historyRecords) {
-    if (record.messagesAdded) {
-      for (const added of record.messagesAdded) {
-        newMessageIds.add(added.message.id);
-      }
-    }
-  }
-
-  if (newMessageIds.size === 0) return 0;
-
-  console.log(`[GmailSync] Found ${newMessageIds.size} new messages in history for ${mailbox.email}. Synchronizing...`);
-
-  // To keep logic concise, we trigger a scoped full sync for now
-  // but eventually we should extract the "processMessage" logic.
   return syncMailbox(mailboxId, getAccessToken);
 }

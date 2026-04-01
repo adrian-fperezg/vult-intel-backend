@@ -2,15 +2,13 @@ import db from '../../db.js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * Cleans an email body by:
- * 1. Stripping all HTML tags.
- * 2. Removing exhaustive quoted reply history using line-by-line delimiters.
- * 3. Removing common signatures.
+ * 1. LIMPIEZA DE CUERPO:
+ * Elimina HTML, recortes de historial (On... wrote) y NORMALIZA acentos/mayúsculas.
  */
 export function cleanEmailBody(text: string): string {
   if (!text) return '';
 
-  // 1. Basic HTML stripping and entity normalization
+  // Limpieza básica de HTML y entidades
   let clean = text
     .replace(/<[^>]*>?/gm, '')
     .replace(/&nbsp;/g, ' ')
@@ -18,20 +16,15 @@ export function cleanEmailBody(text: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
 
-  // 2. Common reply delimiters (Exhaustive list)
+  // Delimitadores para detectar dónde termina la respuesta real y empieza el historial
   const delimiters = [
-    /^On\s.*?\swrote:$/im,                  // Gmail: On Mon, Jan 1, 2024 at 10:00 AM User wrote:
-    /^On\s.*?\sat\s.*?\swrote:$/im,         // Variation
-    /^From:\s.*?\sSent:\s.*$/im,            // Outlook: From: User <user@example.com> Sent: Monday...
-    /^Sent from my .*/im,                   // "Sent from my iPhone/Android"
-    /^-----Original Message-----$/im,       // Standard Outlook
-    /^---+\s*Original\s*Message\s*---+$/im, // Variations
-    /^________________________________$/m,  // Outlook horizontal line
-    /^--+\s*$/m,                            // Typical signature/history separator
-    /^\s*De:.*Enviado el:.*/im,             // Spanish: De: User Enviado el: lunes...
-    /^\s*Von:.*Gesendet:.*/im,              // German
-    /^\s*Van:.*Verzonden:.*/im,             // Dutch
-    /^\s*Le\s.*?\sa\sécrit\s:/im            // French
+    /^On\s.*?\swrote:$/im,
+    /^From:\s.*?\sSent:\s.*$/im,
+    /^Sent from my .*/im,
+    /^-----Original Message-----$/im,
+    /^\s*De:.*Enviado el:.*/im,
+    /^________________________________$/m,
+    /^--+\s*$/m
   ];
 
   let lines = clean.split(/\r?\n/);
@@ -39,73 +32,81 @@ export function cleanEmailBody(text: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-
-    // Check for explicit headers
     if (delimiters.some(d => d.test(line))) {
       stopIndex = i;
       break;
     }
-
-    // Check for inline history markers like "From: " following a blank line
-    if (i > 0 && lines[i-1].trim() === "" && /^From:\s/i.test(line)) {
-      stopIndex = i;
-      break;
-    }
-
-    // Check for blocks of quoted lines starting with '>' or '|'
     if (line.startsWith('>') || line.startsWith('|')) {
       stopIndex = i;
       break;
     }
   }
 
-  return lines.slice(0, stopIndex).join('\n').trim().toLowerCase();
+  // NORMALIZACIÓN FINAL: Quitamos acentos, pasamos a minúsculas y limpiamos espacios
+  return lines.slice(0, stopIndex).join('\n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 /**
- * Checks if a keyword exists in the cleaned email body using punctuation-aware word boundaries.
- * Supports English punctuation and ensures "OK" matches in "Yes, OK!" but not in "BOOK".
+ * 2. BÚSQUEDA DE PALABRA CLAVE:
+ * Blindada contra acentos, mayúsculas y espacios. 
+ * Usa \b para asegurar que "SI" no coincida con "SIdney".
  */
-export function matchKeyword(body: string, keyword: string | null): boolean | null {
-  if (!keyword) return null;
+export function matchKeyword(body: string, keyword: string | null): boolean {
+  if (!keyword || keyword.trim() === '') return false;
 
   const cleanBody = cleanEmailBody(body);
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cleanKeyword = keyword.trim()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-  // Use exact word boundary matching as requested
+  const escaped = cleanKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp("\\b" + escaped + "\\b", "i");
 
-  return regex.test(cleanBody);
+  const isMatched = regex.test(cleanBody);
+
+  if (isMatched) {
+    console.log(`[Cerebro] MATCH: Encontrada palabra "${cleanKeyword}"`);
+  }
+
+  return isMatched;
 }
 
 /**
- * Searches the sequence DAG forward from the current step to find the nearest 
- * "replied" condition. Traverses through "delay" steps but stops if another 
- * "email" step is encountered (as a reply to the current email shouldn't 
- * satisfy a condition for a later email).
+ * Busca la intención de la secuencia basada en el keyword configurado.
  */
-export function findRepliedConditionAhead(steps: any[], currentStepId: string): any | null {
-  const children = steps.filter(s => s.parent_step_id === currentStepId);
+export async function handleSequenceIntent(originalEmail: any, rawBody: string) {
+  if (!originalEmail.sequence_id) return { matched: false, hijacked: false };
 
-  for (const child of children) {
-    if (child.type === 'condition' && child.condition_type === 'replied') {
-      return child;
-    }
-    // If it's a delay, we continue the search through its children
-    if (child.type === 'delay') {
-      const ahead = findRepliedConditionAhead(steps, child.id);
-      if (ahead) return ahead;
+  const sequence = await db.prepare("SELECT intent_keyword FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any;
+  if (!sequence?.intent_keyword) return { matched: false, hijacked: false, keyword: null };
+
+  const matched = matchKeyword(rawBody, sequence.intent_keyword);
+
+  if (matched) {
+    const steps = await db.prepare("SELECT id, branch_path, parent_step_id FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
+    const yesStep = steps.find(s => s.branch_path === 'yes');
+
+    if (yesStep) {
+      return {
+        matched: true,
+        hijacked: true,
+        keyword: sequence.intent_keyword,
+        yesStepId: yesStep.id,
+        parentStepId: yesStep.parent_step_id
+      };
     }
   }
 
-  return null;
+  return { matched: false, hijacked: false, keyword: sequence.intent_keyword };
 }
 
 /**
- * Finds the original outbound email this is a reply to.
+ * Encuentra el email original al que se está respondiendo (Compatible con Postgres).
  */
 export async function findOriginalEmail(potentialIds: string[], threadId?: string) {
-  // 1. Match by message ID (best for IMAP/SMTP)
   for (const mid of potentialIds) {
     const cleanId = mid.replace(/[<>]/g, '').trim();
     const original = await db.prepare(`
@@ -115,12 +116,8 @@ export async function findOriginalEmail(potentialIds: string[], threadId?: strin
     if (original) return original;
   }
 
-  // 2. Match by thread ID (best for Gmail)
   if (threadId) {
-    const original = await db.prepare(`
-      SELECT * FROM outreach_individual_emails 
-      WHERE thread_id = ?
-    `).get(threadId) as any;
+    const original = await db.prepare(`SELECT * FROM outreach_individual_emails WHERE thread_id = ?`).get(threadId) as any;
     if (original) return original;
   }
 
@@ -128,78 +125,7 @@ export async function findOriginalEmail(potentialIds: string[], threadId?: strin
 }
 
 /**
- * Handles the logic for matching an intent keyword and returning the decision.
- * Does NOT perform side effects like recording events or updating enrollments.
- */
-export async function handleSequenceIntent(originalEmail: any, rawBody: string) {
-  if (!originalEmail.sequence_id) return { matched: false, hijacked: false };
-
-  const sequence = await db.prepare("SELECT * FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any;
-  if (!sequence?.intent_keyword) return { matched: false, hijacked: false, keyword: null };
-
-  const conditionKeyword = sequence.intent_keyword.trim();
-  const cleanReply = cleanEmailBody(rawBody);
-  const matched = matchKeyword(cleanReply, conditionKeyword);
-
-  if (matched) {
-    const steps = await db.prepare("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?").all(originalEmail.sequence_id) as any[];
-    const yesStep = steps.find(s => s.branch_path === 'yes');
-
-    if (yesStep) {
-      return { 
-        matched: true, 
-        hijacked: true, 
-        keyword: conditionKeyword, 
-        yesStepId: yesStep.id, 
-        parentStepId: yesStep.parent_step_id || 'synthetic-condition' 
-      };
-    } else {
-      console.warn(`[Sequence Intent] Match found for "${conditionKeyword}" but NO 'yes' branch step exists.`);
-      return { matched: true, hijacked: false, keyword: conditionKeyword };
-    }
-  }
-
-  return { matched: false, hijacked: false, keyword: conditionKeyword };
-}
-
-/**
- * Decision logic for enrollment status after a reply is received.
- * Centralizes Smart Intent Bypass vs Standard behavior.
- */
-export function evaluateSmartIntent(params: {
-  smart_intent_bypass: any;
-  stop_on_reply: any;
-  keywordMatch: boolean | null;
-}): { status: 'replied' | 'paused' | 'stopped' | 'active', matched: boolean } {
-  const { smart_intent_bypass, stop_on_reply, keywordMatch } = params;
-
-  // Ensure these are treated as booleans (PG compatibility)
-  const isBypass = !!smart_intent_bypass;
-  const isStopOnReply = !!stop_on_reply;
-
-  if (isBypass) {
-    if (keywordMatch === true) {
-      return { status: 'replied', matched: true };
-    } else {
-      // If bypass is ON and NO match, we PAUSE to prevent the NO branch
-      return { status: 'paused', matched: false };
-    }
-  }
-
-  // Standard Behavior (Bypass is OFF)
-  if (isStopOnReply) {
-    return { status: 'stopped', matched: false };
-  }
-
-  return { status: 'active', matched: false };
-}
-
-/**
- * Records an outreach event (sent, opened, replied, bounced) and atomically 
- * increments the corresponding counter in the outreach_sequences table.
- * Enforces idempotency using the event_key UNIQUE constraint.
- * 
- * @returns The recorded event or undefined if it was a duplicate.
+ * Registra eventos (sent, opened, replied, bounced) con sintaxis Postgres RETURNING.
  */
 export async function recordOutreachEvent(params: {
   project_id: string;
@@ -213,76 +139,48 @@ export async function recordOutreachEvent(params: {
 }) {
   const { project_id, sequence_id, step_id, contact_id, email_id, event_type, event_key, metadata } = params;
 
-  // Ensure metadata includes email_id if provided
-  const finalMetadata = {
-    ...(metadata || {}),
-    ...(email_id ? { email_id } : {})
-  };
+  const finalMetadata = { ...(metadata || {}), ...(email_id ? { email_id } : {}) };
 
   return await db.transaction(async (tx) => {
-    // 1. Record the event (idempotent via event_key)
-    // The table uses column 'type' for the event type.
     const event = await tx.prepare(`
-      INSERT INTO outreach_events (
-        id, project_id, sequence_id, step_id, contact_id, type, event_key, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO outreach_events (id, project_id, sequence_id, step_id, contact_id, type, event_key, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (event_key) DO NOTHING
       RETURNING id, type
     `).get<{ id: string, type: string }>(
-      uuidv4(), 
-      project_id, 
-      sequence_id || null, 
-      step_id || null, 
-      contact_id || null, 
-      event_type, 
-      event_key, 
-      Object.keys(finalMetadata).length > 0 ? JSON.stringify(finalMetadata) : null
+      uuidv4(), project_id, sequence_id, step_id, contact_id, event_type, event_key,
+      JSON.stringify(finalMetadata)
     );
 
-    // 2. If row was inserted AND we have a sequence_id, increment the counter
     if (event?.id && sequence_id) {
       const counterColumn = `${event_type}_count`;
-      await tx.prepare(`
-        UPDATE outreach_sequences 
-        SET ${counterColumn} = ${counterColumn} + 1 
-        WHERE id = ?
-      `).run(sequence_id);
+      await tx.run(`UPDATE outreach_sequences SET ${counterColumn} = ${counterColumn} + 1 WHERE id = ?`, sequence_id);
     }
-
     return event;
   });
 }
 
 /**
- * Identifies if an email is an automated bounce notification (DSN).
- * Uses common sender and subject patterns for Mailer-Daemon and Postmaster.
+ * Detecta correos de rebote (Bounces).
  */
 export function isBounce(from: string, subject: string): boolean {
   const f = from.toLowerCase();
   const s = subject.toLowerCase();
-
-  const bounceSenders = [
-    'mailer-daemon',
-    'postmaster',
-    'mda@',
-    'delivery-status-notification',
-    'failure@'
-  ];
-
-  const bounceSubjects = [
-    'undelivered mail returned',
-    'delivery status notification',
-    'failure notice',
-    'returned mail',
-    'non-delivery',
-    'could not be delivered',
-    'message not delivered',
-    'permanent failure'
-  ];
-
-  return (
-    bounceSenders.some(sender => f.includes(sender)) ||
-    bounceSubjects.some(sub => s.includes(sub))
-  );
+  const patterns = ['mailer-daemon', 'postmaster', 'delivery-status-notification', 'undelivered', 'returned mail', 'failure notice'];
+  return patterns.some(p => f.includes(p) || s.includes(p));
 }
 
+/**
+ * Busca si hay una condición de respuesta más adelante en el flujo.
+ */
+export function findRepliedConditionAhead(steps: any[], currentStepId: string): any | null {
+  const children = steps.filter(s => s.parent_step_id === currentStepId);
+  for (const child of children) {
+    if (child.step_type === 'condition' && child.condition_type === 'replied') return child;
+    if (child.step_type === 'delay') {
+      const ahead = findRepliedConditionAhead(steps, child.id);
+      if (ahead) return ahead;
+    }
+  }
+  return null;
+}
