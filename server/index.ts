@@ -1551,22 +1551,35 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
     if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
 
+    let finalStatus = 'active';
+
     await db.transaction(async (tx) => {
       // Find the first step to check for a scheduled start time
       const firstStep = await tx.get("SELECT id, scheduled_start_at FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL LIMIT 1", id) as any;
-      
+
       let newStatus = 'active';
       let delay = 0;
 
-      if (firstStep?.scheduled_start_at) {
+      console.log(`[API-START] Activating sequence ${id}. Raw scheduled_start_at from DB:`, firstStep?.scheduled_start_at);
+
+      if (firstStep && firstStep.scheduled_start_at) {
         const startTime = new Date(firstStep.scheduled_start_at).getTime();
-        if (startTime > Date.now()) {
+        const now = Date.now();
+
+        console.log(`[API-TIME-CHECK] Target Time: ${startTime} | Server Now: ${now} | Diff: ${startTime - now}ms`);
+
+        if (startTime > now) {
           newStatus = 'scheduled';
-          delay = startTime - Date.now();
-          console.log(`[Outreach] Sequence ${id} scheduled for future start: ${firstStep.scheduled_start_at} | Delay: ${delay}ms`);
+          delay = startTime - now;
+          console.log(`[API-QUEUE] Sequence ${id} is in the FUTURE. Delay calculated: ${delay}ms`);
+        } else {
+          console.log(`[API-WARNING] Sequence ${id} scheduled time is in the PAST! Defaulting to IMMEDIATE launch.`);
         }
       }
 
+      finalStatus = newStatus;
+
+      // Update the sequence status in the database
       await tx.run("UPDATE outreach_sequences SET status = ? WHERE id = ? AND project_id = ?", newStatus, id, req.projectId);
 
       if (newStatus === 'scheduled') {
@@ -1578,27 +1591,35 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
           delay: delay,
           jobId: `start-seq-${id}` // Deterministic ID to avoid duplicates
         });
-        
-        console.log(`[Outreach] Queued start-sequence job for ${id} with ${delay}ms delay.`);
-        res.json({ success: true, status: newStatus, enrolledCount: 0, message: "Sequence scheduled for future start." });
+
+        console.log(`[API-SUCCESS] Job 'start-sequence' successfully injected into BullMQ with ${delay}ms delay.`);
       } else {
-        // Enroll existing recipients who are not already enrolled (only for ACTIVE sequences)
+        // Enroll existing recipients who are not already enrolled
         const recipients = await tx.all(`
           SELECT contact_id FROM outreach_sequence_recipients 
           WHERE sequence_id = ? AND project_id = ? AND contact_id IS NOT NULL
           AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?)
         `, id, req.projectId, id, req.projectId) as any[];
 
+        console.log(`[API-IMMEDIATE] Sequence ${id} is ACTIVE. Found ${recipients.length} recipients to enroll.`);
+
         for (const r of recipients) {
+          // Assuming enrollContactInSequence handles the immediate execution logic
           await enrollContactInSequence(req.projectId, id, r.contact_id, tx);
         }
-
-        console.log(`[Outreach] Sequence ${id} activated. Enrolled ${recipients.length} recipients immediately.`);
-        res.json({ success: true, status: newStatus, enrolledCount: recipients.length });
+        console.log(`[API-SUCCESS] Sequence ${id} activated immediately. Enrolled ${recipients.length} recipients.`);
       }
     });
+
+    // Send the response AFTER the transaction completes safely
+    res.json({
+      success: true,
+      status: finalStatus,
+      message: finalStatus === 'scheduled' ? "Sequence scheduled for future start." : "Sequence activated immediately."
+    });
+
   } catch (error) {
-    console.error("Failed to activate sequence:", error);
+    console.error("[API-ERROR] Failed to activate sequence:", error);
     res.status(500).json({ error: "Failed to activate sequence" });
   }
 });
