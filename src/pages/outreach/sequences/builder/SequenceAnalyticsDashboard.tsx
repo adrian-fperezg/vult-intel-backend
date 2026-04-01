@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BarChart2, Mail, MessageSquare, MousePointer, 
-  TrendingUp, Users, Loader2, AlertTriangle, 
+import {
+  BarChart2, Mail, MessageSquare, MousePointer,
+  TrendingUp, Users, Loader2, AlertTriangle,
   CheckCircle2, Clock
 } from 'lucide-react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, Legend 
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { OutreachMetricCard, OutreachSectionHeader, OutreachBadge } from '../../OutreachCommon';
@@ -99,7 +99,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
         <p className="text-slate-400 max-w-xs mb-6 text-sm">
           {error || "We couldn't retrieve the performance data for this sequence."}
         </p>
-        <button 
+        <button
           onClick={() => window.location.reload()}
           className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
         >
@@ -113,29 +113,29 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <OutreachMetricCard 
-          label="Total Sent" 
-          value={(stats?.totalSent ?? 0).toLocaleString()} 
-          teal 
-          icon={<Mail className="size-4" />} 
+        <OutreachMetricCard
+          label="Total Sent"
+          value={(stats?.totalSent ?? 0).toLocaleString()}
+          teal
+          icon={<Mail className="size-4" />}
           sub="Delivered emails"
         />
-        <OutreachMetricCard 
-          label="Open Rate" 
-          value={`${stats?.openRate ?? 0}%`} 
-          icon={<TrendingUp className="size-4" />} 
+        <OutreachMetricCard
+          label="Open Rate"
+          value={`${stats?.openRate ?? 0}%`}
+          icon={<TrendingUp className="size-4" />}
           sub="Unique opens"
         />
-        <OutreachMetricCard 
-          label="Reply Rate" 
-          value={`${stats?.replyRate ?? 0}%`} 
-          icon={<MessageSquare className="size-4" />} 
+        <OutreachMetricCard
+          label="Reply Rate"
+          value={`${stats?.replyRate ?? 0}%`}
+          icon={<MessageSquare className="size-4" />}
           sub="Unique replies"
         />
-        <OutreachMetricCard 
-          label="Click Rate" 
-          value={`${stats?.clickRate ?? 0}%`} 
-          icon={<MousePointer className="size-4" />} 
+        <OutreachMetricCard
+          label="Click Rate"
+          value={`${stats?.clickRate ?? 0}%`}
+          icon={<MousePointer className="size-4" />}
           sub="Link engagement"
         />
       </div>
@@ -150,28 +150,28 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
             subtitle="Daily activity for the last 30 days"
           />
           <div className="h-[300px] mt-4">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={100}>
               <LineChart data={stats.dailyStats} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis 
-                  dataKey="day" 
-                  tick={{ fontSize: 10, fill: '#64748B' }} 
-                  axisLine={false} 
-                  tickLine={false} 
+                <XAxis
+                  dataKey="day"
+                  tick={{ fontSize: 10, fill: '#64748B' }}
+                  axisLine={false}
+                  tickLine={false}
                   dy={10}
                 />
-                <YAxis 
-                  tick={{ fontSize: 10, fill: '#64748B' }} 
-                  axisLine={false} 
-                  tickLine={false} 
+                <YAxis
+                  tick={{ fontSize: 10, fill: '#64748B' }}
+                  axisLine={false}
+                  tickLine={false}
                 />
                 <Tooltip content={<CUSTOM_TOOLTIP />} />
-                <Legend 
-                  wrapperStyle={{ fontSize: 10, paddingTop: 20 }} 
+                <Legend
+                  wrapperStyle={{ fontSize: 10, paddingTop: 20 }}
                   iconType="circle"
                 />
-                <Line type="monotone" dataKey="sent"    stroke="#475569" strokeWidth={2} dot={false} name="Sent" />
-                <Line type="monotone" dataKey="opens"   stroke="#14B8A6" strokeWidth={2.5} dot={{ r: 3, fill: '#14B8A6' }} name="Opens" />
+                <Line type="monotone" dataKey="sent" stroke="#475569" strokeWidth={2} dot={false} name="Sent" />
+                <Line type="monotone" dataKey="opens" stroke="#14B8A6" strokeWidth={2.5} dot={{ r: 3, fill: '#14B8A6' }} name="Opens" />
                 <Line type="monotone" dataKey="replies" stroke="#22C55E" strokeWidth={2.5} dot={{ r: 3, fill: '#22C55E' }} name="Replies" />
               </LineChart>
             </ResponsiveContainer>
@@ -186,7 +186,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
               title="Enrollment Status"
               subtitle="Distribution of recipients"
             />
-            
+
             <div className="space-y-6 mt-8">
               <div className="flex items-center justify-between group">
                 <div className="flex items-center gap-3">
@@ -224,8 +224,8 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                 </div>
                 {/* Simple progress bar */}
                 <div className="h-1.5 w-full bg-white/5 rounded-full mt-3 overflow-hidden">
-                  <div 
-                    className="h-full bg-teal-500 rounded-full transition-all duration-1000" 
+                  <div
+                    className="h-full bg-teal-500 rounded-full transition-all duration-1000"
                     style={{ width: `${((stats?.enrollmentStats?.completed ?? 0) / (stats?.enrollmentStats?.total || 1)) * 100}%` }}
                   />
                 </div>

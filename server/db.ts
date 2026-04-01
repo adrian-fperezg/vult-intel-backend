@@ -256,6 +256,7 @@ export const initDb = async () => {
         opened_count INTEGER DEFAULT 0,
         replied_count INTEGER DEFAULT 0,
         bounced_count INTEGER DEFAULT 0,
+        use_recipient_timezone BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -286,7 +287,8 @@ export const initDb = async () => {
       { name: 'sent_count', type: 'INTEGER DEFAULT 0' },
       { name: 'opened_count', type: 'INTEGER DEFAULT 0' },
       { name: 'replied_count', type: 'INTEGER DEFAULT 0' },
-      { name: 'bounced_count', type: 'INTEGER DEFAULT 0' }
+      { name: 'bounced_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'use_recipient_timezone', type: 'BOOLEAN DEFAULT FALSE' }
     ];
 
     for (const col of newSeqCols) {
@@ -328,6 +330,7 @@ export const initDb = async () => {
         location_country TEXT,
         job_title TEXT,
         custom_fields JSONB DEFAULT '{}',
+        inferred_timezone TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(project_id, email)
@@ -343,7 +346,8 @@ export const initDb = async () => {
       { name: 'location_city', type: 'TEXT' },
       { name: 'location_country', type: 'TEXT' },
       { name: 'job_title', type: 'TEXT' },
-      { name: 'custom_fields', type: "JSONB DEFAULT '{}'" }
+      { name: 'custom_fields', type: "JSONB DEFAULT '{}'" },
+      { name: 'inferred_timezone', type: 'TEXT' }
     ];
 
     for (const col of newContactCols) {

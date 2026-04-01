@@ -55,6 +55,7 @@ interface Sequence {
   from_name?: string;
   recipients?: any[];
   smart_intent_bypass: boolean;
+  use_recipient_timezone?: boolean;
 }
 
 interface SequenceBuilderProps {
@@ -852,6 +853,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         smart_send_max_delay: sequence.smart_send_max_delay,
         from_email: sequence.from_email,
         from_name: sequence.from_name,
+        use_recipient_timezone: sequence.use_recipient_timezone,
       });
 
       // Aseguramos que la fecha se envíe en formato ISO (o null si se borró)
@@ -1356,6 +1358,27 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                         <div className={cn(
                           "size-3 rounded-full bg-white transition-all shadow-sm",
                           sequence?.smart_intent_bypass ? "translate-x-5" : "translate-x-0"
+                        )} />
+                      </div>
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Advanced Scheduling</label>
+                    <button
+                      onClick={() => setSequence(prev => prev ? { ...prev, use_recipient_timezone: !prev.use_recipient_timezone } : null)}
+                      className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
+                    >
+                      <div className="flex flex-col items-start gap-0.5 text-left">
+                        <span className="text-sm text-slate-300">Recipient Timezone</span>
+                        <span className="text-[10px] text-slate-500">Deliver during contact's local business hours</span>
+                      </div>
+                      <div className={cn(
+                        "w-10 h-5 rounded-full relative transition-colors p-1",
+                        sequence?.use_recipient_timezone ? "bg-teal-600" : "bg-white/10"
+                      )}>
+                        <div className={cn(
+                          "size-3 rounded-full bg-white transition-all shadow-sm",
+                          sequence?.use_recipient_timezone ? "translate-x-5" : "translate-x-0"
                         )} />
                       </div>
                     </button>

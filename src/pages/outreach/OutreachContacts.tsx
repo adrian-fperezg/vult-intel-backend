@@ -40,6 +40,7 @@ interface Contact {
   locationCity?: string;
   locationCountry?: string;
   custom_fields?: Record<string, any>; // <-- NUEVO: Para guardar los datos extra del CSV
+  inferred_timezone?: string;
 }
 
 const STATUS_CFG: Record<ContactStatus, { label: string; variant: 'teal' | 'green' | 'yellow' | 'red' | 'gray' | 'orange' }> = {
@@ -177,7 +178,8 @@ export default function OutreachContacts() {
           jobTitle: m.job_title || m.title || '—',
           status: (m.status || 'not_enrolled') as ContactStatus,
           verification_status: (m.verification_status || 'unverified') as any,
-          custom_fields: parsedCustomFields // <-- ASIGNADO AQUÍ
+          custom_fields: parsedCustomFields,
+          inferred_timezone: m.inferred_timezone || ""
         };
       }));
     } catch (error) {
@@ -604,14 +606,22 @@ export default function OutreachContacts() {
                             </span>
                           </td>
                           <td className="p-3">
-                            <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
-                              {contact.locationCountry ? (
-                                <span className="flex items-center gap-1">
-                                  {contact.locationCity && <span>{contact.locationCity},</span>}
-                                  <span className="truncate">{contact.locationCountry}</span>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
+                                {contact.locationCountry ? (
+                                  <span className="flex items-center gap-1">
+                                    {contact.locationCity && <span>{contact.locationCity},</span>}
+                                    <span className="truncate">{contact.locationCountry}</span>
+                                  </span>
+                                ) : (contact.location || '—')}
+                              </span>
+                              {contact.inferred_timezone && (
+                                <span className="flex items-center gap-1 text-[8px] text-teal-500/70 font-bold uppercase tracking-tighter">
+                                  <Globe className="size-2" />
+                                  {contact.inferred_timezone.split('/').pop()?.replace('_', ' ')}
                                 </span>
-                              ) : (contact.location || '—')}
-                            </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">

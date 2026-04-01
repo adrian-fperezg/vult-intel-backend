@@ -4,6 +4,8 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import cityTimezones from 'city-timezones';
+import { DateTime } from 'luxon';
 import Papa from 'papaparse';
 import { initializeGlobalMailer } from "./lib/outreach/mailer.js";
 
@@ -261,6 +263,35 @@ const startServices = async () => {
 };
 
 // startServices() will be called right before app.listen()
+
+/**
+ * Infers IANA timezone string from city/country
+ */
+function inferTimezone(city?: string, country?: string): string | null {
+  if (!city) return null;
+  
+  try {
+    const cityData = cityTimezones.lookupViaCity(city);
+    if (!cityData || cityData.length === 0) return null;
+
+    // If we have a country, filter by it
+    if (country) {
+      const countryLower = country.toLowerCase();
+      const filtered = cityData.filter(c => 
+        c.country.toLowerCase() === countryLower || 
+        c.iso2.toLowerCase() === countryLower || 
+        c.iso3.toLowerCase() === countryLower
+      );
+      if (filtered.length > 0) return filtered[0].timezone;
+    }
+
+    // Default to first match
+    return cityData[0].timezone;
+  } catch (error) {
+    console.error("[Timezone Inference] Error mapping city:", city, error);
+    return null;
+  }
+}
 
 // ─── Public health check ──────────────────────────────────────────────────────
 
@@ -1383,7 +1414,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end',
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
     'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic', 'smart_intent_bypass',
-    'scheduled_start_at'
+    'scheduled_start_at', 'use_recipient_timezone'
   ];
 
   const filteredUpdates: Record<string, any> = {};
@@ -1926,6 +1957,8 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
   if (!email) return res.status(400).json({ error: "email is required" });
 
   const id = uuidv4();
+  const timezone = inferTimezone(locationCity || location, locationCountry);
+
   await db.prepare(
     `
     INSERT INTO outreach_contacts (
@@ -1933,9 +1966,9 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
       title, company, website, phone, linkedin, status, tags,
       source_detail, confidence_score, verification_status,
       industry, company_domain, company_size, technologies, location,
-      location_city, location_country, job_title
+      location_city, location_country, job_title, inferred_timezone
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(project_id, email) DO UPDATE SET
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
@@ -1955,7 +1988,8 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
       location = EXCLUDED.location,
       location_city = EXCLUDED.location_city,
       location_country = EXCLUDED.location_country,
-      job_title = EXCLUDED.job_title
+      job_title = EXCLUDED.job_title,
+      inferred_timezone = EXCLUDED.inferred_timezone
   `,
   ).run(
     id,
@@ -1981,7 +2015,8 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
     location || null,
     locationCity || null,
     locationCountry || null,
-    jobTitle || title || ""
+    jobTitle || title || "",
+    timezone
   );
 
   const contact = await db
@@ -2009,9 +2044,9 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           title, company, website, phone, linkedin, status, tags,
           source_detail, confidence_score, verification_status,
           industry, company_domain, company_size, technologies, location,
-          location_city, location_country, job_title
+          location_city, location_country, job_title, inferred_timezone
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(project_id, email) DO UPDATE SET
           first_name = EXCLUDED.first_name,
           last_name = EXCLUDED.last_name,
@@ -2031,12 +2066,14 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           location = EXCLUDED.location,
           location_city = EXCLUDED.location_city,
           location_country = EXCLUDED.location_country,
-          job_title = EXCLUDED.job_title
+          job_title = EXCLUDED.job_title,
+          inferred_timezone = EXCLUDED.inferred_timezone
         RETURNING id
       `;
 
       for (const contact of contacts) {
         if (!contact.email) continue;
+        const timezone = inferTimezone(contact.locationCity || contact.location, contact.locationCountry);
 
         const contactRes = await tx.prepare(upsertQuery).get(
           uuidv4(),
@@ -2062,7 +2099,8 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           contact.location || null,
           contact.locationCity || null,
           contact.locationCountry || null,
-          contact.jobTitle || contact.title || ""
+          contact.jobTitle || contact.title || "",
+          timezone
         ) as any;
 
         if (contactRes?.id) {
@@ -2097,9 +2135,9 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
             title, company, website, phone, linkedin, status, tags,
             source_detail, confidence_score, verification_status,
             industry, company_domain, company_size, technologies, location,
-            location_city, location_country, job_title
+            location_city, location_country, job_title, inferred_timezone
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(project_id, email) DO UPDATE SET
             first_name = EXCLUDED.first_name,
             last_name = EXCLUDED.last_name,
@@ -2119,7 +2157,8 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
             location = EXCLUDED.location,
             location_city = EXCLUDED.location_city,
             location_country = EXCLUDED.location_country,
-            job_title = EXCLUDED.job_title
+            job_title = EXCLUDED.job_title,
+            inferred_timezone = EXCLUDED.inferred_timezone
           RETURNING id
         `;
 
@@ -2127,6 +2166,7 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
 
       for (const contact of contacts) {
         if (!contact.email) continue;
+        const timezone = inferTimezone(contact.locationCity || contact.location, contact.locationCountry);
 
         // 1. Upsert contact
         const contactRes = await tx.prepare(upsertQuery).get(
@@ -2153,7 +2193,8 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
           contact.location || null,
           contact.locationCity || null,
           contact.locationCountry || null,
-          contact.jobTitle || contact.title || ""
+          contact.jobTitle || contact.title || "",
+          timezone
         ) as any;
 
         const contactId = contactRes.id;
@@ -2212,9 +2253,12 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
       first_name: ['first name', 'firstname', 'first', 'nombre', 'given name'],
       last_name: ['last name', 'lastname', 'last', 'apellido', 'surname'],
       company: ['company', 'company name', 'empresa', 'organization', 'org'],
-      job_title: ['job title', 'title', 'position', 'cargo', 'role', 'job title'],
+      job_title: ['job title', 'title', 'position', 'cargo', 'role'],
       phone: ['phone', 'mobile', 'telephone', 'teléfono', 'celular'],
-      linkedin: ['linkedin', 'linkedin url', 'profile url', 'social profile', 'linkedin url']
+      linkedin: ['linkedin', 'linkedin url', 'profile url', 'social profile', 'linkedin url'],
+      location_city: ['city', 'location_city', 'ciudad', 'town', 'locality'],
+      location_country: ['country', 'location_country', 'país', 'nation'],
+      website: ['website', 'site', 'url']
     };
 
     const savedContactIds: string[] = [];
@@ -2259,33 +2303,41 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
       // 2. Process rows
       for (const row of rows) {
         const contactData: any = { custom_fields: {} };
+        const rawCustomFields: Record<string, any> = {};
 
         // Map headers to fields
         for (const header of headers) {
-          let mapped = false;
           const val = row[header];
           const lowerHeader = header.toLowerCase();
+          let isMapped = false;
 
           for (const [field, synonyms] of Object.entries(standardMapping)) {
             if (field === lowerHeader || synonyms.includes(lowerHeader)) {
               contactData[field] = val;
-              mapped = true;
+              isMapped = true;
               break;
             }
           }
 
-          if (!mapped) {
-            contactData.custom_fields[header] = val;
+          if (!isMapped) {
+            rawCustomFields[header] = val;
           }
         }
 
+        contactData.custom_fields = rawCustomFields;
+
         if (!contactData.email || !contactData.email.includes('@')) continue;
+
+        // Infer timezone
+        const city = contactData.location_city || contactData.location;
+        const country = contactData.location_country;
+        const timezone = inferTimezone(city, country);
 
         const contactId = uuidv4();
         const upsertRes = await tx.prepare(`
           INSERT INTO outreach_contacts (
-            id, user_id, project_id, email, first_name, last_name, company, job_title, phone, linkedin, location, website, custom_fields, status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_enrolled')
+            id, user_id, project_id, email, first_name, last_name, company, job_title, phone, linkedin, location, website, location_city, location_country, custom_fields, inferred_timezone, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_enrolled')
           ON CONFLICT (project_id, email) DO UPDATE SET
             first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
             last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
@@ -2295,7 +2347,10 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
             linkedin = COALESCE(EXCLUDED.linkedin, outreach_contacts.linkedin),
             location = COALESCE(EXCLUDED.location, outreach_contacts.location),
             website = COALESCE(EXCLUDED.website, outreach_contacts.website),
-            custom_fields = outreach_contacts.custom_fields || EXCLUDED.custom_fields,
+            location_city = COALESCE(EXCLUDED.location_city, outreach_contacts.location_city),
+            location_country = COALESCE(EXCLUDED.location_country, outreach_contacts.location_country),
+            custom_fields = EXCLUDED.custom_fields,
+            inferred_timezone = EXCLUDED.inferred_timezone,
             updated_at = CURRENT_TIMESTAMP
           RETURNING id
         `).get(
@@ -2304,7 +2359,9 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
           contactData.company || null, contactData.job_title || null,
           contactData.phone || null, contactData.linkedin || null,
           contactData.location || null, contactData.website || null,
-          JSON.stringify(contactData.custom_fields)
+          contactData.location_city || null, contactData.location_country || null,
+          JSON.stringify(contactData.custom_fields),
+          timezone
         ) as any;
 
         const actualContactId = upsertRes.id;

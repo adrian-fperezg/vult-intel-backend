@@ -1,6 +1,7 @@
 import db, { DbWrapper } from '../../db.js';
 import { emailQueue } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
+import { DateTime } from 'luxon';
 import { handleSequenceIntent, matchKeyword, findRepliedConditionAhead } from './utils.js';
 
 export interface SequenceStep {
@@ -102,6 +103,11 @@ export async function scheduleNextStep(
 
   // 3. CÁLCULO DE TIEMPO
   let delayMs = 0;
+  
+  // Fetch contact timezone info
+  const contact = await d.get<any>('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?', [contactId]);
+  const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
+  const recipientTz = contact?.inferred_timezone;
 
   if (isIntentMatch) {
     // Si Adrian detectó un match de palabra clave, mandamos el YES en 5 segundos (casi instantáneo)
@@ -109,16 +115,35 @@ export async function scheduleNextStep(
     console.log(`[SequenceEngine] INTENT MATCH! Programando respuesta YES inmediata.`);
   } else if (parentStepId === null) {
     if (step.scheduled_start_at) {
-      const startTime = new Date(step.scheduled_start_at).getTime();
-      delayMs = Math.max(0, startTime - Date.now());
+      if (useRecipientTz) {
+        // Re-align the scheduled start time to the recipient's timezone
+        const sequenceTz = sequence.send_timezone || 'UTC';
+        const intendedTime = DateTime.fromISO(step.scheduled_start_at, { zone: sequenceTz });
+        const adjustedTime = intendedTime.setZone(recipientTz, { keepLocalTime: true });
+        delayMs = adjustedTime.diffNow().as('milliseconds');
+        console.log(`[SequenceEngine] Timezone Adjustment: ${sequenceTz} -> ${recipientTz}. New Delay: ${delayMs}ms`);
+      } else {
+        const startTime = new Date(step.scheduled_start_at).getTime();
+        delayMs = Math.max(0, startTime - Date.now());
+      }
     }
   } else {
     const amount = step.delay_amount || 2;
     const unit = step.delay_unit || 'days';
-    if (unit === 'minutes') delayMs = amount * 60 * 1000;
-    else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
-    else delayMs = amount * 24 * 60 * 60 * 1000;
+    
+    if (useRecipientTz) {
+      // Calculate delay in recipient's timezone (handles DST and day boundaries better)
+      const nowInRecipTz = DateTime.now().setZone(recipientTz);
+      const targetInRecipTz = nowInRecipTz.plus({ [unit]: amount });
+      delayMs = targetInRecipTz.diffNow().as('milliseconds');
+    } else {
+      if (unit === 'minutes') delayMs = amount * 60 * 1000;
+      else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
+      else delayMs = amount * 24 * 60 * 60 * 1000;
+    }
   }
+  
+  delayMs = Math.max(0, delayMs);
 
   // Smart Send (Variación humana)
   const smartDelayMs = isIntentMatch ? 0 : (Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000);
