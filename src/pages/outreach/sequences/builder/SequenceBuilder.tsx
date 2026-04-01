@@ -463,7 +463,7 @@ function StepNode({
                 <StepNode
                   step={yesChild}
                   allSteps={allSteps}
-                  isFirst={true}
+                  isFirst={false}
                   onUpdate={onUpdate}
                   onUpdateConfig={onUpdateConfig}
                   onRemove={onRemove}
@@ -499,7 +499,7 @@ function StepNode({
                 <StepNode
                   step={noChild}
                   allSteps={allSteps}
-                  isFirst={true}
+                  isFirst={false}
                   onUpdate={onUpdate}
                   onUpdateConfig={onUpdateConfig}
                   onRemove={onRemove}

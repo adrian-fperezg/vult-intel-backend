@@ -1548,7 +1548,19 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
     if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
 
     await db.transaction(async (tx) => {
-      await tx.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ? AND project_id = ?", id, req.projectId);
+      // Find the first step to check for a scheduled start time
+      const firstStep = await tx.get("SELECT scheduled_start_at FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL LIMIT 1", id) as any;
+      
+      let newStatus = 'active';
+      if (firstStep?.scheduled_start_at) {
+        const startTime = new Date(firstStep.scheduled_start_at).getTime();
+        if (startTime > Date.now()) {
+          newStatus = 'scheduled';
+          console.log(`[Outreach] Sequence ${id} scheduled for future start: ${firstStep.scheduled_start_at}`);
+        }
+      }
+
+      await tx.run("UPDATE outreach_sequences SET status = ? WHERE id = ? AND project_id = ?", newStatus, id, req.projectId);
 
       // Enroll existing recipients who are not already enrolled
       const recipients = await tx.all(`
@@ -1561,7 +1573,7 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
         await enrollContactInSequence(project_id, id, r.contact_id, tx);
       }
 
-      res.json({ success: true, enrolledCount: recipients.length });
+      res.json({ success: true, status: newStatus, enrolledCount: recipients.length });
     });
   } catch (error) {
     console.error("Failed to activate sequence:", error);

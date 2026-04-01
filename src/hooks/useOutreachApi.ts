@@ -5,18 +5,41 @@ import { useProject } from '@/contexts/ProjectContext';
 const BASE_URL = (import.meta.env.VITE_OUTREACH_API_URL ?? 'http://localhost:3001') + '/api/outreach';
 
 export interface AnalyticsData {
-  totalSentCount: number;
-  totalOpenedCount: number;
-  totalRepliedCount: number;
-  sentToday: number;
-  openedToday: number;
-  repliedToday: number;
-  overallOpenRate: number;
-  overallReplyRate: number;
-  activeSequences: number;
-  totalRecipients: number;
-  insight: string;
-  daily_data: { day: string; sent: number; opens: number; replies: number; clicks?: number }[];
+  total_sent: number;
+  sent_change: string;
+  open_rate: string;
+  reply_rate: string;
+  active_sequences: number;
+  total_recipients: number;
+  pending_tasks: number;
+  emails_sent_today: number;
+  health_score: number;
+  mailbox_health: {
+    email: string;
+    score: number;
+    status: string;
+    sent: number;
+    bounceRate: number;
+    spamRate: number;
+  }[];
+  daily_data: { 
+    day: string; 
+    sent: number; 
+    opens: number; 
+    replies: number; 
+    clicks?: number 
+  }[];
+  intent_data: {
+    name: string;
+    value: number;
+    color: string;
+  }[];
+  campaign_comparison: {
+    name: string;
+    sent: number;
+    open: number;
+    reply: number;
+  }[];
 }
 /**
  * Central hook for all Outreach API calls.
