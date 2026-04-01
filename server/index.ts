@@ -4,6 +4,7 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import Papa from 'papaparse';
 import { initializeGlobalMailer } from "./lib/outreach/mailer.js";
 
 // ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
@@ -1675,7 +1676,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
           contactObj = await tx.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?", contact_id, userId, project_id);
         } else if (typeof item === 'object' && item.list_id) {
           // It's a list - expand it and add its members
-          const listMembers = await tx.all("SELECT contact_id FROM contact_list_members WHERE list_id = ?", item.list_id) as any[];
+          const listMembers = await tx.all("SELECT contact_id FROM outreach_list_members WHERE list_id = ?", item.list_id) as any[];
           for (const member of listMembers) {
             const memberContactId = member.contact_id;
             const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, memberContactId);
@@ -1875,9 +1876,9 @@ app.get("/api/outreach/contacts", async (req: AuthRequest, res) => {
   const params: any[] = [userId, project_id];
 
   if (list_id === 'unassigned') {
-    query += " AND id NOT IN (SELECT contact_id FROM contact_list_members)";
+    query += " AND id NOT IN (SELECT contact_id FROM outreach_list_members)";
   } else if (list_id && list_id !== 'all') {
-    query += " AND id IN (SELECT contact_id FROM contact_list_members WHERE list_id = ?)";
+    query += " AND id IN (SELECT contact_id FROM outreach_list_members WHERE list_id = ?)";
     params.push(list_id);
   }
 
@@ -2122,7 +2123,7 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
           RETURNING id
         `;
 
-      const memberQuery = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
+      const memberQuery = "INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
 
       for (const contact of contacts) {
         if (!contact.email) continue;
@@ -2169,6 +2170,162 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error("Bulk list save failed:", error);
     res.status(500).json({ error: error.message || "Bulk list save failed" });
+  }
+});
+
+const csvUpload = multer({ storage: multer.memoryStorage() });
+
+// POST /api/outreach/contacts/import-csv
+app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"], csvUpload.single('file'), async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, list_id } = req.body;
+
+  if (!userId || !project_id) {
+    return res.status(401).json({ error: "Authentication and Project ID required" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No CSV file uploaded" });
+  }
+
+  try {
+    const csvData = req.file.buffer.toString('utf8');
+    const results = Papa.parse(csvData, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim()
+    });
+
+    if (results.errors.length > 0) {
+      console.error("[CSV Import] Parsing errors:", results.errors);
+      return res.status(400).json({ error: "Failed to parse CSV", details: results.errors });
+    }
+
+    const rows = results.data as any[];
+    if (rows.length === 0) {
+      return res.status(400).json({ error: "CSV is empty" });
+    }
+
+    const headers = Object.keys(rows[0]);
+    const standardMapping: Record<string, string[]> = {
+      email: ['email', 'e-mail', 'mail', 'correo', 'dirección de correo'],
+      first_name: ['first name', 'firstname', 'first', 'nombre', 'given name'],
+      last_name: ['last name', 'lastname', 'last', 'apellido', 'surname'],
+      company: ['company', 'company name', 'empresa', 'organization', 'org'],
+      job_title: ['job title', 'title', 'position', 'cargo', 'role', 'job title'],
+      phone: ['phone', 'mobile', 'telephone', 'teléfono', 'celular'],
+      linkedin: ['linkedin', 'linkedin url', 'profile url', 'social profile', 'linkedin url']
+    };
+
+    const savedContactIds: string[] = [];
+    const fileName = req.file?.originalname || 'Imported CSV';
+    const autoListId = uuidv4();
+    const autoListName = `Import - ${fileName}`;
+
+    await db.transaction(async (tx) => {
+      // 1. Create a new list for this import
+      await tx.prepare("INSERT INTO outreach_lists (id, project_id, name) VALUES (?, ?, ?)")
+        .run(autoListId, project_id, autoListName);
+      console.log(`[CSV Import] Created auto-list: ${autoListName}`);
+
+      // 1. Register non-standard headers as custom_field snippets
+      for (const header of headers) {
+        const lowerHeader = header.toLowerCase();
+        let isStandard = false;
+
+        for (const [key, synonyms] of Object.entries(standardMapping)) {
+          if (key === lowerHeader || synonyms.includes(lowerHeader)) {
+            isStandard = true;
+            break;
+          }
+        }
+
+        if (!isStandard) {
+          // Check if snippet exists, if not create it
+          const existing = await tx.prepare(
+            "SELECT id FROM outreach_snippets WHERE project_id = ? AND (snippet_key = ? OR name = ?) AND type = 'custom_field'"
+          ).get(project_id, header, header);
+
+          if (!existing) {
+            await tx.prepare(`
+              INSERT INTO outreach_snippets (id, user_id, project_id, name, snippet_key, body, type)
+              VALUES (?, ?, ?, ?, ?, ?, 'custom_field')
+            `).run(uuidv4(), userId, project_id, header, header, `{{${header}}}`);
+            console.log(`[CSV Import] Registered new custom field snippet: ${header}`);
+          }
+        }
+      }
+
+      // 2. Process rows
+      for (const row of rows) {
+        const contactData: any = { custom_fields: {} };
+
+        // Map headers to fields
+        for (const header of headers) {
+          let mapped = false;
+          const val = row[header];
+          const lowerHeader = header.toLowerCase();
+
+          for (const [field, synonyms] of Object.entries(standardMapping)) {
+            if (field === lowerHeader || synonyms.includes(lowerHeader)) {
+              contactData[field] = val;
+              mapped = true;
+              break;
+            }
+          }
+
+          if (!mapped) {
+            contactData.custom_fields[header] = val;
+          }
+        }
+
+        if (!contactData.email || !contactData.email.includes('@')) continue;
+
+        const contactId = uuidv4();
+        const upsertRes = await tx.prepare(`
+          INSERT INTO outreach_contacts (
+            id, user_id, project_id, email, first_name, last_name, company, job_title, phone, linkedin, location, website, custom_fields, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_enrolled')
+          ON CONFLICT (project_id, email) DO UPDATE SET
+            first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
+            last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
+            company = COALESCE(EXCLUDED.company, outreach_contacts.company),
+            job_title = COALESCE(EXCLUDED.job_title, outreach_contacts.job_title),
+            phone = COALESCE(EXCLUDED.phone, outreach_contacts.phone),
+            linkedin = COALESCE(EXCLUDED.linkedin, outreach_contacts.linkedin),
+            location = COALESCE(EXCLUDED.location, outreach_contacts.location),
+            website = COALESCE(EXCLUDED.website, outreach_contacts.website),
+            custom_fields = outreach_contacts.custom_fields || EXCLUDED.custom_fields,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING id
+        `).get(
+          contactId, userId, project_id, contactData.email,
+          contactData.first_name || null, contactData.last_name || null,
+          contactData.company || null, contactData.job_title || null,
+          contactData.phone || null, contactData.linkedin || null,
+          contactData.location || null, contactData.website || null,
+          JSON.stringify(contactData.custom_fields)
+        ) as any;
+
+        const actualContactId = upsertRes.id;
+        savedContactIds.push(actualContactId);
+
+        // 3. Link to the auto-generated list
+        await tx.prepare("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING")
+          .run(autoListId, actualContactId);
+
+        // 4. Link to the explicitly provided list if present
+        if (list_id && list_id !== 'all' && list_id !== autoListId) {
+          await tx.prepare("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING")
+            .run(list_id, actualContactId);
+        }
+      }
+    });
+
+    res.json({ success: true, count: savedContactIds.length, list_id: autoListId, list_name: autoListName });
+  } catch (err: any) {
+    console.error("[CSV Import] Critical Failure:", err);
+    res.status(500).json({ error: err.message || "Failed to import contacts" });
   }
 });
 
@@ -2235,7 +2392,7 @@ app.post("/api/outreach/contacts/bulk-delete", async (req: AuthRequest, res) => 
         .run(project_id, ...contact_ids);
 
       // 2. Delete from list members
-      await tx.prepare(`DELETE FROM contact_list_members WHERE contact_id IN (${placeholders})`)
+      await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`)
         .run(...contact_ids);
     });
 
@@ -2269,7 +2426,7 @@ app.get("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
   if (!userId || !project_id) return res.json([]);
 
   const lists = await db
-    .prepare("SELECT * FROM contact_lists WHERE project_id = ? ORDER BY created_at DESC")
+    .prepare("SELECT * FROM outreach_lists WHERE project_id = ? ORDER BY created_at DESC")
     .all(project_id);
 
   res.json(lists);
@@ -2283,7 +2440,7 @@ app.post("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
   if (!project_id || !name) return res.status(400).json({ error: "project_id and name required" });
 
   const id = uuidv4();
-  await db.prepare("INSERT INTO contact_lists (id, project_id, name) VALUES (?, ?, ?)")
+  await db.prepare("INSERT INTO outreach_lists (id, project_id, name) VALUES (?, ?, ?)")
     .run(id, project_id, name);
 
   res.json({ id, project_id, name });
@@ -2293,8 +2450,8 @@ app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   try {
-    await db.prepare("DELETE FROM contact_lists WHERE id = ?").run(req.params.id);
-    await db.prepare("DELETE FROM contact_list_members WHERE list_id = ?").run(req.params.id);
+    await db.prepare("DELETE FROM outreach_lists WHERE id = ?").run(req.params.id);
+    await db.prepare("DELETE FROM outreach_list_members WHERE list_id = ?").run(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2307,7 +2464,7 @@ app.patch("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
   try {
     const { name, description } = req.body;
-    await db.prepare("UPDATE contact_lists SET name = ?, description = ? WHERE id = ?")
+    await db.prepare("UPDATE outreach_lists SET name = ?, description = ? WHERE id = ?")
       .run(name, description || '', req.params.id);
     res.json({ success: true });
   } catch (error: any) {
@@ -2323,7 +2480,7 @@ app.get("/api/outreach/contact-lists/:id/members", async (req: AuthRequest, res)
   if (!userId) return res.json([]);
 
   const members = await db
-    .prepare("SELECT contact_id FROM contact_list_members WHERE list_id = ?")
+    .prepare("SELECT contact_id FROM outreach_list_members WHERE list_id = ?")
     .all(id);
 
   res.json(members.map((m: any) => m.contact_id));
@@ -2338,7 +2495,7 @@ app.post("/api/outreach/contact-lists/:id/members", async (req: AuthRequest, res
   if (!userId || !Array.isArray(contact_ids)) return res.status(400).json({ error: "Invalid payload" });
 
   await db.transaction(async (tx) => {
-    const query = "INSERT INTO contact_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
+    const query = "INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING";
     for (const cid of contact_ids) {
       await tx.prepare(query).run(id, cid);
     }
@@ -4055,17 +4212,46 @@ console.log('[VEO] Veo Studio Pack routes registered');
 // GET /api/outreach/snippets
 app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const projectId = req.headers['x-project-id'] as string;
+  const projectId = req.headers['x-project-id'] as string || req.query.project_id as string;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!projectId) return res.status(400).json({ error: "Project ID required" });
 
   try {
-    const snippets = await db.all("SELECT * FROM outreach_snippets WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC", userId, projectId);
-    res.json(snippets);
+    // 1. Fetch dynamic/custom snippets from DB
+    const dbSnippets = await db.all("SELECT id, name, snippet_key, type FROM outreach_snippets WHERE project_id = ? ORDER BY type, name ASC", projectId);
+
+    // 2. Define Standard system fields
+    const standardFields = [
+      { key: 'first_name', label: 'First Name', type: 'standard' },
+      { key: 'last_name', label: 'Last Name', type: 'standard' },
+      { key: 'email', label: 'Email', type: 'standard' },
+      { key: 'company', label: 'Company', type: 'standard' },
+      { key: 'job_title', label: 'Title', type: 'standard' },
+      { key: 'phone', label: 'Phone', type: 'standard' },
+      { key: 'linkedin', label: 'LinkedIn', type: 'standard' }
+    ];
+
+    // 3. Map DB snippets to the same structure
+    const customSnippets = dbSnippets.map((s: any) => ({
+      key: s.snippet_key || s.name,
+      label: s.name,
+      type: s.type || 'snippet'
+    }));
+
+    // 4. Combine and return
+    const allVariables = [...standardFields];
+    customSnippets.forEach(cs => {
+      if (!allVariables.find(v => v.key === cs.key)) {
+        allVariables.push(cs);
+      }
+    });
+
+    res.json(allVariables);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // POST /api/outreach/snippets
 app.post("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, res) => {

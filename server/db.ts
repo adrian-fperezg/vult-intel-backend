@@ -327,6 +327,7 @@ export const initDb = async () => {
         location_city TEXT,
         location_country TEXT,
         job_title TEXT,
+        custom_fields JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(project_id, email)
@@ -341,7 +342,8 @@ export const initDb = async () => {
       { name: 'technologies', type: 'TEXT' },
       { name: 'location_city', type: 'TEXT' },
       { name: 'location_country', type: 'TEXT' },
-      { name: 'job_title', type: 'TEXT' }
+      { name: 'job_title', type: 'TEXT' },
+      { name: 'custom_fields', type: "JSONB DEFAULT '{}'" }
     ];
 
     for (const col of newContactCols) {
@@ -551,7 +553,7 @@ export const initDb = async () => {
 
     // 10. Contact Lists
     await db.run(`
-      CREATE TABLE IF NOT EXISTS contact_lists (
+      CREATE TABLE IF NOT EXISTS outreach_lists (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -561,12 +563,28 @@ export const initDb = async () => {
 
     // 11. Contact List Members
     await db.run(`
-      CREATE TABLE IF NOT EXISTS contact_list_members (
-        list_id TEXT REFERENCES contact_lists(id) ON DELETE CASCADE,
+      CREATE TABLE IF NOT EXISTS outreach_list_members (
+        list_id TEXT REFERENCES outreach_lists(id) ON DELETE CASCADE,
         contact_id TEXT REFERENCES outreach_contacts(id) ON DELETE CASCADE,
         PRIMARY KEY (list_id, contact_id)
       )
     `);
+
+    // Migration for Table Renaming (Legacy to Outreach consistency)
+    try {
+      const legacyLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_lists'");
+      if (legacyLists) {
+        console.log("[DB] Migrating contact_lists to outreach_lists...");
+        await db.run("ALTER TABLE contact_lists RENAME TO outreach_lists");
+      }
+      const legacyMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_list_members'");
+      if (legacyMembers) {
+        console.log("[DB] Migrating contact_list_members to outreach_list_members...");
+        await db.run("ALTER TABLE contact_list_members RENAME TO outreach_list_members");
+      }
+    } catch (err) {
+      console.warn("[DB] Legacy table rename migration failed (likely already renamed):", (err as Error).message);
+    }
 
     // 12. Suppression List
     await db.run(`
@@ -697,7 +715,7 @@ export const initDb = async () => {
         sequence_id TEXT NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
         project_id TEXT NOT NULL,
         contact_id TEXT REFERENCES outreach_contacts(id),
-        contact_list_id TEXT REFERENCES contact_lists(id),
+        contact_list_id TEXT REFERENCES outreach_lists(id),
         type TEXT NOT NULL,
         added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(sequence_id, contact_id)
@@ -760,19 +778,28 @@ export const initDb = async () => {
         user_id TEXT NOT NULL,
         project_id TEXT NOT NULL,
         name TEXT NOT NULL,
+        snippet_key TEXT,
         body TEXT NOT NULL,
         vars TEXT DEFAULT '[]',
+        type TEXT DEFAULT 'standard',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
-    const res = await db.all("SELECT column_name as name FROM information_schema.columns WHERE table_name = 'outreach_snippets'");
-    const snippetColNames = (res || []).map((c: any) => c.name);
+    const snippetColsRes = await db.all("SELECT column_name as name FROM information_schema.columns WHERE table_name = 'outreach_snippets'");
+    const snippetColNames = (snippetColsRes || []).map((c: any) => c.name);
+    
     if (!snippetColNames.includes('type')) {
       console.log("[DB] Adding 'type' column to outreach_snippets");
       await db.run(`ALTER TABLE outreach_snippets ADD COLUMN type TEXT DEFAULT 'standard'`);
       await db.run(`UPDATE outreach_snippets SET type = 'standard' WHERE type IS NULL OR type = ''`);
+    }
+
+    if (!snippetColNames.includes('snippet_key')) {
+      console.log("[DB] Adding 'snippet_key' column to outreach_snippets");
+      await db.run(`ALTER TABLE outreach_snippets ADD COLUMN snippet_key TEXT`);
+      await db.run(`UPDATE outreach_snippets SET snippet_key = name WHERE snippet_key IS NULL`);
     }
 
     // Backfill current_step_id for enrollments

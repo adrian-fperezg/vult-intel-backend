@@ -148,7 +148,7 @@ export async function discoverCompanies(projectId: string, userId: string, filte
       const listExclusions = await db.prepare(`
         SELECT DISTINCT c.company_domain 
         FROM outreach_contacts c 
-        JOIN contact_list_members m ON c.id = m.contact_id 
+        JOIN outreach_list_members m ON c.id = m.contact_id 
         WHERE m.list_id IN (${placeholders}) AND c.company_domain IS NOT NULL
       `).all(...params) as any[];
       listExclusions.forEach(row => excludedDomains.add(row.company_domain.toLowerCase()));

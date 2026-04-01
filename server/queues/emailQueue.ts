@@ -282,20 +282,28 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             await processEmail(emailId);
           }
         } else {
-          // Resolve variables
+          // Resolve variables (Standard + Custom Fields)
           let subject = config.subject || "";
           let bodyHtml = config.body_html || "";
-          const variables = {
+          
+          const customFields = typeof contact.custom_fields === 'string' 
+            ? JSON.parse(contact.custom_fields || "{}") 
+            : (contact.custom_fields || {});
+
+          const variables: Record<string, string> = {
             first_name: contact.first_name || "",
             last_name: contact.last_name || "",
             company: contact.company || "",
-            email: contact.email || ""
+            email: contact.email || "",
+            ...customFields
           };
 
           Object.entries(variables).forEach(([key, value]) => {
-            const regex = new RegExp(`{{${key}}}`, 'g');
-            subject = subject.replace(regex, value);
-            bodyHtml = bodyHtml.replace(regex, value);
+            // Support both {{key}} and {{field_name}}
+            const regex = new RegExp(`{{${key}}}`, 'gi');
+            const valStr = String(value || "");
+            subject = subject.replace(regex, valStr);
+            bodyHtml = bodyHtml.replace(regex, valStr);
           });
 
           // Resolve attachments and log for debugging

@@ -11,9 +11,11 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import toast from 'react-hot-toast';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
 import BulkAddToListModal from './contacts/BulkAddToListModal';
+import CSVImportModal from './contacts/CSVImportModal';
 
 type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
 
+// 1. ACTUALIZACIÓN: Interfaz Contact ahora soporta custom_fields
 interface Contact {
   id: string;
   firstName: string;
@@ -37,62 +39,23 @@ interface Contact {
   location?: string;
   locationCity?: string;
   locationCountry?: string;
+  custom_fields?: Record<string, any>; // <-- NUEVO: Para guardar los datos extra del CSV
 }
 
-const MOCK_CONTACTS: Contact[] = [
-  {
-    id: 'c1', firstName: 'Sarah', lastName: 'Chen', email: 'sarah.chen@acmecorp.com',
-    title: 'VP of Sales', company: 'Acme Corp', website: 'acmecorp.com',
-    phone: '+1 555-0101', linkedin: 'linkedin.com/in/sarahchen',
-    status: 'replied', tags: ['hot-lead', 'enterprise'], addedAt: '2026-03-01',
-    lastActivity: '2026-03-14', emailVerified: true,
-  },
-  {
-    id: 'c2', firstName: 'Marcus', lastName: 'Johnson', email: 'mjohnson@techflow.io',
-    title: 'CTO', company: 'TechFlow', website: 'techflow.io',
-    status: 'active', tags: ['saas', 'warm'], addedAt: '2026-03-05',
-    lastActivity: '2026-03-13', emailVerified: true,
-  },
-  {
-    id: 'c3', firstName: 'Emma', lastName: 'Wilson', email: 'emma@startupxyz.com',
-    title: 'Founder & CEO', company: 'StartupXYZ',
-    status: 'not_enrolled', tags: ['founder', 'cold'], addedAt: '2026-03-10',
-    emailVerified: false,
-  },
-  {
-    id: 'c4', firstName: 'David', lastName: 'Park', email: 'david.park@bigcorp.com',
-    title: 'Director of Marketing', company: 'BigCorp',
-    status: 'bounced', tags: ['enterprise'], addedAt: '2026-02-28',
-    emailVerified: false,
-  },
-  {
-    id: 'c5', firstName: 'Jennifer', lastName: 'Martinez', email: 'jmartinez@growthhq.com',
-    title: 'Marketing Manager', company: 'GrowthHQ', website: 'growthhq.com',
-    status: 'active', tags: ['warm', 'smb'], addedAt: '2026-03-08',
-    lastActivity: '2026-03-12', emailVerified: true,
-  },
-  {
-    id: 'c6', firstName: 'Alex', lastName: 'Thompson', email: 'alex@unsubscribed.com',
-    title: 'Product Lead', company: 'ProductCo',
-    status: 'unsubscribed', tags: [], addedAt: '2026-02-15',
-    emailVerified: true,
-  },
-];
-
 const STATUS_CFG: Record<ContactStatus, { label: string; variant: 'teal' | 'green' | 'yellow' | 'red' | 'gray' | 'orange' }> = {
-  active:       { label: 'In Sequence',    variant: 'teal' },
-  replied:      { label: 'Replied',        variant: 'green' },
-  paused:       { label: 'Paused',         variant: 'yellow' },
-  bounced:      { label: 'Bounced',        variant: 'red' },
-  unsubscribed: { label: 'Unsubscribed',   variant: 'orange' },
-  not_enrolled: { label: 'Not Enrolled',   variant: 'gray' },
+  active: { label: 'In Sequence', variant: 'teal' },
+  replied: { label: 'Replied', variant: 'green' },
+  paused: { label: 'Paused', variant: 'yellow' },
+  bounced: { label: 'Bounced', variant: 'red' },
+  unsubscribed: { label: 'Unsubscribed', variant: 'orange' },
+  not_enrolled: { label: 'Not Enrolled', variant: 'gray' },
 };
 
 const VERIFICATION_CFG: Record<string, { label: string; variant: any }> = {
-  valid:      { label: 'Valid',      variant: 'green' },
-  invalid:    { label: 'Invalid',    variant: 'red' },
-  catch_all:  { label: 'Catch-all',  variant: 'yellow' },
-  unknown:    { label: 'Unknown',    variant: 'gray' },
+  valid: { label: 'Valid', variant: 'green' },
+  invalid: { label: 'Invalid', variant: 'red' },
+  catch_all: { label: 'Catch-all', variant: 'yellow' },
+  unknown: { label: 'Unknown', variant: 'gray' },
   unverified: { label: 'Unverified', variant: 'gray' },
 };
 
@@ -109,6 +72,7 @@ export default function OutreachContacts() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [profileContactId, setProfileContactId] = useState<string | null>(null);
+
   // Lists & Suppression
   const [contactLists, setContactLists] = useState<any[]>([]);
   const [listFilter, setListFilter] = useState<string>('all');
@@ -116,6 +80,7 @@ export default function OutreachContacts() {
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // List Management UI States
   const [isManageListsOpen, setIsManageListsOpen] = useState(false);
@@ -171,6 +136,7 @@ export default function OutreachContacts() {
     }
   }, [api.activeProjectId, api.fetchContactLists]);
 
+  // 2. ACTUALIZACIÓN: Procesar custom_fields al cargar contactos
   const loadContacts = useCallback(async () => {
     if (!api.activeProjectId) return;
     setIsLoading(true);
@@ -180,11 +146,18 @@ export default function OutreachContacts() {
         const createdAt = m.created_at ? new Date(m.created_at) : null;
         const isValidDate = createdAt && !isNaN(createdAt.getTime());
         let tags: string[] = [];
+        let parsedCustomFields = {};
+
+        try { tags = Array.isArray(m.tags) ? m.tags : (typeof m.tags === 'string' ? JSON.parse(m.tags) : []); }
+        catch (e) { console.warn('Failed to parse tags', e); }
+
+        // Mapeo seguro de custom_fields
         try {
-          tags = Array.isArray(m.tags) ? m.tags : (typeof m.tags === 'string' ? JSON.parse(m.tags) : []);
-        } catch (e) {
-          console.warn('Failed to parse tags', e);
+          if (m.custom_fields) {
+            parsedCustomFields = typeof m.custom_fields === 'string' ? JSON.parse(m.custom_fields) : m.custom_fields;
+          }
         }
+        catch (e) { console.warn('Failed to parse custom_fields', e); }
 
         return {
           ...m,
@@ -203,7 +176,8 @@ export default function OutreachContacts() {
           location: m.location || '—',
           jobTitle: m.job_title || m.title || '—',
           status: (m.status || 'not_enrolled') as ContactStatus,
-          verification_status: (m.verification_status || 'unverified') as any
+          verification_status: (m.verification_status || 'unverified') as any,
+          custom_fields: parsedCustomFields // <-- ASIGNADO AQUÍ
         };
       }));
     } catch (error) {
@@ -213,7 +187,6 @@ export default function OutreachContacts() {
     }
   }, [api.activeProjectId, api.fetchContacts, listFilter]);
 
-  // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
     setContacts([]);
     setContactLists([]);
@@ -222,15 +195,14 @@ export default function OutreachContacts() {
     loadLists();
   }, [loadContacts, loadLists]);
 
-  // Load list member IDs for sidebar highlighting
   useEffect(() => {
     if (listFilter === 'all' || listFilter === 'unassigned') {
       setListMemberIds(new Set());
       return;
     }
     api.fetchContactListMembers(listFilter)
-       .then(ids => setListMemberIds(new Set(ids || [])))
-       .catch(e => console.error('Failed to load list members', e));
+      .then(ids => setListMemberIds(new Set(ids || [])))
+      .catch(e => console.error('Failed to load list members', e));
   }, [listFilter, api.activeProjectId]);
 
   const handleCreate = async () => {
@@ -259,7 +231,6 @@ export default function OutreachContacts() {
       );
     }
     if (statusFilter !== 'all') list = list.filter(c => c.status === statusFilter);
-    // listFilter is now handled by backend in loadContacts
     list.sort((a, b) => {
       const va = a[sortKey] ?? '';
       const vb = b[sortKey] ?? '';
@@ -375,8 +346,8 @@ export default function OutreachContacts() {
                 onClick={() => setListFilter(item.id)}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
-                  listFilter === item.id 
-                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" 
+                  listFilter === item.id
+                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
@@ -394,7 +365,7 @@ export default function OutreachContacts() {
           <div className="mt-8 mb-4">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">My Lists</h2>
-              <button 
+              <button
                 onClick={() => setIsCreatingList(true)}
                 className="flex items-center gap-1.5 px-2 py-1 rounded bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_10px_rgba(20,184,166,0.1)]"
               >
@@ -409,8 +380,8 @@ export default function OutreachContacts() {
                 onClick={() => setListFilter(list.id)}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
-                  listFilter === list.id 
-                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" 
+                  listFilter === list.id
+                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
@@ -441,13 +412,16 @@ export default function OutreachContacts() {
                 </div>
               </div>
               <p className="text-sm text-slate-400 mt-0.5">
-                {listFilter === 'all' ? 'All available contacts' : 
-                 listFilter === 'unassigned' ? 'Contacts not in any list' : 
-                 `Contacts in ${contactLists.find(l => l.id === listFilter)?.name || 'list'}`}
+                {listFilter === 'all' ? 'All available contacts' :
+                  listFilter === 'unassigned' ? 'Contacts not in any list' :
+                    `Contacts in ${contactLists.find(l => l.id === listFilter)?.name || 'list'}`}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
+              >
                 <Upload className="size-4" /> Import CSV
               </button>
               <TealButton size="sm" onClick={handleCreate} loading={isCreating}>
@@ -489,7 +463,7 @@ export default function OutreachContacts() {
         {/* Floating Bulk Action Bar */}
         <AnimatePresence>
           {selectedIds.size > 0 && (
-            <motion.div 
+            <motion.div
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
@@ -503,7 +477,7 @@ export default function OutreachContacts() {
               </div>
 
               <div className="flex items-center gap-4">
-                <button 
+                <button
                   onClick={() => setIsBulkAddOpen(true)}
                   className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all"
                 >
@@ -512,12 +486,12 @@ export default function OutreachContacts() {
                 <button className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all">
                   <Mail className="size-4" /> Enroll in Sequence
                 </button>
-                <button 
+                <button
                   onClick={handleBulkVerify}
                   disabled={isVerifying}
                   className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50"
                 >
-                  <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} /> 
+                  <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} />
                   {isVerifying ? 'Verifying...' : 'Verify Emails'}
                 </button>
                 <div className="h-6 w-px bg-white/5" />
@@ -527,7 +501,7 @@ export default function OutreachContacts() {
                 >
                   <Trash2 className="size-4" /> Delete
                 </button>
-                <button 
+                <button
                   onClick={() => setSelectedIds(new Set())}
                   className="p-2 text-slate-500 hover:text-white"
                 >
@@ -538,206 +512,221 @@ export default function OutreachContacts() {
           )}
         </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20">
-        {filtered.length === 0 ? (
-          <OutreachEmptyState
-            icon={<User />}
-            title="No contacts found"
-            description="Import a CSV file or add contacts manually to build your prospecting list."
-            action={<TealButton onClick={handleCreate} loading={isCreating}><Plus className="size-4" /> Add Contact</TealButton>}
-          />
-        ) : (
-          <div className="relative">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-20 bg-gray-900 border-b border-white/10 shadow-sm">
-                <tr>
-                  <th className="p-3 w-10">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.size === filtered.length && filtered.length > 0}
-                      onChange={toggleSelectAll}
-                      className="accent-teal-500 size-3.5 cursor-pointer"
-                    />
-                  </th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>Contact <SortIcon col="firstName" /></th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title</th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>Company <SortIcon col="company" /></th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry</th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Size</th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Location</th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
-                  <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>Status <SortIcon col="addedAt" /></th>
-                  <th className="p-3 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {filtered.map((contact, idx) => {
-                  const statusCfg = STATUS_CFG[contact.status];
-                  const isExpanded = expandedRow === contact.id;
-                  return (
-                    <Fragment key={contact.id}>
-                      <motion.tr
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.01 }}
-                        className={cn(
-                          'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
-                          selectedIds.has(contact.id) && 'bg-teal-500/5',
-                          isExpanded && 'bg-teal-500/5'
-                        )}
-                        onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
-                      >
-                        <td className="p-3" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(contact.id)}
-                            onChange={() => toggleSelect(contact.id)}
-                            className="accent-teal-500 size-3.5 cursor-pointer"
-                          />
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="size-6 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-md flex items-center justify-center border border-white/5">
-                              {contact.firstName ? (
-                                <span className="text-[9px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
-                              ) : (
-                                <User className="size-3 text-teal-400" />
+        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20">
+          {filtered.length === 0 ? (
+            <OutreachEmptyState
+              icon={<User />}
+              title="No contacts found"
+              description="Import a CSV file or add contacts manually to build your prospecting list."
+              action={<TealButton onClick={handleCreate} loading={isCreating}><Plus className="size-4" /> Add Contact</TealButton>}
+            />
+          ) : (
+            <div className="relative">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-20 bg-gray-900 border-b border-white/10 shadow-sm">
+                  <tr>
+                    <th className="p-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === filtered.length && filtered.length > 0}
+                        onChange={toggleSelectAll}
+                        className="accent-teal-500 size-3.5 cursor-pointer"
+                      />
+                    </th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>Contact <SortIcon col="firstName" /></th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title</th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>Company <SortIcon col="company" /></th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Industry</th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Size</th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Location</th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</th>
+                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>Status <SortIcon col="addedAt" /></th>
+                    <th className="p-3 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filtered.map((contact, idx) => {
+                    const statusCfg = STATUS_CFG[contact.status];
+                    const isExpanded = expandedRow === contact.id;
+                    return (
+                      <Fragment key={contact.id}>
+                        <motion.tr
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.01 }}
+                          className={cn(
+                            'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
+                            selectedIds.has(contact.id) && 'bg-teal-500/5',
+                            isExpanded && 'bg-teal-500/5'
+                          )}
+                          onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
+                        >
+                          <td className="p-3" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(contact.id)}
+                              onChange={() => toggleSelect(contact.id)}
+                              className="accent-teal-500 size-3.5 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div className="size-6 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-md flex items-center justify-center border border-white/5">
+                                {contact.firstName ? (
+                                  <span className="text-[9px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
+                                ) : (
+                                  <User className="size-3 text-teal-400" />
+                                )}
+                              </div>
+                              <span className="text-xs font-bold text-white whitespace-nowrap">
+                                {contact.firstName || ''} {contact.lastName || ''}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium">
+                              {contact.jobTitle || contact.title || '—'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
+                              {contact.company || '—'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
+                              {contact.industry || '—'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
+                              {contact.companySize || contact.size || '—'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
+                              {contact.locationCountry ? (
+                                <span className="flex items-center gap-1">
+                                  {contact.locationCity && <span>{contact.locationCity},</span>}
+                                  <span className="truncate">{contact.locationCountry}</span>
+                                </span>
+                              ) : (contact.location || '—')}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
+                              <Mail className="size-3 text-slate-600 shrink-0" />
+                              <span className="truncate">{contact.email || 'No email'}</span>
+                              {contact.verification_status && contact.verification_status !== 'unverified' && (
+                                <OutreachBadge
+                                  variant={(VERIFICATION_CFG[contact.verification_status] || VERIFICATION_CFG.unverified).variant}
+                                  className="text-[8px] px-1 py-0 scale-90 origin-left"
+                                >
+                                  {(VERIFICATION_CFG[contact.verification_status] || VERIFICATION_CFG.unverified).label}
+                                </OutreachBadge>
                               )}
                             </div>
-                            <span className="text-xs font-bold text-white whitespace-nowrap">
-                              {contact.firstName || ''} {contact.lastName || ''}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium">
-                            {contact.jobTitle || contact.title || '—'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
-                            {contact.company || '—'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
-                            {contact.industry || '—'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
-                            {contact.companySize || contact.size || '—'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
-                            {contact.locationCountry ? (
-                              <span className="flex items-center gap-1">
-                                {contact.locationCity && <span>{contact.locationCity},</span>}
-                                <span className="truncate">{contact.locationCountry}</span>
-                              </span>
-                            ) : (contact.location || '—')}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
-                            <Mail className="size-3 text-slate-600 shrink-0" />
-                            <span className="truncate">{contact.email || 'No email'}</span>
-                            {contact.verification_status && contact.verification_status !== 'unverified' && (
-                              <OutreachBadge 
-                                variant={(VERIFICATION_CFG[contact.verification_status] || VERIFICATION_CFG.unverified).variant} 
-                                className="text-[8px] px-1 py-0 scale-90 origin-left"
-                              >
-                                {(VERIFICATION_CFG[contact.verification_status] || VERIFICATION_CFG.unverified).label}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <OutreachBadge variant={(STATUS_CFG[contact.status] || STATUS_CFG.not_enrolled).variant} className="text-[9px] px-1.5 py-0">
+                                {(STATUS_CFG[contact.status] || STATUS_CFG.not_enrolled).label}
                               </OutreachBadge>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <OutreachBadge variant={(STATUS_CFG[contact.status] || STATUS_CFG.not_enrolled).variant} className="text-[9px] px-1.5 py-0">
-                              {(STATUS_CFG[contact.status] || STATUS_CFG.not_enrolled).label}
-                            </OutreachBadge>
-                          </div>
-                        </td>
-                        <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
-                              className="p-1.5 bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 rounded-lg border border-white/10 transition-all"
-                              title="View Profile"
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
+                                className="p-1.5 bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 rounded-lg border border-white/10 transition-all"
+                                title="View Profile"
+                              >
+                                <User className="size-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.tr
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="bg-teal-500/[0.03] border-b border-white/5"
                             >
-                              <User className="size-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </motion.tr>
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.tr
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="bg-teal-500/[0.03] border-b border-white/5"
-                          >
-                            <td colSpan={10} className="px-8 py-6">
-                              <div className="flex items-start gap-12">
-                                <div className="space-y-4 flex-1">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Phone</p>
-                                      <p className="text-sm text-white font-medium">{contact.phone || 'N/A'}</p>
+                              <td colSpan={10} className="px-8 py-6">
+                                <div className="flex items-start gap-12">
+                                  <div className="space-y-4 flex-1">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Phone</p>
+                                        <p className="text-sm text-white font-medium">{contact.phone || 'N/A'}</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">LinkedIn</p>
+                                        <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || 'N/A'}</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Website</p>
+                                        <p className="text-sm text-slate-300 font-medium">{contact.website || 'N/A'}</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Last Activity</p>
+                                        <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || 'No recent activity'}</p>
+                                      </div>
                                     </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">LinkedIn</p>
-                                      <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || 'N/A'}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Website</p>
-                                      <p className="text-sm text-slate-300 font-medium">{contact.website || 'N/A'}</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Last Activity</p>
-                                      <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || 'No recent activity'}</p>
+
+                                    {/* 3. ACTUALIZACIÓN: Renderizar Custom Fields (Snippets) si existen */}
+                                    {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
+                                      <div className="mt-4 pt-4 border-t border-white/5">
+                                        <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-3">Custom Fields (Snippets)</p>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                          {Object.entries(contact.custom_fields).map(([key, value]) => (
+                                            <div key={key} className="bg-white/5 p-2 rounded-lg border border-white/5">
+                                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate">{key}</p>
+                                              <p className="text-xs text-white font-medium truncate mt-0.5">{String(value)}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="pt-4 flex items-center gap-2 flex-wrap">
+                                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">Tags:</p>
+                                      {contact.tags.length > 0 ? contact.tags.map(tag => (
+                                        <span key={tag} className="px-2 py-0.5 bg-white/5 border border-white/5 rounded text-[10px] font-bold text-slate-400">#{tag}</span>
+                                      )) : <span className="text-[10px] text-slate-600 italic">No tags</span>}
                                     </div>
                                   </div>
 
-                                  <div className="pt-4 flex items-center gap-2 flex-wrap">
-                                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">Tags:</p>
-                                    {contact.tags.length > 0 ? contact.tags.map(tag => (
-                                      <span key={tag} className="px-2 py-0.5 bg-white/5 border border-white/5 rounded text-[10px] font-bold text-slate-400">#{tag}</span>
-                                    )) : <span className="text-[10px] text-slate-600 italic">No tags</span>}
+                                  <div className="flex flex-col gap-2 min-w-[180px]">
+                                    <TealButton size="sm" className="w-full">Enroll in Sequence</TealButton>
+                                    <button
+                                      onClick={() => handleSuppress(contact.email)}
+                                      className="w-full py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold transition-all"
+                                    >
+                                      Suppress Email
+                                    </button>
+                                    <button
+                                      onClick={() => setProfileContactId(contact.id)}
+                                      className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold border border-white/5 transition-all"
+                                    >
+                                      Full Details
+                                    </button>
                                   </div>
                                 </div>
-
-                                <div className="flex flex-col gap-2 min-w-[180px]">
-                                  <TealButton size="sm" className="w-full">Enroll in Sequence</TealButton>
-                                  <button 
-                                    onClick={() => handleSuppress(contact.email)}
-                                    className="w-full py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold transition-all"
-                                  >
-                                    Suppress Email
-                                  </button>
-                                  <button 
-                                    onClick={() => setProfileContactId(contact.id)}
-                                    className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold border border-white/5 transition-all"
-                                  >
-                                    Full Details
-                                  </button>
-                                </div>
-                              </div>
-                            </td>
-                          </motion.tr>
-                        )}
-                      </AnimatePresence>
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                              </td>
+                            </motion.tr>
+                          )}
+                        </AnimatePresence>
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
       </div>
 
@@ -860,7 +849,7 @@ export default function OutreachContacts() {
         danger
       />
 
-      <ContactProfilePanel 
+      <ContactProfilePanel
         contact={contacts.find(c => c.id === profileContactId) || null}
         isOpen={!!profileContactId}
         onClose={() => setProfileContactId(null)}
@@ -874,6 +863,17 @@ export default function OutreachContacts() {
         onReloadLists={loadLists}
         api={api}
         selectedCount={selectedIds.size}
+      />
+
+      <CSVImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => {
+          loadContacts();
+          loadLists(); // <-- NUEVO: Recargar listas después de importar
+        }}
+        defaultListId={listFilter !== 'all' ? listFilter : undefined}
+        lists={contactLists}
       />
     </div>
   );

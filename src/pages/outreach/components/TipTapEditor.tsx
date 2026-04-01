@@ -20,11 +20,17 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+interface Variable {
+  key: string;
+  label: string;
+  type: 'standard' | 'custom_field' | 'snippet';
+}
+
 interface TipTapEditorProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
-  variables?: string[];
+  variables?: (string | Variable)[];
   className?: string;
   placeholder?: string;
   onOptimize?: () => void;
@@ -66,7 +72,7 @@ export default function TipTapEditor({
   value, 
   onChange, 
   disabled = false, 
-  variables = ['first_name', 'last_name', 'company', 'title'],
+  variables = [],
   className,
   placeholder = "Write your email here...",
   onOptimize,
@@ -121,6 +127,21 @@ export default function TipTapEditor({
 
     editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
   };
+
+  // Group variables by type
+  const groupedVariables = (variables || []).reduce((acc, v) => {
+    const varObj = typeof v === 'string' ? { key: v, label: v, type: 'standard' as const } : v;
+    const type = varObj.type || 'standard';
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(varObj);
+    return acc;
+  }, {} as Record<string, Variable[]>);
+
+  const categories = [
+    { type: 'standard', label: 'Standard Fields' },
+    { type: 'custom_field', label: 'Custom Fields' },
+    { type: 'snippet', label: 'Snippets (Rich Text)' }
+  ];
 
   return (
     <div className={cn(
@@ -250,20 +271,34 @@ export default function TipTapEditor({
               {showVariables && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowVariables(false)} />
-                  <div className="absolute right-0 top-full mt-1 bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl z-20 w-40 overflow-hidden animate-in fade-in slide-in-from-top-1">
-                    {variables.map(v => (
-                      <button 
-                        key={v}
-                        type="button"
-                        onClick={() => {
-                          insertVariable(v);
-                          setShowVariables(false);
-                        }}
-                        className="block w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-teal-500/10 hover:text-white transition-colors"
-                      >
-                        {`{{${v}}}`}
-                      </button>
-                    ))}
+                  <div className="absolute right-0 top-full mt-1 bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl z-20 w-56 overflow-hidden animate-in fade-in slide-in-from-top-1 max-h-[400px] overflow-y-auto custom-scrollbar">
+                    {categories.map(cat => {
+                      const items = groupedVariables[cat.type];
+                      if (!items || items.length === 0) return null;
+                      return (
+                        <div key={cat.type} className="border-b border-[#30363d] last:border-0 pb-1">
+                          <div className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-500 bg-white/5">
+                            {cat.label}
+                          </div>
+                          {items.map(v => (
+                            <button 
+                              key={v.key}
+                              type="button"
+                              onClick={() => {
+                                insertVariable(v.key);
+                                setShowVariables(false);
+                              }}
+                              className="group block w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-teal-500/10 hover:text-white transition-all flex items-center justify-between"
+                            >
+                              <span className="truncate">{v.label}</span>
+                              <span className="text-[8px] font-mono text-slate-600 group-hover:text-teal-500/50">
+                                {`{{${v.key}}}`}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -271,6 +306,7 @@ export default function TipTapEditor({
           )}
         </div>
       </div>
+
 
       {/* Editor Content */}
       <div className="flex-1 p-4 prose prose-invert prose-sm max-w-none focus:outline-none overflow-y-auto custom-scrollbar">

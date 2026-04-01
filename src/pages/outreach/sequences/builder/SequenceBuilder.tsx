@@ -80,6 +80,7 @@ interface StepNodeProps {
   handleActivate: () => void;
   handleSaveAll: () => Promise<void>;
   sequenceStatus: string;
+  snippets: any[];
 }
 
 function StepNode({
@@ -99,7 +100,8 @@ function StepNode({
   analytics,
   handleActivate,
   handleSaveAll,
-  sequenceStatus
+  sequenceStatus,
+  snippets
 }: StepNodeProps) {
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
@@ -412,6 +414,7 @@ function StepNode({
                     value={step.config.body_html || ''}
                     onChange={val => onUpdateConfig(step.id, { body_html: val })}
                     onOptimize={() => handleOptimizeStep(step.id)}
+                    variables={snippets}
                     isOptimizing={isOptimizing}
                     onAttachFile={() => document.getElementById(`file-upload-${step.id}`)?.click()}
                     onPreview={() => onPreview(step.config.subject, step.config.body_html)}
@@ -545,6 +548,7 @@ function StepNode({
                   handleActivate={handleActivate}
                   handleSaveAll={handleSaveAll}
                   sequenceStatus={sequenceStatus}
+                  snippets={snippets}
                 />
               ) : (
                 <button
@@ -583,6 +587,7 @@ function StepNode({
                   handleActivate={handleActivate}
                   handleSaveAll={handleSaveAll}
                   sequenceStatus={sequenceStatus}
+                  snippets={snippets}
                 />
               ) : (
                 <button
@@ -617,6 +622,7 @@ function StepNode({
               handleActivate={handleActivate}
               handleSaveAll={handleSaveAll}
               sequenceStatus={sequenceStatus}
+              snippets={snippets}
             />
           )}
           {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
@@ -645,6 +651,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [stepAnalytics, setStepAnalytics] = useState<Record<string, any>>({});
   const [mailboxes, setMailboxes] = useState<any[]>([]);
   const [identities, setIdentities] = useState<any[]>([]);
+  const [snippets, setSnippets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -756,10 +763,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const loadData = async () => {
     setLoading(true);
     try {
-      const [seqData, mailboxData, identityData] = await Promise.all([
+      const [seqData, mailboxData, identityData, snippetData] = await Promise.all([
         api.getSequence(sequenceId),
         api.fetchMailboxes(),
-        api.fetchIdentities()
+        api.fetchIdentities(),
+        api.fetchSnippets()
       ]);
       if (seqData) {
         setSequence(seqData);
@@ -779,6 +787,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       }
       setMailboxes(mailboxData);
       setIdentities(identityData);
+      setSnippets(snippetData || []);
 
       try {
         const analyticsData = await api.fetchStepAnalytics(sequenceId);
@@ -1170,6 +1179,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   handleActivate={handleActivate}
                   handleSaveAll={handleSaveAll}
                   sequenceStatus={sequence?.status || 'draft'}
+                  snippets={snippets}
                 />
               ) : (
                 <div className="flex flex-col items-center py-20">

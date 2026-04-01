@@ -383,6 +383,16 @@ export function useOutreachApi() {
     [post],
   );
 
+  const importContactsCSV = useCallback(
+    (file: File, listId?: string) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (listId) formData.append('list_id', listId);
+      return postFormData<{ success: true, count: number }>('/contacts/import', formData);
+    },
+    [postFormData]
+  );
+
   // ── Settings & Integrations ──────────────────────────────────────────────
 
   const fetchSettings = useCallback(() => get<any>('/settings'), [get]);
@@ -734,5 +744,6 @@ export function useOutreachApi() {
     addVerifiedDomain,
     verifyDomain,
     deleteVerifiedDomain,
+    importContactsCSV,
   };
 }
