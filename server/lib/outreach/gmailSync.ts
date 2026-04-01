@@ -96,23 +96,36 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       const { stop_on_reply, smart_intent_bypass, bypass_keyword } = sequenceSettings || { stop_on_reply: true, smart_intent_bypass: false, bypass_keyword: 'Khania' };
       const rawBody = getGmailBody(msg.payload);
       let branchingHandled = false;
-      // 5. Lógica de Smart Intent Bypass
+      // 5. Lógica de Smart Intent Bypass (Versión: Enviar YES o Pausar)
       const bypassActive = smart_intent_bypass === true;
       const keyword = (bypass_keyword || 'Khania').toLowerCase();
       const bodyText = (rawBody || '').toLowerCase();
 
-      if (bypassActive && !bodyText.includes(keyword)) {
-        // BYPASS ACTIVO: Botón ON y la palabra (Khania) NO está en el texto.
-        // NO marcamos como is_reply para que la secuencia SIGA viva.
-        console.log(`[POLLER] Smart bypass activo: "${keyword}" no encontrada. Continuando secuencia.`);
+      if (bypassActive) {
+        if (bodyText.includes(keyword)) {
+          // CASO A: ¡Match! Marcamos como respuesta para que el motor dispare la rama YES.
+          await db.run(
+            "UPDATE outreach_individual_emails SET is_reply = true::boolean WHERE id = ?",
+            originalEmail.id
+          );
+          console.log(`[POLLER] Keyword "${keyword}" encontrada. Disparando rama YES.`);
+        } else {
+          // CASO B: No hay palabra. PAUSAMOS la inscripción para que NO se mande el "NO".
+          // Esto "congela" al contacto en este punto sin mandar más correos.
+          await db.run(
+            "UPDATE outreach_enrollments SET status = 'paused' WHERE sequence_id = ? AND contact_id = ?",
+            [originalEmail.sequence_id, originalEmail.contact_id]
+          );
+          console.log(`[POLLER] Keyword "${keyword}" NO encontrada. Pausando secuencia para evitar rama NO.`);
+        }
       } else {
-        // COMPORTAMIENTO NORMAL: Si encontró la palabra o el botón está OFF.
-        // Marcamos como respondido y la secuencia se detendrá (o irá al YES).
+        // COMPORTAMIENTO NORMAL (Si el botón morado está OFF):
+        // Se comporta como siempre (Match -> YES, No Match -> NO).
         await db.run(
           "UPDATE outreach_individual_emails SET is_reply = true::boolean WHERE id = ?",
           originalEmail.id
         );
-        console.log(`[POLLER] Secuencia procesada como respuesta normal.`);
+        console.log(`[POLLER] Respuesta normal detectada. Siguiendo flujo estándar de ramas.`);
       }
       // 5. Intent Evaluation
       let intentResult = { branched: false, keyword: null as string | null, matched: false };
