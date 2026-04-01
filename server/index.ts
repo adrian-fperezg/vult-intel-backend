@@ -1593,6 +1593,7 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
           await enrollContactInSequence(req.projectId, id, r.contact_id, tx);
         }
 
+        console.log(`[Outreach] Sequence ${id} activated. Enrolled ${recipients.length} recipients immediately.`);
         res.json({ success: true, status: newStatus, enrolledCount: recipients.length });
       }
     });

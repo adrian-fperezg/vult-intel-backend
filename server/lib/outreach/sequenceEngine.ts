@@ -105,19 +105,27 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   // 2. Calculate delay/timing
   let delayMs = 0;
   
-  if (parentStepId === null && step.scheduled_start_at) {
-    // Absolute scheduling for Step 1
-    const startTime = new Date(step.scheduled_start_at).getTime();
-    delayMs = Math.max(0, startTime - Date.now());
-    console.log(`[SequenceEngine] Step 1 has absolute schedule: ${step.scheduled_start_at} (UTC: ${new Date(startTime).toUTCString()}). Calculated delay: ${delayMs}ms`);
+  if (parentStepId === null) {
+    if (step.scheduled_start_at) {
+      // Absolute scheduling for Step 1
+      const startTime = new Date(step.scheduled_start_at).getTime();
+      delayMs = Math.max(0, startTime - Date.now());
+      console.log(`[SequenceEngine] Step 1 has absolute schedule: ${step.scheduled_start_at} (UTC: ${new Date(startTime).toUTCString()}). Calculated delay: ${delayMs}ms`);
+    } else {
+      // Root step defaults to immediate dispatch
+      delayMs = 0;
+      console.log(`[SequenceEngine] Step 1 (Root) starting immediately (no absolute schedule). Delay set to 0ms.`);
+    }
   } else {
-    // Relative scheduling for subsequent steps or if Step 1 has no absolute date
-    const amount = step.delay_amount || (parentStepId === null ? 0 : 2);
+    // Relative scheduling for subsequent steps
+    const amount = step.delay_amount || 2;
     const unit = step.delay_unit || 'days';
     
     if (unit === 'minutes') delayMs = amount * 60 * 1000;
     else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
     else delayMs = amount * 24 * 60 * 60 * 1000; // 'days'
+    
+    console.log(`[SequenceEngine] Step ${step.id} has relative delay: ${amount} ${unit}. Calculated delay: ${delayMs}ms`);
   }
 
   // 3. Queue the work
@@ -127,6 +135,9 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   
   const totalDelay = delayMs + (step.step_type === 'email' ? smartDelayMs : 0);
   const scheduledAt = new Date(Date.now() + totalDelay);
+
+  console.log(`[SequenceEngine] Final Total Delay: ${totalDelay}ms (Base: ${delayMs}ms + Max Smart: ${smartDelayMs}ms)`);
+  console.log(`[SequenceEngine] Scheduled dispatch time: ${scheduledAt.toISOString()}`);
 
   // Update enrollment to next step and scheduled time BEFORE adding to queue
   // This ensures the database is the source of truth if Redis fails
@@ -142,6 +153,8 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
     contactId
   );
 
+  const jobId = `seq-${sequenceId}-contact-${contactId}-step-${step.id}`;
+
   await emailQueue.add('execute-sequence-step', {
     projectId,
     sequenceId,
@@ -155,10 +168,10 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
       type: 'exponential',
       delay: 5000
     },
-    jobId: `seq-${sequenceId}-contact-${contactId}-step-${step.id}` // Deterministic ID to prevent double-queuing
+    jobId: jobId // Deterministic ID to prevent double-queuing
   });
 
-  console.log(`[SequenceEngine] Queued step ${step.id} for contact ${contactId} at ${scheduledAt.toISOString()}`);
+  console.log(`[SequenceEngine] Queued step ${step.id} for contact ${contactId} | Job ID: ${jobId}`);
 }
 
 /**
