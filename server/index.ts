@@ -2569,7 +2569,7 @@ app.post("/api/outreach/compose", upload.array('attachments', 5), async (req: Au
     userId,
     project_id,
     mailbox_id,
-    contact_id || null,
+    (contact_id && contact_id.trim() !== "") ? contact_id : null,
     to_email,
     subject || "",
     body_html || "",
@@ -2613,7 +2613,7 @@ app.patch("/api/outreach/compose/:id", upload.array('attachments', 5), async (re
   }
   if (contact_id !== undefined) {
     fields.push("contact_id = ?");
-    values.push(contact_id);
+    values.push((typeof contact_id === 'string' && contact_id.trim() === "") ? null : contact_id);
   }
   if (to_email !== undefined) {
     fields.push("to_email = ?");
