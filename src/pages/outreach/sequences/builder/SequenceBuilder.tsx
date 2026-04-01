@@ -205,6 +205,15 @@ function StepNode({
               </div>
             )}
             {!isExpanded && <FileText className="size-3.5 text-slate-500" />}
+            {step.step_type === 'email' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onPreview(step.config.subject, step.config.body_html); }}
+                className="p-2 hover:bg-teal-500/10 rounded-lg text-slate-500 hover:text-teal-400 transition-colors"
+                title="Preview Email"
+              >
+                <Eye className="size-3.5" />
+              </button>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(step.id); }}
               className="p-2 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
@@ -594,14 +603,32 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
 
-  const [previewData, setPreviewData] = useState<{ subject: string; body: string; isOpen: boolean }>({
+  const [previewData, setPreviewData] = useState<{ 
+    subject: string; 
+    body: string; 
+    isOpen: boolean;
+    recipientData?: any;
+  }>({
     subject: '',
     body: '',
-    isOpen: false
+    isOpen: false,
+    recipientData: null
   });
 
   const handlePreview = (subject: string, body: string) => {
-    setPreviewData({ subject, body, isOpen: true });
+    // Select a random recipient if available
+    let randomRecipient = null;
+    if (sequence?.recipients && sequence.recipients.length > 0) {
+      const randomIndex = Math.floor(Math.random() * sequence.recipients.length);
+      randomRecipient = sequence.recipients[randomIndex];
+    }
+    
+    setPreviewData({ 
+      subject, 
+      body, 
+      isOpen: true,
+      recipientData: randomRecipient
+    });
   };
 
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1380,6 +1407,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         onClose={() => setPreviewData(prev => ({ ...prev, isOpen: false }))}
         subject={previewData.subject}
         body={previewData.body}
+        recipientData={previewData.recipientData}
       />
     </div>
   );

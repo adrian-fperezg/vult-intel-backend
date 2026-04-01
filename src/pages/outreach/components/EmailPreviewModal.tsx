@@ -11,14 +11,18 @@ interface EmailPreviewModalProps {
   subject: string;
   body: string;
   to?: string;
+  recipientData?: any;
 }
 
-export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com" }: EmailPreviewModalProps) {
+export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com", recipientData }: EmailPreviewModalProps) {
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const { theme } = useSettings();
 
-  const parsedSubject = parsePreviewVariables(subject || "(No Subject)");
-  const parsedBody = parsePreviewVariables(body || "<p>(Empty Body)</p>");
+  const recipientName = recipientData ? `${recipientData.first_name || ''} ${recipientData.last_name || ''}`.trim() || recipientData.email : null;
+  const displayTo = recipientData?.email || to;
+
+  const parsedSubject = parsePreviewVariables(subject || "(No Subject)", recipientData);
+  const parsedBody = parsePreviewVariables(body || "<p>(Empty Body)</p>", recipientData);
 
   if (!isOpen) return null;
 
@@ -40,9 +44,21 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Mail className="size-5 text-primary" />
               </div>
-              <div>
+              <div className="flex flex-col">
                 <h3 className="font-semibold text-lg leading-tight">Email Preview</h3>
-                <p className="text-xs text-slate-400">See how your email appears to recipients</p>
+                <div className="flex items-center gap-2 mt-1">
+                  {recipientData ? (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 uppercase tracking-tight">
+                      <div className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+                      Previewing as: {recipientName}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-400 uppercase tracking-tight">
+                      <div className="size-1.5 rounded-full bg-amber-500" />
+                      Sample Data
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -113,7 +129,7 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                       <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Just now</span>
                     </div>
                     <div className="text-sm text-slate-500 flex flex-col gap-0.5">
-                      <p><span className="text-slate-400">To:</span> {to}</p>
+                      <p><span className="text-slate-400">To:</span> {displayTo}</p>
                       <p><span className="text-slate-400">Sub:</span> <span className="font-semibold text-slate-900">{parsedSubject}</span></p>
                     </div>
                   </div>
