@@ -12,6 +12,7 @@ export interface SequenceStep {
   delay_amount?: number;
   delay_unit?: 'minutes' | 'hours' | 'days';
   attachments?: string;
+  scheduled_start_at?: string;
 }
 
 /**
@@ -104,13 +105,20 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
   // 2. Calculate delay/timing
   let delayMs = 0;
   
-  // Apply step-specific delay
-  const amount = step.delay_amount || (parentStepId === null ? 0 : 2);
-  const unit = step.delay_unit || 'days';
-  
-  if (unit === 'minutes') delayMs = amount * 60 * 1000;
-  else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
-  else delayMs = amount * 24 * 60 * 60 * 1000; // 'days'
+  if (parentStepId === null && step.scheduled_start_at) {
+    // Absolute scheduling for Step 1
+    const startTime = new Date(step.scheduled_start_at).getTime();
+    delayMs = Math.max(0, startTime - Date.now());
+    console.log(`[SequenceEngine] Step 1 has absolute schedule: ${step.scheduled_start_at}. Calculated delay: ${delayMs}ms`);
+  } else {
+    // Relative scheduling for subsequent steps or if Step 1 has no absolute date
+    const amount = step.delay_amount || (parentStepId === null ? 0 : 2);
+    const unit = step.delay_unit || 'days';
+    
+    if (unit === 'minutes') delayMs = amount * 60 * 1000;
+    else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
+    else delayMs = amount * 24 * 60 * 60 * 1000; // 'days'
+  }
 
   // 3. Queue the work
   const smartMin = sequence.smart_send_min_delay || 0;

@@ -35,6 +35,7 @@ interface Step {
     subject: string;
     body_html: string;
   };
+  scheduled_start_at?: string;
 }
 
 interface Sequence {
@@ -268,27 +269,60 @@ function StepNode({
             >
               <div className="space-y-4">
                 <div className="flex items-end gap-4">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Delay</label>
-                    <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 text-xs">
-                      <Clock className="size-3 text-teal-400" />
-                      <input
-                        type="number"
-                        value={step.delay_amount || 2}
-                        onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
-                        className="w-10 bg-transparent border-b border-white/10 text-center text-white focus:border-teal-400 outline-none"
-                      />
-                      <select
-                        value={step.delay_unit || 'days'}
-                        onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
-                        className="bg-transparent text-white outline-none cursor-pointer"
-                      >
-                        <option value="minutes">minutes</option>
-                        <option value="hours">hours</option>
-                        <option value="days">days</option>
-                      </select>
+                  {!isFirst ? (
+                    <div className="flex-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Delay</label>
+                      <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 text-xs text-white">
+                        <Clock className="size-3 text-teal-400" />
+                        <input
+                          type="number"
+                          value={step.delay_amount || 0}
+                          onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
+                          className="w-10 bg-transparent border-b border-white/10 text-center text-white focus:border-teal-400 outline-none"
+                        />
+                        <select
+                          value={step.delay_unit || 'days'}
+                          onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
+                          className="bg-transparent text-white outline-none cursor-pointer"
+                        >
+                          <option value="minutes" className="bg-[#161b22]">minutes</option>
+                          <option value="hours" className="bg-[#161b22]">hours</option>
+                          <option value="days" className="bg-[#161b22]">days</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex-1">
+                      <label className="text-[10px] font-bold text-teal-500 uppercase tracking-wider mb-2 block flex items-center gap-1.5">
+                        <Play className="size-2.5" />
+                        Anchor Launch Time (Step 1)
+                      </label>
+                      <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-teal-500/20 text-xs shadow-lg shadow-teal-500/5">
+                        <Clock className="size-3 text-teal-400" />
+                        <input
+                          type="datetime-local"
+                          value={step.scheduled_start_at ? new Date(step.scheduled_start_at).toISOString().slice(0, 16) : ''}
+                          onChange={e => {
+                            const date = e.target.value ? new Date(e.target.value).toISOString() : undefined;
+                            onUpdate(step.id, { scheduled_start_at: date });
+                          }}
+                          className="bg-transparent text-white focus:text-teal-400 outline-none cursor-pointer w-full"
+                        />
+                        {step.scheduled_start_at && (
+                          <button 
+                            onClick={() => onUpdate(step.id, { scheduled_start_at: undefined })}
+                            className="p-1 hover:bg-white/10 rounded-md text-slate-500 hover:text-white transition-colors"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-slate-500 mt-2 italic flex items-center gap-1">
+                        <AlertCircle className="size-2.5" />
+                        This date anchors the entire sequence. Subsequent steps will be relative to this moment.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>

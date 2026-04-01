@@ -655,6 +655,7 @@ export const initDb = async () => {
         parent_step_id TEXT REFERENCES outreach_sequence_steps(id) ON DELETE SET NULL,
         condition_type TEXT, -- 'opened', 'clicked', 'replied'
         branch_path TEXT,    -- 'yes', 'no', 'default'
+        scheduled_start_at TIMESTAMP WITH TIME ZONE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -667,7 +668,8 @@ export const initDb = async () => {
       { name: 'branch_path', type: 'TEXT' },
       { name: 'delay_amount', type: 'INTEGER DEFAULT 2' },
       { name: 'delay_unit', type: "TEXT DEFAULT 'days'" },
-      { name: 'attachments', type: 'TEXT' }
+      { name: 'attachments', type: 'TEXT' },
+      { name: 'scheduled_start_at', type: 'TIMESTAMP WITH TIME ZONE' }
     ];
 
     for (const col of newStepCols) {
