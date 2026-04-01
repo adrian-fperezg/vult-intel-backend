@@ -142,6 +142,39 @@ function StepNode({
     onUpdate(step.id, { attachments: (step.attachments || []).filter((a: any) => a.id !== id) });
   };
 
+  // --- NUEVA FUNCIÓN PARA ZONAS HORARIAS ---
+  // Convierte un string "YYYY-MM-DDTHH:mm" (del input local) a "YYYY-MM-DDTHH:mm:ss.sssZ" (ISO Universal)
+  const handleDateChange = (localDateString: string) => {
+    if (!localDateString) {
+      onUpdate(step.id, { scheduled_start_at: undefined });
+      return;
+    }
+    try {
+      const dateObj = new Date(localDateString);
+      // Solo actualizamos si la fecha es válida
+      if (!isNaN(dateObj.getTime())) {
+        onUpdate(step.id, { scheduled_start_at: dateObj.toISOString() });
+      }
+    } catch (e) {
+      console.error("Invalid date format", e);
+    }
+  };
+
+  // --- FUNCIÓN PARA MOSTRAR LA FECHA EN EL INPUT ---
+  // Convierte "YYYY-MM-DDTHH:mm:ss.sssZ" de vuelta a formato local para el <input>
+  const getLocalDateForInput = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      // Ajuste mágico para obtener el formato YYYY-MM-DDTHH:mm en la zona horaria del navegador
+      const tzOffset = d.getTimezoneOffset() * 60000;
+      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
+      return localISOTime;
+    } catch (e) {
+      return '';
+    }
+  };
+
   return (
     <div className="flex flex-col items-center w-full">
       {!isFirst && !step.branch_path && (
@@ -317,10 +350,8 @@ function StepNode({
                           <Clock className="size-3 text-teal-400" />
                           <input
                             type="datetime-local"
-                            value={step.scheduled_start_at ? step.scheduled_start_at.substring(0, 16) : ''}
-                            onChange={e => {
-                              onUpdate(step.id, { scheduled_start_at: e.target.value });
-                            }}
+                            value={getLocalDateForInput(step.scheduled_start_at)}
+                            onChange={e => handleDateChange(e.target.value)}
                             className="bg-transparent text-white focus:text-teal-400 outline-none cursor-pointer w-full"
                           />
                           {step.scheduled_start_at && (
@@ -823,8 +854,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         from_name: sequence.from_name,
       });
 
+      // Aseguramos que la fecha se envíe en formato ISO (o null si se borró)
       const stepsToSave = steps.map(s => ({
         ...s,
+        scheduled_start_at: s.scheduled_start_at || null,
         attachments: JSON.stringify(s.attachments)
       }));
 
@@ -832,11 +865,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
       setHasUnsavedChanges(false);
       setLastSavedTime(new Date());
-      // No toast here to avoid spam when called from Schedule button
     } catch (err: any) {
       const errorMsg = err.response?.data?.error || err.message || 'Failed to save changes';
       toast.error(errorMsg);
-      throw err; // Re-throw to handle failure in calling functions
+      throw err;
     } finally {
       setIsSaving(false);
     }
