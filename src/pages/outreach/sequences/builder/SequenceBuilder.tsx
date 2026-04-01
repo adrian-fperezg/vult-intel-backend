@@ -306,30 +306,69 @@ function StepNode({
                         <Play className="size-2.5" />
                         Anchor Launch Time (Step 1)
                       </label>
-                      <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-teal-500/20 text-xs shadow-lg shadow-teal-500/5">
-                        <Clock className="size-3 text-teal-400" />
-                        <input
-                          type="datetime-local"
-                          value={step.scheduled_start_at ? new Date(step.scheduled_start_at).toISOString().slice(0, 16) : ''}
-                          onChange={e => {
-                            const date = e.target.value ? new Date(e.target.value).toISOString() : undefined;
-                            onUpdate(step.id, { scheduled_start_at: date });
-                          }}
-                          className="bg-transparent text-white focus:text-teal-400 outline-none cursor-pointer w-full"
-                        />
-                        {step.scheduled_start_at && (
-                          <button 
-                            onClick={() => onUpdate(step.id, { scheduled_start_at: undefined })}
-                            className="p-1 hover:bg-white/10 rounded-md text-slate-500 hover:text-white transition-colors"
+
+                      <div className="space-y-4">
+                        {/* EL CALENDARIO: Ahora bloqueado para que NO salte la hora */}
+                        <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-teal-500/20 text-xs shadow-lg shadow-teal-500/5">
+                          <Clock className="size-3 text-teal-400" />
+                          <input
+                            type="datetime-local"
+                            // Mostramos el valor tal cual, sin conversiones a ISO que mueven la zona horaria
+                            value={step.scheduled_start_at || ''}
+                            onChange={e => {
+                              // Guardamos el texto directo (ej: "2026-04-01T11:14")
+                              onUpdate(step.id, { scheduled_start_at: e.target.value });
+                            }}
+                            className="bg-transparent text-white focus:text-teal-400 outline-none cursor-pointer w-full"
+                          />
+                          {step.scheduled_start_at && (
+                            <button
+                              onClick={() => onUpdate(step.id, { scheduled_start_at: undefined })}
+                              className="p-1 hover:bg-white/10 rounded-md text-slate-500 hover:text-white transition-colors"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* LOS DOS BOTONES: Control Total */}
+                        <div className="flex gap-2">
+                          {/* BOTÓN 1: LANZAR AHORA */}
+                          <button
+                            onClick={() => {
+                              // 1. Borramos cualquier fecha programada
+                              onUpdate(step.id, { scheduled_start_at: undefined });
+                              // 2. Ejecutamos la activación (asegúrate de que esta función sea la que llama a tu API)
+                              if (window.confirm("Launch this sequence immediately?")) {
+                                handleActivateSequence();
+                              }
+                            }}
+                            className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-lg text-[9px] uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-teal-500/20"
                           >
-                            <X className="size-3" />
+                            Launch Immediately
                           </button>
-                        )}
+
+                          {/* BOTÓN 2: PROGRAMAR */}
+                          <button
+                            onClick={() => {
+                              if (!step.scheduled_start_at) {
+                                alert("Error: Please select a date and time in the calendar first.");
+                                return;
+                              }
+                              // Ejecutamos la activación respetando la fecha del input
+                              handleActivateSequence();
+                            }}
+                            className="flex-1 bg-white/5 hover:bg-white/10 text-teal-400 font-bold py-2.5 rounded-lg border border-teal-500/30 text-[9px] uppercase tracking-widest transition-all active:scale-95"
+                          >
+                            Schedule Sequence
+                          </button>
+                        </div>
+
+                        <p className="text-[9px] text-slate-500 mt-2 italic flex items-center gap-1">
+                          <AlertCircle className="size-2.5" />
+                          Immediate ignores the calendar. Schedule respects the exact time shown above.
+                        </p>
                       </div>
-                      <p className="text-[9px] text-slate-500 mt-2 italic flex items-center gap-1">
-                        <AlertCircle className="size-2.5" />
-                        This date anchors the entire sequence. Subsequent steps will be relative to this moment.
-                      </p>
                     </div>
                   )}
                 </div>
@@ -603,9 +642,9 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
 
-  const [previewData, setPreviewData] = useState<{ 
-    subject: string; 
-    body: string; 
+  const [previewData, setPreviewData] = useState<{
+    subject: string;
+    body: string;
     isOpen: boolean;
     recipientData?: any;
   }>({
@@ -622,10 +661,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       const randomIndex = Math.floor(Math.random() * sequence.recipients.length);
       randomRecipient = sequence.recipients[randomIndex];
     }
-    
-    setPreviewData({ 
-      subject, 
-      body, 
+
+    setPreviewData({
+      subject,
+      body,
       isOpen: true,
       recipientData: randomRecipient
     });
