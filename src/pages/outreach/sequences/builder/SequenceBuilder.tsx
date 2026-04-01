@@ -1343,7 +1343,14 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   <OutreachBadge variant="teal" className="ml-2">{(sequence as any)?.recipients?.length || 0}</OutreachBadge>
                 </h3>
                 <div className="flex gap-3">
-                  <UserPlus className="size-4" /> Add Recipients
+                  <TealButton
+                    variant="solid"
+                    size="sm"
+                    onClick={() => setIsRecipientModalOpen(true)}
+                    className="rounded-xl flex items-center gap-2"
+                  >
+                    <UserPlus className="size-4" /> Add Recipients
+                  </TealButton>
                 </div>
               </div>
 

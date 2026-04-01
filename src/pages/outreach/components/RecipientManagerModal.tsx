@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, Search, Plus, Upload, Users, UserPlus, 
-  FileText, Check, AlertCircle, ChevronRight, 
-  Trash2, Download
+import {
+  X, Search, Plus, Upload, Users, UserPlus,
+  FileText, Check, AlertCircle, ChevronRight,
+  Trash2, Download, Loader2
 } from 'lucide-react';
 import { TealButton, OutreachBadge } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
@@ -19,27 +19,28 @@ interface RecipientManagerModalProps {
 
 type Tab = 'crm' | 'manual' | 'csv';
 
-export default function RecipientManagerModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  api 
+export default function RecipientManagerModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  api
 }: RecipientManagerModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('crm');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // CRM State
   const [lists, setLists] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
   const [selectedListIds, setSelectedListIds] = useState<string[]>([]);
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
-  
+
   // Manual State
   const [manualRows, setManualRows] = useState<any[]>([
     { first_name: '', last_name: '', email: '', company: '' }
   ]);
-  
+
   // CSV State
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvData, setCsvData] = useState<any[]>([]);
@@ -55,6 +56,12 @@ export default function RecipientManagerModal({
   useEffect(() => {
     if (isOpen) {
       loadCrmData();
+      // Limpiar selecciones al abrir para poder agregar nuevos baches
+      setSelectedListIds([]);
+      setSelectedContactIds([]);
+      setManualRows([{ first_name: '', last_name: '', email: '', company: '' }]);
+      setCsvFile(null);
+      setCsvData([]);
     }
   }, [isOpen]);
 
@@ -76,13 +83,13 @@ export default function RecipientManagerModal({
 
   // ── CRM Handlers ───────────────────────────────────────────────────────────
   const toggleList = (id: string) => {
-    setSelectedListIds(prev => 
+    setSelectedListIds(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
 
   const toggleContact = (id: string) => {
-    setSelectedContactIds(prev => 
+    setSelectedContactIds(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
@@ -108,7 +115,7 @@ export default function RecipientManagerModal({
     const file = e.target.files?.[0];
     if (!file) return;
     setCsvFile(file);
-    
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -143,31 +150,37 @@ export default function RecipientManagerModal({
     }
   }, [mapping, csvData]);
 
-  // ── Final Confirm ──────────────────────────────────────────────────────────
+  // ── Final Confirm (EL CAMBIO PRINCIPAL ESTÁ AQUÍ) ──────────────────────────
   const handleConfirm = async () => {
-    setIsLoading(true);
+    setIsSaving(true);
     try {
       let finalRecipients: any[] = [];
 
       if (activeTab === 'crm') {
-        // Fetch full contacts for selected lists and individual contacts
-        // For now, we just send the IDs to the parent
+        // Formato mixto que el backend espera: { id: '...' } y { list_id: '...' }
         finalRecipients = [
           ...selectedContactIds.map(id => ({ id })),
-          ...selectedListIds.map(id => ({ list_id: id }))
+          ...selectedListIds.map(listId => ({ list_id: listId }))
         ];
+
+        if (finalRecipients.length === 0) {
+          toast.error("Please select at least one contact or list.");
+          setIsSaving(false);
+          return;
+        }
+
       } else if (activeTab === 'manual') {
         const validRows = manualRows.filter(r => r.email.includes('@'));
         if (validRows.length === 0) {
           toast.error('Please add at least one valid email');
-          setIsLoading(false);
+          setIsSaving(false);
           return;
         }
         finalRecipients = validRows.map(r => ({ ...r, type: 'manual' }));
       } else if (activeTab === 'csv') {
         if (!mapping.email) {
           toast.error('Email mapping is required');
-          setIsLoading(false);
+          setIsSaving(false);
           return;
         }
         finalRecipients = csvData.map(row => ({
@@ -180,12 +193,20 @@ export default function RecipientManagerModal({
       }
 
       await onConfirm(finalRecipients);
-      onClose();
+      onClose(); // Solo cerramos si fue exitoso
     } catch (err) {
       toast.error('Failed to assign recipients');
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
+  };
+
+  // Cálculo del total seleccionado para el footer
+  const getTotalSelected = () => {
+    if (activeTab === 'crm') return selectedContactIds.length + selectedListIds.length;
+    if (activeTab === 'manual') return manualRows.filter(r => r.email.includes('@')).length;
+    if (activeTab === 'csv') return csvData.filter(r => r[mapping.email] && String(r[mapping.email]).includes('@')).length;
+    return 0;
   };
 
   if (!isOpen) return null;
@@ -193,7 +214,7 @@ export default function RecipientManagerModal({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
-      
+
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -262,73 +283,87 @@ export default function RecipientManagerModal({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Contact Lists</label>
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                      {lists.filter(l => l.name.toLowerCase().includes(searchQuery.toLowerCase())).map(list => (
-                        <button
-                          key={list.id}
-                          onClick={() => toggleList(list.id)}
-                          className={cn(
-                            'w-full flex items-center justify-between p-4 rounded-2xl border transition-all group',
-                            selectedListIds.includes(list.id)
-                              ? 'bg-teal-500/10 border-teal-500/30 ring-1 ring-teal-500/20'
-                              : 'bg-white/5 border-white/5 hover:border-white/10'
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={cn(
-                              'size-10 rounded-xl flex items-center justify-center transition-colors',
-                              selectedListIds.includes(list.id) ? 'bg-teal-500/20 text-teal-400' : 'bg-slate-800 text-slate-500'
-                            )}>
-                              <Users className="size-5" />
-                            </div>
-                            <div className="text-left">
-                              <p className="text-sm font-bold text-white">{list.name}</p>
-                              <p className="text-[10px] text-slate-500">{list.contacts_count || 0} contacts</p>
-                            </div>
-                          </div>
-                          {selectedListIds.includes(list.id) && <Check className="size-5 text-teal-400" />}
-                        </button>
-                      ))}
-                    </div>
+                {isLoading ? (
+                  <div className="flex justify-center py-10">
+                    <Loader2 className="size-8 text-teal-500 animate-spin" />
                   </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Saved Lists</label>
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                        {lists.filter(l => l.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+                          <p className="text-xs text-slate-500 px-2">No lists found.</p>
+                        )}
+                        {lists.filter(l => l.name.toLowerCase().includes(searchQuery.toLowerCase())).map(list => (
+                          <button
+                            key={list.id}
+                            onClick={() => toggleList(list.id)}
+                            className={cn(
+                              'w-full flex items-center justify-between p-4 rounded-2xl border transition-all group',
+                              selectedListIds.includes(list.id)
+                                ? 'bg-teal-500/10 border-teal-500/30 ring-1 ring-teal-500/20'
+                                : 'bg-white/5 border-white/5 hover:border-white/10'
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                'size-10 rounded-xl flex items-center justify-center transition-colors',
+                                selectedListIds.includes(list.id) ? 'bg-teal-500/20 text-teal-400' : 'bg-slate-800 text-slate-500'
+                              )}>
+                                <Users className="size-5" />
+                              </div>
+                              <div className="text-left">
+                                <p className="text-sm font-bold text-white">{list.name}</p>
+                                <p className="text-[10px] text-slate-500">Will enroll all active contacts</p>
+                              </div>
+                            </div>
+                            {selectedListIds.includes(list.id) && <Check className="size-5 text-teal-400" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Individual Contacts</label>
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                      {contacts.filter(c => 
-                        (c.first_name + ' ' + c.last_name + ' ' + c.email).toLowerCase().includes(searchQuery.toLowerCase())
-                      ).map(contact => (
-                        <button
-                          key={contact.id}
-                          onClick={() => toggleContact(contact.id)}
-                          className={cn(
-                            'w-full flex items-center justify-between p-4 rounded-2xl border transition-all group',
-                            selectedContactIds.includes(contact.id)
-                              ? 'bg-teal-500/10 border-teal-500/30 ring-1 ring-teal-500/20'
-                              : 'bg-white/5 border-white/5 hover:border-white/10'
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Individual Contacts</label>
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                        {contacts.filter(c =>
+                          (c.first_name + ' ' + c.last_name + ' ' + c.email).toLowerCase().includes(searchQuery.toLowerCase())
+                        ).length === 0 && (
+                            <p className="text-xs text-slate-500 px-2">No contacts found.</p>
                           )}
-                        >
-                          <div className="flex items-center gap-3 text-left">
-                            <div className={cn(
-                              'size-10 rounded-full flex items-center justify-center font-bold text-xs',
-                              selectedContactIds.includes(contact.id) ? 'bg-teal-500/20 text-teal-400' : 'bg-slate-800 text-slate-400'
-                            )}>
-                              {contact.first_name?.[0]}{contact.last_name?.[0]}
+                        {contacts.filter(c =>
+                          (c.first_name + ' ' + c.last_name + ' ' + c.email).toLowerCase().includes(searchQuery.toLowerCase())
+                        ).map(contact => (
+                          <button
+                            key={contact.id}
+                            onClick={() => toggleContact(contact.id)}
+                            className={cn(
+                              'w-full flex items-center justify-between p-4 rounded-2xl border transition-all group',
+                              selectedContactIds.includes(contact.id)
+                                ? 'bg-teal-500/10 border-teal-500/30 ring-1 ring-teal-500/20'
+                                : 'bg-white/5 border-white/5 hover:border-white/10'
+                            )}
+                          >
+                            <div className="flex items-center gap-3 text-left overflow-hidden">
+                              <div className={cn(
+                                'size-10 rounded-full flex items-center justify-center font-bold text-xs shrink-0',
+                                selectedContactIds.includes(contact.id) ? 'bg-teal-500/20 text-teal-400' : 'bg-slate-800 text-slate-400'
+                              )}>
+                                {contact.first_name?.[0] || ''}{contact.last_name?.[0] || ''}
+                              </div>
+                              <div className="overflow-hidden">
+                                <p className="text-sm font-bold text-white truncate">{contact.first_name} {contact.last_name}</p>
+                                <p className="text-[10px] text-slate-500 truncate">{contact.email}</p>
+                              </div>
                             </div>
-                            <div className="overflow-hidden">
-                              <p className="text-sm font-bold text-white truncate">{contact.first_name} {contact.last_name}</p>
-                              <p className="text-[10px] text-slate-500 truncate">{contact.email}</p>
-                            </div>
-                          </div>
-                          {selectedContactIds.includes(contact.id) && <Check className="size-5 text-teal-400" />}
-                        </button>
-                      ))}
+                            {selectedContactIds.includes(contact.id) && <Check className="size-5 text-teal-400 shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </motion.div>
             )}
 
@@ -438,7 +473,7 @@ export default function RecipientManagerModal({
                         </h4>
                         <button onClick={() => setCsvFile(null)} className="text-xs text-red-400 hover:underline">Change File</button>
                       </div>
-                      
+
                       <div className="space-y-4">
                         {[
                           { key: 'first_name', label: 'First Name' },
@@ -477,9 +512,11 @@ export default function RecipientManagerModal({
                             </div>
                           </div>
                         ))}
-                        <div className="p-4 bg-teal-500/5 text-center text-[10px] font-bold text-teal-400 uppercase tracking-tighter">
-                          + {csvData.length - 5} more records
-                        </div>
+                        {csvData.length > 5 && (
+                          <div className="p-4 bg-teal-500/5 text-center text-[10px] font-bold text-teal-400 uppercase tracking-tighter">
+                            + {csvData.length - 5} more records
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -490,18 +527,16 @@ export default function RecipientManagerModal({
         </div>
 
         {/* Footer */}
-        <div className="p-8 border-t border-white/5 bg-[#0d1117] flex items-center justify-between">
+        <div className="p-8 border-t border-white/5 bg-[#0d1117] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
             <div className="flex -space-x-2">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="size-8 rounded-full bg-slate-800 border-2 border-[#0d1117] flex items-center justify-center text-[10px] font-bold text-slate-500">
-                  ?
-                </div>
-              ))}
+              <div className="size-8 rounded-full bg-slate-800 border-2 border-[#0d1117] flex items-center justify-center text-[10px] font-bold text-slate-500">
+                <Users className="size-3.5" />
+              </div>
             </div>
             <p className="text-sm font-medium text-slate-400">
-              Total selected: <span className="text-white font-bold">
-                {activeTab === 'crm' ? selectedContactIds.length + selectedListIds.length : (activeTab === 'manual' ? manualRows.filter(r => r.email).length : csvData.length)}
+              Total selected: <span className="text-white font-bold text-base ml-1">
+                {getTotalSelected()}
               </span>
             </p>
           </div>
@@ -509,10 +544,11 @@ export default function RecipientManagerModal({
             <button onClick={onClose} className="px-8 py-3 rounded-2xl font-bold text-slate-400 hover:text-white transition-colors">Cancel</button>
             <TealButton
               onClick={handleConfirm}
-              loading={isLoading}
+              loading={isSaving}
+              disabled={getTotalSelected() === 0 || isSaving}
               className="px-12 py-3 shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:shadow-[0_0_30px_rgba(20,184,166,0.5)]"
             >
-              Assign to Sequence
+              Enroll Recipients
             </TealButton>
           </div>
         </div>
