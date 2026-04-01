@@ -78,6 +78,8 @@ interface StepNodeProps {
   onPreview: (subject: string, body: string) => void;
   analytics?: Record<string, any>;
   handleActivate: () => void;
+  handleSaveAll: () => Promise<void>;
+  sequenceStatus: string;
 }
 
 function StepNode({
@@ -95,7 +97,9 @@ function StepNode({
   setActiveStepId,
   onPreview,
   analytics,
-  handleActivate
+  handleActivate,
+  handleSaveAll,
+  sequenceStatus
 }: StepNodeProps) {
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
@@ -128,7 +132,6 @@ function StepNode({
       toast.error('Failed to upload file');
     } finally {
       setIsUploading(false);
-      // Reset input
       e.target.value = '';
     }
   };
@@ -139,12 +142,10 @@ function StepNode({
 
   return (
     <div className="flex flex-col items-center w-full">
-      {/* Connector from parent (if not root) */}
       {!isFirst && !step.branch_path && (
         <div className="h-4 w-px bg-white/10" />
       )}
 
-      {/* Step Card */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -310,15 +311,12 @@ function StepNode({
                       </label>
 
                       <div className="space-y-4">
-                        {/* EL CALENDARIO: Ahora bloqueado para que NO salte la hora */}
                         <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-teal-500/20 text-xs shadow-lg shadow-teal-500/5">
                           <Clock className="size-3 text-teal-400" />
                           <input
                             type="datetime-local"
-                            // Mostramos el valor tal cual, sin conversiones a ISO que mueven la zona horaria
-                            value={step.scheduled_start_at || ''}
+                            value={step.scheduled_start_at ? step.scheduled_start_at.substring(0, 16) : ''}
                             onChange={e => {
-                              // Guardamos el texto directo (ej: "2026-04-01T11:14")
                               onUpdate(step.id, { scheduled_start_at: e.target.value });
                             }}
                             className="bg-transparent text-white focus:text-teal-400 outline-none cursor-pointer w-full"
@@ -333,33 +331,60 @@ function StepNode({
                           )}
                         </div>
 
-                        {/* LOS DOS BOTONES: Control Total */}
                         <div className="flex gap-2">
                           {/* BOTÓN 1: LANZAR AHORA */}
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               onUpdate(step.id, { scheduled_start_at: undefined });
                               if (window.confirm("Launch this sequence immediately?")) {
-                                handleActivate(); // Corregido el nombre
+                                const loading = toast.loading("Saving and launching...");
+                                try {
+                                  await handleSaveAll();
+                                  await handleActivate();
+                                  toast.success("Sequence launched immediately!", { id: loading });
+                                } catch (e) {
+                                  toast.error("Failed to launch", { id: loading });
+                                }
                               }
                             }}
-                            className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-lg text-[9px] uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-teal-500/20"
+                            className={cn(
+                              "flex-1 font-bold py-2.5 rounded-lg text-[9px] uppercase tracking-widest transition-all active:scale-95 shadow-lg",
+                              sequenceStatus === 'active' && !step.scheduled_start_at
+                                ? "bg-teal-500 text-white shadow-teal-500/20 border border-teal-400"
+                                : "bg-teal-600 hover:bg-teal-500 text-white shadow-teal-500/20"
+                            )}
                           >
-                            Launch Immediately
+                            {sequenceStatus === 'active' && !step.scheduled_start_at ? (
+                              <span className="flex items-center justify-center gap-1"><Check className="size-2.5" /> Active: Launched</span>
+                            ) : "Launch Immediately"}
                           </button>
 
                           {/* BOTÓN 2: PROGRAMAR */}
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               if (!step.scheduled_start_at) {
-                                alert("Error: Please select a date and time in the calendar first.");
+                                toast.error("Please select a date and time in the calendar first.");
                                 return;
                               }
-                              handleActivate(); // Corregido el nombre
+                              const loading = toast.loading("Saving and scheduling...");
+                              try {
+                                await handleSaveAll();
+                                await handleActivate();
+                                toast.success("Sequence scheduled successfully!", { id: loading });
+                              } catch (e) {
+                                toast.error("Failed to schedule", { id: loading });
+                              }
                             }}
-                            className="flex-1 bg-white/5 hover:bg-white/10 text-teal-400 font-bold py-2.5 rounded-lg border border-teal-500/30 text-[9px] uppercase tracking-widest transition-all active:scale-95"
+                            className={cn(
+                              "flex-1 font-bold py-2.5 rounded-lg text-[9px] uppercase tracking-widest transition-all active:scale-95 border",
+                              sequenceStatus === 'active' && step.scheduled_start_at
+                                ? "bg-teal-500/10 text-teal-400 border-teal-500 shadow-lg shadow-teal-500/10"
+                                : "bg-white/5 hover:bg-white/10 text-teal-400 border-teal-500/30"
+                            )}
                           >
-                            Schedule Sequence
+                            {sequenceStatus === 'active' && step.scheduled_start_at ? (
+                              <span className="flex items-center justify-center gap-1"><Check className="size-2.5" /> Active: Scheduled</span>
+                            ) : "Schedule Sequence"}
                           </button>
                         </div>
                         <p className="text-[9px] text-slate-500 mt-2 italic flex items-center gap-1">
@@ -464,7 +489,6 @@ function StepNode({
                 </div>
               </div>
 
-              {/* Keyword Intent Parsing — only for 'replied' conditions */}
               {step.condition_type === 'replied' && (
                 <div className="pt-1 space-y-1.5">
                   <label className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
@@ -491,11 +515,8 @@ function StepNode({
         </AnimatePresence>
       </motion.div>
 
-      {/* ── VERTICAL STACK CHILDREN ── */}
       {step.step_type === 'condition' ? (
         <div className="w-full flex flex-col mt-1">
-
-          {/* YES branch */}
           <div className="w-full flex flex-col">
             <div className="flex items-center gap-2 py-1">
               <div className="h-4 w-px bg-green-500/40 mx-auto" style={{ marginLeft: '16px' }} />
@@ -522,6 +543,8 @@ function StepNode({
                   onPreview={onPreview}
                   analytics={analytics}
                   handleActivate={handleActivate}
+                  handleSaveAll={handleSaveAll}
+                  sequenceStatus={sequenceStatus}
                 />
               ) : (
                 <button
@@ -535,7 +558,6 @@ function StepNode({
             </div>
           </div>
 
-          {/* NO branch */}
           <div className="w-full flex flex-col mt-4">
             <div className="flex items-center gap-2">
               <div className="h-px w-6 bg-red-500/30" />
@@ -559,6 +581,8 @@ function StepNode({
                   onPreview={onPreview}
                   analytics={analytics}
                   handleActivate={handleActivate}
+                  handleSaveAll={handleSaveAll}
+                  sequenceStatus={sequenceStatus}
                 />
               ) : (
                 <button
@@ -571,7 +595,6 @@ function StepNode({
               )}
             </div>
           </div>
-
         </div>
       ) : (
         <div className="flex flex-col items-center w-full">
@@ -592,6 +615,8 @@ function StepNode({
               onPreview={onPreview}
               analytics={analytics}
               handleActivate={handleActivate}
+              handleSaveAll={handleSaveAll}
+              sequenceStatus={sequenceStatus}
             />
           )}
           {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
@@ -637,8 +662,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
 
-
-  // DAG States & Scroll Persistence
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
@@ -656,7 +679,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   });
 
   const handlePreview = (subject: string, body: string) => {
-    // Select a random recipient if available
     let randomRecipient = null;
     if (sequence?.recipients && sequence.recipients.length > 0) {
       const randomIndex = Math.floor(Math.random() * sequence.recipients.length);
@@ -674,15 +696,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const canvasRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Restore scroll
   useEffect(() => {
     if (!loading && steps.length > 0 && canvasRef.current) {
       const saved = sessionStorage.getItem(`sequence_scroll_${sequenceId}`);
       if (saved) {
         try {
           const { x, y } = JSON.parse(saved);
-          console.log('Restoring scroll position to:', x, y);
-          // Wait for DOM paint to ensure full height/width is available
           setTimeout(() => {
             if (canvasRef.current) {
               canvasRef.current.scrollTo({ left: x, top: y, behavior: 'instant' });
@@ -717,16 +736,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     loadData();
   }, [sequenceId, activeProjectId]);
 
-  // Jump-out if project changes and we're in the wrong context
   useEffect(() => {
     if (sequence && activeProjectId && sequence.project_id !== activeProjectId) {
-      console.warn(`[SequenceBuilder] Project mismatch: Current seq belongs to ${sequence.project_id}, but active project is ${activeProjectId}. Redirecting.`);
       onBack();
     }
   }, [activeProjectId, sequence, onBack]);
 
   useEffect(() => {
-    // Warn about unsaved changes
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges) {
         e.preventDefault();
@@ -736,7 +752,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
-
 
   const loadData = async () => {
     setLoading(true);
@@ -765,7 +780,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       setMailboxes(mailboxData);
       setIdentities(identityData);
 
-      // Load Analytics
       try {
         const analyticsData = await api.fetchStepAnalytics(sequenceId);
         if (analyticsData) setStepAnalytics(analyticsData);
@@ -781,23 +795,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
 
   const handleSaveAll = async () => {
-    if (!sequenceId) {
-      toast.error('Sequence ID is missing');
-      return;
-    }
-    if (!activeProjectId) {
-      toast.error('No project selected');
-      console.error('[Outreach] Error: Cannot save sequence because activeProjectId is missing from state.');
-      return;
-    }
-    if (!sequence) {
-      toast.error('Sequence data not loaded');
+    if (!sequenceId || !activeProjectId || !sequence) {
+      toast.error('Missing required save data');
       return;
     }
 
     setIsSaving(true);
     try {
-      // 1. Update sequence basic info
       await api.updateSequence(sequenceId, {
         name: sequence.name,
         mailbox_id: sequence.mailbox_id,
@@ -808,10 +812,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         smart_send_max_delay: sequence.smart_send_max_delay,
         from_email: sequence.from_email,
         from_name: sequence.from_name,
-        custom_intent_logic: (sequence as any).custom_intent_logic
       });
 
-      // 2. Update all steps - ensure attachments are stringified
       const stepsToSave = steps.map(s => ({
         ...s,
         attachments: JSON.stringify(s.attachments)
@@ -821,17 +823,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
       setHasUnsavedChanges(false);
       setLastSavedTime(new Date());
-      toast.success('Sequence saved successfully');
+      // No toast here to avoid spam when called from Schedule button
     } catch (err: any) {
-      console.error('Save error:', err);
-
-      // Detailed error handling for project isolation
-      if (err.status === 403 || err.message?.includes('403')) {
-        toast.error('Access Denied: This sequence belongs to another project.');
-      } else {
-        const errorMsg = err.response?.data?.error || err.message || 'Failed to save changes';
-        toast.error(errorMsg);
-      }
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to save changes';
+      toast.error(errorMsg);
+      throw err; // Re-throw to handle failure in calling functions
     } finally {
       setIsSaving(false);
     }
@@ -882,7 +878,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       step_number: steps.length + 1,
       step_type: 'condition',
       parent_step_id: pendingConditionParentId,
-      branch_path: 'default', // Condition itself is a child of the email step
+      branch_path: 'default',
       condition_type: conditionType,
       delay_amount: 2,
       delay_unit: 'days',
@@ -911,7 +907,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
 
   const removeStep = (id: string) => {
-    // Also remove all descendants
     const getDescendantIds = (parentId: string): string[] => {
       const children = steps.filter(s => s.parent_step_id === parentId);
       let ids = children.map(c => c.id);
@@ -971,7 +966,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     setIsSaving(true);
     try {
       await api.activateSequence(sequenceId, activeProjectId!);
-      toast.success("Sequence activated!");
       loadData();
     } catch (error) {
       toast.error("Activation failed");
@@ -996,8 +990,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   const handleAssignRecipients = async (recipients: any[]) => {
     if (!sequenceId || !activeProjectId) return;
-
-    // Determine if these are manual contact objects or just IDs
     const isManual = recipients.length > 0 && typeof recipients[0] === 'object';
     const payload = isManual
       ? { recipients, project_id: activeProjectId }
@@ -1005,12 +997,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
     try {
       const result = await api.addSequenceRecipients(sequenceId, payload);
-
       if (result.success && result.addedContacts) {
         setSequence(prev => {
           if (!prev) return prev;
           const currentRecipients = prev.recipients || [];
-          // Filter out any that might already be in state just in case, then add new ones
           const newRecipients = (result.addedContacts || []).filter(
             (nc: any) => !currentRecipients.some((rc: any) => rc.id === nc.id)
           );
@@ -1025,7 +1015,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         loadData();
       }
     } catch (err) {
-      console.error("Failed to assign recipients:", err);
       toast.error('Failed to assign recipients');
     }
   };
@@ -1053,7 +1042,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   return (
     <div className="h-full flex flex-col bg-[#0d1117] text-slate-300">
-      {/* Top Navigation Bar */}
       <header className="h-14 border-b border-white/5 bg-[#161b22]/50 backdrop-blur-md flex items-center justify-between px-4 z-20">
         <div className="flex items-center gap-4">
           <button
@@ -1180,6 +1168,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   onPreview={handlePreview}
                   analytics={stepAnalytics}
                   handleActivate={handleActivate}
+                  handleSaveAll={handleSaveAll}
+                  sequenceStatus={sequence?.status || 'draft'}
                 />
               ) : (
                 <div className="flex flex-col items-center py-20">
@@ -1343,9 +1333,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   <OutreachBadge variant="teal" className="ml-2">{(sequence as any)?.recipients?.length || 0}</OutreachBadge>
                 </h3>
                 <div className="flex gap-3">
-                  <TealButton variant="solid" size="md" onClick={() => setIsRecipientModalOpen(true)} className="rounded-xl">
-                    <UserPlus className="size-4" /> Add Recipients
-                  </TealButton>
+                  <UserPlus className="size-4" /> Add Recipients
                 </div>
               </div>
 
@@ -1433,7 +1421,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         onClose={() => setIsConditionModalOpen(false)}
         onSelect={handleSelectCondition}
       />
-      {/* Email Preview Modal */}
       <EmailPreviewModal
         isOpen={previewData.isOpen}
         onClose={() => setPreviewData(prev => ({ ...prev, isOpen: false }))}
