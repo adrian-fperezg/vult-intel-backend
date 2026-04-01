@@ -18,6 +18,7 @@ import toast from 'react-hot-toast';
 
 import ConditionSelectorModal from './ConditionSelectorModal';
 import SequenceAnalyticsDashboard from './SequenceAnalyticsDashboard';
+import EmailPreviewModal from '../../components/EmailPreviewModal';
 
 interface Step {
   id: string;
@@ -73,6 +74,7 @@ interface StepNodeProps {
   handleOptimizeStep: (stepId: string) => void;
   activeStepId: string | null;
   setActiveStepId: (id: string | null) => void;
+  onPreview: (subject: string, body: string) => void;
   analytics?: Record<string, any>;
 }
 
@@ -89,6 +91,7 @@ function StepNode({
   handleOptimizeStep,
   activeStepId,
   setActiveStepId,
+  onPreview,
   analytics
 }: StepNodeProps) {
   const { uploadFile } = useOutreachApi();
@@ -306,6 +309,7 @@ function StepNode({
                     onOptimize={() => handleOptimizeStep(step.id)}
                     isOptimizing={isOptimizing}
                     onAttachFile={() => document.getElementById(`file-upload-${step.id}`)?.click()}
+                    onPreview={() => onPreview(step.config.subject, step.config.body_html)}
                   />
                   <input
                     type="file"
@@ -435,6 +439,7 @@ function StepNode({
                   handleOptimizeStep={handleOptimizeStep}
                   activeStepId={activeStepId}
                   setActiveStepId={setActiveStepId}
+                  onPreview={onPreview}
                   analytics={analytics}
                 />
               ) : (
@@ -470,6 +475,7 @@ function StepNode({
                   handleOptimizeStep={handleOptimizeStep}
                   activeStepId={activeStepId}
                   setActiveStepId={setActiveStepId}
+                  onPreview={onPreview}
                   analytics={analytics}
                 />
               ) : (
@@ -501,6 +507,7 @@ function StepNode({
               handleOptimizeStep={handleOptimizeStep}
               activeStepId={activeStepId}
               setActiveStepId={setActiveStepId}
+              onPreview={onPreview}
               analytics={analytics}
             />
           )}
@@ -552,6 +559,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
   const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
+
+  const [previewData, setPreviewData] = useState<{ subject: string; body: string; isOpen: boolean }>({
+    subject: '',
+    body: '',
+    isOpen: false
+  });
+
+  const handlePreview = (subject: string, body: string) => {
+    setPreviewData({ subject, body, isOpen: true });
+  };
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1068,6 +1085,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   handleOptimizeStep={handleOptimizeStep}
                   activeStepId={activeStepId}
                   setActiveStepId={setActiveStepId}
+                  onPreview={handlePreview}
                   analytics={stepAnalytics}
                 />
               ) : (
@@ -1321,6 +1339,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         isOpen={isConditionModalOpen}
         onClose={() => setIsConditionModalOpen(false)}
         onSelect={handleSelectCondition}
+      />
+      {/* Email Preview Modal */}
+      <EmailPreviewModal
+        isOpen={previewData.isOpen}
+        onClose={() => setPreviewData(prev => ({ ...prev, isOpen: false }))}
+        subject={previewData.subject}
+        body={previewData.body}
       />
     </div>
   );

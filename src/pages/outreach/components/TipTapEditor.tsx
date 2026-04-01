@@ -14,7 +14,8 @@ import {
   Undo,
   Redo,
   CloudLightning,
-  Paperclip
+  Paperclip,
+  Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,7 @@ interface TipTapEditorProps {
   onOptimize?: () => void;
   isOptimizing?: boolean;
   onAttachFile?: () => void;
+  onPreview?: () => void;
 }
 
 const MenuButton = ({ 
@@ -68,6 +70,7 @@ export default function TipTapEditor({
   placeholder = "Write your email here...",
   onOptimize,
   isOptimizing = false,
+  onPreview,
   onAttachFile
 }: TipTapEditorProps) {
   const [showVariables, setShowVariables] = React.useState(false);
@@ -210,6 +213,17 @@ export default function TipTapEditor({
                 <Sparkles className="size-3.5" />
               )}
               {isOptimizing ? "Optimizing..." : "AI Optimize"}
+            </button>
+          )}
+
+          {onPreview && (
+            <button
+              onClick={onPreview}
+              type="button"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-[#30363d] text-slate-300 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95"
+            >
+              <Eye className="size-3.5" />
+              Preview
             </button>
           )}
 
