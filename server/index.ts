@@ -64,7 +64,7 @@ import {
   fetchGmailAliases,
 } from "./oauth.js";
 import { encryptToken, decryptToken } from "./lib/outreach/encrypt.js";
-import { syncMailbox } from "./lib/outreach/gmailSync.js";
+import { syncMailbox, setupGmailWatch, syncMailboxHistory } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
 import { getAccountInformation } from "./lib/outreach/hunter.js";
 import { getZeroBounceCredits } from "./lib/outreach/zerobounce.js";
@@ -73,6 +73,7 @@ import { verifyEmailWaterfall } from "./lib/outreach/verifier.js";
 import { extractDomain, generateVerificationToken, verifyDomainDns } from "./lib/outreach/domainVerification.js";
 import { stripe, verifyStripeSignature } from "./lib/stripe.js";
 import admin from 'firebase-admin';
+import { gmailWebhookHandler } from "./api/webhooks/gmailWebhook.js";
 
 
 const app = express();
@@ -191,6 +192,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     return res.status(400).json({ error: 'Invalid JSON payload' });
   }
   next();
+});
+
+// Gmail Pub/Sub Webhook handler
+app.post('/api/webhooks/gmail/push', express.json(), async (req, res) => {
+  await gmailWebhookHandler(req, res);
 });
 
 // Configure Multer for attachments
@@ -350,8 +356,11 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
       tokens.scope,
     );
 
-    // Initial sync
+    // Initial sync and setup watch
     syncMailbox(mailboxId, getValidAccessToken).catch(console.error);
+    setupGmailWatch(mailboxId, getValidAccessToken).catch(err => {
+      console.error(`[GmailWatch] Auto-setup failed for ${userInfo.email}:`, err.message);
+    });
     // Fetch aliases
     fetchGmailAliases(mailboxId).catch(console.error);
 
@@ -4100,16 +4109,16 @@ aiKeysCheck();
 // Start sync
 syncMailboxesFromRedis();
 
-// Start recurring IMAP poll every 10 minutes
-emailQueue.add('poll-mailboxes', {}, {
-  repeat: { every: 600000 },
-  jobId: 'poll-mailboxes-repeat'
-}).catch(console.error);
+// (DEPRECATED) Polling removed in favor of Event-Driven Webhooks
+// emailQueue.add('poll-mailboxes', {}, {
+//   repeat: { every: 600000 },
+//   jobId: 'poll-mailboxes-repeat'
+// }).catch(console.error);
 
-// Start Outreach Sequence Watchdog every 5 minutes (safety net for stalled sequences)
+// Start Outreach Sequence Watchdog every 24 hours (safety net for stalled sequences)
 setInterval(() => {
   sequenceWatchdog().catch(err => console.error('[Watchdog Error]', err));
-}, 5 * 60 * 1000);
+}, 24 * 60 * 60 * 1000);
 
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
 

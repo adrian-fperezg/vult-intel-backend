@@ -35,7 +35,7 @@ export const campaignQueue = new Queue('campaign-queue', {
   }
 });
 
-import { syncMailbox } from '../lib/outreach/gmailSync.js';
+import { syncMailbox, syncMailboxHistory, setupGmailWatch } from '../lib/outreach/gmailSync.js';
 import { getValidAccessToken } from '../oauth.js';
 
 export async function pollMailboxes() {
@@ -76,9 +76,15 @@ export async function pollMailboxes() {
               console.log(`[IMAP] Polling: ${mailbox.email} (Project: ${projectId})`);
               await pollImap(mailbox.id);
             } else if (mailbox.connection_type === 'gmail_oauth') {
-              console.log(`[Gmail] Syncing: ${mailbox.email} (Project: ${projectId})`);
-              await syncMailbox(mailbox.id, async (id) => {
-                return await getValidAccessToken(id);
+              console.log(`[Gmail] Syncing & Ensuring Watch: ${mailbox.email} (Project: ${projectId})`);
+              const getTkn = async (id: string) => await getValidAccessToken(id);
+              
+              // 1. Full Sync (as a safety measure)
+              await syncMailbox(mailbox.id, getTkn);
+              
+              // 2. Setup Watch (Idempotent, maintains the subscription)
+              await setupGmailWatch(mailbox.id, getTkn).catch(err => {
+                console.error(`[GmailWatch] Periodic setup failed for ${mailbox.email}:`, err.message);
               });
             }
           } catch (mailboxErr: any) {
@@ -130,6 +136,23 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
   if (name === 'poll-mailboxes') {
     await pollMailboxes();
+    return;
+  }
+
+  if (name === 'sync-mailbox-history') {
+    const { mailboxId, historyId } = data;
+    console.log(`[Worker] Running incremental sync for mailbox ${mailboxId} from historyId ${historyId}`);
+    try {
+      await syncMailboxHistory(mailboxId, parseInt(historyId), async (id) => {
+        return await getValidAccessToken(id);
+      });
+    } catch (err: any) {
+      console.error(`[Worker] History sync failed for ${mailboxId}:`, err.message);
+      // Fallback to full sync on failure if it's a critical error
+      if (err.message.includes('too old') || err.message.includes('404')) {
+        await syncMailbox(mailboxId, async (id) => await getValidAccessToken(id));
+      }
+    }
     return;
   }
 

@@ -42,19 +42,22 @@ export class DbWrapper {
 
   async run(sql: string, ...params: any[]) {
     const convertedSql = this.convertSql(sql);
-    const res = await this.pgConn.query(convertedSql, params);
+    const finalParams = (params.length === 1 && Array.isArray(params[0])) ? params[0] : params;
+    const res = await this.pgConn.query(convertedSql, finalParams);
     return { lastInsertRowid: null, changes: res.rowCount || 0 };
   }
 
   async get<T>(sql: string, ...params: any[]): Promise<T | undefined> {
     const convertedSql = this.convertSql(sql);
-    const res = await this.pgConn.query(convertedSql, params);
+    const finalParams = (params.length === 1 && Array.isArray(params[0])) ? params[0] : params;
+    const res = await this.pgConn.query(convertedSql, finalParams);
     return res.rows[0];
   }
 
   async all<T>(sql: string, ...params: any[]): Promise<T[]> {
     const convertedSql = this.convertSql(sql);
-    const res = await this.pgConn.query(convertedSql, params);
+    const finalParams = (params.length === 1 && Array.isArray(params[0])) ? params[0] : params;
+    const res = await this.pgConn.query(convertedSql, finalParams);
     return res.rows || [];
   }
 
@@ -433,7 +436,8 @@ export const initDb = async () => {
       { name: 'provider', type: 'TEXT' },
       { name: 'aliases', type: "JSONB DEFAULT '[]'" },
       { name: 'enabled', type: 'BOOLEAN DEFAULT TRUE' },
-      { name: 'isPollingActive', type: 'BOOLEAN DEFAULT TRUE' }
+      { name: 'isPollingActive', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'gmail_history_id', type: 'TEXT' }
     ];
 
     for (const col of newMailboxCols) {

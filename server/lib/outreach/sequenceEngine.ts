@@ -56,7 +56,7 @@ export async function scheduleNextStep(projectId: string, sequenceId: string, co
     'SELECT status FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
     sequenceId, contactId
   );
-  if (!enrollment || enrollment.status !== 'active') {
+  if (!enrollment || (enrollment.status !== 'active' && enrollment.status !== 'replied')) {
     console.warn(`[SequenceEngine] Enrollment for contact ${contactId} in sequence ${sequenceId} is no longer active (status: ${enrollment?.status || 'missing'}). Aborting schedule.`);
     return;
   }

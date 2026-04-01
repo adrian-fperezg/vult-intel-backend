@@ -162,3 +162,35 @@ export async function handleSequenceIntent(originalEmail: any, rawBody: string) 
   return { matched: false, hijacked: false, keyword: conditionKeyword };
 }
 
+/**
+ * Decision logic for enrollment status after a reply is received.
+ * Centralizes Smart Intent Bypass vs Standard behavior.
+ */
+export function evaluateSmartIntent(params: {
+  smart_intent_bypass: any;
+  stop_on_reply: any;
+  keywordMatch: boolean | null;
+}): { status: 'replied' | 'paused' | 'stopped' | 'active', matched: boolean } {
+  const { smart_intent_bypass, stop_on_reply, keywordMatch } = params;
+
+  // Ensure these are treated as booleans (PG compatibility)
+  const isBypass = !!smart_intent_bypass;
+  const isStopOnReply = !!stop_on_reply;
+
+  if (isBypass) {
+    if (keywordMatch === true) {
+      return { status: 'replied', matched: true };
+    } else {
+      // If bypass is ON and NO match, we PAUSE to prevent the NO branch
+      return { status: 'paused', matched: false };
+    }
+  }
+
+  // Standard Behavior (Bypass is OFF)
+  if (isStopOnReply) {
+    return { status: 'stopped', matched: false };
+  }
+
+  return { status: 'active', matched: false };
+}
+
