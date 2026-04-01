@@ -125,7 +125,23 @@ export async function resetRepeatableJobs() {
 }
 
 import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
-import { scheduleNextStep } from '../lib/outreach/sequenceEngine.js';
+import { scheduleNextStep, enrollContactInSequence } from '../lib/outreach/sequenceEngine.js';
+
+/**
+ * Cancels a scheduled sequence start job.
+ */
+export async function cancelScheduledSequenceStart(sequenceId: string) {
+  const jobId = `start-seq-${sequenceId}`;
+  try {
+    const job = await emailQueue.getJob(jobId);
+    if (job) {
+      await job.remove();
+      console.log(`[Queue] Cancelled scheduled start for sequence ${sequenceId}`);
+    }
+  } catch (err: any) {
+    console.warn(`[Queue] Failed to cancel job ${jobId}:`, err.message);
+  }
+}
 
 // ─── WORKERS ─────────────────────────────────────────────────────────────────
 
@@ -136,6 +152,30 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
   if (name === 'poll-mailboxes') {
     await pollMailboxes();
+    return;
+  }
+
+  if (name === 'start-sequence') {
+    const { projectId, sequenceId } = data;
+    console.log(`[Worker] Waking up scheduled sequence: ${sequenceId}`);
+    try {
+      await db.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ? AND project_id = ?", sequenceId, projectId);
+      
+      // Enroll existing recipients who are not already enrolled
+      const recipients = await db.all(`
+        SELECT contact_id FROM outreach_sequence_recipients 
+        WHERE sequence_id = ? AND project_id = ? AND contact_id IS NOT NULL
+        AND contact_id NOT IN (SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?)
+      `, sequenceId, projectId, sequenceId, projectId) as any[];
+
+      console.log(`[Worker] Enrolling ${recipients.length} recipients for scheduled sequence ${sequenceId}`);
+      for (const r of recipients) {
+        await enrollContactInSequence(projectId, sequenceId, r.contact_id);
+      }
+    } catch (err: any) {
+      console.error(`[Worker] Failed to start scheduled sequence ${sequenceId}:`, err.message);
+      throw err;
+    }
     return;
   }
 

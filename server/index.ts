@@ -52,7 +52,7 @@ import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
-import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog } from "./queues/emailQueue.js";
+import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -1380,7 +1380,8 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const allowedFields = [
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end',
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
-    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic', 'smart_intent_bypass'
+    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic', 'smart_intent_bypass',
+    'scheduled_start_at'
   ];
 
   const filteredUpdates: Record<string, any> = {};

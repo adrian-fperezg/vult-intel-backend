@@ -251,6 +251,7 @@ export const initDb = async () => {
         from_name TEXT,
         intent_keyword TEXT,
         bypass_keyword TEXT DEFAULT 'Khania',
+        scheduled_start_at TIMESTAMP WITH TIME ZONE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -276,7 +277,8 @@ export const initDb = async () => {
       { name: 'from_name', type: 'TEXT' },
       { name: 'steps', type: 'TEXT' },
       { name: 'intent_keyword', type: 'TEXT' },
-      { name: 'bypass_keyword', type: "TEXT DEFAULT 'Khania'" }
+      { name: 'bypass_keyword', type: "TEXT DEFAULT 'Khania'" },
+      { name: 'scheduled_start_at', type: 'TIMESTAMP WITH TIME ZONE' }
     ];
 
     for (const col of newSeqCols) {
