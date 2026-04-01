@@ -283,7 +283,7 @@ export async function pollImap(mailboxId: string) {
           }
           await connection.addFlags(uid, ['\\Seen']);
         }
- else {
+        else {
           // No sequence info, just mark as seen
           await connection.addFlags(uid, ['\\Seen']);
         }

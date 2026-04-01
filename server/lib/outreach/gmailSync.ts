@@ -88,9 +88,6 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     if (originalEmail) {
       console.log(`[Gmail] Found reply for Contact ${originalEmail.contact_id} (Thread: ${msg.threadId})`);
 
-      // Mark original email as replied
-      await db.run("UPDATE outreach_individual_emails SET is_reply = true::boolean WHERE id = ?", originalEmail.id);
-
       // 4. Fetch Sequence Settings
       const sequenceSettings = originalEmail.sequence_id
         ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass, bypass_keyword FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any
