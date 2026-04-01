@@ -507,13 +507,27 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
+  // INJECT SIGNATURE
+  let bodyWithSignature = email.body_html || "";
+  const signatureRegex = /\{\{\s*signature\s*\}\}/gi;
+  if (signatureRegex.test(bodyWithSignature)) {
+    const signatureSnippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND type = 'signature' LIMIT 1").get(email.project_id) as any;
+    if (signatureSnippet) {
+      console.log(`[processEmail] Injecting signature for project ${email.project_id}`);
+      bodyWithSignature = bodyWithSignature.replace(signatureRegex, signatureSnippet.body || "");
+    } else {
+      console.warn(`[processEmail] {{signature}} tag found but no signature snippet configured for project ${email.project_id}`);
+      bodyWithSignature = bodyWithSignature.replace(signatureRegex, "");
+    }
+  }
+
   // INJECT TRACKING PIXEL
   const backendUrl = process.env.BACKEND_URL;
   if (!backendUrl) {
     console.warn(`[Tracking] BACKEND_URL environment variable is MISSING. Open tracking will fall back to localhost and likely fail in production.`);
   }
   const trackingPixel = `\n<img src="${backendUrl || "http://localhost:8080"}/api/tracking/open?emailId=${emailId}" width="1" height="1" style="display:none;" alt="" />`;
-  const bodyWithTracking = (email.body_html || "") + trackingPixel;
+  const bodyWithTracking = bodyWithSignature + trackingPixel;
 
   // Use resilient attachment resolver to handle missing files on ephemeral hosts
   const attachments = await resolveAttachments(email.attachments);

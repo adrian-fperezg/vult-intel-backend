@@ -15,7 +15,8 @@ import {
   Redo,
   CloudLightning,
   Paperclip,
-  Eye
+  Eye,
+  PenLine
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -189,6 +190,13 @@ export default function TipTapEditor({
           title="Redo"
         >
           <Redo className="size-4" />
+        </MenuButton>
+
+        <MenuButton 
+          onClick={() => editor.chain().focus().insertContent('{{signature}}').run()}
+          title="Insert Signature"
+        >
+          <PenLine className="size-4" />
         </MenuButton>
 
         {onAttachFile && (

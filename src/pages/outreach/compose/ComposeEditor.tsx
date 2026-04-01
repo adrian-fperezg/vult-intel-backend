@@ -95,7 +95,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
         contact_id: '',
         to_email: '',
         subject: '',
-        body_html: '',
+        body_html: '<p><br></p><p>{{signature}}</p>',
         scheduled_at: '',
         from_email: identities[0]?.email || '',
         from_name: identities[0]?.name || ''
@@ -144,7 +144,8 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
     try {
       const formData = new FormData();
       Object.entries(form).forEach(([key, value]) => {
-        if (value) formData.append(key, value as any);
+        const sanitizedValue = (key === 'scheduled_at' && value === '') ? null : value;
+        if (sanitizedValue !== null) formData.append(key, sanitizedValue as any);
       });
       attachments.forEach(file => {
         formData.append('attachments', file as any);
@@ -160,7 +161,8 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
         if (attachments.length > 0) {
           await updateIndividualEmail(emailId, formData);
         } else {
-          await updateIndividualEmail(emailId, { ...form });
+          const sanitizedPayload = { ...form, scheduled_at: form.scheduled_at === '' ? null : form.scheduled_at };
+          await updateIndividualEmail(emailId, sanitizedPayload);
         }
         if (showToast) toast.success('Draft saved');
         setAttachments([]); // Clear new attachments after successful upload
@@ -215,7 +217,8 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
       if (emailId === 'new') {
         const formData = new FormData();
         Object.entries(form).forEach(([key, value]) => {
-          if (value) formData.append(key, value as any);
+          const sanitizedValue = (key === 'scheduled_at' && value === '') ? null : value;
+          if (sanitizedValue !== null) formData.append(key, sanitizedValue as any);
         });
         attachments.forEach(file => {
           formData.append('attachments', file as any);
@@ -225,7 +228,8 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
         const created = await createIndividualEmail(formData);
         targetId = created.id; 
       } else {
-        await updateIndividualEmail(emailId, { ...form });
+        const sanitizedPayload = { ...form, scheduled_at: form.scheduled_at === '' ? null : form.scheduled_at };
+        await updateIndividualEmail(emailId, sanitizedPayload);
       }
 
       await sendIndividualEmail(targetId, form.scheduled_at || undefined);
@@ -523,6 +527,7 @@ export default function ComposeEditor({ emailId, onClose, refreshSidebar }: Comp
               disabled={isReadOnly}
               onOptimize={handleOptimize}
               isOptimizing={isOptimizing}
+              variables={['first_name', 'last_name', 'company', 'title', 'signature']}
             />
           </div>
 

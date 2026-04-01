@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Monitor, Smartphone, Mail, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../../lib/utils';
 import { useSettings } from '../../../contexts/SettingsContext';
+import { useOutreachApi } from '../../../hooks/useOutreachApi';
 import { parsePreviewVariables } from '../../../utils/outreach/previewParser';
 
 interface EmailPreviewModalProps {
@@ -16,13 +17,37 @@ interface EmailPreviewModalProps {
 
 export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com", recipientData }: EmailPreviewModalProps) {
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
+  const { fetchSnippets, activeProjectId } = useOutreachApi();
+  const [signature, setSignature] = useState("");
   const { theme } = useSettings();
+
+  useEffect(() => {
+    const getSignature = async () => {
+      try {
+        const snippets = await fetchSnippets();
+        if (snippets) {
+          const sigSnippet = snippets.find((s: any) => s.type === 'signature');
+          if (sigSnippet) setSignature(sigSnippet.body);
+        }
+      } catch (error) {
+        console.error("Error fetching signature:", error);
+      }
+    };
+
+    // Only fetch if modal is open, we have a project, and the content likely needs a signature
+    const needsSignature = (body?.includes('{{signature}}') || subject?.includes('{{signature}}'));
+    if (isOpen && activeProjectId && needsSignature && !signature) {
+      getSignature();
+    }
+  }, [isOpen, activeProjectId, fetchSnippets, body, subject, signature]);
+
+  const mergedRecipientData = { ...recipientData, signature };
 
   const recipientName = recipientData ? `${recipientData.first_name || ''} ${recipientData.last_name || ''}`.trim() || recipientData.email : null;
   const displayTo = recipientData?.email || to;
 
-  const parsedSubject = parsePreviewVariables(subject || "(No Subject)", recipientData);
-  const parsedBody = parsePreviewVariables(body || "<p>(Empty Body)</p>", recipientData);
+  const parsedSubject = parsePreviewVariables(subject || "(No Subject)", mergedRecipientData);
+  const parsedBody = parsePreviewVariables(body || "<p>(Empty Body)</p>", mergedRecipientData);
 
   if (!isOpen) return null;
 

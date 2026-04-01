@@ -54,6 +54,11 @@ export function parsePreviewVariables(content: string, recipientData?: Record<st
       return MOCK_DATA[key];
     }
 
+    // 4. Special handling for {{signature}}
+    if (key === 'signature') {
+      return normalizedRecipient.signature || "";
+    }
+
     // Handle nested or complex tags if necessary (simple string replacement for now)
     return match;
   });

@@ -41,6 +41,7 @@ export interface AnalyticsData {
     reply: number;
   }[];
 }
+
 /**
  * Central hook for all Outreach API calls.
  *
@@ -575,6 +576,67 @@ export function useOutreachApi() {
     [postFormData]
   );
 
+  // ── Snippets ─────────────────────────────────────────────────────────────
+  const fetchSnippets = useCallback(() => get<any[]>('/snippets'), [get]);
+
+  const createSnippet = useCallback(
+    (data: { name: string; body: string; vars?: string[]; type?: string }) =>
+      post<any>('/snippets', data),
+    [post]
+  );
+
+  const updateSnippet = useCallback(
+    (id: string, data: { name?: string; body?: string; vars?: string[]; type?: string }) =>
+      patch<any>(`/snippets/${id}`, data),
+    [patch]
+  );
+
+  const deleteSnippet = useCallback(
+    (id: string) => del(`/snippets/${id}`),
+    [del]
+  );
+
+  // ── Domain Verification ──────────────────────────────────────────────────
+  const fetchVerifiedDomains = useCallback(() => get<any[]>('/verified-domains'), [get]);
+
+  const addVerifiedDomain = useCallback(
+    (domain: string) => post<any>('/verified-domains', { domain }),
+    [post]
+  );
+
+  const verifyDomain = useCallback(
+    (id: string) => post<any>(`/verified-domains/${id}/verify`, {}),
+    [post]
+  );
+
+  const deleteVerifiedDomain = useCallback(
+    (id: string) => del(`/verified-domains/${id}`),
+    [del]
+  );
+
+  // ── Aliases ──────────────────────────────────────────────────────────────
+  const addAlias = useCallback(
+    (mailboxId: string, email: string, name?: string) =>
+      post<any>(`/mailboxes/${mailboxId}/aliases`, { email, name }),
+    [post]
+  );
+
+  const fetchAliases = useCallback(
+    (mailboxId: string) => get<any[]>(`/mailboxes/${mailboxId}/aliases`),
+    [get]
+  );
+
+  const syncGmailAliases = useCallback(
+    (mailboxId: string) => post<any>(`/mailboxes/${mailboxId}/sync-aliases`, {}),
+    [post]
+  );
+
+  const removeSequenceRecipient = useCallback(
+    (sequenceId: string, contactId: string) =>
+      del(`/sequences/${sequenceId}/recipients/${contactId}`),
+    [del]
+  );
+
   return {
     activeProjectId,
     // Campaigns
@@ -597,8 +659,7 @@ export function useOutreachApi() {
     fetchStepAnalytics,
     fetchSequenceStats,
     addSequenceRecipients,
-    removeSequenceRecipient: (sequenceId: string, contactId: string) => 
-      del(`/sequences/${sequenceId}/recipients/${contactId}`),
+    removeSequenceRecipient,
     getGlobalLimitStatus,
     fetchGlobalStats,
     // Contacts
@@ -626,10 +687,10 @@ export function useOutreachApi() {
     disconnectMailbox,
     connectGmail,
     // Snippets
-    fetchSnippets: () => get<any[]>('/snippets'),
-    createSnippet: (data: { name: string; body: string; vars?: string[]; type?: string }) => post<any>('/snippets', data),
-    updateSnippet: (id: string, data: { name?: string; body?: string; vars?: string[]; type?: string }) => patch<any>(`/snippets/${id}`, data),
-    deleteSnippet: (id: string) => del(`/snippets/${id}`),
+    fetchSnippets,
+    createSnippet,
+    updateSnippet,
+    deleteSnippet,
     // Analytics
     fetchAnalytics,
     // Contact Lists & Suppression
@@ -665,20 +726,13 @@ export function useOutreachApi() {
     verifyEmailsBulk,
     connectSmtp,
     fetchIdentities,
-    addAlias: (mailboxId: string, email: string, name?: string) => 
-      post<any>(`/mailboxes/${mailboxId}/aliases`, { email, name }),
-    fetchAliases: (mailboxId: string) => 
-      get<any[]>(`/mailboxes/${mailboxId}/aliases`),
-    syncGmailAliases: (mailboxId: string) => 
-      post<any>(`/mailboxes/${mailboxId}/sync-aliases`, {}),
+    addAlias,
+    fetchAliases,
+    syncGmailAliases,
     // Domain Verification
-    fetchVerifiedDomains: () => 
-      get<any[]>('/verified-domains'),
-    addVerifiedDomain: (domain: string) => 
-      post<any>('/verified-domains', { domain }),
-    verifyDomain: (id: string) => 
-      post<any>(`/verified-domains/${id}/verify`, {}),
-    deleteVerifiedDomain: (id: string) => 
-      del(`/verified-domains/${id}`),
+    fetchVerifiedDomains,
+    addVerifiedDomain,
+    verifyDomain,
+    deleteVerifiedDomain,
   };
 }

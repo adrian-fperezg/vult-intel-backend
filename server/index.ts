@@ -1402,6 +1402,9 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
         // PostgreSQL can handle native booleans (through pg pg-pool), but 1/0 is broadly safe for mapped numeric booleans in sqlite
         if (typeof val === 'boolean' && !db.isPostgres) {
           filteredUpdates[field] = val ? 1 : 0;
+        } else if (field === 'scheduled_start_at' && val === "") {
+          // STRICT FIX: Prevent Postgres TIMESTAMP crash on empty string
+          filteredUpdates[field] = null;
         } else {
           filteredUpdates[field] = val;
         }
@@ -2572,7 +2575,7 @@ app.post("/api/outreach/compose", upload.array('attachments', 5), async (req: Au
     body_html || "",
     JSON.stringify(attachments),
     status || "draft",
-    scheduled_at || null,
+    (scheduled_at && typeof scheduled_at === 'string' && scheduled_at.trim() !== "") ? scheduled_at : null,
     from_email || null,
     from_name || null,
   );
@@ -2630,7 +2633,9 @@ app.patch("/api/outreach/compose/:id", upload.array('attachments', 5), async (re
   }
   if (scheduled_at !== undefined) {
     fields.push("scheduled_at = ?");
-    values.push(scheduled_at);
+    // Ensure "" becomes null for Postgres TIMESTAMP columns
+    const sanitizedScheduled = (typeof scheduled_at === 'string' && scheduled_at.trim() === "") ? null : (scheduled_at || null);
+    values.push(sanitizedScheduled);
   }
   if (from_name !== undefined) {
     fields.push("from_name = ?");
@@ -2719,12 +2724,13 @@ app.post("/api/outreach/compose/:id/send", async (req: AuthRequest, res) => {
       return res.status(400).json({ error: "No mailbox associated with this email. Please select a mailbox." });
     }
 
-    if (scheduled_at) {
+    const isScheduled = scheduled_at && typeof scheduled_at === 'string' && scheduled_at.trim() !== "";
+    if (isScheduled) {
       console.log(`[OUTREACH] Scheduling email ${id} for ${scheduled_at}`);
       const delay = Math.max(0, new Date(scheduled_at).getTime() - Date.now());
       await db.prepare(
         "UPDATE outreach_individual_emails SET status = ?, scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      ).run("scheduled", scheduled_at, id);
+      ).run("scheduled", scheduled_at || null, id);
 
       await emailQueue.add(`send-email-${id}`, { emailId: id }, { delay });
 
