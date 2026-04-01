@@ -532,8 +532,23 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       const replacementRegex = new RegExp(`\\{\\{${escapedTagName}\\}\\}`, 'gi');
 
       if (snippet) {
-         bodyWithSignature = bodyWithSignature.replace(replacementRegex, snippet.body || "");
-         console.log(`[processEmail] Successfully replaced {{${tagName}}} with dedicated snippet.`);
+         let sanitizedSig = snippet.body || "";
+         
+         // 1. Replace <p> tags with styled <div> tags to remove default vertical margins
+         sanitizedSig = sanitizedSig.replace(/<p>/gi, '<div style="margin: 0; padding: 0;">');
+         sanitizedSig = sanitizedSig.replace(/<\/p>/gi, '</div>');
+
+         // 2. Convert raw newlines to single <br> tags
+         sanitizedSig = sanitizedSig.replace(/\r?\n/g, '<br>');
+
+         // 3. Collapse multiple consecutive <br> tags into a single <br> to prevent extra vertical gaps
+         sanitizedSig = sanitizedSig.replace(/(<br\s*\/?>){2,}/gi, '<br>');
+
+         // 4. Wrap the entire signature in a <div> with forced zero margins and tight line-height
+         const finalSignatureHtml = `<div style="margin: 0; padding: 0; line-height: 1.2;">${sanitizedSig}</div>`;
+
+         bodyWithSignature = bodyWithSignature.replace(replacementRegex, finalSignatureHtml);
+         console.log(`[processEmail] Successfully replaced {{${tagName}}} with sanitized snippet.`);
       } else {
          console.warn(`[processEmail] Signature tag {{${tagName}}} found but no matching snippet found for project ${email.project_id}`);
          bodyWithSignature = bodyWithSignature.replace(replacementRegex, "");
