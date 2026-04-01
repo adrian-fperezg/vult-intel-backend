@@ -77,6 +77,7 @@ interface StepNodeProps {
   setActiveStepId: (id: string | null) => void;
   onPreview: (subject: string, body: string) => void;
   analytics?: Record<string, any>;
+  handleActivate: () => void;
 }
 
 function StepNode({
@@ -93,7 +94,8 @@ function StepNode({
   activeStepId,
   setActiveStepId,
   onPreview,
-  analytics
+  analytics,
+  handleActivate
 }: StepNodeProps) {
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
@@ -336,11 +338,9 @@ function StepNode({
                           {/* BOTÓN 1: LANZAR AHORA */}
                           <button
                             onClick={() => {
-                              // 1. Borramos cualquier fecha programada
                               onUpdate(step.id, { scheduled_start_at: undefined });
-                              // 2. Ejecutamos la activación (asegúrate de que esta función sea la que llama a tu API)
                               if (window.confirm("Launch this sequence immediately?")) {
-                                handleActivateSequence();
+                                handleActivate(); // Corregido el nombre
                               }
                             }}
                             className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-lg text-[9px] uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-teal-500/20"
@@ -355,15 +355,13 @@ function StepNode({
                                 alert("Error: Please select a date and time in the calendar first.");
                                 return;
                               }
-                              // Ejecutamos la activación respetando la fecha del input
-                              handleActivateSequence();
+                              handleActivate(); // Corregido el nombre
                             }}
                             className="flex-1 bg-white/5 hover:bg-white/10 text-teal-400 font-bold py-2.5 rounded-lg border border-teal-500/30 text-[9px] uppercase tracking-widest transition-all active:scale-95"
                           >
                             Schedule Sequence
                           </button>
                         </div>
-
                         <p className="text-[9px] text-slate-500 mt-2 italic flex items-center gap-1">
                           <AlertCircle className="size-2.5" />
                           Immediate ignores the calendar. Schedule respects the exact time shown above.
@@ -523,6 +521,7 @@ function StepNode({
                   setActiveStepId={setActiveStepId}
                   onPreview={onPreview}
                   analytics={analytics}
+                  handleActivate={handleActivate}
                 />
               ) : (
                 <button
@@ -559,6 +558,7 @@ function StepNode({
                   setActiveStepId={setActiveStepId}
                   onPreview={onPreview}
                   analytics={analytics}
+                  handleActivate={handleActivate}
                 />
               ) : (
                 <button
@@ -591,6 +591,7 @@ function StepNode({
               setActiveStepId={setActiveStepId}
               onPreview={onPreview}
               analytics={analytics}
+              handleActivate={handleActivate}
             />
           )}
           {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
@@ -1151,15 +1152,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
               </TealButton>
             </div>
           )}
-
-          {sequence?.status === 'draft' && (
-            <TealButton
-              className="h-[34px] px-6 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-teal-500/5"
-              onClick={handleActivate}
-            >
-              <Play className="size-3.5" /> Launch
-            </TealButton>
-          )}
         </div>
       </header>
 
@@ -1187,6 +1179,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   setActiveStepId={setActiveStepId}
                   onPreview={handlePreview}
                   analytics={stepAnalytics}
+                  handleActivate={handleActivate}
                 />
               ) : (
                 <div className="flex flex-col items-center py-20">
