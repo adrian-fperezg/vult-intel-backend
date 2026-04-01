@@ -507,17 +507,37 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
-  // INJECT SIGNATURE
+  // INJECT SIGNATURES (Enhanced for dynamic sig_... tags)
   let bodyWithSignature = email.body_html || "";
-  const signatureRegex = /\{\{\s*signature\s*\}\}/gi;
-  if (signatureRegex.test(bodyWithSignature)) {
-    const signatureSnippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND type = 'signature' LIMIT 1").get(email.project_id) as any;
-    if (signatureSnippet) {
-      console.log(`[processEmail] Injecting signature for project ${email.project_id}`);
-      bodyWithSignature = bodyWithSignature.replace(signatureRegex, signatureSnippet.body || "");
-    } else {
-      console.warn(`[processEmail] {{signature}} tag found but no signature snippet configured for project ${email.project_id}`);
-      bodyWithSignature = bodyWithSignature.replace(signatureRegex, "");
+  const dynamicSigRegex = /\{\{(sig_[A-Za-z0-9_]+|signature)\}\}/gi;
+  const sigMatches = [...bodyWithSignature.matchAll(dynamicSigRegex)];
+  
+  if (sigMatches.length > 0) {
+    const uniqueTagNames = [...new Set(sigMatches.map(m => m[1]))]; // Preserve original case for more reliable mapping if needed, though lookup is case-insensitive for 'signature'
+    console.log(`[processEmail] Detected signature tags:`, uniqueTagNames);
+
+    for (const tagName of uniqueTagNames) {
+      let snippet: any = null;
+      if (tagName.toLowerCase() === 'signature') {
+        // Default project-wide signature
+        console.log(`[processEmail] Resolving default signature for project ${email.project_id}`);
+        snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND type = 'signature' LIMIT 1").get(email.project_id) as any;
+      } else {
+        // Specific named signature snippet
+        console.log(`[processEmail] Resolving specific signature snippet: ${tagName} for project ${email.project_id}`);
+        snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND name = ? LIMIT 1").get(email.project_id, tagName) as any;
+      }
+
+      const escapedTagName = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const replacementRegex = new RegExp(`\\{\\{${escapedTagName}\\}\\}`, 'gi');
+
+      if (snippet) {
+         bodyWithSignature = bodyWithSignature.replace(replacementRegex, snippet.body || "");
+         console.log(`[processEmail] Successfully replaced {{${tagName}}} with dedicated snippet.`);
+      } else {
+         console.warn(`[processEmail] Signature tag {{${tagName}}} found but no matching snippet found for project ${email.project_id}`);
+         bodyWithSignature = bodyWithSignature.replace(replacementRegex, "");
+      }
     }
   }
 
