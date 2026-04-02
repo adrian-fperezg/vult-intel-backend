@@ -2,9 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, MoreHorizontal, Play, Pause, Copy, Trash2,
-  Users, Mail, TrendingUp, Clock, CheckCircle2,
-  ChevronRight, Loader2, ListChecks, FolderOpen
-} from 'lucide-react';
+    Search, Users, Mail, TrendingUp, Clock, CheckCircle2,
+    ChevronRight, Loader2, ListChecks, FolderOpen,
+    Send, MousePointer2, MessageSquare, BarChart3,
+    Calendar, Layers
+  } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
+  ResponsiveContainer, Cell, LabelList 
+} from 'recharts';
 import { cn } from '@/lib/utils';
 import {
   OutreachBadge, OutreachMetricCard, OutreachEmptyState,
@@ -140,6 +146,31 @@ export default function OutreachCampaigns() {
     try { await api.deleteCampaign(id); } catch { await loadCampaigns(); }
   };
 
+  // Redesigned: Global KPIs
+  const totalSent = funnelStats.reduce((acc, s) => acc + (s.total_sent || 0), 0);
+  const totalOpens = funnelStats.reduce((acc, s) => acc + (s.total_opens || 0), 0);
+  const totalReplies = funnelStats.reduce((acc, s) => acc + (s.total_replies || 0), 0);
+  
+  const avgOpenRate = totalSent > 0 ? ((totalOpens / totalSent) * 100).toFixed(1) : "0";
+  const avgReplyRate = totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : "0";
+
+  // Recharts Data Transformation
+  const chartData = ['TOFU', 'MOFU', 'BOFU'].map(stage => {
+    const s = funnelStats.find(x => x.funnel_stage === stage) || { total_sent: 0, total_replies: 0 };
+    return {
+      name: stage,
+      sent: s.total_sent || 0,
+      replies: s.total_replies || 0,
+      rate: s.total_sent > 0 ? ((s.total_replies / s.total_sent) * 100).toFixed(1) : "0"
+    };
+  });
+
+  const getFunnelVariant = (stage: string) => {
+    if (stage === 'TOFU') return 'tofu';
+    if (stage === 'MOFU') return 'mofu';
+    return 'bofu';
+  };
+
   if (!api.activeProjectId) {
     return (
       <OutreachEmptyState
@@ -161,243 +192,359 @@ export default function OutreachCampaigns() {
   }
 
   return (
-    <div className="p-8 space-y-8 max-w-[1600px] mx-auto min-h-screen bg-[#0d1117] text-white">
-      {/* Header & Stats */}
-      <div className="flex flex-col gap-8">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
-              Outreach Campaigns
-              <OutreachBadge variant="teal" className="text-xs py-0.5 px-2">Funnel Analytics</OutreachBadge>
-            </h1>
-            <p className="text-slate-400 font-medium">Strategize and monitor your B2B sales funnel performance.</p>
+    <div className="p-8 space-y-10 max-w-[1600px] mx-auto min-h-screen bg-[#0d1117] text-white">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-black tracking-tight text-white flex items-center gap-4">
+            Campaigns
+            <div className="flex items-center gap-1 bg-teal-500/10 border border-teal-500/20 px-3 py-1 rounded-full">
+              <div className="size-2 rounded-full bg-teal-500 animate-pulse" />
+              <span className="text-[10px] font-black uppercase text-teal-400 tracking-widest">Live Performance</span>
+            </div>
+          </h1>
+          <p className="text-slate-400 font-medium text-lg">Aggregate B2B sales funnel intelligence and automation.</p>
+        </div>
+        <TealButton 
+          onClick={handleCreate}
+          className="h-14 px-8 rounded-2xl shadow-2xl shadow-teal-500/20 active:scale-95 transition-all text-base"
+        >
+          <Plus className="size-5 mr-3 shrink-0" />
+          New Campaign
+        </TealButton>
+      </div>
+
+      {/* SECTION 1: GLOBAL KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <OutreachMetricCard 
+          label="Total Funnel Volume" 
+          value={totalSent.toLocaleString()} 
+          icon={<Send className="text-sky-400" />}
+          sub="Emails sent across all stages"
+          teal
+        />
+        <OutreachMetricCard 
+          label="Avg. Open Rate" 
+          value={`${avgOpenRate}%`} 
+          icon={<MousePointer2 className="text-amber-400" />}
+          trend="up"
+          trendValue="+2.4%"
+        />
+        <OutreachMetricCard 
+          label="Avg. Reply Rate" 
+          value={`${avgReplyRate}%`} 
+          icon={<MessageSquare className="text-emerald-400" />}
+          trend="up"
+          trendValue="+0.8%"
+        />
+        <OutreachMetricCard 
+          label="Conversion Engine" 
+          value={campaigns.filter(c => c.status === 'active').length.toString()} 
+          icon={<Play className="text-purple-400" />}
+          sub="Currently active campaigns"
+        />
+      </div>
+
+      {/* SECTION 2: FUNNEL PERFORMANCE VISUALIZATION */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-[#161b22] border border-[#30363d] rounded-[32px] p-8 space-y-6 shadow-xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-5">
+            <BarChart3 className="size-32" />
           </div>
-          <TealButton 
-            onClick={handleCreate}
-            className="h-12 px-6 rounded-xl shadow-lg shadow-teal-500/20 active:scale-95 transition-transform"
-          >
-            <Plus className="size-5 mr-3" />
-            New Campaign
-          </TealButton>
+          
+          <div className="flex items-center justify-between relative z-10">
+            <div className="space-y-1">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Layers className="size-5 text-teal-400" />
+                Funnel Throughput
+              </h3>
+              <p className="text-sm text-slate-500">Volume vs. Engagement by funnel stage</p>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest text-slate-500">
+               <div className="flex items-center gap-2">
+                 <div className="size-3 rounded-full bg-teal-500/20 border border-teal-500/50" />
+                 Sent
+               </div>
+               <div className="flex items-center gap-2">
+                 <div className="size-3 rounded-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.3)]" />
+                 Replies
+               </div>
+            </div>
+          </div>
+
+          <div className="h-[300px] w-full pt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#30363d" vertical={false} />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#8b949e', fontSize: 12, fontWeight: 700 }}
+                  dy={10}
+                />
+                <YAxis hide />
+                <Tooltip 
+                  cursor={{ fill: '#161b22', opacity: 0.5 }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-[#0d1117] border border-[#30363d] p-4 rounded-xl shadow-2xl">
+                          <p className="text-sm font-black text-white mb-2">{data.name} Analysis</p>
+                          <div className="space-y-1">
+                            <p className="text-xs text-slate-400 flex justify-between gap-8">Sent: <span className="text-white font-bold">{data.sent}</span></p>
+                            <p className="text-xs text-slate-400 flex justify-between gap-8">Replies: <span className="text-teal-400 font-bold">{data.replies}</span></p>
+                            <p className="text-[10px] font-black text-teal-500 pt-1 border-t border-white/5 mt-1">{data.rate}% Final Conversion</p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar dataKey="sent" radius={[8, 8, 8, 8]} barSize={40}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`sent-${index}`} fill="rgba(20,184,166,0.1)" stroke="rgba(20,184,166,0.2)" strokeWidth={1} />
+                  ))}
+                </Bar>
+                <Bar dataKey="replies" radius={[8, 8, 8, 8]} barSize={40}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`reply-${index}`} fill="#14b8a6" />
+                  ))}
+                  <LabelList 
+                    dataKey="rate" 
+                    position="top" 
+                    offset={10}
+                    formatter={(val: any) => `${val}%`}
+                    style={{ fill: '#14b8a6', fontSize: 10, fontWeight: 900 }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        {/* Funnel Navigation */}
-        <div className="flex items-center justify-between bg-[#161b22] border border-[#30363d] p-1.5 rounded-2xl w-fit">
-          {['ALL', 'TOFU', 'MOFU', 'BOFU'].map((stage) => (
-            <button
-              key={stage}
-              onClick={() => setFunnelStage(stage as any)}
-              className={cn(
-                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2",
-                funnelStage === stage 
-                  ? "bg-teal-500 text-white shadow-xl shadow-teal-500/20" 
-                  : "text-slate-400 hover:text-white"
-              )}
-            >
-              {stage === 'ALL' && <ListChecks className="size-4" />}
-              {stage}
-              <span className={cn(
-                "ml-1 text-[10px] px-1.5 py-0.5 rounded-lg",
-                funnelStage === stage ? "bg-white/20" : "bg-white/5"
-              )}>
-                {stage === 'ALL' 
-                  ? campaigns.length 
-                  : campaigns.filter(c => c.funnel_stage === stage).length
-                }
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Funnel KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <OutreachMetricCard 
-            label="Total Sent" 
-            value={currentFunnelStat.total_sent.toLocaleString()} 
-            icon={<Mail className="text-teal-400" />}
-            trend="up"
-            trendValue="+12.5%"
-          />
-          <OutreachMetricCard 
-            label="Open Rate" 
-            value={`${openRate}%`} 
-            icon={<TrendingUp className="text-blue-400" />}
-            trend="up"
-            trendValue="+2.1%"
-          />
-          <OutreachMetricCard 
-            label="Reply Rate" 
-            value={`${replyRate}%`} 
-            icon={<Users className="text-purple-400" />}
-            trend="down"
-            trendValue="-0.4%"
-          />
-          <OutreachMetricCard 
-            label="Active Campaigns" 
-            value={filteredCampaigns.filter(c => c.status === 'active').length.toString()} 
-            icon={<Play className="text-green-400" />}
-          />
+        <div className="bg-gradient-to-br from-[#161b22] to-[#0d1117] border border-[#30363d] rounded-[32px] p-8 flex flex-col justify-between shadow-xl">
+           <div className="space-y-6">
+             <div className="space-y-1">
+               <h3 className="text-xl font-bold flex items-center gap-2">
+                 <TrendingUp className="size-5 text-teal-400" />
+                 Engine Optimization
+               </h3>
+               <p className="text-sm text-slate-500">Suggested improvements based on data</p>
+             </div>
+             
+             <div className="space-y-4">
+               {chartData.map(d => {
+                 const lowRate = parseFloat(d.rate) < 2;
+                 return (
+                   <div key={d.name} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "size-10 rounded-xl flex items-center justify-center font-black text-xs border shrink-0",
+                          d.name === 'TOFU' ? "bg-sky-500/10 border-sky-500/20 text-sky-400" :
+                          d.name === 'MOFU' ? "bg-amber-500/10 border-amber-500/20 text-amber-400" :
+                          "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                        )}>
+                          {d.name[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">{d.name} Pipeline</p>
+                          <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{d.sent} Prospects Active</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={cn("text-sm font-black", lowRate ? "text-amber-500" : "text-teal-400")}>{d.rate}%</p>
+                        <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">{lowRate ? "Needs Focus" : "Healthy"}</p>
+                      </div>
+                   </div>
+                 );
+               })}
+             </div>
+           </div>
+           
+           <div className="pt-6">
+             <button className="w-full h-12 rounded-xl bg-white/5 border border-white/10 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white hover:bg-teal-500 hover:border-teal-400 transition-all">
+               Generate AI Audit Report
+             </button>
+           </div>
         </div>
       </div>
 
-      {/* Campaigns Grid */}
-      {isLoading ? (
-        <div className="h-[400px] flex flex-col items-center justify-center gap-4 bg-[#161b22]/50 rounded-3xl border border-[#30363d] backdrop-blur-xl">
-          <div className="relative">
-            <div className="size-16 rounded-full border-4 border-teal-500/10 border-t-teal-500 animate-spin" />
-            <Loader2 className="size-6 text-teal-400 animate-pulse absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-          </div>
-          <span className="text-sm font-bold text-slate-400 animate-pulse">Loading funnel performance...</span>
-        </div>
-      ) : filteredCampaigns.length === 0 ? (
-        <OutreachEmptyState
-          icon={<Mail />}
-          title="No campaigns found"
-          description={funnelStage === 'ALL' ? "Create your first outreach campaign to start generating leads." : `No ${funnelStage} campaigns found. Start one to fill this stage.`}
-          action={<TealButton onClick={handleCreate}><Plus className="size-4" /> New Campaign</TealButton>}
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          <AnimatePresence mode="popLayout">
-            {filteredCampaigns.map((campaign) => {
-              const isActive = selected === campaign.id;
-              const campaignOpenRate = campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0';
-              const campaignReplyRate = campaign.sent_count > 0 ? ((campaign.replied_count / campaign.sent_count) * 100).toFixed(1) : '0';
-
-              return (
-                <motion.div
-                  key={campaign.id}
-                  layout
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.97 }}
-                  onClick={() => setSelected(isActive ? null : campaign.id)}
-                  className={cn(
-                    'rounded-3xl border p-6 cursor-pointer transition-all group relative bg-[#161b22] border-[#30363d] hover:border-teal-500/50',
-                    isActive && 'ring-2 ring-teal-500/20 border-teal-500'
-                  )}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                       <div className="flex items-center gap-2">
-                        <OutreachBadge variant={STATUS_CONFIG[campaign.status].variant}>
-                          {STATUS_CONFIG[campaign.status].label}
-                        </OutreachBadge>
-                        <span className={cn(
-                          "text-[10px] font-black tracking-widest px-2 py-0.5 rounded-md uppercase",
-                          campaign.funnel_stage === 'TOFU' ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" :
-                          campaign.funnel_stage === 'MOFU' ? "bg-orange-500/10 text-orange-400 border border-orange-500/20" :
-                          "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                        )}>
-                          {campaign.funnel_stage}
-                        </span>
-                      </div>
-                      <h3 className="text-lg font-bold text-white group-hover:text-teal-400 transition-colors line-clamp-1">
-                        {campaign.name}
-                      </h3>
-                    </div>
-                    <div className="relative">
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenMenu(openMenu === campaign.id ? null : campaign.id);
-                        }}
-                        className="p-2 hover:bg-white/10 rounded-xl transition-colors text-slate-400"
-                      >
-                        <MoreHorizontal className="size-5" />
-                      </button>
-                      
-                      {openMenu === campaign.id && (
-                        <div className="absolute right-0 mt-2 w-48 bg-[#1c2128] border border-[#30363d] rounded-2xl shadow-2xl py-2 z-20 overflow-hidden backdrop-blur-xl">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleTogglePause(campaign.id); }}
-                            className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-teal-500/10 hover:text-teal-400 transition-colors flex items-center gap-3"
-                          >
-                            {campaign.status === 'active' ? <Pause className="size-4" /> : <Play className="size-4" />}
-                            {campaign.status === 'active' ? 'Pause Campaign' : 'Resume Campaign'}
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDuplicate(campaign.id); }}
-                            className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-teal-500/10 hover:text-teal-400 transition-colors flex items-center gap-3"
-                          >
-                            <Copy className="size-4" /> Duplicate
-                          </button>
-                          <div className="h-px bg-[#30363d] my-1" />
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setDeleteDialog(campaign.id); setOpenMenu(null); }}
-                            className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-3"
-                          >
-                            <Trash2 className="size-4" /> Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-white/5">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Sent</span>
-                      <p className="text-lg font-black text-white">{campaign.sent_count}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Open</span>
-                      <p className="text-lg font-black text-teal-400">
-                        {campaignOpenRate}%
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reply</span>
-                      <p className="text-lg font-black text-blue-400">
-                        {campaignReplyRate}%
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Expanded Detail Row */}
-                  <AnimatePresence>
-                    {isActive && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="mt-5 pt-5 border-t border-white/5 grid grid-cols-3 md:grid-cols-6 gap-3">
-                          {[
-                            { label: 'Delivered', value: `${campaign.sent_count}` },
-                            { label: 'Open Rate', value: `${campaignOpenRate}%`, teal: true },
-                            { label: 'Click Rate', value: `${(campaign as any).clickRate || 0}%` },
-                            { label: 'Reply Rate', value: `${campaignReplyRate}%` },
-                            { label: 'Bounced', value: '0%' },
-                            { label: 'Unsub', value: '0%' },
-                          ].map(({ label, value, teal }) => (
-                            <div key={label} className="text-center">
-                              <p className={cn('text-lg font-bold tabular-nums', teal ? 'text-teal-400' : 'text-white')}>{value}</p>
-                              <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-0.5">{label}</p>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-4 flex items-center gap-3">
-                          <TealButton size="sm" onClick={(e) => { e.stopPropagation(); setViewingAnalytics(campaign); }}>
-                            View Analytics
-                          </TealButton>
-                          <button className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-                            Edit Campaign
-                          </button>
-                          <button className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-                            Manage Leads
-                          </button>
-                        </div>
-                      </motion.div>
+      {/* SECTION 3: CAMPAIGNS TABLE */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-[32px] overflow-hidden shadow-2xl relative">
+        <div className="p-8 border-b border-[#30363d] flex items-center justify-between bg-white/[0.02]">
+           <div className="flex items-center gap-4">
+              <h3 className="text-xl font-bold">Campaign Inventory</h3>
+              <div className="flex items-center gap-2 h-8 px-2 bg-[#0d1117] rounded-lg border border-[#30363d]">
+                {['ALL', 'TOFU', 'MOFU', 'BOFU'].map((stage) => (
+                  <button
+                    key={stage}
+                    onClick={() => setFunnelStage(stage as any)}
+                    className={cn(
+                      "px-3 h-6 rounded-md text-[10px] font-black tracking-widest transition-all",
+                      funnelStage === stage 
+                        ? "bg-teal-500 text-white shadow-md shadow-teal-500/20" 
+                        : "text-slate-500 hover:text-slate-300"
                     )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+                  >
+                    {stage}
+                  </button>
+                ))}
+              </div>
+           </div>
+           <div className="flex items-center gap-3">
+              <div className="relative group">
+                <Search className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
+                <input 
+                  type="text" 
+                  placeholder="Search campaigns..." 
+                  className="h-10 pl-10 pr-4 bg-[#0d1117] border border-[#30363d] rounded-xl text-sm focus:outline-none focus:border-teal-500/50 transition-all w-64"
+                />
+              </div>
+           </div>
         </div>
-      )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/[0.01]">
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">Campaign Details</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">Funnel Stage</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">Status</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d] text-center">Performance</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d] text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#30363d]">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="py-20 text-center">
+                    <Loader2 className="size-8 text-teal-500 animate-spin mx-auto mb-4" />
+                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Hydrating data from engine...</span>
+                  </td>
+                </tr>
+              ) : filteredCampaigns.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-20 text-center">
+                     <Mail className="size-12 text-slate-700 mx-auto mb-4 opacity-50" />
+                     <h4 className="text-xl font-bold text-slate-500">Zero Campaigns Discovered</h4>
+                     <button onClick={handleCreate} className="mt-4 text-teal-400 font-bold hover:underline">Deploy your first campaign →</button>
+                  </td>
+                </tr>
+              ) : (
+                filteredCampaigns.map((campaign) => {
+                  const openRate = campaign.sent_count > 0 ? ((campaign.opened_count / campaign.sent_count) * 100).toFixed(1) : '0';
+                  const replyRate = campaign.sent_count > 0 ? ((campaign.replied_count / campaign.sent_count) * 100).toFixed(1) : '0';
+                  
+                  return (
+                    <motion.tr 
+                      key={campaign.id} 
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="hover:bg-white/[0.02] group/row transition-colors"
+                    >
+                      <td className="px-8 py-6">
+                        <div className="flex flex-col gap-1">
+                          <p className="text-base font-bold text-white group-hover/row:text-teal-400 transition-colors">{campaign.name}</p>
+                          <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                            <span className="flex items-center gap-1"><Calendar className="size-3" /> {campaign.createdAt}</span>
+                            <span className="flex items-center gap-1"><Users className="size-3" /> {campaign.leads} Leased</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-8 py-6">
+                        <OutreachBadge variant={getFunnelVariant(campaign.funnel_stage)}>
+                          {campaign.funnel_stage}
+                        </OutreachBadge>
+                      </td>
+                      <td className="px-8 py-6">
+                        <div className="flex items-center gap-2">
+                           <div className={cn(
+                             "size-2 rounded-full",
+                             campaign.status === 'active' ? "bg-green-500 animate-pulse" : "bg-slate-600"
+                           )} />
+                           <span className={cn(
+                             "text-[10px] font-black uppercase tracking-widest",
+                             campaign.status === 'active' ? "text-green-500" : "text-slate-500"
+                           )}>
+                             {campaign.status}
+                           </span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-6">
+                         <div className="flex items-center justify-center gap-10">
+                            <div className="text-center">
+                              <p className="text-sm font-black text-white">{campaign.sent_count}</p>
+                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">Sent</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm font-black text-teal-400">{openRate}%</p>
+                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">Open</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm font-black text-blue-400">{replyRate}%</p>
+                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">Reply</p>
+                            </div>
+                         </div>
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => setViewingAnalytics(campaign)}
+                            className="p-2.5 rounded-xl bg-[#0d1117] border border-[#30363d] text-slate-400 hover:text-white hover:border-teal-500/50 transition-all"
+                            title="Analytics"
+                          >
+                            <TrendingUp className="size-4" />
+                          </button>
+                          <div className="relative">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenu(openMenu === campaign.id ? null : campaign.id);
+                              }}
+                              className="p-2.5 rounded-xl bg-[#0d1117] border border-[#30363d] text-slate-400 hover:text-white hover:border-teal-500/50 transition-all"
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </button>
+                            
+                            {openMenu === campaign.id && (
+                              <div className="absolute right-0 mt-3 w-52 bg-[#1c2128] border border-[#30363d] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] py-2 z-30 overflow-hidden backdrop-blur-xl">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleTogglePause(campaign.id); }}
+                                  className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-300 hover:bg-teal-500/10 hover:text-teal-400 transition-colors flex items-center gap-3"
+                                >
+                                  {campaign.status === 'active' ? <Pause className="size-4" /> : <Play className="size-4" />}
+                                  {campaign.status === 'active' ? 'Pause Engine' : 'Resume Engine'}
+                                </button>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleDuplicate(campaign.id); }}
+                                  className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-300 hover:bg-teal-500/10 hover:text-teal-400 transition-colors flex items-center gap-3"
+                                >
+                                  <Copy className="size-4" /> Duplicate
+                                </button>
+                                <div className="h-px bg-[#30363d] my-1" />
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setDeleteDialog(campaign.id); setOpenMenu(null); }}
+                                  className="w-full px-4 py-2.5 text-left text-sm font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-3"
+                                >
+                                  <Trash2 className="size-4" /> Terminate
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <OutreachConfirmDialog
         isOpen={!!deleteDialog}

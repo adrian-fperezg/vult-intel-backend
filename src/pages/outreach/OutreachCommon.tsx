@@ -18,7 +18,10 @@ type BadgeVariant =
   | 'gray'       // OUT_OF_OFFICE, INACTIVE
   | 'blue'       // NEUTRAL
   | 'green'      // ACTIVE, DELIVERED
-  | 'purple';    // TRIAL
+  | 'purple'     // TRIAL
+  | 'tofu'       // Awareness (Sky Blue/Teal)
+  | 'mofu'       // Interest (Amber/Orange)
+  | 'bofu';      // Decision (Emerald/Green)
 
 const BADGE_STYLES: Record<BadgeVariant, string> = {
   teal:   'bg-teal-500/15 text-teal-400 border-teal-500/20',
@@ -29,6 +32,9 @@ const BADGE_STYLES: Record<BadgeVariant, string> = {
   blue:   'bg-blue-500/15 text-blue-400 border-blue-500/20',
   green:  'bg-green-500/15 text-green-400 border-green-500/20',
   purple: 'bg-purple-500/15 text-purple-400 border-purple-500/20',
+  tofu:   'bg-sky-500/15 text-sky-400 border-sky-500/20',
+  mofu:   'bg-amber-500/15 text-amber-400 border-amber-500/20',
+  bofu:   'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
 };
 
 interface OutreachBadgeProps {

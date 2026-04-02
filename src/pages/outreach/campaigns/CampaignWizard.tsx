@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Settings, Mail, Users, Zap, Search, 
   Upload, ChevronRight, ChevronLeft, Loader2,
-  CheckCircle2, AlertCircle, Trash2, Clock
+  CheckCircle2, AlertCircle, Trash2, Clock, Layers
 } from 'lucide-react';
 import { TealButton } from '../OutreachCommon';
 import TipTapEditor from '../components/TipTapEditor';
@@ -40,7 +40,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
     from_name: '',
     track_opens: true,
     track_clicks: true,
-    funnel_stage: 'TOFU' as 'TOFU' | 'MOFU' | 'BOFU',
+    funnel_stage: '' as any, // Start empty to enforce selection
   });
 
   const [content, setContent] = useState({
@@ -311,25 +311,47 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                   </div>
                 </div>
                 <div className="space-y-4">
-                  <div className="p-6 bg-teal-500/5 border border-teal-500/10 rounded-2xl space-y-4">
-                    <h4 className="text-sm font-bold text-teal-400">Funnel Strategy</h4>
-                    <p className="text-xs text-slate-400 -mt-2">Categorize this campaign to track its impact on your sales funnel.</p>
-                    <div className="flex p-1 bg-[#161b22] border border-[#30363d] rounded-xl">
-                      {['TOFU', 'MOFU', 'BOFU'].map((stage) => (
+                  <div className="p-8 bg-[#161b22] border border-[#30363d] rounded-[24px] space-y-6 shadow-sm">
+                    <div className="space-y-1">
+                      <h4 className="text-base font-bold text-white flex items-center gap-2">
+                        <Layers className="size-5 text-teal-400" />
+                        Funnel Placement
+                      </h4>
+                      <p className="text-sm text-slate-500">How does this campaign contribute to your B2B sales cycle?</p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      {[
+                        { id: 'TOFU', label: 'Top of Funnel', desc: 'Awareness & Outreach', variant: 'tofu' },
+                        { id: 'MOFU', label: 'Middle of Funnel', desc: 'Education & Interest', variant: 'mofu' },
+                        { id: 'BOFU', label: 'Bottom of Funnel', desc: 'Decision & Closing', variant: 'bofu' }
+                      ].map((stage) => (
                         <button
-                          key={stage}
+                          key={stage.id}
                           type="button"
-                          onClick={() => setSettings({ ...settings, funnel_stage: stage as any })}
+                          onClick={() => setSettings({ ...settings, funnel_stage: stage.id as any })}
                           className={cn(
-                            "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
-                            settings.funnel_stage === stage 
-                              ? "bg-teal-500 text-white shadow-lg shadow-teal-500/20" 
-                              : "text-slate-400 hover:text-slate-300"
+                            "relative p-5 rounded-2xl border text-left transition-all group overflow-hidden",
+                            settings.funnel_stage === stage.id 
+                              ? "bg-white/[0.03] border-teal-500/50 ring-1 ring-teal-500/50 shadow-[0_0_20px_rgba(20,184,166,0.1)]" 
+                              : "bg-[#0d1117] border-[#30363d] hover:border-[#424b55]"
                           )}
                         >
-                          {stage === 'TOFU' && 'TOFU (Awareness)'}
-                          {stage === 'MOFU' && 'MOFU (Interest)'}
-                          {stage === 'BOFU' && 'BOFU (Decision)'}
+                          {settings.funnel_stage === stage.id && (
+                            <div className="absolute top-3 right-3">
+                              <CheckCircle2 className="size-4 text-teal-400" />
+                            </div>
+                          )}
+                          <div className={cn(
+                            "size-10 rounded-xl flex items-center justify-center font-black text-xs border mb-4 transition-transform group-hover:scale-110",
+                            stage.id === 'TOFU' ? "bg-sky-500/10 border-sky-500/20 text-sky-400" :
+                            stage.id === 'MOFU' ? "bg-amber-500/10 border-amber-500/20 text-amber-400" :
+                            "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                          )}>
+                            {stage.id}
+                          </div>
+                          <p className="text-sm font-bold text-white mb-1">{stage.label}</p>
+                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-tighter">{stage.desc}</p>
                         </button>
                       ))}
                     </div>
@@ -552,6 +574,17 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                     <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">Contacts</p>
                     <p className="text-sm text-white font-semibold">{contacts.length} Prospects</p>
                   </div>
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5 col-span-2">
+                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">Strategy</p>
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "size-3 rounded-full",
+                        settings.funnel_stage === 'TOFU' ? "bg-sky-400" :
+                        settings.funnel_stage === 'MOFU' ? "bg-amber-400" : "bg-emerald-400"
+                      )} />
+                      <p className="text-sm text-white font-semibold">{settings.funnel_stage} Pipeline Optimization</p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-6">
@@ -607,6 +640,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 onClick={() => {
                   if (step === 'settings') {
                     if (!settings.name) return toast.error('Please enter a campaign name');
+                    if (!settings.funnel_stage) return toast.error('Please select a funnel stage');
                     setStep('content');
                   } else if (step === 'content') {
                     if (!content.subject) return toast.error('Please enter a subject line');
