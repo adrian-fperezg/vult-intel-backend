@@ -201,6 +201,10 @@ export const initDb = async () => {
         from_email TEXT,
         from_name TEXT,
         status TEXT DEFAULT 'draft',
+        sent_count INTEGER DEFAULT 0,
+        opened_count INTEGER DEFAULT 0,
+        replied_count INTEGER DEFAULT 0,
+        bounced_count INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -209,7 +213,11 @@ export const initDb = async () => {
     const campaignColsMigration = [
       { name: 'mailbox_id', type: 'TEXT' },
       { name: 'from_email', type: 'TEXT' },
-      { name: 'from_name', type: 'TEXT' }
+      { name: 'from_name', type: 'TEXT' },
+      { name: 'sent_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'opened_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'replied_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'bounced_count', type: 'INTEGER DEFAULT 0' }
     ];
 
     for (const col of campaignColsMigration) {

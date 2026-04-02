@@ -504,6 +504,17 @@ export function useOutreachApi() {
     return get<AnalyticsData>('/analytics', params);
   }, [get]);
 
+  const generateAiReport = useCallback((data: any) => post<any>('/ai/generate-report', data), [post]);
+
+  const exportAiReport = useCallback(async () => {
+    if (!activeProjectId) return;
+    const headers = await authHeaders();
+    const params = new URLSearchParams({ project_id: activeProjectId });
+    const res = await fetch(`${BASE_URL}/export/ai-report?${params}`, { headers });
+    if (!res.ok) throw new Error('Failed to export AI report');
+    return res.blob();
+  }, [activeProjectId, authHeaders]);
+
   const disconnectMailbox = useCallback(
     (id: string) => del(`/mailboxes/${id}`),
     [del],
@@ -745,5 +756,7 @@ export function useOutreachApi() {
     verifyDomain,
     deleteVerifiedDomain,
     importContactsCSV,
+    generateAiReport,
+    exportAiReport,
   };
 }

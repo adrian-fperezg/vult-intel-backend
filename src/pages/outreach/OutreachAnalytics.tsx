@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   BarChart2, TrendingUp, Users, Mail, MousePointer,
-  MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield, Loader2
+  MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield, Loader2,
+  Sparkles, Download, X
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -30,8 +31,11 @@ export default function OutreachAnalytics() {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportContent, setReportContent] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { fetchAnalytics, activeProjectId } = useOutreachApi();
+  const { fetchAnalytics, generateAiReport, exportAiReport, activeProjectId } = useOutreachApi();
 
   useEffect(() => {
     async function load() {
@@ -55,6 +59,39 @@ export default function OutreachAnalytics() {
     }
     load();
   }, [timeRange, activeProjectId, fetchAnalytics]);
+
+  const handleGenerateReport = async () => {
+    if (!data) return;
+    setIsGeneratingReport(true);
+    try {
+      const res = await generateAiReport({ stats: data, timeRange });
+      if (res && res.report) {
+        setReportContent(res.report);
+        setShowReportModal(true);
+      }
+    } catch (err) {
+      console.error("Report generation failed:", err);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    try {
+      const blob = await exportAiReport();
+      if (!blob) return;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `VultIntel_Outreach_Report_${new Date().toISOString().split('T')[0]}.md`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error("Export failed:", err);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -89,31 +126,46 @@ export default function OutreachAnalytics() {
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
-      <div className="px-8 py-6 space-y-8">
+      <div className="px-8 py-6 space-y-8 pb-16">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Analytics</h1>
             <p className="text-sm text-slate-400 mt-0.5">Performance across all campaigns and mailboxes</p>
           </div>
-          <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl p-1">
-            {(['7d', '30d', '90d'] as const).map(r => (
-              <button
-                key={r}
-                onClick={() => setTimeRange(r)}
-                className={cn(
-                  'px-4 py-1.5 rounded-lg text-xs font-bold transition-all',
-                  timeRange === r ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'text-slate-500 hover:text-white'
-                )}
-              >
-                {r}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl p-1">
+              {(['7d', '30d', '90d'] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setTimeRange(r)}
+                  className={cn(
+                    'px-4 py-1.5 rounded-lg text-xs font-bold transition-all',
+                    timeRange === r ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'text-slate-500 hover:text-white'
+                  )}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={handleGenerateReport}
+              disabled={isGeneratingReport}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingReport ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Sparkles className="size-3" />
+              )}
+              🌐 Powered by Gemini: Generar Reporte
+            </button>
           </div>
         </div>
 
-        {/* Top Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Top Metrics - Focused Core */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <OutreachMetricCard 
             label="Total Sent" 
             value={(data.total_sent ?? 0).toLocaleString()} 
@@ -128,7 +180,7 @@ export default function OutreachAnalytics() {
             icon={<TrendingUp />} 
             trend="neutral" 
             trendValue="vs average" 
-            sub="industry avg 21%" 
+            sub="Avg 21.5%" 
           />
           <OutreachMetricCard 
             label="Reply Rate" 
@@ -136,39 +188,8 @@ export default function OutreachAnalytics() {
             icon={<MessageSquare />} 
             trend="neutral" 
             trendValue="vs average" 
+            sub="Avg 3.2%"
           />
-          <OutreachMetricCard 
-            label="Daily Avg" 
-            value={(data.emails_sent_today ?? 0).toLocaleString()} 
-            icon={<MousePointer />} 
-            trend="neutral" 
-            trendValue="today" 
-          />
-        </div>
-
-        {/* Counts Row */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Active Sequences</p>
-              <p className="text-xl font-bold text-white">{data.active_sequences ?? 0}</p>
-            </div>
-            <BarChart2 className="size-5 text-teal-500/50" />
-          </div>
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Total Recipients</p>
-              <p className="text-xl font-bold text-white">{(data.total_recipients ?? 0).toLocaleString()}</p>
-            </div>
-            <Users className="size-5 text-teal-500/50" />
-          </div>
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Pending Tasks</p>
-              <p className="text-xl font-bold text-white">{data.pending_tasks ?? 0}</p>
-            </div>
-            <Loader2 className="size-5 text-teal-500/50" />
-          </div>
         </div>
 
         {/* Time Series Chart */}
@@ -178,7 +199,7 @@ export default function OutreachAnalytics() {
             title="Engagement Over Time"
             subtitle="Daily email volume and engagement metrics"
           />
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={dailyData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
@@ -196,7 +217,7 @@ export default function OutreachAnalytics() {
           {/* Intent Breakdown */}
           <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
             <OutreachSectionHeader icon={<MessageSquare />} title="Reply Intent Breakdown" subtitle="AI-categorized reply intent" />
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6 mt-4">
               <PieChart width={140} height={140}>
                 <Pie data={data?.intent_data || []} cx={70} cy={70} innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={0}>
                   {(data?.intent_data || []).map((entry, i) => (
@@ -204,7 +225,7 @@ export default function OutreachAnalytics() {
                   ))}
                 </Pie>
               </PieChart>
-              <div className="flex-1 space-y-2">
+              <div className="flex-1 space-y-3">
                 {(data?.intent_data || []).map((item) => {
                   const name = item?.name || 'Unknown';
                   const value = item?.value || 0;
@@ -212,7 +233,7 @@ export default function OutreachAnalytics() {
                   return (
                     <div key={String(name)} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
-                        <span className="size-2 rounded-full shrink-0" style={{ background: color }} />
+                        <span className="size-2.5 rounded-full shrink-0" style={{ background: color }} />
                         <span className="text-slate-400">{String(name)}</span>
                       </div>
                       <span className="font-bold text-white">{String(value)}%</span>
@@ -225,79 +246,73 @@ export default function OutreachAnalytics() {
 
           {/* Campaign Comparison */}
           <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
-            <OutreachSectionHeader icon={<BarChart2 />} title="Campaign Comparison" subtitle="Open & reply rates per campaign" />
-            <ResponsiveContainer width="100%" height={160}>
+            <OutreachSectionHeader icon={<TrendingUp />} title="Top Performing Entities" subtitle="Response rates per campaign/sequence" />
+            <ResponsiveContainer width="100%" height={200}>
               {(data?.campaign_comparison || []).length > 0 ? (
                 <BarChart layout="vertical" data={data?.campaign_comparison || []} margin={{ left: 0, right: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={100} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
-                  <Bar dataKey="open"  name="Open Rate"  fill="#14B8A6" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="reply" name="Reply Rate" fill="#22C55E" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="open"  name="Open Rate"  fill="#14B8A6" radius={[0, 4, 4, 0]} barSize={8} />
+                  <Bar dataKey="reply" name="Reply Rate" fill="#22C55E" radius={[0, 4, 4, 0]} barSize={8} />
                 </BarChart>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs">
-                  No campaign data found for this period.
+                  No performance data available.
                 </div>
               )}
             </ResponsiveContainer>
           </div>
         </div>
+      </div>
 
-        {/* Mailbox Health */}
-        <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
-          <OutreachSectionHeader
-            icon={<Shield />}
-            title="Mailbox Health"
-            subtitle="Deliverability score per connected mailbox"
-          />
-          <div className="space-y-4">
-            {(data?.mailbox_health || []).length > 0 ? (data?.mailbox_health || []).map(({ email, score, status, sent, bounceRate, spamRate }) => {
-              const scoreColor = score >= 85 ? '#14B8A6' : score >= 70 ? '#EAB308' : '#EF4444';
-              const scoreBadge = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
-              return (
-                <div key={String(email)} className="flex items-center gap-5 p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div style={{ '--score-color': scoreColor } as any} className="relative size-14 shrink-0">
-                    <svg viewBox="0 0 36 36" className="size-14 -rotate-90">
-                      <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="2.5" />
-                      <circle
-                        cx="18" cy="18" r="15" fill="none"
-                        stroke={scoreColor} strokeWidth="2.5"
-                        strokeDasharray={`${(Number(score) / 100) * 94.2} 94.2`}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-sm font-bold" style={{ color: scoreColor }}>{String(score)}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold text-white text-sm">{String(email)}</p>
-                      <OutreachBadge variant={scoreBadge as any}>
-                        {String(status)}
-                      </OutreachBadge>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
-                      <span>{(Number(sent) ?? 0).toLocaleString()} sent</span>
-                      <span className={Number(bounceRate ?? 0) > 3 ? 'text-red-400' : 'text-slate-400'}>Bounce: {String(bounceRate ?? '0.0')}%</span>
-                      <span className={Number(spamRate ?? 0) > 0.5 ? 'text-amber-400' : 'text-slate-400'}>Spam: {String(spamRate ?? '0.0')}%</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 shrink-0 text-xs">
-                    {score >= 85 && <CheckCircle2 className="size-4 text-teal-400" />}
-                    {score < 85 && score >= 70 && <AlertTriangle className="size-4 text-amber-400" />}
-                    {score < 70 && <AlertTriangle className="size-4 text-red-400" />}
-                  </div>
+      {/* Report Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0d1117] border border-white/10 w-full max-w-3xl max-h-[85vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col shadow-teal-500/10">
+            <div className="px-8 py-5 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-xl bg-teal-500/10 flex items-center justify-center">
+                  <Sparkles className="size-4 text-teal-400" />
                 </div>
-              );
-            }) : (
-              <div className="text-slate-500 text-sm text-center py-4">
-                No mailboxes connected or active in this time period.
+                <div>
+                  <h3 className="font-bold text-white leading-none">Gemini Performance Report</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">AI-generated outreach optimization insights</p>
+                </div>
               </div>
-            )}
+              <button 
+                onClick={() => setShowReportModal(false)}
+                className="size-8 rounded-full flex items-center justify-center hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+              <div className="prose prose-invert prose-slate prose-sm max-w-none text-slate-300 whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
+                {reportContent}
+              </div>
+            </div>
+
+            <div className="px-8 py-5 bg-white/[0.02] border-t border-white/5 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="px-5 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={handleDownloadReport}
+                className="flex items-center gap-2 px-5 py-2 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl text-xs transition-all"
+              >
+                <Download className="size-3" />
+                Descargar Reporte (.md)
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

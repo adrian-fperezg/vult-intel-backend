@@ -104,43 +104,43 @@ export async function scheduleNextStep(
   // 3. CÁLCULO DE TIEMPO
   let delayMs = 0;
   
-  // Fetch contact timezone info
+  // Fetch contact and sequence timezone info
   const contact = await d.get<any>('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?', [contactId]);
   const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
-  const recipientTz = contact?.inferred_timezone;
+  const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'UTC');
+
+  // Calculate base intended time in the target zone
+  let targetTime = DateTime.now().setZone(targetTz);
 
   if (isIntentMatch) {
-    // Si Adrian detectó un match de palabra clave, mandamos el YES en 5 segundos (casi instantáneo)
-    delayMs = 5000;
-    console.log(`[SequenceEngine] INTENT MATCH! Programando respuesta YES inmediata.`);
+    // Intent matches are urgent, but will still be subjected to window checks below
+    targetTime = targetTime.plus({ seconds: 5 });
+    console.log(`[SequenceEngine] INTENT MATCH! Target set for immediate (within window).`);
   } else if (parentStepId === null) {
     if (step.scheduled_start_at) {
       if (useRecipientTz) {
         // Re-align the scheduled start time to the recipient's timezone
+        // We take the local hour of the intended time and apply it to the recipient's zone
         const sequenceTz = sequence.send_timezone || 'UTC';
         const intendedTime = DateTime.fromISO(step.scheduled_start_at, { zone: sequenceTz });
-        const adjustedTime = intendedTime.setZone(recipientTz, { keepLocalTime: true });
-        delayMs = adjustedTime.diffNow().as('milliseconds');
-        console.log(`[SequenceEngine] Timezone Adjustment: ${sequenceTz} -> ${recipientTz}. New Delay: ${delayMs}ms`);
+        targetTime = intendedTime.setZone(targetTz, { keepLocalTime: true });
+        console.log(`[SequenceEngine] Timezone Alignment: ${sequenceTz} -> ${targetTz} (Keep Local Time)`);
       } else {
-        const startTime = new Date(step.scheduled_start_at).getTime();
-        delayMs = Math.max(0, startTime - Date.now());
+        targetTime = DateTime.fromISO(step.scheduled_start_at, { zone: targetTz });
       }
     }
   } else {
     const amount = step.delay_amount || 2;
     const unit = step.delay_unit || 'days';
-    
-    if (useRecipientTz) {
-      // Calculate delay in recipient's timezone (handles DST and day boundaries better)
-      const nowInRecipTz = DateTime.now().setZone(recipientTz);
-      const targetInRecipTz = nowInRecipTz.plus({ [unit]: amount });
-      delayMs = targetInRecipTz.diffNow().as('milliseconds');
-    } else {
-      if (unit === 'minutes') delayMs = amount * 60 * 1000;
-      else if (unit === 'hours') delayMs = amount * 60 * 60 * 1000;
-      else delayMs = amount * 24 * 60 * 60 * 1000;
-    }
+    targetTime = targetTime.plus({ [unit]: amount });
+  }
+
+  // 4. ENFORCE BUSINESS HOURS & WEEKDAYS
+  const finalizedTime = getNextBusinessSlot(targetTime, sequence);
+  delayMs = finalizedTime.diffNow().as('milliseconds');
+  
+  if (finalizedTime > targetTime) {
+    console.log(`[SequenceEngine] Rescheduling to next available slot: ${finalizedTime.toISO()} (Due to window/weekday constraints in ${targetTz})`);
   }
   
   delayMs = Math.max(0, delayMs);
@@ -284,4 +284,61 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
     currentStep = nextStep;
   }
   return { stepId: null, branchPath: 'default', isCompleted: true };
+}
+
+/**
+ * Calculates the next available sending slot based on sequence windows and weekdays.
+ */
+export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime {
+  const windowStart = sequence.send_window_start || '09:00';
+  const windowEnd = sequence.send_window_end || '17:00';
+  
+  // Parse weekdays safely
+  let allowedDays: boolean[] = [true, true, true, true, true, false, false];
+  try {
+    if (sequence.send_on_weekdays) {
+      const raw = sequence.send_on_weekdays;
+      if (typeof raw === 'string' && raw.startsWith('{') && raw.endsWith('}')) {
+        // Postgres array format: {"true","false",...}
+        allowedDays = raw.slice(1, -1).split(',').map((v: string) => v.replace(/"/g, '').trim().toLowerCase() === 'true');
+      } else if (typeof raw === 'string') {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          allowedDays = parsed.map(v => String(v).toLowerCase() === 'true');
+        }
+      } else if (Array.isArray(raw)) {
+        allowedDays = raw.map(v => String(v).toLowerCase() === 'true');
+      }
+    }
+  } catch (e) {
+    console.warn("[SequenceEngine] Error parsing send_on_weekdays:", e);
+  }
+
+  const [startHour, startMin] = windowStart.split(':').map(Number);
+  const [endHour, endMin] = windowEnd.split(':').map(Number);
+
+  let current = baseTime;
+  
+  // Max check: 14 days to prevent infinite loops
+  for (let i = 0; i < 14; i++) {
+    const dayIndex = current.weekday - 1; // Luxon: Mon=1 -> 0, Sun=7 -> 6
+    const isAllowedDay = allowedDays[dayIndex];
+    
+    const startOfWindow = current.set({ hour: startHour, minute: startMin, second: 0, millisecond: 0 });
+    const endOfWindow = current.set({ hour: endHour, minute: endMin, second: 0, millisecond: 0 });
+
+    if (isAllowedDay) {
+      if (current < startOfWindow) {
+        return startOfWindow;
+      }
+      if (current <= endOfWindow) {
+        return current;
+      }
+    }
+    
+    // Jump to next day at start of window
+    current = current.plus({ days: 1 }).set({ hour: startHour, minute: startMin, second: 0, millisecond: 0 });
+  }
+  
+  return current;
 }
