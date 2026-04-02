@@ -5,7 +5,7 @@ import {
   FileText, Check, AlertCircle, ChevronRight,
   Trash2, Download, Loader2
 } from 'lucide-react';
-import { TealButton, OutreachBadge } from '../OutreachCommon';
+import { TealButton, OutreachBadge } from '../OutreachCommon'; // O '../../OutreachCommon' dependiendo de la carpeta
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';

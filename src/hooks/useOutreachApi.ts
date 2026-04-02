@@ -4,43 +4,8 @@ import { useProject } from '@/contexts/ProjectContext';
 
 const BASE_URL = (import.meta.env.VITE_OUTREACH_API_URL ?? 'http://localhost:3001') + '/api/outreach';
 
-export interface AnalyticsData {
-  total_sent: number;
-  sent_change: string;
-  open_rate: string;
-  reply_rate: string;
-  active_sequences: number;
-  total_recipients: number;
-  pending_tasks: number;
-  emails_sent_today: number;
-  health_score: number;
-  mailbox_health: {
-    email: string;
-    score: number;
-    status: string;
-    sent: number;
-    bounceRate: number;
-    spamRate: number;
-  }[];
-  daily_data: { 
-    day: string; 
-    sent: number; 
-    opens: number; 
-    replies: number; 
-    clicks?: number 
-  }[];
-  intent_data: {
-    name: string;
-    value: number;
-    color: string;
-  }[];
-  campaign_comparison: {
-    name: string;
-    sent: number;
-    open: number;
-    reply: number;
-  }[];
-}
+import type { AnalyticsData, FunnelStat, AiReportResponse } from '@shared/types/outreach';
+export type { AnalyticsData, FunnelStat, AiReportResponse };
 
 /**
  * Central hook for all Outreach API calls.
@@ -241,10 +206,9 @@ export function useOutreachApi() {
 
   const fetchCampaigns = useCallback(() => get<any[]>('/campaigns'), [get]);
 
-  const createCampaign = useCallback(
-    (name = 'New Campaign') => post<any>('/campaigns', { name, type: 'email' }),
-    [post],
-  );
+  const createCampaign = (name = 'New Campaign', funnel_stage = 'TOFU') => 
+    post<any>('/campaigns', { name, type: 'email', funnel_stage });
+
 
   const toggleCampaignStatus = useCallback(
     (id: string, currentStatus: string) =>
@@ -504,6 +468,10 @@ export function useOutreachApi() {
     return get<AnalyticsData>('/analytics', params);
   }, [get]);
 
+  const getFunnelStats = useCallback(() => {
+    return get<FunnelStat[]>('/campaigns/funnel-stats');
+  }, [get]);
+
   const generateAiReport = useCallback((data: any) => post<any>('/ai/generate-report', data), [post]);
 
   const exportAiReport = useCallback(async () => {
@@ -758,5 +726,6 @@ export function useOutreachApi() {
     importContactsCSV,
     generateAiReport,
     exportAiReport,
+    getFunnelStats,
   };
 }

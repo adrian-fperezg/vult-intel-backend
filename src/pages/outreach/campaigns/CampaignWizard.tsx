@@ -40,6 +40,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
     from_name: '',
     track_opens: true,
     track_clicks: true,
+    funnel_stage: 'TOFU' as 'TOFU' | 'MOFU' | 'BOFU',
   });
 
   const [content, setContent] = useState({
@@ -118,7 +119,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
     setIsSubmitting(true);
     try {
       // 1. Create campaign metadata container
-      const campaign = await createCampaign(settings.name);
+      const campaign = await createCampaign(settings.name, settings.funnel_stage);
       
       // 2. Launch with all data
       await launchCampaign(campaign.id, {
@@ -306,6 +307,31 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                           ))}
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="p-6 bg-teal-500/5 border border-teal-500/10 rounded-2xl space-y-4">
+                    <h4 className="text-sm font-bold text-teal-400">Funnel Strategy</h4>
+                    <p className="text-xs text-slate-400 -mt-2">Categorize this campaign to track its impact on your sales funnel.</p>
+                    <div className="flex p-1 bg-[#161b22] border border-[#30363d] rounded-xl">
+                      {['TOFU', 'MOFU', 'BOFU'].map((stage) => (
+                        <button
+                          key={stage}
+                          type="button"
+                          onClick={() => setSettings({ ...settings, funnel_stage: stage as any })}
+                          className={cn(
+                            "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                            settings.funnel_stage === stage 
+                              ? "bg-teal-500 text-white shadow-lg shadow-teal-500/20" 
+                              : "text-slate-400 hover:text-slate-300"
+                          )}
+                        >
+                          {stage === 'TOFU' && 'TOFU (Awareness)'}
+                          {stage === 'MOFU' && 'MOFU (Interest)'}
+                          {stage === 'BOFU' && 'BOFU (Decision)'}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>

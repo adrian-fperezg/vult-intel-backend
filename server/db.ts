@@ -200,11 +200,14 @@ export const initDb = async () => {
         mailbox_id TEXT REFERENCES outreach_mailboxes(id),
         from_email TEXT,
         from_name TEXT,
+        type TEXT DEFAULT 'email',
+        settings TEXT, -- JSON
         status TEXT DEFAULT 'draft',
         sent_count INTEGER DEFAULT 0,
         opened_count INTEGER DEFAULT 0,
         replied_count INTEGER DEFAULT 0,
         bounced_count INTEGER DEFAULT 0,
+        funnel_stage TEXT DEFAULT 'TOFU',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -217,7 +220,10 @@ export const initDb = async () => {
       { name: 'sent_count', type: 'INTEGER DEFAULT 0' },
       { name: 'opened_count', type: 'INTEGER DEFAULT 0' },
       { name: 'replied_count', type: 'INTEGER DEFAULT 0' },
-      { name: 'bounced_count', type: 'INTEGER DEFAULT 0' }
+      { name: 'bounced_count', type: 'INTEGER DEFAULT 0' },
+      { name: 'funnel_stage', type: 'TEXT DEFAULT \'TOFU\'' },
+      { name: 'type', type: 'TEXT DEFAULT \'email\'' },
+      { name: 'settings', type: 'TEXT' }
     ];
 
     for (const col of campaignColsMigration) {
@@ -264,6 +270,7 @@ export const initDb = async () => {
         opened_count INTEGER DEFAULT 0,
         replied_count INTEGER DEFAULT 0,
         bounced_count INTEGER DEFAULT 0,
+        funnel_stage TEXT DEFAULT 'TOFU',
         use_recipient_timezone BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -292,6 +299,7 @@ export const initDb = async () => {
       { name: 'intent_keyword', type: 'TEXT' },
       { name: 'bypass_keyword', type: "TEXT DEFAULT 'Khania'" },
       { name: 'scheduled_start_at', type: 'TIMESTAMP WITH TIME ZONE' },
+      { name: 'funnel_stage', type: 'TEXT DEFAULT \'TOFU\'' },
       { name: 'sent_count', type: 'INTEGER DEFAULT 0' },
       { name: 'opened_count', type: 'INTEGER DEFAULT 0' },
       { name: 'replied_count', type: 'INTEGER DEFAULT 0' },

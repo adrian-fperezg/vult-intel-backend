@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   BarChart2, TrendingUp, Users, Mail, MousePointer,
   MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield, Loader2,
-  Sparkles, Download, X
+  Sparkles, Download, X, Filter
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader } from './OutreachCommon';
 import { cn } from '@/lib/utils';
-import { useOutreachApi, AnalyticsData } from '@/hooks/useOutreachApi';
+import { useOutreachApi, AnalyticsData, FunnelStat } from '@/hooks/useOutreachApi';
 
 const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -30,12 +30,13 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 export default function OutreachAnalytics() {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [funnelStats, setFunnelStats] = useState<FunnelStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { fetchAnalytics, generateAiReport, exportAiReport, activeProjectId } = useOutreachApi();
+  const { fetchAnalytics, getFunnelStats, generateAiReport, exportAiReport, activeProjectId } = useOutreachApi();
 
   useEffect(() => {
     async function load() {
@@ -44,12 +45,15 @@ export default function OutreachAnalytics() {
       setError(null);
       try {
         const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
-        const res = await fetchAnalytics(days);
-        if (res) {
-          setData(res);
-        } else {
-          setError('No data returned from the server.');
-        }
+        const [res, funnel] = await Promise.all([
+          fetchAnalytics(days),
+          getFunnelStats()
+        ]);
+        
+        if (res) setData(res);
+        if (funnel) setFunnelStats(funnel);
+        
+        if (!res) setError('No core analytics data returned.');
       } catch (err: any) {
         console.error('Failed to load analytics:', err);
         setError(err.message || 'Failed to connect to the analytics service.');
@@ -130,8 +134,11 @@ export default function OutreachAnalytics() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Analytics</h1>
-            <p className="text-sm text-slate-400 mt-0.5">Performance across all campaigns and mailboxes</p>
+            <h1 className="text-2xl font-bold text-white leading-none">Performance Overview</h1>
+            <p className="text-sm text-slate-500 mt-2 flex items-center gap-2">
+              <Globe className="size-3.5 text-teal-400" />
+              Unified analytics across All Outreach Engines
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl p-1">
@@ -152,163 +159,214 @@ export default function OutreachAnalytics() {
             <button
               onClick={handleGenerateReport}
               disabled={isGeneratingReport}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-white rounded-2xl text-xs font-bold transition-all shadow-xl shadow-teal-500/10 disabled:opacity-50"
             >
-              {isGeneratingReport ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <Sparkles className="size-3" />
-              )}
+              <Sparkles className={cn("size-3.5", isGeneratingReport && "animate-pulse")} />
               🌐 Powered by Gemini: Generar Reporte
             </button>
           </div>
         </div>
 
-        {/* Top Metrics - Focused Core */}
+        {/* Core KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <OutreachMetricCard 
-            label="Total Sent" 
+            label="Total Outreach Volume" 
             value={(data.total_sent ?? 0).toLocaleString()} 
             teal 
-            icon={<Mail />} 
+            icon={<Mail className="size-4" />} 
             trend={Number(data.sent_change ?? 0) >= 0 ? "up" : "down"}
             trendValue={`${Math.abs(Number(data.sent_change ?? 0))}%`} 
           />
           <OutreachMetricCard 
-            label="Open Rate" 
+            label="Unified Open Rate" 
             value={`${data.open_rate ?? '0.0'}%`} 
-            icon={<TrendingUp />} 
+            icon={<TrendingUp className="size-4" />} 
             trend="neutral" 
-            trendValue="vs average" 
-            sub="Avg 21.5%" 
+            trendValue="vs ecosystem" 
+            sub="Enterprise avg: 21.5%" 
           />
           <OutreachMetricCard 
-            label="Reply Rate" 
+            label="Engagement / Reply Rate" 
             value={`${data.reply_rate ?? '0.0'}%`} 
-            icon={<MessageSquare />} 
+            icon={<MessageSquare className="size-4" />} 
             trend="neutral" 
-            trendValue="vs average" 
-            sub="Avg 3.2%"
+            trendValue="vs ecosystem" 
+            sub="Enterprise avg: 3.2%"
           />
         </div>
 
-        {/* Time Series Chart */}
-        <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
-          <OutreachSectionHeader
-            icon={<BarChart2 />}
-            title="Engagement Over Time"
-            subtitle="Daily email volume and engagement metrics"
-          />
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={dailyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CUSTOM_TOOLTIP />} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="sent"    stroke="#475569"   strokeWidth={1.5} dot={false} name="Sent" />
-              <Line type="monotone" dataKey="opens"   stroke="#14B8A6"   strokeWidth={2}   dot={false} name="Opens" />
-              <Line type="monotone" dataKey="replies" stroke="#22C55E"   strokeWidth={2}   dot={false} name="Replies" />
-            </LineChart>
-          </ResponsiveContainer>
+        {/* Main Analytics Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Timeline */}
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8 backdrop-blur-sm">
+            <OutreachSectionHeader
+              icon={<BarChart2 className="size-5 text-teal-400" />}
+              title="Engagement Over Time"
+              subtitle="Consolidated daily performance across campaigns and sequences."
+            />
+            <div className="h-[320px] mt-8">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dailyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                  <XAxis 
+                    dataKey="day" 
+                    stroke="#334155" 
+                    fontSize={10} 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(val) => val.split('T')[0]} // If it's a date string
+                  />
+                  <YAxis stroke="#334155" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip content={<CUSTOM_TOOLTIP />} />
+                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
+                  <Line name="Sent" type="monotone" dataKey="sent" stroke="#14b8a6" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
+                  <Line name="Opens" type="monotone" dataKey="opens" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                  <Line name="Replies" type="monotone" dataKey="replies" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Funnel */}
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8 backdrop-blur-sm">
+            <OutreachSectionHeader
+              icon={<Filter className="size-5 text-indigo-400" />}
+              title="Unified Funnel Performance"
+              subtitle="Comparing engagement efficiency by strategic funnel stage."
+            />
+            <div className="h-[320px] mt-8">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={funnelStats}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                  <XAxis dataKey="funnel_stage" stroke="#334155" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#334155" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip content={<CUSTOM_TOOLTIP />} />
+                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
+                  <Bar name="Volume (Sent)" dataKey="total_sent" fill="#14b8a6" radius={[6, 6, 0, 0]} barSize={40} />
+                  <Bar name="Impact (Replies)" dataKey="total_replies" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Intent Breakdown */}
-          <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
-            <OutreachSectionHeader icon={<MessageSquare />} title="Reply Intent Breakdown" subtitle="AI-categorized reply intent" />
-            <div className="flex items-center gap-6 mt-4">
-              <PieChart width={140} height={140}>
-                <Pie data={data?.intent_data || []} cx={70} cy={70} innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={0}>
-                  {(data?.intent_data || []).map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
-              <div className="flex-1 space-y-3">
-                {(data?.intent_data || []).map((item) => {
-                  const name = item?.name || 'Unknown';
-                  const value = item?.value || 0;
-                  const color = item?.color || '#333';
-                  return (
-                    <div key={String(name)} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="size-2.5 rounded-full shrink-0" style={{ background: color }} />
-                        <span className="text-slate-400">{String(name)}</span>
-                      </div>
-                      <span className="font-bold text-white">{String(value)}%</span>
+        {/* Strategy Layer */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Intent */}
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8">
+            <OutreachSectionHeader
+              icon={<Sparkles className="size-5 text-amber-400" />}
+              title="Global Intent Analysis"
+              subtitle="AI Breakdown of reply sentiment across all outreach."
+            />
+            <div className="flex items-center gap-12 mt-8">
+              <div className="size-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={data.intent_data || []}
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={8}
+                      dataKey="value"
+                    >
+                      {(data.intent_data || []).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CUSTOM_TOOLTIP />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-4">
+                {(data.intent_data || []).map((item) => (
+                  <div key={item.name} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400 font-medium">{item.name}</span>
+                      <span className="text-white font-bold">{item.value}%</span>
                     </div>
-                  );
-                })}
+                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${item.value}%`, backgroundColor: item.color }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Campaign Comparison */}
-          <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-6">
-            <OutreachSectionHeader icon={<TrendingUp />} title="Top Performing Entities" subtitle="Response rates per campaign/sequence" />
-            <ResponsiveContainer width="100%" height={200}>
-              {(data?.campaign_comparison || []).length > 0 ? (
-                <BarChart layout="vertical" data={data?.campaign_comparison || []} margin={{ left: 0, right: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={100} />
+          {/* Leaders */}
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8">
+            <OutreachSectionHeader
+              icon={<TrendingUp className="size-5 text-emerald-400" />}
+              title="Top Performing Entities"
+              subtitle="Highest response rates relative to total volume."
+            />
+            <div className="h-[240px] mt-8">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart layout="vertical" data={data.campaign_comparison} margin={{ left: 0, right: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" horizontal={false} />
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={11} width={120} tickLine={false} axisLine={false} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
-                  <Bar dataKey="open"  name="Open Rate"  fill="#14B8A6" radius={[0, 4, 4, 0]} barSize={8} />
-                  <Bar dataKey="reply" name="Reply Rate" fill="#22C55E" radius={[0, 4, 4, 0]} barSize={8} />
+                  <Bar dataKey="reply" name="Reply Rate" fill="url(#emeraldGradient)" radius={[0, 4, 4, 0]} barSize={12} />
+                  <defs>
+                    <linearGradient id="emeraldGradient" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity={0.2} />
+                      <stop offset="100%" stopColor="#10b981" />
+                    </linearGradient>
+                  </defs>
                 </BarChart>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs">
-                  No performance data available.
-                </div>
-              )}
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Report Modal */}
+      {/* Ai Report Modal */}
       {showReportModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#0d1117] border border-white/10 w-full max-w-3xl max-h-[85vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col shadow-teal-500/10">
-            <div className="px-8 py-5 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-xl bg-teal-500/10 flex items-center justify-center">
-                  <Sparkles className="size-4 text-teal-400" />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-[#0b0e14] border border-white/10 w-full max-w-4xl max-h-[90vh] rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col ring-1 ring-white/5">
+            <div className="px-10 py-6 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-teal-500/5 to-transparent">
+              <div className="flex items-center gap-4">
+                <div className="size-10 rounded-2xl bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                  <Sparkles className="size-5 text-teal-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white leading-none">Gemini Performance Report</h3>
-                  <p className="text-[11px] text-slate-500 mt-1">AI-generated outreach optimization insights</p>
+                  <h3 className="text-lg font-bold text-white">Vult Intel: Strategic Analysis</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Gemini-driven performance optimization</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowReportModal(false)}
-                className="size-8 rounded-full flex items-center justify-center hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+                className="size-10 rounded-full flex items-center justify-center hover:bg-white/5 text-slate-400 hover:text-white transition-all"
               >
-                <X className="size-4" />
+                <X className="size-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-              <div className="prose prose-invert prose-slate prose-sm max-w-none text-slate-300 whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
+            <div className="flex-1 overflow-y-auto p-10 custom-scrollbar bg-black/20">
+              <div className="prose prose-invert prose-teal max-w-none prose-sm leading-relaxed text-slate-300 whitespace-pre-wrap font-sans">
                 {reportContent}
               </div>
             </div>
 
-            <div className="px-8 py-5 bg-white/[0.02] border-t border-white/5 flex items-center justify-end gap-3">
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="px-5 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
-              >
-                Cerrar
-              </button>
-              <button
-                onClick={handleDownloadReport}
-                className="flex items-center gap-2 px-5 py-2 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl text-xs transition-all"
-              >
-                <Download className="size-3" />
-                Descargar Reporte (.md)
-              </button>
+            <div className="px-10 py-6 bg-white/[0.02] border-t border-white/5 flex items-center justify-between">
+              <p className="text-[10px] text-slate-500 font-mono">CONFIDENTIAL: Strategic Sales Intelligence Report</p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="px-6 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
+                >
+                  Close Window
+                </button>
+                <button
+                  onClick={handleDownloadReport}
+                  className="flex items-center gap-3 px-6 py-2.5 bg-white text-black font-bold rounded-2xl text-xs transition-all hover:bg-teal-50 shadow-lg shadow-white/5"
+                >
+                  <Download className="size-3.5" />
+                  Descargar Reporte (.md)
+                </button>
+              </div>
             </div>
           </div>
         </div>

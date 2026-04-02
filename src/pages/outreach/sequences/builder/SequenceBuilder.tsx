@@ -56,6 +56,7 @@ interface Sequence {
   recipients?: any[];
   smart_intent_bypass: boolean;
   use_recipient_timezone?: boolean;
+  funnel_stage: 'TOFU' | 'MOFU' | 'BOFU';
 }
 
 interface SequenceBuilderProps {
@@ -854,6 +855,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         from_email: sequence.from_email,
         from_name: sequence.from_name,
         use_recipient_timezone: sequence.use_recipient_timezone,
+        funnel_stage: sequence.funnel_stage || 'TOFU'
       });
 
       // Aseguramos que la fecha se envíe en formato ISO (o null si se borró)
@@ -1299,6 +1301,43 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                       <TealButton variant="outline" size="sm" onClick={() => (window as any).location.href = '/outreach/mailboxes'}>Connect Mailbox</TealButton>
                     </div>
                   )}
+                </div>
+              </section>
+
+              <section className="space-y-6 border-t border-white/5 pt-8">
+                <div>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Filter className="size-5 text-teal-400" /> B2B Funnel Alignment
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1">Categorize this sequence for strategic performance tracking.</p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  {[
+                    { id: 'TOFU', label: 'Top of Funnel', desc: 'Cold Awareness' },
+                    { id: 'MOFU', label: 'Middle of Funnel', desc: 'Nurture & Intent' },
+                    { id: 'BOFU', label: 'Bottom of Funnel', desc: 'Closing & Sales' }
+                  ].map((stage) => (
+                    <button
+                      key={stage.id}
+                      onClick={() => setSequence(prev => prev ? { ...prev, funnel_stage: stage.id as any } : null)}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-6 rounded-2xl border transition-all text-center gap-2",
+                        sequence?.funnel_stage === stage.id
+                          ? "bg-teal-500/10 border-teal-500/30 ring-1 ring-teal-500/20"
+                          : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/10"
+                      )}
+                    >
+                      <div className={cn(
+                        "size-10 rounded-full flex items-center justify-center font-bold text-xs",
+                        sequence?.funnel_stage === stage.id ? "bg-teal-500 text-white" : "bg-white/10 text-slate-400"
+                      )}>
+                        {stage.id}
+                      </div>
+                      <span className="text-xs font-bold text-white">{stage.label}</span>
+                      <span className="text-[10px] text-slate-500 leading-tight">{stage.desc}</span>
+                    </button>
+                  ))}
                 </div>
               </section>
 
