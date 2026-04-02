@@ -271,7 +271,7 @@ const startServices = async () => {
  */
 function inferTimezone(city?: string, country?: string): string | null {
   if (!city) return null;
-  
+
   try {
     const cityData = cityTimezones.lookupViaCity(city);
     if (!cityData || cityData.length === 0) return null;
@@ -279,9 +279,9 @@ function inferTimezone(city?: string, country?: string): string | null {
     // If we have a country, filter by it
     if (country) {
       const countryLower = country.toLowerCase();
-      const filtered = cityData.filter(c => 
-        c.country.toLowerCase() === countryLower || 
-        c.iso2.toLowerCase() === countryLower || 
+      const filtered = cityData.filter(c =>
+        c.country.toLowerCase() === countryLower ||
+        c.iso2.toLowerCase() === countryLower ||
         c.iso3.toLowerCase() === countryLower
       );
       if (filtered.length > 0) return filtered[0].timezone;
@@ -1403,35 +1403,64 @@ app.get("/api/outreach/analytics", verifyFirebaseToken, async (req: AuthRequest,
   const projectId = req.headers['x-project-id'] as string;
   const days = parseInt(req.query.days as string) || 7;
   const userTz = getUserTimezone(req);
-  
+
   try {
+    const nowTz = DateTime.now().setZone(userTz);
+    const startDateStr = nowTz.minus({ days }).startOf('day').toUTC().toISO()!;
+    const previousStartDateStr = nowTz.minus({ days: days * 2 }).startOf('day').toUTC().toISO()!;
+
     // 1. Fetch Global Totals (Consolidated & Filtered)
     const statsPromises = [
-      db.get<{total: number}>(`SELECT COUNT(*) as total FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)`, projectId),
-      db.get<{total: number}>(`SELECT COUNT(*) as total FROM outreach_events WHERE project_id = ? AND type = 'opened' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)`, projectId),
-      db.get<{total: number}>(`SELECT COUNT(*) as total FROM outreach_events WHERE project_id = ? AND type = 'replied' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)`, projectId),
-      db.get<{total: number}>(`SELECT COUNT(DISTINCT contact_id) as total FROM (SELECT contact_id FROM outreach_sequence_enrollments WHERE project_id = ? UNION SELECT contact_id FROM outreach_campaign_enrollments WHERE project_id = ?) as e`, projectId, projectId).catch(() => ({ total: 0 })), // Fallback if campaign_enrollments table is missing
-      db.get<{total: number}>(`SELECT (SELECT COUNT(*) FROM outreach_sequences WHERE project_id = ? AND status = 'active') + (SELECT COUNT(*) FROM outreach_campaigns WHERE project_id = ? AND status = 'sending') as total`, projectId, projectId)
+      db.get<{ total: number }>(`SELECT COUNT(*) as total FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)`, projectId),
+      db.get<{ total: number }>(`SELECT COUNT(*) as total FROM outreach_events WHERE project_id = ? AND type = 'opened' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)`, projectId),
+      db.get<{ total: number }>(`SELECT COUNT(*) as total FROM outreach_events WHERE project_id = ? AND type = 'replied' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)`, projectId),
+      db.get<{ total: number }>(`SELECT COUNT(DISTINCT contact_id) as total FROM (SELECT contact_id FROM outreach_sequence_enrollments WHERE project_id = ? UNION SELECT contact_id FROM outreach_campaign_enrollments WHERE project_id = ?) as e`, projectId, projectId).catch(() => ({ total: 0 })),
+      db.get<{ total: number }>(`SELECT (SELECT COUNT(*) FROM outreach_sequences WHERE project_id = ? AND status = 'active') + (SELECT COUNT(*) FROM outreach_campaigns WHERE project_id = ? AND status = 'sending') as total`, projectId, projectId)
     ];
 
     const [sent, opened, replied, recipients, active] = await Promise.all(statsPromises);
 
-    // 2. Fetch Time-Series Data
-    const dailyData = await db.all<{day: string, sent: number, opens: number, replies: number, clicks: number}>(`
-      SELECT 
-        date(created_at, 'localtime') as day,
-        COUNT(CASE WHEN status = 'sent' THEN 1 END) as sent,
-        (SELECT COUNT(*) FROM outreach_events e WHERE date(e.created_at, 'localtime') = date(i.created_at, 'localtime') AND e.type = 'opened' AND e.project_id = i.project_id) as opens,
-        (SELECT COUNT(*) FROM outreach_events e WHERE date(e.created_at, 'localtime') = date(i.created_at, 'localtime') AND e.type = 'replied' AND e.project_id = i.project_id) as replies,
-        (SELECT COUNT(*) FROM outreach_events e WHERE date(e.created_at, 'localtime') = date(i.created_at, 'localtime') AND e.type = 'click' AND e.project_id = i.project_id) as clicks
-      FROM outreach_individual_emails i
-      WHERE project_id = ? AND created_at >= date('now', '-' || ? || ' days')
-      GROUP BY day
-      ORDER BY day ASC
-    `, projectId, days);
+    // 2. Fetch Time-Series Data (Compatible con PostgreSQL y Luxon)
+    const dayExpr = db.isPostgres ? `(created_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text` : `date(created_at)`;
 
-    // 3. Campaign Comparison
-    const campaignStats = await db.all<{name: string, sent: number, open: number, reply: number}>(`
+    const dailySent = await db.all<{ day: string, sent: number }>(`
+      SELECT 
+        ${db.isPostgres ? `(sent_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text` : `date(sent_at)`} as day,
+        COUNT(*) as sent
+      FROM outreach_individual_emails
+      WHERE project_id = ? AND status = 'sent' AND sent_at >= ?
+      GROUP BY day
+    `, ...(db.isPostgres ? [userTz, projectId, startDateStr] : [projectId, startDateStr]));
+
+    const dailyEvents = await db.all<{ day: string, opens: number, replies: number, clicks: number }>(`
+      SELECT 
+        ${dayExpr} as day,
+        COUNT(CASE WHEN type = 'opened' THEN 1 END) as opens,
+        COUNT(CASE WHEN type = 'replied' THEN 1 END) as replies,
+        COUNT(CASE WHEN type = 'click' THEN 1 END) as clicks
+      FROM outreach_events
+      WHERE project_id = ? AND created_at >= ?
+      GROUP BY day
+    `, ...(db.isPostgres ? [userTz, projectId, startDateStr] : [projectId, startDateStr]));
+
+    // 3. Unir stats diarios basados en el Timezone del usuario
+    const statsMap: Record<string, any> = {};
+    for (let i = 0; i < days; i++) {
+      const dayStr = nowTz.minus({ days: (days - 1) - i }).toFormat('yyyy-MM-dd');
+      statsMap[dayStr] = { day: dayStr, sent: 0, opens: 0, replies: 0, clicks: 0 };
+    }
+
+    dailySent.forEach((row: any) => { if (statsMap[row.day]) statsMap[row.day].sent = parseInt(row.sent) || 0; });
+    dailyEvents.forEach((row: any) => {
+      if (statsMap[row.day]) {
+        statsMap[row.day].opens = parseInt(row.opens) || 0;
+        statsMap[row.day].replies = parseInt(row.replies) || 0;
+        statsMap[row.day].clicks = parseInt(row.clicks) || 0;
+      }
+    });
+
+    // 4. Campaign Comparison
+    const campaignStats = await db.all<{ name: string, sent: number, open: number, reply: number }>(`
       SELECT 
         name,
         sent_count as sent,
@@ -1446,10 +1475,10 @@ app.get("/api/outreach/analytics", verifyFirebaseToken, async (req: AuthRequest,
       LIMIT 5
     `, projectId, projectId);
 
-    // 4. Calculate Percentage Change (sent_change)
+    // 5. Calculate Percentage Change (sent_change)
     const [sentThisPeriodRow, sentLastPeriodRow] = await Promise.all([
-      db.get<{total: number}>(`SELECT COUNT(*) as total FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND created_at >= date('now', '-' || ? || ' days') AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)`, projectId, days),
-      db.get<{total: number}>(`SELECT COUNT(*) as total FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND created_at >= date('now', '-' || (? * 2) || ' days') AND created_at < date('now', '-' || ? || ' days') AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)`, projectId, days, days)
+      db.get<{ total: number }>(`SELECT COUNT(*) as total FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)`, projectId, startDateStr),
+      db.get<{ total: number }>(`SELECT COUNT(*) as total FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ? AND sent_at < ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)`, projectId, previousStartDateStr, startDateStr)
     ]);
 
     const sentThisValue = sentThisPeriodRow?.total || 0;
@@ -1462,14 +1491,14 @@ app.get("/api/outreach/analytics", verifyFirebaseToken, async (req: AuthRequest,
       sentChange = "+100%";
     }
 
-    // 5. Emails Sent Today
-    const todayStart = DateTime.now().setZone(userTz).startOf('day').toUTC().toISO();
-    const emailsTodayRow = await db.get<{total: number}>(`
+    // 6. Emails Sent Today
+    const todayStartStr = nowTz.startOf('day').toUTC().toISO()!;
+    const emailsTodayRow = await db.get<{ total: number }>(`
       SELECT COUNT(*) as total 
       FROM outreach_individual_emails 
       WHERE project_id = ? AND status = 'sent' AND sent_at >= ? 
       AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)
-    `, projectId, todayStart);
+    `, projectId, todayStartStr);
 
     const totalSent = sent?.total || 0;
     const totalOpened = opened?.total || 0;
@@ -1484,9 +1513,9 @@ app.get("/api/outreach/analytics", verifyFirebaseToken, async (req: AuthRequest,
       total_recipients: recipients?.total || 0,
       pending_tasks: 0,
       emails_sent_today: emailsTodayRow?.total || 0,
-      health_score: 98,
+      health_score: 98, // Dummy temporal o reemplazar por lógica real
       mailbox_health: [],
-      daily_data: dailyData,
+      daily_data: Object.values(statsMap),
       intent_data: [
         { name: 'Positive', value: 45, color: '#22C55E' },
         { name: 'Neutral', value: 30, color: '#F59E0B' },
@@ -1547,7 +1576,7 @@ async function generateOutreachReport(projectId: string) {
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   const entityData = (activeEntities || []).map(s => `- ${s.name} (${s.status}): Sent ${s.sent}, Open Rate ${s.sent > 0 ? (s.opened / s.sent * 100).toFixed(1) : 0}%, Reply Rate ${s.sent > 0 ? (s.replied / s.sent * 100).toFixed(1) : 0}%`).join("\n");
-  
+
   const prompt = `You are a Senior Outreach Growth Consultant. Generate a high-impact, minimalist "Enterprise Performance Report" based on the following data.
   
 Global Stats:
