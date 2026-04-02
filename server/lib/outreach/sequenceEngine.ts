@@ -24,6 +24,9 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
   const d = tx || db;
 
   try {
+    const sequence = await d.get<any>('SELECT status FROM outreach_sequences WHERE id = ?', [sequenceId]);
+    const isScheduled = sequence?.status === 'scheduled';
+
     // Usamos sintaxis limpia para Postgres
     await d.run(
       `INSERT INTO outreach_sequence_enrollments 
@@ -32,8 +35,14 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
       [enrollmentId, sequenceId, contactId, projectId]
     );
 
-    // Arrancamos el paso 1
-    await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx);
+    // Solo arrancamos el paso 1 si la secuencia ya está activa.
+    // Si está 'scheduled', el master Job despertará a todos los contactos después.
+    if (!isScheduled) {
+      console.log(`[SequenceEngine] Sequence is ${sequence?.status}. Starting step 1 for contact ${contactId}.`);
+      await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx);
+    } else {
+      console.log(`[SequenceEngine] Sequence is SCHEDULED. Enrolling contact ${contactId} but waiting for master trigger.`);
+    }
 
     return { success: true, enrollmentId };
   } catch (error: any) {
@@ -122,11 +131,23 @@ export async function scheduleNextStep(
         // Re-align the scheduled start time to the recipient's timezone
         // We take the local hour of the intended time and apply it to the recipient's zone
         const sequenceTz = sequence.send_timezone || 'UTC';
-        const intendedTime = DateTime.fromISO(step.scheduled_start_at, { zone: sequenceTz });
+        
+        // Robust parsing: PG returns Date objects, SQLite/API might return strings
+        const rawDate = step.scheduled_start_at as any;
+        const intendedTime = (rawDate instanceof Date) 
+          ? DateTime.fromJSDate(rawDate, { zone: sequenceTz })
+          : DateTime.fromISO(rawDate as string, { zone: sequenceTz });
+
         targetTime = intendedTime.setZone(targetTz, { keepLocalTime: true });
         console.log(`[SequenceEngine] Timezone Alignment: ${sequenceTz} -> ${targetTz} (Keep Local Time)`);
+        console.log(`[SequenceEngine] Parsed Target: ${targetTime.toISO()}`);
       } else {
-        targetTime = DateTime.fromISO(step.scheduled_start_at, { zone: targetTz });
+        const rawDate = step.scheduled_start_at as any;
+        targetTime = (rawDate instanceof Date)
+          ? DateTime.fromJSDate(rawDate, { zone: targetTz })
+          : DateTime.fromISO(rawDate as string, { zone: targetTz });
+        
+        console.log(`[SequenceEngine] No realignment. Target: ${targetTime.toISO()}`);
       }
     }
   } else {

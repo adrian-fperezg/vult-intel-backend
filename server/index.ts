@@ -1940,17 +1940,19 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
       console.log(`[API-START] Activating sequence ${id}. Raw scheduled_start_at from DB:`, firstStep?.scheduled_start_at);
 
       if (firstStep && firstStep.scheduled_start_at) {
-        const startTime = new Date(firstStep.scheduled_start_at).getTime();
+        // Robust check: PG might return a Date object
+        const rawScheduled = firstStep.scheduled_start_at;
+        const startTime = (rawScheduled instanceof Date) ? rawScheduled.getTime() : new Date(rawScheduled as string).getTime();
         const now = Date.now();
 
-        console.log(`[API-TIME-CHECK] Target Time: ${startTime} | Server Now: ${now} | Diff: ${startTime - now}ms`);
+        console.log(`[API-TIME-CHECK] Raw: ${rawScheduled} | Parsed TS: ${startTime} | Server Now: ${now} | Diff: ${startTime - now}ms`);
 
         if (startTime > now) {
           newStatus = 'scheduled';
           delay = startTime - now;
-          console.log(`[API-QUEUE] Sequence ${id} is in the FUTURE. Delay calculated: ${delay}ms`);
+          console.log(`[API-QUEUE] Sequence ${id} is in the FUTURE. Final Status: ${newStatus}, Delay: ${delay}ms`);
         } else {
-          console.log(`[API-WARNING] Sequence ${id} scheduled time is in the PAST! Defaulting to IMMEDIATE launch.`);
+          console.log(`[API-WARNING] Sequence ${id} scheduled time ${rawScheduled} is in the PAST or NOW! Defaulting to active.`);
         }
       }
 

@@ -12,7 +12,6 @@ import { TealButton, OutreachBadge, OutreachSectionHeader } from '../../Outreach
 import { cn } from '@/lib/utils';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
-import { DateTime } from 'luxon';
 import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
@@ -145,32 +144,33 @@ function StepNode({
     onUpdate(step.id, { attachments: (step.attachments || []).filter((a: any) => a.id !== id) });
   };
 
-  // --- NUEVA FUNCIÓN PARA ZONAS HORARIAS (LUXON) ---
-  const handleDateChange = (localDateString: string) => {
-    if (!localDateString) {
+  const formatForInput = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '';
+      // To display exactly what the UTC time is in local view for the input
+      // without standard browser offset shifting the hour value.
+      const localDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+      return localDate.toISOString().slice(0, 16);
+    } catch {
+      return '';
+    }
+  };
+
+  const handleDateChange = (val: string) => {
+    if (!val) {
       onUpdate(step.id, { scheduled_start_at: undefined });
       return;
     }
     try {
-      // Parse local input "YYYY-MM-DDTHH:mm" and convert to UTC ISO
-      const dt = DateTime.fromFormat(localDateString, "yyyy-MM-dd'T'HH:mm");
-      if (dt.isValid) {
-        onUpdate(step.id, { scheduled_start_at: dt.toUTC().toISO() || undefined });
+      // Input value 'val' is YYYY-MM-DDTHH:mm (local)
+      const dateObj = new Date(val);
+      if (!isNaN(dateObj.getTime())) {
+        onUpdate(step.id, { scheduled_start_at: dateObj.toISOString() });
       }
     } catch (e) {
-      console.error("Invalid date format", e);
-    }
-  };
-
-  // --- FUNCIÓN PARA MOSTRAR LA FECHA EN EL INPUT (LUXON) ---
-  const getLocalDateForInput = (isoString?: string) => {
-    if (!isoString) return '';
-    try {
-      // Parse UTC ISO and convert to local "YYYY-MM-DDTHH:mm"
-      const dt = DateTime.fromISO(isoString);
-      return dt.isValid ? dt.toFormat("yyyy-MM-dd'T'HH:mm") : '';
-    } catch (e) {
-      return '';
+      console.error("[SequenceBuilder] Invalid date selected:", e);
     }
   };
 
@@ -349,7 +349,7 @@ function StepNode({
                           <Clock className="size-3 text-teal-400" />
                           <input
                             type="datetime-local"
-                            value={getLocalDateForInput(step.scheduled_start_at)}
+                            value={formatForInput(step.scheduled_start_at)}
                             onChange={e => handleDateChange(e.target.value)}
                             className="bg-transparent text-white focus:text-teal-400 outline-none cursor-pointer w-full"
                           />
