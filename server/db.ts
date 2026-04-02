@@ -796,6 +796,18 @@ export const initDb = async () => {
       }
     }
 
+    // 20.5 Campaign Enrollments (¡NUEVA TABLA PARA EL EMBUDO!)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_campaign_enrollments (
+        id TEXT PRIMARY KEY,
+        campaign_id TEXT NOT NULL REFERENCES outreach_campaigns(id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES outreach_contacts(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(campaign_id, contact_id)
+      )
+    `);
+
     // 21. Snippets
     await db.run(`
       CREATE TABLE IF NOT EXISTS outreach_snippets (
