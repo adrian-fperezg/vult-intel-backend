@@ -12,6 +12,7 @@ import { TealButton, OutreachBadge, OutreachSectionHeader } from '../../Outreach
 import { cn } from '@/lib/utils';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
+import { DateTime } from 'luxon';
 import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
@@ -144,34 +145,30 @@ function StepNode({
     onUpdate(step.id, { attachments: (step.attachments || []).filter((a: any) => a.id !== id) });
   };
 
-  // --- NUEVA FUNCIÓN PARA ZONAS HORARIAS ---
-  // Convierte un string "YYYY-MM-DDTHH:mm" (del input local) a "YYYY-MM-DDTHH:mm:ss.sssZ" (ISO Universal)
+  // --- NUEVA FUNCIÓN PARA ZONAS HORARIAS (LUXON) ---
   const handleDateChange = (localDateString: string) => {
     if (!localDateString) {
       onUpdate(step.id, { scheduled_start_at: undefined });
       return;
     }
     try {
-      const dateObj = new Date(localDateString);
-      // Solo actualizamos si la fecha es válida
-      if (!isNaN(dateObj.getTime())) {
-        onUpdate(step.id, { scheduled_start_at: dateObj.toISOString() });
+      // Parse local input "YYYY-MM-DDTHH:mm" and convert to UTC ISO
+      const dt = DateTime.fromFormat(localDateString, "yyyy-MM-dd'T'HH:mm");
+      if (dt.isValid) {
+        onUpdate(step.id, { scheduled_start_at: dt.toUTC().toISO() || undefined });
       }
     } catch (e) {
       console.error("Invalid date format", e);
     }
   };
 
-  // --- FUNCIÓN PARA MOSTRAR LA FECHA EN EL INPUT ---
-  // Convierte "YYYY-MM-DDTHH:mm:ss.sssZ" de vuelta a formato local para el <input>
+  // --- FUNCIÓN PARA MOSTRAR LA FECHA EN EL INPUT (LUXON) ---
   const getLocalDateForInput = (isoString?: string) => {
     if (!isoString) return '';
     try {
-      const d = new Date(isoString);
-      // Ajuste mágico para obtener el formato YYYY-MM-DDTHH:mm en la zona horaria del navegador
-      const tzOffset = d.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-      return localISOTime;
+      // Parse UTC ISO and convert to local "YYYY-MM-DDTHH:mm"
+      const dt = DateTime.fromISO(isoString);
+      return dt.isValid ? dt.toFormat("yyyy-MM-dd'T'HH:mm") : '';
     } catch (e) {
       return '';
     }
@@ -814,7 +811,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             subject: s.config?.subject || '',
             body_html: s.config?.body_html || '',
           },
-          custom_intent_logic: !!s.custom_intent_logic
+          custom_intent_logic: !!s.custom_intent_logic,
+          scheduled_start_at: s.scheduled_start_at
         }));
         setSteps(mappedSteps);
       }
