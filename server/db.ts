@@ -394,6 +394,7 @@ export const initDb = async () => {
     const newEventCols = [
       { name: 'sequence_id', type: 'TEXT' },
       { name: 'step_id', type: 'TEXT' },
+      { name: 'campaign_id', type: 'TEXT' },
       { name: 'event_key', type: 'TEXT UNIQUE' }
     ];
 
@@ -492,6 +493,7 @@ export const initDb = async () => {
         contact_id TEXT REFERENCES outreach_contacts(id),
         sequence_id TEXT REFERENCES outreach_sequences(id),
         step_id TEXT REFERENCES outreach_sequence_steps(id),
+        campaign_id TEXT REFERENCES outreach_campaigns(id),
         from_email TEXT,
         from_name TEXT,
         to_email TEXT NOT NULL,
@@ -516,6 +518,7 @@ export const initDb = async () => {
       { name: 'attachments', type: "TEXT DEFAULT '[]'" },
       { name: 'sequence_id', type: 'TEXT' },
       { name: 'step_id', type: 'TEXT' },
+      { name: 'campaign_id', type: 'TEXT' },
       { name: 'opened_at', type: 'TIMESTAMP' },
       { name: 'is_reply', type: 'BOOLEAN DEFAULT FALSE' },
       { name: 'error_code', type: 'TEXT' }
@@ -626,6 +629,7 @@ export const initDb = async () => {
         project_id TEXT,
         sequence_id TEXT,
         step_id TEXT,
+        campaign_id TEXT,
         type TEXT,
         metadata TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -636,7 +640,8 @@ export const initDb = async () => {
     const newTrackCols = [
       { name: 'project_id', type: 'TEXT' },
       { name: 'sequence_id', type: 'TEXT' },
-      { name: 'step_id', type: 'TEXT' }
+      { name: 'step_id', type: 'TEXT' },
+      { name: 'campaign_id', type: 'TEXT' }
     ];
 
     for (const col of newTrackCols) {
@@ -809,7 +814,7 @@ export const initDb = async () => {
 
     const snippetColsRes = await db.all("SELECT column_name as name FROM information_schema.columns WHERE table_name = 'outreach_snippets'");
     const snippetColNames = (snippetColsRes || []).map((c: any) => c.name);
-    
+
     if (!snippetColNames.includes('type')) {
       console.log("[DB] Adding 'type' column to outreach_snippets");
       await db.run(`ALTER TABLE outreach_snippets ADD COLUMN type TEXT DEFAULT 'standard'`);
