@@ -1330,7 +1330,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
     // Calculate fixed calendar day start (00:00:00) in user's timezone
     const userTz = timezone || getUserTimezone(req);
     const { startDateStr, endDateStr } = getTimeframeBounds(timeframe, userTz);
-    
+
     // For velocity/limits, we still need today's actual start
     const todayStart = DateTime.now().setZone(userTz).startOf('day');
     const todayStr = todayStart.toUTC().toISO()!;
@@ -1459,8 +1459,10 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         Activities Performance:
         ${entityData}`;
 
-        const result = await (ai as any).models.get("gemini-1.5-flash").generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        // ✅ CÓDIGO CORREGIDO
+        const result = await ai.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: prompt
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
       } catch (err) {
@@ -1523,7 +1525,7 @@ async function generateOutreachReport(projectId: string, timeframe?: string, tim
         (SELECT COUNT(*) FROM outreach_events WHERE project_id = ? AND type = 'opened' AND created_at BETWEEN ? AND ?) as totalOpened,
         (SELECT COUNT(*) FROM outreach_events WHERE project_id = ? AND type = 'replied' AND created_at BETWEEN ? AND ?) as totalReplied
     `, projectId, startDateStr, endDateStr, projectId, startDateStr, endDateStr, projectId, startDateStr, endDateStr),
-    
+
     db.all<OutreachEntityPerformance>(`
       WITH sequence_stats AS (
         SELECT s.name, s.status, 'sequence' as type,
@@ -1541,8 +1543,8 @@ async function generateOutreachReport(projectId: string, timeframe?: string, tim
       )
       SELECT * FROM (SELECT * FROM sequence_stats UNION ALL SELECT * FROM campaign_stats) 
       WHERE sent > 0 ORDER BY sent DESC LIMIT 10
-    `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId, 
-       startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId)
+    `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId,
+      startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId)
   ]);
 
   const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -1571,16 +1573,18 @@ Structure the report with these sections:
 
 Use professional, encouraging, and data-driven language. Use Markdown for formatting.`;
 
+  // ✅ CÓDIGO CORREGIDO
   try {
-    const result = await (ai as any).models.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    const result = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: prompt
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
   } catch (err) {
     console.error("[Report Generation Error]", err);
     return "Error generating AI report: " + (err instanceof Error ? err.message : "unknown error");
   }
-}
+} // <-- Esta llave cierra la función generateOutreachReport
 
 app.post("/api/outreach/ai/generate-report", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const projectId = req.headers['x-project-id'] as string;
@@ -3614,10 +3618,10 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
         (SELECT count(*) FROM outreach_sequence_enrollments e WHERE sequence_id = ? AND project_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as active_enrollments,
         (SELECT count(*) FROM outreach_sequence_enrollments e WHERE sequence_id = ? AND project_id = ? AND status = 'completed' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as completed_enrollments
     `).get(
-      id, startDateStr, endDateStr, 
-      id, projectId, startDateStr, endDateStr, 
-      id, projectId, startDateStr, endDateStr, 
-      id, projectId, startDateStr, endDateStr, 
+      id, startDateStr, endDateStr,
+      id, projectId, startDateStr, endDateStr,
+      id, projectId, startDateStr, endDateStr,
+      id, projectId, startDateStr, endDateStr,
       id, projectId, id, projectId, id, projectId
     ) as any;
 
@@ -3629,7 +3633,7 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
     // 2. Dynamic Time-Series Stats
     let datePart = `(created_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text`;
     let sentDatePart = `(sent_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text`;
-    
+
     if (grouping === 'week') {
       datePart = `date_trunc('week', created_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text`;
       sentDatePart = `date_trunc('week', sent_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text`;
@@ -3716,7 +3720,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   try {
     const userTz = timezone || getUserTimezone(req);
     const { startDateStr, endDateStr, previousStartDateStr, previousEndDateStr, grouping } = getTimeframeBounds(timeframe, userTz);
-    
+
     // Also need start of TODAY for the summary cards
     const nowTz = DateTime.now().setZone(userTz);
     const dayStart = nowTz.startOf('day').toUTC().toISO()!;
