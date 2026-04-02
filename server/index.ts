@@ -1170,6 +1170,11 @@ import { enrollContactInSequence } from './lib/outreach/sequenceEngine.js';
 import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
 
 // GET /api/outreach/stats
+// Helper to get user timezone from header or default
+const getUserTimezone = (req: any) => {
+  return (req.headers['x-user-timezone'] as string) || 'America/Mexico_City';
+};
+
 app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const projectId = req.headers['x-project-id'] as string;
@@ -1180,10 +1185,10 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
 
-    // Calculate fixed calendar day start (00:00:00)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStr = todayStart.toISOString();
+    // Calculate fixed calendar day start (00:00:00) in user's timezone
+    const userTz = getUserTimezone(req);
+    const todayStart = DateTime.now().setZone(userTz).startOf('day');
+    const todayStr = todayStart.toUTC().toISO()!;
 
     const [
       { sendVelocity },
@@ -1196,16 +1201,16 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
       { openedToday },
       { repliedToday }
     ] = await Promise.all([
-      db.get("SELECT COUNT(*) as sendVelocity FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, todayStr),
+      db.get("SELECT COUNT(*) as sendVelocity FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id) AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = outreach_individual_emails.sequence_id AND status != 'archived')", projectId, todayStr),
       db.get("SELECT COUNT(*) as activeSequences FROM outreach_sequences WHERE project_id = ? AND status = 'active'", projectId),
-      db.get("SELECT COUNT(DISTINCT contact_id) as totalRecipients FROM outreach_sequence_enrollments WHERE project_id = ?", projectId),
-      db.get("SELECT COALESCE(SUM(sent_count), 0) as totalSentCount FROM outreach_sequences WHERE project_id = ?", projectId),
-      db.get("SELECT COALESCE(SUM(opened_count), 0) as totalOpenedCount FROM outreach_sequences WHERE project_id = ?", projectId),
-      db.get("SELECT COALESCE(SUM(replied_count), 0) as totalRepliedCount FROM outreach_sequences WHERE project_id = ?", projectId),
+      db.get("SELECT COUNT(DISTINCT contact_id) as totalRecipients FROM outreach_sequence_enrollments e WHERE project_id = ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id) AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived')", projectId),
+      db.get("SELECT COALESCE(SUM(sent_count), 0) as totalSentCount FROM outreach_sequences WHERE project_id = ? AND status != 'archived'", projectId),
+      db.get("SELECT COALESCE(SUM(opened_count), 0) as totalOpenedCount FROM outreach_sequences WHERE project_id = ? AND status != 'archived'", projectId),
+      db.get("SELECT COALESCE(SUM(replied_count), 0) as totalRepliedCount FROM outreach_sequences WHERE project_id = ? AND status != 'archived'", projectId),
       // Today specific aggregates
-      db.get("SELECT COUNT(*) as sentToday FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ?", projectId, todayStr),
-      db.get("SELECT COUNT(*) as openedToday FROM outreach_events WHERE project_id = ? AND type = 'opened' AND created_at >= ?", projectId, todayStr),
-      db.get("SELECT COUNT(*) as repliedToday FROM outreach_events WHERE project_id = ? AND type = 'replied' AND created_at >= ?", projectId, todayStr)
+      db.get("SELECT COUNT(*) as sentToday FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id) AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = outreach_individual_emails.sequence_id AND status != 'archived')", projectId, todayStr),
+      db.get("SELECT COUNT(*) as openedToday FROM outreach_events WHERE project_id = ? AND type = 'opened' AND created_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id) AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = outreach_events.sequence_id AND status != 'archived')", projectId, todayStr),
+      db.get("SELECT COUNT(*) as repliedToday FROM outreach_events WHERE project_id = ? AND type = 'replied' AND created_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id) AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = outreach_events.sequence_id AND status != 'archived')", projectId, todayStr)
     ]) as any[];
 
     const overallOpenRate = totalSentCount > 0 ? (totalOpenedCount / totalSentCount) * 100 : 0;
@@ -1231,17 +1236,15 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         Sequences:
         ${seqData}`;
 
-        // Apagamos la IA temporalmente para que no rompa la carga de la pantalla
-        insight = "Insights pausados temporalmente. ¡El botón ahora sí se guardará!";
-
-        /* COMENTAMOS TODO ESTO:
         try {
-            const result = await (ai as any).models.generateContent({ ... });
-            insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
+          const result = await (ai as any).models.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+          });
+          insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
         } catch (err) {
-            console.error("[AI Insight Error]", err);
+          console.error("[AI Insight Error]", err);
+          insight = "AI insight generation skipped: " + (err instanceof Error ? err.message : "unknown error");
         }
-        */
       } catch (e) { }
     }
     const stats = {
@@ -1275,26 +1278,27 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   if (!userId || !project_id) return res.json([]);
 
   try {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStr = todayStart.toISOString();
+    // Calculate fixed calendar day start (00:00:00) in user's timezone
+    const userTz = getUserTimezone(req);
+    const todayStart = DateTime.now().setZone(userTz).startOf('day');
+    const todayStr = todayStart.toUTC().toISO()!;
 
     const sequences = await db.all(`
       SELECT s.*, 
              (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id AND project_id = s.project_id) as step_count,
-             (SELECT COUNT(*) FROM outreach_sequence_enrollments WHERE sequence_id = s.id AND project_id = s.project_id) as contact_count,
+             (SELECT COUNT(*) FROM outreach_sequence_enrollments e WHERE sequence_id = s.id AND project_id = s.project_id AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as contact_count,
              
              s.sent_count as total_sent,
-             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at >= ?) as sent_today,
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as sent_today,
              
              s.opened_count as total_opened,
-             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'opened' AND created_at >= ?) as opened_today,
+             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'opened' AND created_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as opened_today,
              
              s.replied_count as total_replies,
-             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'replied' AND created_at >= ?) as replied_today,
+             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type = 'replied' AND created_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as replied_today,
              
              s.bounced_count as total_bounced,
-             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND updated_at >= ?) as bounced_today
+             (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND updated_at >= ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as bounced_today
       FROM outreach_sequences s
       WHERE s.user_id = ? AND s.project_id = ?
       ORDER BY s.created_at DESC
@@ -3256,18 +3260,19 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
       return res.status(404).json({ error: "Sequence not found or unauthorized" });
     }
 
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const userTz = getUserTimezone(req);
+    const thirtyDaysAgo = DateTime.now().setZone(userTz).minus({ days: 30 }).startOf('day').toUTC().toISO()!;
 
     // 1. Overall Totals
     const totals = await db.prepare(`
       SELECT 
-        (SELECT count(*) FROM outreach_individual_emails WHERE sequence_id = ?) as total_sent,
-        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND project_id = ? AND type = 'email_opened') as unique_opens,
-        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND project_id = ? AND type = 'email_replied') as unique_replies,
-        (SELECT count(DISTINCT contact_id) FROM outreach_events WHERE sequence_id = ? AND project_id = ? AND type = 'email_clicked') as unique_clicks,
-        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?) as total_recipients,
-        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ? AND status = 'active') as active_enrollments,
-        (SELECT count(*) FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ? AND status = 'completed') as completed_enrollments
+        (SELECT count(*) FROM outreach_individual_emails e WHERE sequence_id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as total_sent,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events e WHERE sequence_id = ? AND project_id = ? AND type = 'email_opened' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as unique_opens,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events e WHERE sequence_id = ? AND project_id = ? AND type = 'email_replied' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as unique_replies,
+        (SELECT count(DISTINCT contact_id) FROM outreach_events e WHERE sequence_id = ? AND project_id = ? AND type = 'email_clicked' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as unique_clicks,
+        (SELECT count(*) FROM outreach_sequence_enrollments e WHERE sequence_id = ? AND project_id = ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as total_recipients,
+        (SELECT count(*) FROM outreach_sequence_enrollments e WHERE sequence_id = ? AND project_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as active_enrollments,
+        (SELECT count(*) FROM outreach_sequence_enrollments e WHERE sequence_id = ? AND project_id = ? AND status = 'completed' AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as completed_enrollments
     `).get(id, id, projectId, id, projectId, id, projectId, id, projectId, id, projectId, id, projectId) as any;
 
     const totalSent = parseInt(totals.total_sent) || 0;
@@ -3276,34 +3281,35 @@ app.get("/api/outreach/sequences/:id/dashboard-stats", async (req: AuthRequest, 
     const clickRate = totalSent > 0 ? ((parseInt(totals.unique_clicks) || 0) / totalSent) * 100 : 0;
 
     // 2. Daily Stats (Last 30 days)
-    const dailyEvents = await db.prepare(`
+    const dailyEvents = await db.all(`
       SELECT 
-        ${db.isPostgres ? "TO_CHAR(created_at, 'YYYY-MM-DD')" : "date(created_at)"} as day,
+        (created_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text as day,
         count(CASE WHEN type = 'email_opened' THEN 1 END) as opens,
         count(CASE WHEN type = 'email_replied' THEN 1 END) as replies,
         count(CASE WHEN type = 'email_clicked' THEN 1 END) as clicks
-      FROM outreach_events
+      FROM outreach_events e
       WHERE sequence_id = ? AND created_at >= ?
+        AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
       GROUP BY day
       ORDER BY day ASC
-    `).all(id, thirtyDaysAgo) as any[];
+    `, userTz, id, thirtyDaysAgo) as any[];
 
-    const dailySent = await db.prepare(`
+    const dailySent = await db.all(`
       SELECT 
-        ${db.isPostgres ? "TO_CHAR(sent_at, 'YYYY-MM-DD')" : "date(sent_at)"} as day,
+        (sent_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text as day,
         count(*) as sent
-      FROM outreach_individual_emails
+      FROM outreach_individual_emails e
       WHERE sequence_id = ? AND status = 'sent' AND sent_at >= ?
+        AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
       GROUP BY day
       ORDER BY day ASC
-    `).all(id, thirtyDaysAgo) as any[];
+    `, userTz, id, thirtyDaysAgo) as any[];
 
-    // Merge daily stats
+    // Merge daily stats using user's timezone for local day generation
     const statsMap: Record<string, any> = {};
+    const now = DateTime.now().setZone(userTz);
     for (let i = 0; i < 30; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - (29 - i));
-      const dayStr = d.toISOString().split('T')[0];
+      const dayStr = now.minus({ days: 29 - i }).toFormat('yyyy-MM-dd');
       statsMap[dayStr] = { day: dayStr, sent: 0, opens: 0, replies: 0, clicks: 0 };
     }
 
@@ -3346,39 +3352,50 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
   const { campaign_id } = req.query as { campaign_id?: string };
 
   try {
-    const now = new Date();
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const userTz = getUserTimezone(req);
+    const nowTz = DateTime.now().setZone(userTz);
+    const dayStart = nowTz.startOf('day').toUTC().toISO()!;
+    const thirtyDaysAgo = nowTz.minus({ days: 30 }).startOf('day').toUTC().toISO()!;
+    const sixtyDaysAgo = nowTz.minus({ days: 60 }).startOf('day').toUTC().toISO()!;
 
     const campaignFilter = campaign_id ? `AND metadata LIKE '%"campaign_id":"' || ? || '"%'` : "";
     const queryParams = campaign_id ? [project_id, thirtyDaysAgo, campaign_id] : [project_id, thirtyDaysAgo];
 
-    const currentMetrics = await db.prepare(`
+    const currentMetrics = await db.all(`
       SELECT 
         count(CASE WHEN type = 'sent' THEN 1 END) as sent,
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
-      FROM outreach_events 
-      WHERE project_id = ? AND created_at >= ? ${campaignFilter}
-    `).get(...queryParams) as any;
+      FROM outreach_events e
+      WHERE project_id = ? AND created_at >= ? 
+        AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
+        AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived')
+        ${campaignFilter}
+    `, ...queryParams) as any[];
+    const currentMetric = currentMetrics[0];
 
     const prevQueryParams = campaign_id ? [project_id, sixtyDaysAgo, thirtyDaysAgo, campaign_id] : [project_id, sixtyDaysAgo, thirtyDaysAgo];
-    const prevMetrics = await db.prepare(`
+    const prevMetricsRes = await db.all(`
       SELECT 
         count(CASE WHEN type = 'sent' THEN 1 END) as sent,
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
-      FROM outreach_events 
-      WHERE project_id = ? AND created_at >= ? AND created_at < ? ${campaignFilter}
-    `).get(...prevQueryParams) as any;
+      FROM outreach_events e
+      WHERE project_id = ? AND created_at >= ? AND created_at < ? 
+        AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
+        AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived')
+        ${campaignFilter}
+    `, ...prevQueryParams) as any[];
+    const prevMetric = prevMetricsRes[0];
 
     // 3. Today's Performance
-    const todaySent = await db.prepare(`
+    const todaySent = await db.get(`
       SELECT count(*) as count 
-      FROM outreach_individual_emails 
-      WHERE project_id = ? AND created_at >= ? AND status = 'sent'
-    `).get(project_id, dayStart) as any;
+      FROM outreach_individual_emails e
+      WHERE project_id = ? AND sent_at >= ? AND status = 'sent'
+        AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
+        AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived')
+    `, project_id, dayStart) as any;
 
     // 4. Counts
     const activeSequences = await db.prepare(`
@@ -3418,18 +3435,20 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     }));
 
     // 7. Daily Data
-    const dayExpr = db.isPostgres ? "TO_CHAR(created_at, 'YYYY-MM-DD')" : "strftime('%Y-%m-%d', created_at)";
-    const dailyData = await db.prepare(`
+    const dayExpr = `(created_at AT TIME ZONE 'UTC' AT TIME ZONE ?)::date::text`;
+    const dailyData = await db.all(`
       SELECT 
         ${dayExpr} as day,
         count(CASE WHEN type = 'sent' THEN 1 END) as sent,
         count(CASE WHEN type = 'opened' THEN 1 END) as opens,
         count(CASE WHEN (type = 'replied' OR type = 'reply') THEN 1 END) as replies
-      FROM outreach_events
-      WHERE project_id = ? AND created_at >= ? ${campaignFilter}
+      FROM outreach_events e
+      WHERE project_id = ? AND created_at >= ?
+        AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
+        AND EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived')
       GROUP BY day
       ORDER BY day ASC
-    `).all(...queryParams) as any[];
+    `, userTz, project_id, thirtyDaysAgo) as any[];
 
     // 8. Campaign Comparison
     const campaignComparisonReq = await db.prepare(`
@@ -3447,16 +3466,16 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       LIMIT 5
     `).all(project_id) as any[];
 
-    const sent = Number(currentMetrics.sent || 0);
-    const prevSent = Number(prevMetrics.sent || 0);
-    const calcRate = (part: number, total: number) => total > 0 ? ((part / total) * 100).toFixed(1) : "0.0";
+    const sentValue = Number(currentMetric?.sent || 0);
+    const prevSentValue = Number(prevMetric?.sent || 0);
+    const calcRate = (part: any, total: number) => total > 0 ? ((Number(part) / total) * 100).toFixed(1) : "0.0";
     const calcChange = (curr: number, prev: number) => prev > 0 ? (((curr - prev) / prev) * 100).toFixed(1) : "0.0";
 
     res.json({
-      total_sent: sent,
-      sent_change: calcChange(sent, prevSent),
-      open_rate: calcRate(currentMetrics.opens, sent),
-      reply_rate: calcRate(currentMetrics.replies, sent),
+      total_sent: sentValue,
+      sent_change: calcChange(sentValue, prevSentValue),
+      open_rate: calcRate(currentMetric?.opens, sentValue),
+      reply_rate: calcRate(currentMetric?.replies, sentValue),
       active_sequences: activeSequences?.count || 0,
       total_recipients: totalRecipients?.count || 0,
       pending_tasks: pendingTasks?.count || 0,
