@@ -18,11 +18,14 @@ interface Sequence {
   step_count: number;
   contact_count: number;
   total_sent: number;
-  sent_today: number;
+  sent_in_period: number;
   total_opened: number;
-  opened_today: number;
+  opened_in_period: number;
   total_replies: number;
-  replied_today: number;
+  replied_in_period: number;
+  clicked_in_period: number;
+  bounced_in_period: number;
+  unsub_in_period: number;
   open_rate: number;
   reply_rate: number;
   created_at: string;
@@ -37,6 +40,7 @@ export default function OutreachSequences() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
+  const [timeframe, setTimeframe] = useState<string>('30d');
   const [globalStats, setGlobalStats] = useState<any>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,10 +65,11 @@ export default function OutreachSequences() {
     if (!activeProjectId) return;
     setIsLoading(true);
     try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const [seqs, limits, stats] = await Promise.all([
-        api.fetchSequences(),
+        api.fetchSequences(timeframe, tz),
         api.getGlobalLimitStatus(activeProjectId),
-        api.fetchGlobalStats()
+        api.fetchGlobalStats(timeframe, tz)
       ]);
       setSequences(seqs || []);
       setLimitStatus(limits);
@@ -74,7 +79,7 @@ export default function OutreachSequences() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeProjectId, api.fetchSequences, api.getGlobalLimitStatus]);
+  }, [activeProjectId, api.fetchSequences, api.getGlobalLimitStatus, timeframe]);
 
   // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
@@ -208,20 +213,45 @@ export default function OutreachSequences() {
         </div>
 
         {/* Filters & Search */}
-        <div className="flex items-center justify-between gap-4 pt-2">
-          <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
-            {['all', 'active', 'draft'].map((s) => (
-              <button
-                key={s}
-                onClick={() => setFilterStatus(s as any)}
-                className={cn(
-                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize",
-                  filterStatus === s ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
-                )}
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
+              {['all', 'active', 'draft'].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setFilterStatus(s as any)}
+                  className={cn(
+                    "px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize",
+                    filterStatus === s ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            <div className="h-6 w-px bg-white/5 mx-2" />
+
+            <div className="flex items-center gap-2">
+              <Clock className="size-4 text-slate-500" />
+              <select
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value)}
+                className="bg-white/5 border border-white/5 text-slate-300 text-xs font-bold rounded-xl px-3 py-1.5 outline-none hover:bg-white/10 transition-all cursor-pointer"
               >
-                {s}
-              </button>
-            ))}
+                <option value="1d">Last 24h</option>
+                <option value="3d">Last 3 days</option>
+                <option value="7d">Last 7 days</option>
+                <option value="14d">Last 14 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="1m">Last month</option>
+                <option value="Q1">Q1 (Jan-Mar)</option>
+                <option value="Q2">Q2 (Apr-Jun)</option>
+                <option value="Q3">Q3 (Jul-Sep)</option>
+                <option value="Q4">Q4 (Oct-Dec)</option>
+                <option value="1y">Last year</option>
+              </select>
+            </div>
           </div>
           <div className="flex-1 max-w-md relative group">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
@@ -310,8 +340,8 @@ export default function OutreachSequences() {
                         <span className="text-[10px] font-bold text-slate-600 uppercase">Open Rate</span>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className="text-xs font-bold text-teal-500/80">{seq.open_rate}%</span>
-                          {seq.opened_today > 0 && (
-                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-teal-500/10 text-teal-400">+{seq.opened_today}</span>
+                          {seq.opened_in_period > 0 && (
+                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-teal-500/10 text-teal-400">+{seq.opened_in_period}</span>
                           )}
                         </div>
                       </div>
@@ -320,8 +350,8 @@ export default function OutreachSequences() {
                         <span className="text-[10px] font-bold text-slate-600 uppercase">Reply Rate</span>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className="text-xs font-bold text-white/80">{seq.reply_rate}%</span>
-                          {seq.replied_today > 0 && (
-                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">+{seq.replied_today}</span>
+                          {seq.replied_in_period > 0 && (
+                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">+{seq.replied_in_period}</span>
                           )}
                         </div>
                       </div>

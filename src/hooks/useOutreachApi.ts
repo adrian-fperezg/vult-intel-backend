@@ -204,7 +204,12 @@ export function useOutreachApi() {
 
   // ── Campaigns ────────────────────────────────────────────────────────────
 
-  const fetchCampaigns = useCallback(() => get<any[]>('/campaigns'), [get]);
+  const fetchCampaigns = useCallback((timeframe?: string, timezone?: string) => {
+    const params: Record<string, string> = {};
+    if (timeframe) params.timeframe = timeframe;
+    if (timezone) params.timezone = timezone;
+    return get<any[]>('/campaigns', params);
+  }, [get]);
 
   const createCampaign = (name = 'New Campaign', funnel_stage = 'TOFU') => 
     post<any>('/campaigns', { name, type: 'email', funnel_stage });
@@ -235,7 +240,12 @@ export function useOutreachApi() {
 
   // ── Sequences ────────────────────────────────────────────────────────────
 
-  const fetchSequences = useCallback(() => get<any[]>('/sequences'), [get]);
+  const fetchSequences = useCallback((timeframe?: string, timezone?: string) => {
+    const params: Record<string, string> = {};
+    if (timeframe) params.timeframe = timeframe;
+    if (timezone) params.timezone = timezone;
+    return get<any[]>('/sequences', params);
+  }, [get]);
 
   const createSequence = useCallback(
     (name = 'New Sequence', steps: any[] = []) =>
@@ -292,12 +302,22 @@ export function useOutreachApi() {
   );
 
   const fetchSequenceStats = useCallback(
-    (id: string) => get<any>(`/sequences/${id}/dashboard-stats`),
+    (id: string, timeframe?: string, timezone?: string) => {
+      const params: Record<string, string> = {};
+      if (timeframe) params.timeframe = timeframe;
+      if (timezone) params.timezone = timezone;
+      return get<any>(`/sequences/${id}/dashboard-stats`, params);
+    },
     [get]
   );
 
   const fetchGlobalStats = useCallback(
-    () => get<any>('/stats'),
+    (timeframe?: string, timezone?: string) => {
+      const params: Record<string, string> = {};
+      if (timeframe) params.timeframe = timeframe;
+      if (timezone) params.timezone = timezone;
+      return get<any>('/stats', params);
+    },
     [get]
   );
 
@@ -462,22 +482,33 @@ export function useOutreachApi() {
 
   // ── Analytics ─────────────────────────────────────────────────────────────
 
-  const fetchAnalytics = useCallback((days: number, campaignId?: string) => {
-    const params: Record<string, string> = { days: days.toString() };
+  const fetchAnalytics = useCallback((timeframe?: string, campaignId?: string, timezone?: string) => {
+    const params: Record<string, string> = {};
+    if (timeframe) params.timeframe = timeframe;
     if (campaignId) params.campaign_id = campaignId;
+    if (timezone) params.timezone = timezone;
     return get<AnalyticsData>('/analytics', params);
   }, [get]);
 
-  const getFunnelStats = useCallback(() => {
-    return get<FunnelStat[]>('/campaigns/funnel-stats');
+  const getFunnelStats = useCallback((timeframe?: string, timezone?: string) => {
+    const params: Record<string, string> = {};
+    if (timeframe) params.timeframe = timeframe;
+    if (timezone) params.timezone = timezone;
+    return get<FunnelStat[]>('/campaigns/funnel-stats', params);
   }, [get]);
 
-  const generateAiReport = useCallback((data: any) => post<any>('/ai/generate-report', data), [post]);
+  const generateAiReport = useCallback((data: { timeframe?: string; timezone?: string }) => 
+    post<any>('/ai/generate-report', data), [post]
+  );
 
-  const exportAiReport = useCallback(async () => {
+  const exportAiReport = useCallback(async (timeframe?: string, timezone?: string) => {
     if (!activeProjectId) return;
     const headers = await authHeaders();
-    const params = new URLSearchParams({ project_id: activeProjectId });
+    const params = new URLSearchParams({ 
+      project_id: activeProjectId, 
+      ...(timeframe && { timeframe }), 
+      ...(timezone && { timezone }) 
+    });
     const res = await fetch(`${BASE_URL}/export/ai-report?${params}`, { headers });
     if (!res.ok) throw new Error('Failed to export AI report');
     return res.blob();

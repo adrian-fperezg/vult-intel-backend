@@ -75,6 +75,33 @@ export function matchKeyword(body: string, keyword: string | null): boolean {
 }
 
 /**
+ * 4. EVALUADOR DE INTENCIONES INTELIGENTE:
+ * Decide qué hacer con un contacto basado en la configuración de la secuencia y el match de palabras clave.
+ */
+export function evaluateSmartIntent(params: {
+  smart_intent_bypass: boolean;
+  stop_on_reply: boolean;
+  keywordMatch: boolean | null;
+}) {
+  const { smart_intent_bypass, stop_on_reply, keywordMatch } = params;
+
+  if (smart_intent_bypass) {
+    if (keywordMatch === true) {
+      return { status: 'replied', matched: true };
+    }
+    // Si no hay match pero el bypass está activado, pausamos para revisión humana
+    return { status: 'paused', matched: false };
+  }
+
+  // Comportamiento estándar legacy
+  if (stop_on_reply) {
+    return { status: 'stopped', matched: false };
+  }
+
+  return { status: 'active', matched: false };
+}
+
+/**
  * Busca la intención de la secuencia basada en el keyword configurado.
  */
 export async function handleSequenceIntent(originalEmail: any, rawBody: string) {

@@ -19,10 +19,11 @@ interface SequenceStats {
   openRate: number;
   replyRate: number;
   clickRate: number;
+  grouping: 'day' | 'week' | 'month';
   enrollmentStats: {
+    total: number;
     active: number;
     completed: number;
-    total: number;
   };
   dailyStats: {
     day: string;
@@ -54,6 +55,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 
 export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
   const [stats, setStats] = useState<SequenceStats | null>(null);
+  const [timeframe, setTimeframe] = useState<string>('30d');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { fetchSequenceStats } = useOutreachApi();
@@ -64,7 +66,8 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
       setIsLoading(true);
       setError(null);
       try {
-        const data = await fetchSequenceStats(sequenceId);
+        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const data = await fetchSequenceStats(sequenceId, timeframe, userTz);
         if (data) {
           setStats(data);
         } else {
@@ -78,7 +81,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
       }
     }
     loadStats();
-  }, [sequenceId, fetchSequenceStats]);
+  }, [sequenceId, fetchSequenceStats, timeframe]);
 
   if (isLoading) {
     return (
@@ -111,6 +114,51 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header with Timeframe Selector */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">Performance Overview</h2>
+          <p className="text-sm text-slate-500">Sequence metrics and engagement trends.</p>
+        </div>
+        <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
+          {[
+            { label: '24h', value: '1d' },
+            { label: '7d', value: '7d' },
+            { label: '30d', value: '30d' },
+            { label: 'Q1', value: 'Q1' },
+            { label: '1y', value: '1y' }
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTimeframe(opt.value)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-bold rounded-lg transition-all",
+                timeframe === opt.value ? "bg-teal-500 text-white shadow-lg shadow-teal-500/20" : "text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <select
+             value={timeframe}
+             onChange={(e) => setTimeframe(e.target.value)}
+             className="bg-transparent text-xs font-bold text-slate-400 outline-none pr-2 cursor-pointer hover:text-white transition-colors"
+          >
+            <option value="1d" className="bg-[#1c2128]">24h</option>
+            <option value="3d" className="bg-[#1c2128]">3 days</option>
+            <option value="7d" className="bg-[#1c2128]">7 days</option>
+            <option value="14d" className="bg-[#1c2128]">14 days</option>
+            <option value="30d" className="bg-[#1c2128]">30 days</option>
+            <option value="1m" className="bg-[#1c2128]">Month</option>
+            <option value="Q1" className="bg-[#1c2128]">Q1</option>
+            <option value="Q2" className="bg-[#1c2128]">Q2</option>
+            <option value="Q3" className="bg-[#1c2128]">Q3</option>
+            <option value="Q4" className="bg-[#1c2128]">Q4</option>
+            <option value="1y" className="bg-[#1c2128]">Year</option>
+          </select>
+        </div>
+      </div>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <OutreachMetricCard
@@ -147,7 +195,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
           <OutreachSectionHeader
             icon={<BarChart2 />}
             title="Engagement Over Time"
-            subtitle="Daily activity for the last 30 days"
+            subtitle={`Aggregated by ${stats.grouping || 'day'}`}
           />
           <div className="h-[300px] mt-4">
             <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={100}>
@@ -159,6 +207,13 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                   axisLine={false}
                   tickLine={false}
                   dy={10}
+                  tickFormatter={(val) => {
+                    if (!val) return '';
+                    const date = new Date(val);
+                    if (stats.grouping === 'month') return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+                    if (stats.grouping === 'week') return `Wk ${date.getDate()}/${date.getMonth() + 1}`;
+                    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                  }}
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: '#64748B' }}

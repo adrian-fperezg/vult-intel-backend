@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   BarChart2, TrendingUp, Users, Mail, MousePointer,
   MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield, Loader2,
-  Sparkles, Download, X, Filter
+  Sparkles, Download, X, Filter, Clock
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -28,7 +28,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 };
 
 export default function OutreachAnalytics() {
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
+  const [timeRange, setTimeRange] = useState<string>('30d');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [funnelStats, setFunnelStats] = useState<FunnelStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,10 +44,10 @@ export default function OutreachAnalytics() {
       setIsLoading(true);
       setError(null);
       try {
-        const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const [res, funnel] = await Promise.all([
-          fetchAnalytics(days),
-          getFunnelStats()
+          fetchAnalytics(timeRange, undefined, userTz),
+          getFunnelStats(timeRange, userTz)
         ]);
         
         if (res) setData(res);
@@ -68,7 +68,8 @@ export default function OutreachAnalytics() {
     if (!data) return;
     setIsGeneratingReport(true);
     try {
-      const res = await generateAiReport({ stats: data, timeRange });
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await generateAiReport({ timeframe: timeRange, timezone: userTz });
       if (res && res.report) {
         setReportContent(res.report);
         setShowReportModal(true);
@@ -82,12 +83,13 @@ export default function OutreachAnalytics() {
 
   const handleDownloadReport = async () => {
     try {
-      const blob = await exportAiReport();
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const blob = await exportAiReport(timeRange, userTz);
       if (!blob) return;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `VultIntel_Outreach_Report_${new Date().toISOString().split('T')[0]}.md`;
+      a.download = `VultIntel_Outreach_Report_${timeRange}_${new Date().toISOString().split('T')[0]}.md`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -141,28 +143,38 @@ export default function OutreachAnalytics() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl p-1">
-              {(['7d', '30d', '90d'] as const).map(r => (
-                <button
-                  key={r}
-                  onClick={() => setTimeRange(r)}
-                  className={cn(
-                    'px-4 py-1.5 rounded-lg text-xs font-bold transition-all',
-                    timeRange === r ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'text-slate-500 hover:text-white'
-                  )}
-                >
-                  {r}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 hover:bg-white/10 transition-all group">
+              <Clock className="size-4 text-teal-400 group-hover:scale-110 transition-transform" />
+              <select
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value)}
+                className="bg-transparent border-none text-slate-300 text-xs font-bold outline-none cursor-pointer"
+              >
+                <option value="1d">Last 24h</option>
+                <option value="3d">Last 3 days</option>
+                <option value="7d">Last 7 days</option>
+                <option value="14d">Last 14 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="1m">Last month</option>
+                <option value="Q1">Q1 (Jan-Mar)</option>
+                <option value="Q2">Q2 (Apr-Jun)</option>
+                <option value="Q3">Q3 (Jul-Sep)</option>
+                <option value="Q4">Q4 (Oct-Dec)</option>
+                <option value="1y">Last year</option>
+              </select>
             </div>
-
-            <button
+            
+            <button 
               onClick={handleGenerateReport}
               disabled={isGeneratingReport}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-white rounded-2xl text-xs font-bold transition-all shadow-xl shadow-teal-500/10 disabled:opacity-50"
+              className="flex items-center gap-2 px-6 py-2 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black text-[#0d1117] transition-all shadow-lg shadow-teal-500/20 active:scale-95"
             >
-              <Sparkles className={cn("size-3.5", isGeneratingReport && "animate-pulse")} />
-              🌐 Powered by Gemini: Generar Reporte
+              {isGeneratingReport ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5" />
+              )}
+              AI REPORT
             </button>
           </div>
         </div>
