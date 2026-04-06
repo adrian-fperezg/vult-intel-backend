@@ -5003,7 +5003,30 @@ setInterval(() => {
   sequenceWatchdog().catch(err => console.error('[Watchdog Error]', err));
 }, 24 * 60 * 60 * 1000);
 
-// ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
+// ─── GLOBAL ERROR HANDLER & FORENSICS ──────────────────────────────────────────
+
+import { sendAlert } from './lib/notifier';
+
+// Endpoint to bridge frontend crashes to Discord/Slack
+app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
+  try {
+    const { errorMessage, stackTrace, requestPath, userId } = req.body;
+    
+    await sendAlert({
+      environment: process.env.NODE_ENV || 'production',
+      source: 'Frontend',
+      errorMessage,
+      stackTrace,
+      requestPath,
+      userId: userId || req.user?.uid || 'Anonymous',
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to process frontend crash alert:', error);
+    res.status(500).json({ error: 'Failed to process alert' });
+  }
+});
 
 // Catch-all 404 handler (must be last)
 app.use((req, res) => {
@@ -5017,6 +5040,22 @@ app.use((req, res) => {
 
 app.use((err: any, req: any, res: any, next: any) => {
   console.error('[Express Error]', err.message, err.stack);
+  
+  // Trigger rich alert for backend crashes
+  sendAlert({
+    environment: process.env.NODE_ENV || 'production',
+    source: 'Backend',
+    errorMessage: err.message,
+    stackTrace: err.stack,
+    requestPath: req.originalUrl || req.path,
+    userId: req.user?.uid || 'Anonymous',
+    payload: {
+      method: req.method,
+      query: req.query,
+      body: req.body
+    }
+  }).catch(alertErr => console.error('Failed to send backend alert:', alertErr));
+
   res.status(500).json({
     error: err.message || 'Internal server error',
     path: req.path,
