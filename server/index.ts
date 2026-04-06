@@ -5027,6 +5027,15 @@ app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
     res.status(500).json({ error: 'Failed to process alert' });
   }
 });
+// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.head('/api/health', (req, res) => {
+  res.status(200).end();
+});
 
 // Catch-all 404 handler (must be last)
 app.use((req, res) => {
