@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { DateTime } from 'luxon';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -144,16 +145,21 @@ function StepNode({
     onUpdate(step.id, { attachments: (step.attachments || []).filter((a: any) => a.id !== id) });
   };
 
-  const formatForInput = (isoString?: string) => {
+  const formatForInput = (isoString?: string | null) => {
     if (!isoString) return '';
     try {
+      // 1. Create a Date object from the UTC ISO string
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return '';
-      // To display exactly what the UTC time is in local view for the input
-      // without standard browser offset shifting the hour value.
+
+      // 2. Adjust for the user's local timezone offset
+      // This prevents the input from showing a shifted time
       const localDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+
+      // 3. Return the first 16 chars (YYYY-MM-DDThh:mm)
       return localDate.toISOString().slice(0, 16);
-    } catch {
+    } catch (e) {
+      console.error("[SequenceBuilder] Error formatting date:", e);
       return '';
     }
   };
@@ -164,11 +170,15 @@ function StepNode({
       return;
     }
     try {
-      // Input value 'val' is YYYY-MM-DDTHH:mm (local)
-      const dateObj = new Date(val);
-      if (!isNaN(dateObj.getTime())) {
-        onUpdate(step.id, { scheduled_start_at: dateObj.toISOString() });
-      }
+      // 1. Create a Date object assuming the input 'val' is in local time
+      const localDate = new Date(val);
+      if (isNaN(localDate.getTime())) return;
+
+      // 2. Convert to strict UTC ISO string before sending to DB
+      const utcIso = localDate.toISOString();
+
+      console.log(`[SequenceBuilder] Setting scheduled_start_at: ${utcIso}`);
+      onUpdate(step.id, { scheduled_start_at: utcIso });
     } catch (e) {
       console.error("[SequenceBuilder] Invalid date selected:", e);
     }
@@ -857,11 +867,14 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       });
 
       // Aseguramos que la fecha se envíe en formato ISO (o null si se borró)
-      const stepsToSave = steps.map(s => ({
-        ...s,
-        scheduled_start_at: s.scheduled_start_at || null,
-        attachments: JSON.stringify(s.attachments)
-      }));
+      const stepsToSave = steps.map(s => {
+        const scheduled = s.scheduled_start_at || null;
+        return {
+          ...s,
+          scheduled_start_at: scheduled,
+          attachments: typeof s.attachments === 'string' ? s.attachments : JSON.stringify(s.attachments || [])
+        };
+      });
 
       await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
 
@@ -1066,9 +1079,25 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     if (!window.confirm("Are you sure you want to remove this contact from the sequence?")) return;
     try {
       await api.removeSequenceRecipient(sequenceId, contactId);
+      toast.success("Recipient removed");
       loadData();
-    } catch (error) {
-      console.error("Failed to remove recipient:", error);
+    } catch (err) {
+      console.error("Failed to remove recipient:", err);
+      toast.error("Failed to remove recipient");
+    }
+  };
+
+  const handleToggleRecipientStatus = async (contactId: string, currentStatus: string) => {
+    // If status is 'bounced', resuming it sets it to 'active'.
+    const newStatus = currentStatus === 'active' ? 'paused' : 'active';
+    const toastId = toast.loading(`${newStatus === 'active' ? 'Resuming' : 'Pausing'} contact...`);
+    try {
+      await api.toggleRecipientStatus(sequenceId, contactId, newStatus);
+      toast.success(`Contact ${newStatus === 'active' ? 'resumed' : 'paused'} successfully`, { id: toastId });
+      loadData(); // Refetch to show new status
+    } catch (err) {
+      console.error("Failed to toggle recipient status:", err);
+      toast.error("Failed to update contact status", { id: toastId });
     }
   };
 
@@ -1472,20 +1501,44 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                           </td>
                           <td className="px-6 py-4">
                             {r.enrollment_status ? (
-                              <OutreachBadge variant={r.enrollment_status === 'active' ? 'green' : 'gray'}>
-                                {r.enrollment_status}
+                              <OutreachBadge 
+                                variant={
+                                  r.enrollment_status === 'active' ? 'green' : 
+                                  r.enrollment_status === 'paused' ? 'yellow' : 
+                                  r.enrollment_status === 'bounced' ? 'red' : 
+                                  r.enrollment_status === 'completed' ? 'teal' : 'gray'
+                                }
+                              >
+                                {r.enrollment_status.charAt(0).toUpperCase() + r.enrollment_status.slice(1)}
                               </OutreachBadge>
                             ) : (
-                              <span className="text-xs text-slate-600 font-medium">Pending</span>
+                              <span className="text-xs text-slate-600 font-medium italic">Not Enrolled</span>
                             )}
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => handleRemoveRecipient(r.contact_id)}
-                              className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
+                            <div className="flex justify-end items-center gap-1">
+                              {r.enrollment_status && r.enrollment_status !== 'completed' && (
+                                <button
+                                  onClick={() => handleToggleRecipientStatus(r.contact_id, r.enrollment_status)}
+                                  className={cn(
+                                    "p-2 rounded-lg transition-colors opacity-0 group-hover:opacity-100",
+                                    r.enrollment_status === 'active' 
+                                      ? "hover:bg-amber-500/10 text-amber-500/60 hover:text-amber-400" 
+                                      : "hover:bg-emerald-500/10 text-emerald-500/60 hover:text-emerald-400"
+                                  )}
+                                  title={r.enrollment_status === 'active' ? "Pause contact" : "Resume contact"}
+                                >
+                                  {r.enrollment_status === 'active' ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleRemoveRecipient(r.contact_id)}
+                                className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                                title="Remove recipient"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}

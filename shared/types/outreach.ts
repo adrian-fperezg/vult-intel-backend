@@ -21,7 +21,8 @@ export interface AnalyticsData {
     sent: number; 
     opens: number; 
     replies: number; 
-    clicks?: number 
+    clicks?: number;
+    bounced?: number;
   }[];
   intent_data: {
     name: string;
@@ -31,9 +32,11 @@ export interface AnalyticsData {
   campaign_comparison: {
     name: string;
     sent: number;
-    open: number;
-    reply: number;
+    open: string;
+    reply: string;
+    bounce: string;
   }[];
+  bounce_rate?: string;
 }
 
 export interface FunnelStat {
@@ -42,6 +45,7 @@ export interface FunnelStat {
   total_sent: number;
   total_opens: number;
   total_replies: number;
+  total_bounces: number;
 }
 
 export interface AiReportResponse {

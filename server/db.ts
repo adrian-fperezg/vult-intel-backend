@@ -883,6 +883,11 @@ export const initDb = async () => {
       console.log("[DB] Backfill complete.");
     }
 
+    // 22. Performance Indices
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_emails_project_status_sent ON outreach_individual_emails (project_id, status, sent_at)`);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_events_project_type_created ON outreach_events (project_id, type, created_at)`);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_emails_mailbox_status ON outreach_individual_emails (mailbox_id, status)`);
+
     console.log("✅ Database initialized successfully");
   } catch (err) {
     console.error("❌ Database initialization failed:", err);

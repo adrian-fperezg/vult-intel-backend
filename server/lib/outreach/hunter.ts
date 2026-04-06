@@ -215,7 +215,7 @@ export async function discoverCompanies(projectId: string, userId: string, filte
           ...c,
           id: c.id || uuidv4(),
           logo: `https://logo.clearbit.com/${c.domain}`,
-          match_score: c.match_score || Math.floor(Math.random() * 20) + 75, // Fallback match score
+          match_score: c.match_score || 80, // Stable fallback match score
           target_personas: c.target_personas || []
         }));
     } else {

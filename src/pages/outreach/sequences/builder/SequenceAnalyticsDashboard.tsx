@@ -19,6 +19,11 @@ interface SequenceStats {
   openRate: number;
   replyRate: number;
   clickRate: number;
+  bounceRate: number;
+  uniqueOpens: number;
+  uniqueReplies: number;
+  uniqueClicks: number;
+  uniqueBounces: number;
   grouping: 'day' | 'week' | 'month';
   enrollmentStats: {
     total: number;
@@ -31,6 +36,7 @@ interface SequenceStats {
     opens: number;
     replies: number;
     clicks: number;
+    bounced: number;
   }[];
 }
 
@@ -181,10 +187,10 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
           sub="Unique replies"
         />
         <OutreachMetricCard
-          label="Click Rate"
-          value={`${stats?.clickRate ?? 0}%`}
-          icon={<MousePointer className="size-4" />}
-          sub="Link engagement"
+          label="Bounce Rate"
+          value={`${stats?.bounceRate ?? 0}%`}
+          icon={<AlertTriangle className="size-4" />}
+          sub="Failed deliveries"
         />
       </div>
 
@@ -228,6 +234,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                 <Line type="monotone" dataKey="sent" stroke="#475569" strokeWidth={2} dot={false} name="Sent" />
                 <Line type="monotone" dataKey="opens" stroke="#14B8A6" strokeWidth={2.5} dot={{ r: 3, fill: '#14B8A6' }} name="Opens" />
                 <Line type="monotone" dataKey="replies" stroke="#22C55E" strokeWidth={2.5} dot={{ r: 3, fill: '#22C55E' }} name="Replies" />
+                <Line type="monotone" dataKey="bounced" stroke="#EF4444" strokeWidth={2.5} dot={false} name="Bounces" />
               </LineChart>
             </ResponsiveContainer>
           </div>

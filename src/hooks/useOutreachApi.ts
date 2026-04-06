@@ -651,6 +651,12 @@ export function useOutreachApi() {
     [post]
   );
 
+  const toggleRecipientStatus = useCallback(
+    (sequence_id: string, contact_id: string, status: 'active' | 'paused') =>
+      patch<any>(`/sequences/${sequence_id}/enrollments/${contact_id}`, { status }),
+    [patch],
+  );
+
   const removeSequenceRecipient = useCallback(
     (sequenceId: string, contactId: string) =>
       del(`/sequences/${sequenceId}/recipients/${contactId}`),
@@ -680,6 +686,7 @@ export function useOutreachApi() {
     fetchSequenceStats,
     addSequenceRecipients,
     removeSequenceRecipient,
+    toggleRecipientStatus,
     getGlobalLimitStatus,
     fetchGlobalStats,
     // Contacts

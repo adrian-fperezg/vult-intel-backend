@@ -76,7 +76,7 @@ export async function searchPDL(projectId: string, params: {
       title: p.job_title || '',
       department: p.job_title_role || params.department || '',
       seniority: p.job_title_levels?.[0] || '',
-      confidence: 85, // PDL data is generally high quality
+      confidence: 85, // Fixed provider confidence (PDL resume data is high quality)
       company: p.job_company_name || '',
       domain: params.domain,
       industry: p.industry || '',

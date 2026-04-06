@@ -28,6 +28,7 @@ interface Sequence {
   unsub_in_period: number;
   open_rate: number;
   reply_rate: number;
+  bounce_rate: number;
   created_at: string;
   smart_intent_bypass: boolean;
 }
@@ -352,6 +353,16 @@ export default function OutreachSequences() {
                           <span className="text-xs font-bold text-white/80">{seq.reply_rate}%</span>
                           {seq.replied_in_period > 0 && (
                             <span className="text-[9px] font-black px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">+{seq.replied_in_period}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="h-6 w-px bg-white/5" />
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-600 uppercase">Bounce</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className={cn("text-xs font-bold", seq.bounce_rate > 2.5 ? "text-red-400" : "text-white/40")}>{seq.bounce_rate}%</span>
+                          {seq.bounced_in_period > 0 && (
+                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-red-500/10 text-red-400">+{seq.bounced_in_period}</span>
                           )}
                         </div>
                       </div>

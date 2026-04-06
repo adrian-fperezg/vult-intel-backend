@@ -180,7 +180,7 @@ export default function OutreachAnalytics() {
         </div>
 
         {/* Core KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <OutreachMetricCard 
             label="Total Outreach Volume" 
             value={(data.total_sent ?? 0).toLocaleString()} 
@@ -204,6 +204,14 @@ export default function OutreachAnalytics() {
             trend="neutral" 
             trendValue="vs ecosystem" 
             sub="Enterprise avg: 3.2%"
+          />
+          <OutreachMetricCard 
+            label="Unified Bounce Rate" 
+            value={`${data.bounce_rate ?? '0.0'}%`} 
+            icon={<Shield className="size-4" />} 
+            trend="neutral" 
+            trendValue="Monitoring" 
+            sub="Safety threshold: <2.5%"
           />
         </div>
 
@@ -234,6 +242,7 @@ export default function OutreachAnalytics() {
                   <Line name="Sent" type="monotone" dataKey="sent" stroke="#14b8a6" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
                   <Line name="Opens" type="monotone" dataKey="opens" stroke="#0ea5e9" strokeWidth={2} dot={false} />
                   <Line name="Replies" type="monotone" dataKey="replies" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                  <Line name="Bounces" type="monotone" dataKey="bounced" stroke="#94a3b8" strokeWidth={2} dot={false} strokeDasharray="4 4" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -321,6 +330,7 @@ export default function OutreachAnalytics() {
                   <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={11} width={120} tickLine={false} axisLine={false} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
                   <Bar dataKey="reply" name="Reply Rate" fill="url(#emeraldGradient)" radius={[0, 4, 4, 0]} barSize={12} />
+                  <Bar dataKey="bounce" name="Bounce Rate" fill="#EF4444" radius={[0, 4, 4, 0]} barSize={4} />
                   <defs>
                     <linearGradient id="emeraldGradient" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#10b981" stopOpacity={0.2} />
