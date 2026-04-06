@@ -13,7 +13,8 @@
     "start": "tsx server/index.ts",
     "dev:all": "concurrently -n \"frontend,backend\" -c \"cyan,green\" \"npm run dev\" \"npm run server\"",
     "verify-deployment": "sh scripts/grep-guard.sh",
-    "test:smart-intent": "node --import tsx --test server/lib/outreach/smartIntent.test.ts"
+    "test:smart-intent": "node --import tsx --test server/lib/outreach/smartIntent.test.ts",
+    "test:alert": "tsx scripts/test-alert.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

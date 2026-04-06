@@ -1,4 +1,5 @@
-import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+dotenv.config();
 
 export interface AlertPayload {
   environment?: string;
@@ -10,13 +11,13 @@ export interface AlertPayload {
   payload?: any;
 }
 
-// User placeholder from prompt
-const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || '[PEGA_AQUÍ_TU_URL_DE_DISCORD_O_SLACK]';
+// Prefer Slack, Fallback to Discord, then manual placeholder
+const WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
 
 export const sendAlert = async (alert: AlertPayload) => {
   try {
-    if (!WEBHOOK_URL.startsWith('http')) {
-      console.warn('[Notifier] Webhook URL not configured. Would have sent:', alert.errorMessage);
+    if (!WEBHOOK_URL || !WEBHOOK_URL.startsWith('http')) {
+      console.warn('[Notifier] Webhook URL not configured. (Set SLACK_WEBHOOK_URL in .env)');
       return;
     }
 
@@ -39,55 +40,82 @@ export const sendAlert = async (alert: AlertPayload) => {
       
       try {
         maskObject(masked);
-        safePayload = JSON.stringify(masked, null, 2).slice(0, 1000); // Top 1000 chars to avoid Discord limits
+        safePayload = JSON.stringify(masked, null, 2).slice(0, 2000); 
       } catch (e) {
         safePayload = '[Unserializable Payload]';
       }
     }
 
-    const embed = {
-      title: `🚨 [Vult Intel] ${alert.source} Crash`,
-      color: alert.source === 'Backend' ? 0xff0000 : 0xffa500, // Red for Backend, Orange for Frontend
-      fields: [
-        { name: 'Environment', value: alert.environment || process.env.NODE_ENV || 'production', inline: true },
-        { name: 'Source', value: alert.source, inline: true },
-        { name: 'User ID', value: alert.userId ? String(alert.userId) : 'Anonymous', inline: true },
-        { name: 'Request Path', value: alert.requestPath || 'N/A', inline: false },
-        { name: 'Error Message', value: alert.errorMessage ? alert.errorMessage.slice(0, 1000) : 'Unknown', inline: false }
-      ],
-      timestamp: new Date().toISOString()
-    };
+    // Formatting for Slack Block Kit
+    const blocks: any[] = [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `🚨 Vult Intel Forensic Report: ${alert.source} Crash`,
+          emoji: true
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*Environment:*\n${alert.environment || process.env.NODE_ENV || 'production'}` },
+          { type: "mrkdwn", text: `*Source:*\n${alert.source}` },
+          { type: "mrkdwn", text: `*User ID:*\n${alert.userId || 'Anonymous'}` },
+          { type: "mrkdwn", text: `*Request Path:*\n\`${alert.requestPath || 'N/A'}\`` }
+        ]
+      },
+      {
+        type: "divider"
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Error Message:*\n> ${alert.errorMessage}`
+        }
+      }
+    ];
 
     if (alert.stackTrace) {
-      embed.fields.push({
-        name: 'Stack Trace',
-        value: `\`\`\`\n${alert.stackTrace.slice(0, 1000)}\n\`\`\``,
-        inline: false
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Stack Trace:*\n\`\`\`${alert.stackTrace.slice(0, 2000)}\`\`\``
+        }
       });
     }
 
-    if (safePayload) {
-      embed.fields.push({
-        name: 'Payload',
-        value: `\`\`\`json\n${safePayload}\n\`\`\``,
-        inline: false
+    if (safePayload && safePayload !== '{}') {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Context Payload:*\n\`\`\`json\n${safePayload}\n\`\`\``
+        }
       });
     }
 
-    const body = {
-      username: 'Vult Intel Forensics',
-      embeds: [embed]
+    const payload = {
+      text: `🚨 [Vult Intel] ${alert.source} Crash: ${alert.errorMessage}`,
+      blocks
     };
 
-    // Note: Node 18+ has global fetch, otherwise falling back
-    const fetchToUse = typeof fetch !== 'undefined' ? fetch : require('node-fetch');
-    
-    await fetchToUse(WEBHOOK_URL, {
+    // Use native fetch (Node 18+)
+    const response = await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(payload)
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Notifier] Slack API Error: ${response.status} - ${errorText}`);
+    } else {
+      console.log(`[Notifier] forensic alert successfully pushed to Slack.`);
+    }
   } catch (error) {
-    console.error('Failed to send forensic alert:', error);
+    console.error('Failed to send forensic alert to Slack:', error);
   }
 };
