@@ -24,14 +24,15 @@ export async function initializeGlobalMailer() {
     try {
       // Create transporter with strict, provider-agnostic configuration
       globalTransporter = nodemailer.createTransport({
-        host: host || 'smtp.gmail.com',
-        port: 465,
-        secure: true, // Force secure for port 465
+        host: 'smtp.gmail.com', // Force Gmail host for reliability
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: false, // TLS is upgraded via STARTTLS on 587
+        requireTLS: true, // Ensure encryption is used
         auth: {
           user,
           pass,
         },
-        family: 4, // Strictly force IPv4 to avoid ENETUNREACH in Railway
+        family: 4, // Strictly force IPv4
       } as any);
 
       // Verification check to ensure credentials and firewall rules allow connection
