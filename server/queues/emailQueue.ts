@@ -399,14 +399,13 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           return;
         }
         
-        // ... (rest of logic) ...
         // --- REFRESH IMAP STATE (Sync-First for Replies) ---
         if (step.condition_type === 'replied') {
           console.log(`[Sequence] [Sync-First] Triggering fresh IMAP sync for condition evaluation of step ${stepId}`);
           try {
             const sequence = await db.prepare('SELECT mailbox_id FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
             if (sequence?.mailbox_id) {
-               console.log(`[Sequence] [Sync-First] Awaiting IMAP poll for mailbox ${sequence.mailbox_id}...`);
+               console.log(`[Sequence] [Sync-First] Awaiting blocking IMAP poll for mailbox ${sequence.mailbox_id}...`);
                await pollImap(sequence.mailbox_id);
                console.log(`[Sequence] [Sync-First] IMAP poll completed successfully for step ${stepId}.`);
             } else {
@@ -414,6 +413,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             }
           } catch (syncErr: any) {
             console.error(`[Sequence] [Sync-First] CRITICAL FAILURE: Priority IMAP sync failed for step ${stepId}: ${syncErr.message}`);
+            // We should NOT swallow this failure if we want reliable branching
+            throw new Error(`Sync-First failed: ${syncErr.message}`);
           }
         }
 
@@ -424,6 +425,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         };
         const targetEventType = eventTypeMapping[step.condition_type] || 'opened';
 
+        // Get the latest event for this step/contact
         const event = await db.prepare(`
           SELECT * FROM outreach_events 
           WHERE contact_id = ? AND type = ? AND step_id = ?
@@ -433,14 +435,19 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         let branchPath = event ? 'yes' : 'no';
 
-        if (branchPath === 'yes' && step.condition_type === 'replied' && step.condition_keyword && event?.metadata) {
-          try {
-            const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
-            if (meta.keyword_matched === false) {
-              branchPath = 'no';
-              console.log(`[Sequence] Keyword "${step.condition_keyword}" not found in reply. Routing to NO branch.`);
-            }
-          } catch { }
+        if (step.condition_type === 'replied' && step.condition_keyword) {
+          const matched = (branchPath === 'yes');
+          let keywordFound = false;
+          
+          if (matched && event?.metadata) {
+            try {
+              const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
+              keywordFound = meta.matched === true || meta.keyword_matched === true;
+              if (!keywordFound) branchPath = 'no';
+            } catch { }
+          }
+          
+          console.log(`[DEBUG] Checking reply for contact ${contactId}: Keyword '${step.condition_keyword}' found? ${keywordFound ? 'Yes' : 'No'}. (Branch: ${branchPath.toUpperCase()})`);
         }
 
         console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);

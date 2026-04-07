@@ -595,26 +595,26 @@ export const initDb = async () => {
 
     // Migration for Table Renaming (Legacy to Outreach consistency)
     try {
-      const legacyLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_lists' AND table_schema = 'public'");
-      const targetLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'outreach_lists' AND table_schema = 'public'");
+      const legacyLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_lists'");
+      const targetLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'outreach_lists'");
       
       if (legacyLists && !targetLists) {
         console.log("[DB] Migrating contact_lists to outreach_lists...");
         await db.run("ALTER TABLE contact_lists RENAME TO outreach_lists");
       }
 
-      const legacyMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_list_members' AND table_schema = 'public'");
-      const targetMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'outreach_list_members' AND table_schema = 'public'");
+      const legacyMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_list_members'");
+      const targetMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'outreach_list_members'");
 
       if (legacyMembers && !targetMembers) {
         console.log("[DB] Migrating contact_list_members to outreach_list_members...");
         await db.run("ALTER TABLE contact_list_members RENAME TO outreach_list_members");
       }
-    } catch (err) {
-      // Only warn if it's NOT a "relation already exists" error (42P07 in PG)
-      const msg = (err as any).message || "";
-      if (!msg.includes("already exists")) {
-        console.warn("[DB] Legacy table rename migration failed:", msg);
+    } catch (err: any) {
+      const msg = err.message || "";
+      // Silently catch "already exists" (42P07) or "does not exist" (42P01) if we race
+      if (!msg.toLowerCase().includes("already exists") && !msg.toLowerCase().includes("does not exist")) {
+        console.warn("[DB] Legacy table rename migration warning:", msg);
       }
     }
 

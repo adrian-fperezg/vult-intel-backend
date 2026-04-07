@@ -1670,6 +1670,8 @@ Dates: ${startDateStr} to ${endDateStr} (Timezone: ${userTz})
 
 Global Aggregate Stats:
 - Total Sent: ${stats?.totalSent || 0}
+- Total Opened: ${stats?.totalOpened || 0}
+- Total Replied: ${stats?.totalReplied || 0}
 - Overall Open Rate: ${stats && stats.totalSent > 0 ? (stats.totalOpened / stats.totalSent * 100).toFixed(1) : 0}%
 - Overall Reply Rate: ${stats && stats.totalSent > 0 ? (stats.totalReplied / stats.totalSent * 100).toFixed(1) : 0}%
 - Overall Bounce Rate: ${stats && stats.totalSent > 0 ? (stats.totalBounced / stats.totalSent * 100).toFixed(1) : 0}%
@@ -4214,10 +4216,13 @@ app.get("/api/outreach/integrations/status", async (req: AuthRequest, res) => {
 
     if (settings?.hunter_api_key) {
       try {
-        const info = await getAccountInformation(decryptToken(settings.hunter_api_key));
-        status.hunter.quota = info.calls;
+        const decryptedKey = decryptToken(settings.hunter_api_key);
+        if (decryptedKey) {
+          const info = await getAccountInformation(decryptedKey);
+          status.hunter.quota = info.calls;
+        }
       } catch (e) {
-        console.error("Hunter status fetch failed:", e);
+        console.error("Hunter status fetch failed (decrypt or fetch error):", e);
       }
     }
 
@@ -4242,27 +4247,32 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-  try {
-    const settings = await db.prepare('SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
-    if (!settings?.hunter_api_key) return res.status(404).json({ error: "Hunter API key not configured" });
+    try {
+      const settings = await db.prepare('SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
+      if (!settings?.hunter_api_key) return res.status(404).json({ error: "Hunter API key not configured" });
 
-    const decryptedKey = decryptToken(settings.hunter_api_key);
-    const info = await getAccountInformation(decryptedKey);
+      let decryptedKey: string | null = null;
+      try {
+        decryptedKey = decryptToken(settings.hunter_api_key);
+      } catch (e) {
+        return res.status(400).json({ error: "[SAFE] Decrypt error - Please configure your key again." });
+      }
 
-    // Flatten as requested: Total Credits = available, Used Credits = used
-    res.json({
-      available: info.calls?.search?.available || 0,
-      used: info.calls?.search?.used || 0,
-      reset_date: info.reset_date,
-      plan_name: info.plan_name,
-      // Keep nested for verify too
-      verify_available: info.calls?.verify?.available || 0,
-      verify_used: info.calls?.verify?.used || 0
-    });
-  } catch (error: any) {
-    console.error(`[API] Hunter Account Error:`, error.message);
-    res.status(500).json({ error: error.message });
-  }
+      if (!decryptedKey) return res.status(400).json({ error: "Invalid API key" });
+
+      const info = await getAccountInformation(decryptedKey);
+      res.json({
+        available: info.calls?.search?.available || 0,
+        used: info.calls?.search?.used || 0,
+        reset_date: info.reset_date,
+        plan_name: info.plan_name,
+        verify_available: info.calls?.verify?.available || 0,
+        verify_used: info.calls?.verify?.used || 0
+      });
+    } catch (error: any) {
+      console.error(`[API] Hunter Account Error:`, error.message);
+      res.status(500).json({ error: error.message });
+    }
 });
 
 app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
@@ -4274,7 +4284,13 @@ app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
   try {
     const settings = await db.prepare('SELECT zerobounce_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
     if (!settings?.zerobounce_api_key) return res.status(404).json({ error: "ZeroBounce API key not configured" });
-    const credits = await getZeroBounceCredits(decryptToken(settings.zerobounce_api_key));
+    let credits: any = 0;
+    try {
+      const res = await getZeroBounceCredits(decryptToken(settings.zerobounce_api_key));
+      credits = typeof res === 'number' ? res : 0;
+    } catch (e) {
+      console.warn("[ZeroBounce] Credits check failed during verification.");
+    }
     res.json({ credits });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -4323,7 +4339,11 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
         try {
           let key: string | null = null;
           try {
-            key = decryptToken(row.hunter_api_key);
+            try {
+              key = decryptToken(row.hunter_api_key);
+            } catch (e) {
+              console.warn("[Hunter] Key decryption failed for specific row.");
+            }
           } catch (e) {
             console.warn("[Settings] Decrypt Error: Possible key mismatch or malformed token for Hunter key");
           }
@@ -4362,7 +4382,12 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       // 2. ZeroBounce Live Fetch
       if (row.zerobounce_api_key) {
         try {
-          const key = decryptToken(row.zerobounce_api_key);
+          let key = "";
+          try {
+            key = decryptToken(row.zerobounce_api_key);
+          } catch (e) {
+            console.warn("[ZeroBounce] Key decryption failed for verification.");
+          }
           const credits = await getZeroBounceCredits(key);
           response.zerobounce = {
             connected: true,
@@ -4565,8 +4590,14 @@ app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => 
     );
 
     // Tokens are encrypted in DB
-    const accessToken = decryptToken((mailbox as any).access_token);
-    const refreshToken = decryptToken((mailbox as any).refresh_token);
+    let accessToken = "";
+    let refreshToken = "";
+    try {
+      accessToken = decryptToken((mailbox as any).access_token);
+      refreshToken = decryptToken((mailbox as any).refresh_token);
+    } catch (e) {
+      console.error("[Sheets Export] Failed to decrypt mailbox tokens.");
+    }
 
     auth.setCredentials({
       access_token: accessToken,
