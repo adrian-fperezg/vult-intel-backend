@@ -133,7 +133,7 @@ export async function pollImap(mailboxId: string) {
         }
 
         // 4. ACTUALIZAR EMAIL Y REGISTRAR EVENTO (Postgres Syntax)
-        await db.run("UPDATE outreach_individual_emails SET is_reply = True WHERE id = ?", [originalEmail.id]);
+        await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
 
         await recordOutreachEvent({
           project_id: originalEmail.project_id, sequence_id: originalEmail.sequence_id,

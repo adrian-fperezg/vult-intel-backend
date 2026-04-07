@@ -400,12 +400,25 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         }
         
         // ... (rest of logic) ...
+        // --- REFRESH IMAP STATE (Sync-First for Replies) ---
+        if (step.condition_type === 'replied') {
+          console.log(`[Sequence] [Sync-First] Triggering fresh IMAP sync for condition evaluation of step ${stepId}`);
+          try {
+            const enrollment = await db.prepare('SELECT mailbox_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?').get(sequenceId, contactId) as any;
+            if (enrollment?.mailbox_id) {
+               await pollImap(enrollment.mailbox_id);
+            }
+          } catch (syncErr: any) {
+            console.error(`[Sequence] [Sync-First] Failed to perform priority IMAP sync: ${syncErr.message}`);
+          }
+        }
+
         const eventTypeMapping: Record<string, string> = {
-          'opened': 'email_opened',
-          'clicked': 'email_clicked',
-          'replied': 'email_replied'
+          'opened': 'opened',
+          'clicked': 'clicked',
+          'replied': 'replied'
         };
-        const targetEventType = eventTypeMapping[step.condition_type] || 'email_opened';
+        const targetEventType = eventTypeMapping[step.condition_type] || 'opened';
 
         const event = await db.prepare(`
           SELECT * FROM outreach_events 
@@ -568,11 +581,11 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   }
 
   // INJECT TRACKING PIXEL
-  const backendUrl = process.env.BACKEND_URL;
-  if (!backendUrl) {
-    console.warn(`[Tracking] BACKEND_URL environment variable is MISSING. Open tracking will fall back to localhost and likely fail in production.`);
+  const backendUrl = process.env.APP_URL || process.env.BACKEND_URL || (process.env.RAILWAY_STATIC_URL ? `https://${process.env.RAILWAY_STATIC_URL}` : "http://localhost:8080");
+  if (!process.env.APP_URL && !process.env.BACKEND_URL && !process.env.RAILWAY_STATIC_URL) {
+    console.warn(`[Tracking] APP_URL, BACKEND_URL and RAILWAY_STATIC_URL environment variables are MISSING. Open tracking will fall back to localhost and likely fail in production.`);
   }
-  const trackingPixel = `\n<img src="${backendUrl || "http://localhost:8080"}/api/tracking/open?emailId=${emailId}" width="1" height="1" style="display:none;" alt="" />`;
+  const trackingPixel = `\n<img src="${backendUrl}/api/outreach/track/${emailId}/pixel" width="1" height="1" style="display:none;" alt="" />`;
   const bodyWithTracking = bodyWithSignature + trackingPixel;
 
   // Use resilient attachment resolver to handle missing files on ephemeral hosts

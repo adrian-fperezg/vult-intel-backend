@@ -3616,7 +3616,14 @@ app.get("/api/outreach/track/:emailId/pixel", async (req, res) => {
         VALUES (?, ?, 'open', ?, ?)
       `).run(uuidv4(), emailId, String(ip), String(userAgent));
 
-      // 2. Record standardized 'opened' event with atomic counter increment
+      // 2. Update parent email record with opened_at timestamp
+      await db.run(`
+        UPDATE outreach_individual_emails 
+        SET opened_at = CURRENT_TIMESTAMP 
+        WHERE id = ? AND opened_at IS NULL
+      `, [emailId]);
+
+      // 3. Record standardized 'opened' event with atomic counter increment
       // We use 'opened:${emailId}' as the key to ensure we only count the first open per email
       await recordOutreachEvent({
         project_id: email.project_id,
@@ -4011,7 +4018,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         m.status,
         COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.id END) as sent,
         COUNT(DISTINCT CASE WHEN e.status = 'bounced' THEN e.id END) as bounced,
-        (SELECT COUNT(*) FROM outreach_events v WHERE (v.metadata::jsonb)->>'mailbox_id' = m.id AND v.type IN ('complaint', 'spam')) as spam
+        (SELECT COUNT(*) FROM outreach_events v WHERE (v.metadata::jsonb)->>'mailbox_id' = m.id::text AND v.type IN ('complaint', 'spam')) as spam
       FROM outreach_mailboxes m
       LEFT JOIN outreach_individual_emails e ON m.id = e.mailbox_id
       WHERE m.project_id = ? AND m.user_id = ?
