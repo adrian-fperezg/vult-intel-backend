@@ -595,18 +595,27 @@ export const initDb = async () => {
 
     // Migration for Table Renaming (Legacy to Outreach consistency)
     try {
-      const legacyLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_lists'");
-      if (legacyLists) {
+      const legacyLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_lists' AND table_schema = 'public'");
+      const targetLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'outreach_lists' AND table_schema = 'public'");
+      
+      if (legacyLists && !targetLists) {
         console.log("[DB] Migrating contact_lists to outreach_lists...");
         await db.run("ALTER TABLE contact_lists RENAME TO outreach_lists");
       }
-      const legacyMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_list_members'");
-      if (legacyMembers) {
+
+      const legacyMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_list_members' AND table_schema = 'public'");
+      const targetMembers = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'outreach_list_members' AND table_schema = 'public'");
+
+      if (legacyMembers && !targetMembers) {
         console.log("[DB] Migrating contact_list_members to outreach_list_members...");
         await db.run("ALTER TABLE contact_list_members RENAME TO outreach_list_members");
       }
     } catch (err) {
-      console.warn("[DB] Legacy table rename migration failed (likely already renamed):", (err as Error).message);
+      // Only warn if it's NOT a "relation already exists" error (42P07 in PG)
+      const msg = (err as any).message || "";
+      if (!msg.includes("already exists")) {
+        console.warn("[DB] Legacy table rename migration failed:", msg);
+      }
     }
 
     // 12. Suppression List
