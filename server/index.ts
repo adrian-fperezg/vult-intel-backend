@@ -2031,6 +2031,7 @@ app.post("/api/outreach/sequences/:id/steps", async (req: AuthRequest, res) => {
             step.condition_type || null,
             step.condition_keyword || null,
             step.branch_path || 'default',
+            step.scheduled_start_at || null,
           );
         } catch (stepErr) {
           console.error(`Failed to insert step ${index + 1} (${step.step_type}):`, stepErr);
