@@ -1559,7 +1559,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         // ✅ CÓDIGO CORREGIDO
         const result = await ai.models.generateContent({
           model: 'gemini-2.0-flash',
-          contents: aiPrompt
+          contents: [{ role: 'user', parts: [{ text: aiPrompt }] }]
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
       } catch (err: any) {
@@ -1689,7 +1689,7 @@ Use professional, encouraging, and data-driven language. Use Markdown for format
   try {
     const result = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
-      contents: reportPrompt
+      contents: [{ role: 'user', parts: [{ text: reportPrompt }] }]
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
   } catch (err: any) {
@@ -4018,7 +4018,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         m.status,
         COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.id END) as sent,
         COUNT(DISTINCT CASE WHEN e.status = 'bounced' THEN e.id END) as bounced,
-        (SELECT COUNT(*) FROM outreach_events v WHERE (v.metadata::jsonb)->>'mailbox_id' = m.id::text AND v.type IN ('complaint', 'spam')) as spam
+        (SELECT COUNT(*) FROM outreach_events v WHERE (CASE WHEN v.metadata IS NOT NULL AND v.metadata != '' AND v.metadata LIKE '{%}' THEN (v.metadata::jsonb)->>'mailbox_id' ELSE NULL END) = m.id::text AND v.type IN ('complaint', 'spam')) as spam
       FROM outreach_mailboxes m
       LEFT JOIN outreach_individual_emails e ON m.id = e.mailbox_id
       WHERE m.project_id = ? AND m.user_id = ?

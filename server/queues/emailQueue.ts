@@ -404,9 +404,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         if (step.condition_type === 'replied') {
           console.log(`[Sequence] [Sync-First] Triggering fresh IMAP sync for condition evaluation of step ${stepId}`);
           try {
-            const enrollment = await db.prepare('SELECT mailbox_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?').get(sequenceId, contactId) as any;
-            if (enrollment?.mailbox_id) {
-               await pollImap(enrollment.mailbox_id);
+            const sequence = await db.prepare('SELECT mailbox_id FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
+            if (sequence?.mailbox_id) {
+               await pollImap(sequence.mailbox_id);
             }
           } catch (syncErr: any) {
             console.error(`[Sequence] [Sync-First] Failed to perform priority IMAP sync: ${syncErr.message}`);
