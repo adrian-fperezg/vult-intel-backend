@@ -7,7 +7,8 @@ import fs from "fs";
 import cityTimezones from 'city-timezones';
 import { DateTime } from 'luxon';
 import Papa from 'papaparse';
-import { initializeGlobalMailer } from "./lib/outreach/mailer.js";
+import { initializeGlobalMailer, getMailerHealth } from "./lib/outreach/mailer.js";
+import { getImapHealth } from "./lib/outreach/imapHealth.js";
 
 // ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -309,8 +310,9 @@ app.get("/api/health", async (_req, res) => {
 
   // 1. PostgreSQL Check
   try {
+    const start = Date.now();
     await db.get('SELECT 1');
-    health.dependencies.postgres = 'connected';
+    health.dependencies.postgres = `connected (${Date.now() - start}ms)`;
   } catch (err) {
     health.dependencies.postgres = 'disconnected';
     health.status = 'error';
@@ -339,11 +341,12 @@ app.get("/api/health", async (_req, res) => {
   // 5. Firebase Admin Check
   health.dependencies.firebase = admin.apps.length > 0 ? 'initialized' : 'uninitialized';
 
-  // 6. Email Infrastructure Check (Lightweight config check)
-  const hasSmtp = !!(process.env.SMTP_HOST && process.env.SMTP_PASSWORD);
-  const hasImap = !!(process.env.IMAP_HOST && process.env.IMAP_PASSWORD);
-  health.dependencies.email_smtp = hasSmtp ? 'configured' : 'missing';
-  health.dependencies.email_imap = hasImap ? 'configured' : 'missing';
+  // 6. Email Infrastructure Check (Verbose diagnostics)
+  // SMTP Health (from global mailer state)
+  health.dependencies.email_smtp = getMailerHealth();
+  
+  // IMAP Health (Performing a live dry-run connection check)
+  health.dependencies.email_imap = await getImapHealth();
 
   res.status(overallStatus).json(health);
 });
@@ -5125,29 +5128,6 @@ app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
     res.status(500).json({ error: 'Failed to process alert' });
   }
 });
-// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
-
-app.get('/api/health', (req, res) => {
-  const geminiConfigured = !!(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY);
-  const veoConfigured = !!(process.env.GEMINI_API_KEY && process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-  const googleConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-  
-  res.status(200).json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    db: 'connected', 
-    dependencies: {
-      ai_gemini: geminiConfigured ? 'configured' : 'missing',
-      ai_veo: veoConfigured ? 'configured' : 'missing',
-      google_api: googleConfigured ? 'configured' : 'missing'
-    }
-  });
-});
-
-app.head('/api/health', (req, res) => {
-  res.status(200).end();
-});
-
 // Catch-all 404 handler (must be last)
 app.use((req, res) => {
   console.warn(`[404 NOT FOUND]: ${req.method} ${req.originalUrl}`);

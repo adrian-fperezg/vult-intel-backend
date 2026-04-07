@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 let globalTransporter: nodemailer.Transporter | null = null;
+let lastError: string | null = null;
+let isInitializing = false;
 
 /**
  * Initializes a global SMTP transporter using environment variables.
@@ -17,6 +19,8 @@ export async function initializeGlobalMailer() {
   const pass = process.env.SMTP_PASS;
 
   if (host && user && pass) {
+    isInitializing = true;
+    lastError = null;
     try {
       // Create transporter with strict, provider-agnostic configuration
       globalTransporter = nodemailer.createTransport({
@@ -32,10 +36,14 @@ export async function initializeGlobalMailer() {
       // Verification check to ensure credentials and firewall rules allow connection
       await globalTransporter.verify();
       console.log(`[MAILER] Universal SMTP connected successfully to ${host}`);
+      lastError = null;
     } catch (err: any) {
-      console.error('[MAILER] SMTP Connection Failed. Check your host, port, or credentials:', err.message);
+      lastError = err.message || 'Unknown SMTP error';
+      console.error('[MAILER] SMTP Connection Failed. Check your host, port, or credentials:', lastError);
       // Reset to null to ensure we don't try to use a broken transporter
       globalTransporter = null;
+    } finally {
+      isInitializing = false;
     }
   } else {
     // Collect missing variables for detailed logging
@@ -44,7 +52,8 @@ export async function initializeGlobalMailer() {
     if (!user) missing.push('SMTP_USER');
     if (!pass) missing.push('SMTP_PASS');
     
-    console.warn(`[MAILER] Global SMTP initialization skipped: Missing ${missing.join(', ')} environment variables.`);
+    lastError = `Missing env vars: ${missing.join(', ')}`;
+    console.warn(`[MAILER] Global SMTP initialization skipped: ${lastError}`);
   }
 }
 
@@ -52,6 +61,14 @@ export function getGlobalTransporter() {
   return globalTransporter;
 }
 
-export function isMailerReady() {
-  return globalTransporter !== null;
+export function getMailerHealth() {
+  if (globalTransporter !== null) return { status: 'connected' };
+  if (isInitializing) return { status: 'initializing' };
+  if (lastError) {
+    if (lastError.includes('Missing env vars')) return { status: 'missing_env_vars', error: lastError };
+    if (lastError.includes('auth') || lastError.includes('invalid_grant') || lastError.includes('535')) return { status: 'auth_failed', error: lastError };
+    return { status: 'connection_failed', error: lastError };
+  }
+  return { status: 'uninitialized' };
 }
+
