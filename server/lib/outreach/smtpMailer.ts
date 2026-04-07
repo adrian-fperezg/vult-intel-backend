@@ -26,9 +26,8 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
   try {
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com', // Consistent Gmail host
-      port: 587,
-      secure: false, // TLS upgraded via STARTTLS on 587
-      requireTLS: true, // Fail if TLS cannot be established
+      port: 465, // Implicit SSL port
+      secure: true, // Use implicit SSL
       auth: {
         user: mailbox.smtp_username || mailbox.email,
         pass: password,

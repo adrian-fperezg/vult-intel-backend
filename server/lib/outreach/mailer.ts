@@ -25,9 +25,8 @@ export async function initializeGlobalMailer() {
       // Create transporter with strict, provider-agnostic configuration
       globalTransporter = nodemailer.createTransport({
         host: 'smtp.gmail.com', // Force Gmail host for reliability
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: false, // TLS is upgraded via STARTTLS on 587
-        requireTLS: true, // Ensure encryption is used
+        port: 465, // Implicit SSL port
+        secure: true, // Use implicit SSL
         auth: {
           user,
           pass,
