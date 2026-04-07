@@ -1555,7 +1555,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         // ✅ CÓDIGO CORREGIDO
         const result = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.0-flash',
           contents: aiPrompt
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
@@ -1685,7 +1685,7 @@ Use professional, encouraging, and data-driven language. Use Markdown for format
   // ✅ CÓDIGO CORREGIDO
   try {
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
       contents: reportPrompt
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
@@ -3572,7 +3572,7 @@ app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
     `;
 
     const response = await client.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
 
