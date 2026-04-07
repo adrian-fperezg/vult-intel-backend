@@ -4010,7 +4010,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         m.status,
         COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.id END) as sent,
         COUNT(DISTINCT CASE WHEN e.status = 'bounced' THEN e.id END) as bounced,
-        (SELECT COUNT(*) FROM outreach_events v WHERE v.metadata->>'mailbox_id' = m.id AND v.type IN ('complaint', 'spam')) as spam
+        (SELECT COUNT(*) FROM outreach_events v WHERE (v.metadata::jsonb)->>'mailbox_id' = m.id AND v.type IN ('complaint', 'spam')) as spam
       FROM outreach_mailboxes m
       LEFT JOIN outreach_individual_emails e ON m.id = e.mailbox_id
       WHERE m.project_id = ? AND m.user_id = ?
@@ -4263,28 +4263,38 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       // 1. Hunter.io Live Fetch
       if (row.hunter_api_key) {
         try {
-          const key = decryptToken(row.hunter_api_key);
-          const account = await getAccountInformation(key);
+          let key: string | null = null;
+          try {
+            key = decryptToken(row.hunter_api_key);
+          } catch (e) {
+            console.warn("[Settings] Decrypt Error: Possible key mismatch or malformed token for Hunter key");
+          }
 
-          // Extraction based on real Hunter API structure (requests object)
-          const searches = account.requests?.searches || { used: 0, available: 0 };
-          const verifications = account.requests?.verifications || { used: 0, available: 0 };
+          if (key) {
+            const account = await getAccountInformation(key);
 
-          response.hunter = {
-            connected: true,
-            reset_date: account.reset_date || null,
-            plan_name: account.plan_name || 'Free',
-            searches: {
-              used: searches.used || 0,
-              total: searches.available || 0,
-              remaining: (searches.available || 0) - (searches.used || 0)
-            },
-            verifications: {
-              used: verifications.used || 0,
-              total: verifications.available || 0,
-              remaining: (verifications.available || 0) - (verifications.used || 0)
-            }
-          };
+            // Extraction based on real Hunter API structure (requests object)
+            const searches = account.requests?.searches || { used: 0, available: 0 };
+            const verifications = account.requests?.verifications || { used: 0, available: 0 };
+
+            response.hunter = {
+              connected: true,
+              reset_date: account.reset_date || null,
+              plan_name: account.plan_name || 'Free',
+              searches: {
+                used: searches.used || 0,
+                total: searches.available || 0,
+                remaining: (searches.available || 0) - (searches.used || 0)
+              },
+              verifications: {
+                used: verifications.used || 0,
+                total: verifications.available || 0,
+                remaining: (verifications.available || 0) - (verifications.used || 0)
+              }
+            };
+          } else {
+            response.hunter = { connected: false, error: "Decrypt error" };
+          }
         } catch (err: any) {
           console.error("[Settings] Hunter Fetch Error:", err.message);
           response.hunter = { connected: true, error: true };
