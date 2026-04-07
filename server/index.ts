@@ -1558,7 +1558,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         // ✅ CÓDIGO CORREGIDO
         const result = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
+          model: 'gemini-1.5-flash',
           contents: [{ role: 'user', parts: [{ text: aiPrompt }] }]
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
@@ -1688,7 +1688,7 @@ Use professional, encouraging, and data-driven language. Use Markdown for format
   // ✅ CÓDIGO CORREGIDO
   try {
     const result = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       contents: [{ role: 'user', parts: [{ text: reportPrompt }] }]
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
@@ -3576,7 +3576,7 @@ app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
     `;
 
     const response = await client.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-1.5-flash",
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
 
@@ -4869,7 +4869,7 @@ Number of shots: ${shotCount || 4}
 Brief: ${brief}`;
 
     const result = await (ai as any).models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
     });
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -4906,7 +4906,7 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
   try {
     const systemPrompt = `You are a world-class AI video director. Enhance the following prompt to make it more cinematic and detailed for ${mode || 'video'} generation in ${style || 'cinematic'} style. Return ONLY the enhanced prompt text, nothing else, no quotes, max 200 words.\n\nOriginal: ${prompt}`;
     const result = await (new GoogleGenAI({ apiKey: geminiKey }) as any).models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
     });
     const enhanced = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;
