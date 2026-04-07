@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { GoogleGenAI } from "@google/genai";
 import db from "../../db.js";
 import { decryptToken } from "./encrypt.js";
+import { sendAlert } from "../notifier.js";
 
 const HUNTER_API_URL = "https://api.hunter.io/v2";
 
@@ -226,6 +227,18 @@ export async function discoverCompanies(projectId: string, userId: string, filte
     return data;
   } catch (err: any) {
     console.error(`[Hunter Lib] AI Discover Error:`, err.message);
+    
+    // Forensic alert for AI discovery failure
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 AI Provider Error: Hunter Discovery',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPath: 'lib/outreach/hunter.ts:discoverCompanies',
+      projectId,
+      payload: { filters }
+    });
+    
     logUsage(projectId, userId, 'discover-ai', 0, 'error');
     throw err;
   }

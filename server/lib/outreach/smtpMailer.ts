@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
+import { sendAlert } from '../notifier.js';
 
 export interface SmtpConfig {
   host: string;
@@ -22,31 +23,51 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
 
   const password = decryptToken(mailbox.smtp_password);
 
-  const transporter = nodemailer.createTransport({
-    host: mailbox.smtp_host,
-    port: mailbox.smtp_port,
-    secure: mailbox.smtp_port === 465, // Correctly handle implicit SSL vs STARTTLS
-    auth: {
-      user: mailbox.smtp_username || mailbox.email,
-      pass: password,
-    },
-  });
+  try {
+    const transporter = nodemailer.createTransport({
+      host: mailbox.smtp_host,
+      port: mailbox.smtp_port,
+      secure: mailbox.smtp_port === 465, // Correctly handle implicit SSL vs STARTTLS
+      auth: {
+        user: mailbox.smtp_username || mailbox.email,
+        pass: password,
+      },
+    });
 
-  // Ensure the from address matches the authenticated user to prevent spam rejection
-  const fromEmail = mailbox.smtp_username || mailbox.email;
-  const fromName = emailData.fromName || mailbox.name;
-  const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
+    // Ensure the from address matches the authenticated user to prevent spam rejection
+    const fromEmail = mailbox.smtp_username || mailbox.email;
+    const fromName = emailData.fromName || mailbox.name;
+    const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
-  console.log(`[SMTP] Sending email from ${fromHeader} to ${emailData.to}`);
+    console.log(`[SMTP] Sending email from ${fromHeader} to ${emailData.to}`);
 
-  const info = await transporter.sendMail({
-    from: fromHeader,
-    to: emailData.to,
-    subject: emailData.subject,
-    html: emailData.bodyHtml,
-    attachments: emailData.attachments || [] // Pre-resolved and verified by resolveAttachments()
-  });
+    const info = await transporter.sendMail({
+      from: fromHeader,
+      to: emailData.to,
+      subject: emailData.subject,
+      html: emailData.bodyHtml,
+      attachments: emailData.attachments || [] // Pre-resolved and verified by resolveAttachments()
+    });
 
-  console.log(`[SMTP] Email sent successfully. Message ID: ${info.messageId}`);
-  return { messageId: info.messageId };
+    console.log(`[SMTP] Email sent successfully. Message ID: ${info.messageId}`);
+    return { messageId: info.messageId };
+  } catch (err: any) {
+    console.error(`[SMTP] Dispatch failed for ${emailData.to}:`, err.message);
+    
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 SMTP Dispatch Error',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      payload: { 
+        mailboxId, 
+        to: emailData.to, 
+        subject: emailData.subject,
+        smtp_host: mailbox.smtp_host
+      }
+    });
+
+    throw err;
+  }
 }
+

@@ -12,6 +12,8 @@ import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
 import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
 import { recordOutreachEvent } from '../lib/outreach/utils.js';
+import { sendAlert } from '../lib/notifier.js';
+
 
 dotenv.config();
 
@@ -807,9 +809,38 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
   }
 }, { connection: redis as any });
 
-emailWorker.on('failed', (job, err) => {
-  console.error(`Job ${job?.id} failed: ${err.message}`);
+campaignWorker.on('failed', async (job, err) => {
+  console.error(`[Campaign Worker] Job ${job?.id} failed: ${err.message}`);
+  
+  await sendAlert({
+    source: 'Backend',
+    customTitle: '🚨 Background Job Failed: Campaign Processor',
+    errorMessage: err.message,
+    stackTrace: err.stack,
+    payload: {
+      jobId: job?.id,
+      data: job?.data
+    }
+  });
 });
+
+
+emailWorker.on('failed', async (job, err) => {
+  console.error(`Job ${job?.id} failed: ${err.message}`);
+  
+  await sendAlert({
+    source: 'Backend',
+    customTitle: `🚨 Background Job Failed: ${job?.name || 'Email Queue'}`,
+    errorMessage: err.message,
+    stackTrace: err.stack,
+    payload: {
+      jobId: job?.id,
+      jobName: job?.name,
+      data: job?.data
+    }
+  });
+});
+
 
 emailWorker.on('completed', (job) => {
   console.log(`Job ${job.id} completed successfully`);

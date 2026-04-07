@@ -5,6 +5,8 @@ import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
 import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, recordOutreachEvent, isBounce } from './utils.js';
 import { scheduleNextStep, evaluateIntent } from './sequenceEngine.js';
+import { sendAlert } from '../notifier.js';
+
 
 export interface ImapConfig {
   host: string; port: number; secure: boolean; user: string; enc_pass: string;
@@ -147,7 +149,20 @@ export async function pollImap(mailboxId: string) {
       }
     }
   } catch (err: any) {
-    console.error(`[IMAP] Error de conexión:`, err.message);
+    console.error(`[IMAP] Connection/Polling Error for mailbox ${mailboxId}:`, err.message);
+    
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 IMAP Sync Error',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      payload: { 
+        mailboxId,
+        email: mailbox.email,
+        imap_host: mailbox.imap_host
+      }
+    });
+
   } finally {
     if (connection) connection.end();
   }

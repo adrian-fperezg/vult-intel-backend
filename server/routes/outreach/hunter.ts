@@ -13,6 +13,7 @@ import {
 } from '../../lib/outreach/hunter.js';
 import { searchPDL } from '../../lib/outreach/pdl.js';
 import crypto from 'crypto';
+import { sendAlert } from '../../lib/notifier.js';
 
 interface PersonLead {
   id: string;
@@ -327,11 +328,37 @@ router.post("/ai-extract", async (req: AuthRequest, res) => {
       throw new Error("No AI API keys configured (Gemini or Anthropic required)");
     }
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const data = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
-    res.json(data);
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const data = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
+      res.json(data);
+    } catch (parseErr: any) {
+      // Forensic alert for malformed AI response
+      await sendAlert({
+        source: 'Backend',
+        customTitle: '🚨 AI Provider Error: Hunter AI Extract (Parse)',
+        errorMessage: parseErr.message,
+        stackTrace: parseErr.stack,
+        requestPath: '/api/outreach/hunter/ai-extract',
+        projectId: pId,
+        payload: { prompt, text: text.slice(0, 500) }
+      });
+      throw parseErr;
+    }
   } catch (error: any) {
     console.error("[HUNTER_AI_EXTRACT_ERROR]:", error.message);
+    
+    // Forensic alert for general AI failure (API down, Rate limited, etc.)
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 AI Provider Error: Hunter AI Extract',
+      errorMessage: error.message,
+      stackTrace: error.stack,
+      requestPath: '/api/outreach/hunter/ai-extract',
+      projectId: pId,
+      payload: { prompt, icpContext }
+    });
+    
     res.status(500).json({ error: error.message || "Failed to extract parameters" });
   }
 });

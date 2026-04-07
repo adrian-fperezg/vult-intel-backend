@@ -3,6 +3,7 @@ import redis from '../redis.js';
 import { GoogleGenAI } from '@google/genai';
 import { GoogleAuth } from 'google-auth-library';
 import { updateJobStatus, refundVideoCredit, saveToLibrary } from '../lib/veoStudio/access.js';
+import { sendAlert } from '../lib/notifier.js';
 
 const VEO_MODEL = 'veo-3.1-fast-generate-preview';
 const POLL_INTERVAL_MS = 10_000;  // 10s between status checks
@@ -105,6 +106,13 @@ async function checkVideoJobStatus(operationName: string): Promise<{ outputUrl?:
       console.log(`[VEO QUEUE] Operation ${operationName} still pending (${i + 1}/${MAX_POLLS})...`);
     } catch (e: any) {
       console.error('[VEO VERTEX FETCH ERROR]:', e);
+      await sendAlert({
+        source: 'Backend',
+        customTitle: '🚨 AI Provider Error: VEO (Polling Failure)',
+        errorMessage: e.message,
+        stackTrace: e.stack,
+        payload: { operationName }
+      });
     }
   }
 
@@ -204,6 +212,16 @@ export const veoWorker = new Worker<VeoJobData>(
       console.log(`[VEO QUEUE] Job ${jobId} completed successfully for uid ${uid}`);
     } catch (err: any) {
       console.error(`[VEO QUEUE] Job ${jobId} execution error:`, err.message);
+      
+      await sendAlert({
+        source: 'Backend',
+        customTitle: '🚨 AI Provider Error: VEO (Generation Failure)',
+        errorMessage: err.message,
+        stackTrace: err.stack,
+        userId: uid,
+        payload: { jobId, projectId, prompt, outputType, aspectRatio, style }
+      });
+
       await updateJobStatus(jobId, 'failed', undefined, err.message);
       // Only refund if it was a video job (image jobs don't consume video credits)
       if (outputType === 'video') {
@@ -217,6 +235,18 @@ export const veoWorker = new Worker<VeoJobData>(
 veoWorker.on('completed', job => {
   console.log(`[VEO QUEUE] Worker completed job: ${job.id}`);
 });
-veoWorker.on('failed', (job, err) => {
+veoWorker.on('failed', async (job, err) => {
   console.error(`[VEO QUEUE] Worker failed job ${job?.id}:`, err.message);
+  
+  await sendAlert({
+    source: 'Backend',
+    customTitle: '🚨 Background Job Failed: VEO Generation',
+    errorMessage: err.message,
+    stackTrace: err.stack,
+    payload: {
+      jobId: job?.id,
+      data: job?.data
+    }
+  });
 });
+

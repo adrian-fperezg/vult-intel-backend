@@ -79,6 +79,7 @@ import { stripe, verifyStripeSignature } from "./lib/stripe.js";
 import admin from 'firebase-admin';
 import { gmailWebhookHandler } from "./api/webhooks/gmailWebhook.js";
 import { AnalyticsData, AiReportResponse } from "../shared/types/outreach";
+import { sendAlert } from "./lib/notifier.js";
 
 
 
@@ -296,10 +297,65 @@ function inferTimezone(city?: string, country?: string): string | null {
 }
 
 // ─── Public health check ──────────────────────────────────────────────────────
+app.get("/api/health", async (_req, res) => {
+  const health: any = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    dependencies: {} as any
+  };
+
+  let overallStatus = 200;
+
+  // 1. PostgreSQL Check
+  try {
+    await db.get('SELECT 1');
+    health.dependencies.postgres = 'connected';
+  } catch (err) {
+    health.dependencies.postgres = 'disconnected';
+    health.status = 'error';
+    overallStatus = 503;
+  }
+
+  // 2. Redis Check
+  try {
+    if (redis.status === 'ready') {
+      health.dependencies.redis = 'connected';
+    } else {
+      throw new Error(`Redis status: ${redis.status}`);
+    }
+  } catch (err) {
+    health.dependencies.redis = 'disconnected';
+    health.status = 'error';
+    overallStatus = 503;
+  }
+
+  // 3. AI Providers Check (Gemini)
+  health.dependencies.ai_gemini = process.env.GEMINI_API_KEY ? 'configured' : 'missing';
+  
+  // 4. AI Providers Check (VEO)
+  health.dependencies.ai_veo = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ? 'configured' : 'missing';
+
+  // 5. Firebase Admin Check
+  health.dependencies.firebase = admin.apps.length > 0 ? 'initialized' : 'uninitialized';
+
+  // 6. Email Infrastructure Check (Lightweight config check)
+  const hasSmtp = !!(process.env.SMTP_HOST && process.env.SMTP_PASSWORD);
+  const hasImap = !!(process.env.IMAP_HOST && process.env.IMAP_PASSWORD);
+  health.dependencies.email_smtp = hasSmtp ? 'configured' : 'missing';
+  health.dependencies.email_imap = hasImap ? 'configured' : 'missing';
+
+  res.status(overallStatus).json(health);
+});
+
+app.head("/api/health", (_req, res) => {
+  res.status(200).end();
+});
 
 app.get("/api/outreach/health", (_req, res) => {
   res.json({ status: "ok", service: "outreach-api" });
 });
+
 
 // ─── Google OAuth — PUBLIC (no Firebase token required) ──────────────────────
 // The frontend hits this after getting a short-lived "auth init token" from the
@@ -1489,21 +1545,29 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
 
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     if (geminiKey && activeEntities.length > 0) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const entityData = activeEntities.map(s => `${s.name}: Sent ${s.sent}, Opened ${s.opened}, Replied ${s.replied}`).join("\n");
-        const prompt = `Analyze these outreach campaigns/sequences for the period [${timeframe || 'last 30 days'}] and provide exactly ONE sentence of minimalist, high-impact performance insight. Identify the top performer and the core reason (open rate vs reply rate) for its success. Stay professional and concise.
+      const entityData = activeEntities.map(s => `${s.name}: Sent ${s.sent}, Opened ${s.opened}, Replied ${s.replied}`).join("\n");
+      const aiPrompt = `Analyze these outreach campaigns/sequences for the period [${timeframe || 'last 30 days'}] and provide exactly ONE sentence of minimalist, high-impact performance insight. Identify the top performer and the core reason (open rate vs reply rate) for its success. Stay professional and concise.
         
         Activities Performance:
         ${entityData}`;
 
+      try {
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
         // ✅ CÓDIGO CORREGIDO
         const result = await ai.models.generateContent({
           model: 'gemini-1.5-flash',
-          contents: prompt
+          contents: aiPrompt
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
-      } catch (err) {
+      } catch (err: any) {
+        await sendAlert({
+          source: 'Backend',
+          customTitle: '🚨 AI Provider Error: Gemini (Insights)',
+          errorMessage: err.message,
+          stackTrace: err.stack,
+          requestPath: '/api/outreach/stats',
+          payload: { prompt: aiPrompt.slice(0, 500) }
+        });
         insight = "Send more emails to unlock AI-powered growth insights.";
       }
     }
@@ -1597,7 +1661,7 @@ async function generateOutreachReport(projectId: string, timeframe?: string, tim
   const entityData = activeEntities.map(s => `${s.name}: Sent ${s.sent}, Opened ${s.opened}, Replied ${s.replied}`).join("\n");
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
-  const prompt = `You are a Senior Outreach Strategist. Generate a period-specific Performance Report.
+  const reportPrompt = `You are a Senior Outreach Strategist. Generate a period-specific Performance Report.
 Period: ${timeframe || "Last 30 Days"}
 Dates: ${startDateStr} to ${endDateStr} (Timezone: ${userTz})
 
@@ -1622,11 +1686,19 @@ Use professional, encouraging, and data-driven language. Use Markdown for format
   try {
     const result = await ai.models.generateContent({
       model: 'gemini-1.5-flash',
-      contents: prompt
+      contents: reportPrompt
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
-  } catch (err) {
+  } catch (err: any) {
     console.error("[Report Generation Error]", err);
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 AI Provider Error: Gemini (Report)',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPath: '/api/outreach/ai/generate-report',
+      payload: { prompt_preview: reportPrompt.slice(0, 500) }
+    });
     return "Error generating AI report: " + (err instanceof Error ? err.message : "unknown error");
   }
 } // <-- Esta llave cierra la función generateOutreachReport
@@ -3512,6 +3584,15 @@ app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
     res.json({ optimizedContent });
   } catch (err: any) {
     console.error("[AI OPTIMIZE ERROR]:", err);
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 AI Provider Error: Gemini (Email Optimizer)',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPath: '/api/outreach/ai/optimize-email',
+      userId: (req as any).user?.uid,
+      payload: { subject, content_preview: content?.slice(0, 500) }
+    });
     res.status(500).json({ error: "Failed to optimize content", details: err.message });
   }
 });
@@ -4727,6 +4808,15 @@ Brief: ${brief}`;
     res.json(plan);
   } catch (err: any) {
     console.error('[VEO] storyboard-plan error:', err);
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 AI Provider Error: Gemini (Storyboard)',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPath: '/api/veo-studio/storyboard-plan',
+      userId: req.user?.uid,
+      payload: { brief, tone, shotCount }
+    });
     res.status(500).json({ error: err.message || 'AI planning failed' });
   }
 });
@@ -4750,7 +4840,16 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
     });
     const enhanced = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;
     res.json({ enhanced });
-  } catch {
+  } catch (err: any) {
+    await sendAlert({
+      source: 'Backend',
+      customTitle: '🚨 AI Provider Error: Gemini (Prompt Enhancer)',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPath: '/api/veo-studio/enhance-prompt',
+      userId: req.user?.uid,
+      payload: { prompt, mode, style }
+    });
     res.json({ enhanced: prompt });
   }
 });
@@ -5005,7 +5104,6 @@ setInterval(() => {
 
 // ─── GLOBAL ERROR HANDLER & FORENSICS ──────────────────────────────────────────
 
-import { sendAlert } from './lib/notifier';
 
 // Endpoint to bridge frontend crashes to Discord/Slack
 app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
@@ -5030,7 +5128,20 @@ app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  const geminiConfigured = !!(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY);
+  const veoConfigured = !!(process.env.GEMINI_API_KEY && process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  const googleConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    db: 'connected', 
+    dependencies: {
+      ai_gemini: geminiConfigured ? 'configured' : 'missing',
+      ai_veo: veoConfigured ? 'configured' : 'missing',
+      google_api: googleConfigured ? 'configured' : 'missing'
+    }
+  });
 });
 
 app.head('/api/health', (req, res) => {
