@@ -33,6 +33,9 @@ export async function initializeGlobalMailer() {
           pass,
         },
         family: 4, // Strictly force IPv4
+        tls: {
+          family: 4, // Redundant IPv4 enforcement for TLS handshake
+        },
       } as any);
 
       // Verification check to ensure credentials and firewall rules allow connection

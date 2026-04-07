@@ -34,6 +34,9 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
         pass: password,
       },
       family: 4, // Strictly force IPv4
+      tls: {
+        family: 4, // Redundant IPv4 enforcement for TLS handshake
+      },
     } as any);
 
     // Ensure the from address matches the authenticated user to prevent spam rejection
