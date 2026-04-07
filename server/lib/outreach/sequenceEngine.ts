@@ -251,6 +251,7 @@ export async function evaluateIntent(projectId: string, sequenceId: string, cont
 
     if (conditionStep?.condition_keyword) {
       const keywordMatched = matchKeyword(rawBody, conditionStep.condition_keyword);
+      console.log(`[DEBUG] Checking reply for contact ${contactId}: Keyword '${conditionStep.condition_keyword}' found in body? ${keywordMatched ? 'Yes' : 'No'}.`);
 
       if (keywordMatched) {
         console.log(`[SequenceEngine] Match en paso de condición: "${conditionStep.condition_keyword}".`);

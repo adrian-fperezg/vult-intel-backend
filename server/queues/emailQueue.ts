@@ -406,10 +406,14 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           try {
             const sequence = await db.prepare('SELECT mailbox_id FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
             if (sequence?.mailbox_id) {
+               console.log(`[Sequence] [Sync-First] Awaiting IMAP poll for mailbox ${sequence.mailbox_id}...`);
                await pollImap(sequence.mailbox_id);
+               console.log(`[Sequence] [Sync-First] IMAP poll completed successfully for step ${stepId}.`);
+            } else {
+               console.warn(`[Sequence] [Sync-First] No mailbox_id found for sequence ${sequenceId}. Skipping sync.`);
             }
           } catch (syncErr: any) {
-            console.error(`[Sequence] [Sync-First] Failed to perform priority IMAP sync: ${syncErr.message}`);
+            console.error(`[Sequence] [Sync-First] CRITICAL FAILURE: Priority IMAP sync failed for step ${stepId}: ${syncErr.message}`);
           }
         }
 
@@ -581,11 +585,11 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   }
 
   // INJECT TRACKING PIXEL
-  const backendUrl = process.env.APP_URL || process.env.BACKEND_URL || (process.env.RAILWAY_STATIC_URL ? `https://${process.env.RAILWAY_STATIC_URL}` : "http://localhost:8080");
-  if (!process.env.APP_URL && !process.env.BACKEND_URL && !process.env.RAILWAY_STATIC_URL) {
-    console.warn(`[Tracking] APP_URL, BACKEND_URL and RAILWAY_STATIC_URL environment variables are MISSING. Open tracking will fall back to localhost and likely fail in production.`);
+  const backendUrl = process.env.APP_URL || "http://localhost:3000";
+  if (!process.env.APP_URL) {
+    console.warn(`[Tracking] APP_URL environment variable is MISSING. Open tracking will fall back to localhost and likely fail in production.`);
   }
-  const trackingPixel = `\n<img src="${backendUrl}/api/outreach/track/${emailId}/pixel" width="1" height="1" style="display:none;" alt="" />`;
+  const trackingPixel = `\n<img src="${backendUrl}/api/track/open/${emailId}" width="1" height="1" style="display:none;" alt="" />`;
   const bodyWithTracking = bodyWithSignature + trackingPixel;
 
   // Use resilient attachment resolver to handle missing files on ephemeral hosts
