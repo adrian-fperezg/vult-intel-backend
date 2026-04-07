@@ -25,15 +25,15 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
 
   try {
     const transporter = nodemailer.createTransport({
-      host: mailbox.smtp_host,
-      port: mailbox.smtp_port,
-      secure: mailbox.smtp_port === 465, // Correctly handle implicit SSL vs STARTTLS
+      host: mailbox.smtp_host || 'smtp.gmail.com',
+      port: 465,
+      secure: true, // Force secure on 465 for GMail consistency
       auth: {
         user: mailbox.smtp_username || mailbox.email,
         pass: password,
       },
-      family: 4, // Force IPv4 for Railway
-    });
+      family: 4, // Strictly force IPv4
+    } as any);
 
     // Ensure the from address matches the authenticated user to prevent spam rejection
     const fromEmail = mailbox.smtp_username || mailbox.email;
