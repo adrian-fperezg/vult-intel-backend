@@ -25,6 +25,7 @@ export async function getImapHealth() {
       host,
       port,
       tls: port === 993 || port === 443, // Common TLS ports
+      tlsOptions: { rejectUnauthorized: false }, // Bypass self-signed cert check
       authTimeout: 5000
     }
   };

@@ -31,6 +31,7 @@ export async function initializeGlobalMailer() {
           user,
           pass,
         },
+        family: 4, // Force IPv4 to avoid ENETUNREACH with IPv6 in Railway
       });
 
       // Verification check to ensure credentials and firewall rules allow connection

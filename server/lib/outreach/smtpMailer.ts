@@ -32,6 +32,7 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
         user: mailbox.smtp_username || mailbox.email,
         pass: password,
       },
+      family: 4, // Force IPv4 for Railway
     });
 
     // Ensure the from address matches the authenticated user to prevent spam rejection

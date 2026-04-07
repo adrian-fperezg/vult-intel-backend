@@ -42,6 +42,7 @@ export async function pollImap(mailboxId: string) {
       host: mailbox.imap_host,
       port: mailbox.imap_port,
       tls: mailbox.imap_secure === 1 || mailbox.imap_secure === true,
+      tlsOptions: { rejectUnauthorized: false }, // Bypass self-signed cert check
       authTimeout: 10000
     }
   };
