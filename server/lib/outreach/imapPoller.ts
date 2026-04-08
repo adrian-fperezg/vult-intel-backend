@@ -58,24 +58,40 @@ export async function pollImap(mailboxId: string) {
     connection = await imap.connect(imapConfig);
     await connection.openBox('INBOX');
 
-    const searchCriteria = ['UNSEEN'];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const searchCriteria = [['SINCE', yesterday]];
+    console.log(`[IMAP DEBUG] Searching IMAP with criteria: ${JSON.stringify(searchCriteria)}`);
+
     const fetchOptions = {
       bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)', 'TEXT', ''],
       struct: true, markSeen: false
     };
 
     const messages = await connection.search(searchCriteria, fetchOptions);
+    console.log(`[IMAP DEBUG] IMAP returned ${messages.length} raw messages.`);
 
     for (const msg of messages) {
       const uid = msg.attributes.uid;
+      
       try {
+        // DE-DUPLICATION CHECK: Skip if we already have this email recorded as a reply or sent email
         const headerPart = msg.parts.find((p: any) => p.which.includes('HEADER.FIELDS'));
         const headers = headerPart?.body;
         if (!headers) continue;
 
+        const messageId = (headers?.['message-id']?.[0] || '').toString();
+        if (messageId) {
+          const existing = await db.prepare("SELECT id FROM outreach_individual_emails WHERE message_id = ?").get(messageId);
+          if (existing) {
+            // console.log(`[IMAP DEBUG] Skipping already processed message: ${messageId}`);
+            continue;
+          }
+        }
+
         const from = (headers.from?.[0] || '').toString();
         const subject = (headers.subject?.[0] || '').toString();
-        const messageId = (headers['message-id']?.[0] || '').toString();
         const inReplyTo = headers['in-reply-to']?.[0];
 
         console.log(`[IMAP] [UID: ${uid}] Processing UNSEEN email from ${from}: "${subject}"`);

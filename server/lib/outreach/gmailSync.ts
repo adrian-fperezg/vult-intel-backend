@@ -62,9 +62,11 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
   if (!mailbox) throw new Error("Mailbox not found");
 
   const accessToken = await getAccessToken(mailboxId);
+  const query = 'newer_than:1d';
+  console.log(`[IMAP DEBUG] Searching Gmail with query: ${query}`);
 
   const response = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=after:${Math.floor(Date.now() / 1000) - 86400}`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=${encodeURIComponent(query)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
@@ -74,6 +76,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
   }
 
   const { messages } = (await response.json()) as { messages?: Array<{ id: string }> };
+  const rawCount = messages?.length || 0;
+  console.log(`[IMAP DEBUG] Gmail returned ${rawCount} raw messages.`);
+  
   if (!messages || messages.length === 0) return 0;
 
   let newCount = 0;
