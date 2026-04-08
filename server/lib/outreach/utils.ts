@@ -62,13 +62,16 @@ export function matchKeyword(body: string, keyword: string | null): boolean {
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-  const escaped = cleanKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp("\\b" + escaped + "\\b", "i");
+  // Log showing the cleaned string it is evaluating
+  console.log(`[DEBUG] Cleaned body excerpt for evaluation: "${cleanBody.substring(0, 150).replace(/\n/g, ' ')}..."`);
 
-  const isMatched = regex.test(cleanBody);
+  // Fuzzy Match: Use .includes() rather than strict word boundaries or exact equality
+  const isMatched = cleanBody.includes(cleanKeyword);
 
   if (isMatched) {
-    console.log(`[Cerebro] MATCH: Encontrada palabra "${cleanKeyword}"`);
+    console.log(`[Cerebro] MATCH: Encontrada palabra clave "${cleanKeyword}"`);
+  } else {
+    console.log(`[DEBUG] No match for keyword "${cleanKeyword}" in cleaned body.`);
   }
 
   return isMatched;
