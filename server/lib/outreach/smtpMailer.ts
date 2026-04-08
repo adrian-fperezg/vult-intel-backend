@@ -28,9 +28,10 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
       host: 'smtp.gmail.com', // Consistent Gmail host
       port: 465, // Implicit SSL port
       secure: true, // Use implicit SSL
-      pool: true, // Enable connection pooling
-      maxConnections: 1, // Be gentle with Gmail Limits
-      maxMessages: 10, // Max messages per connection
+      pool: false, // Use single connections to avoid hung idle sockets
+      connectionTimeout: 10000, // Timeout wait for connection to establish
+      greetingTimeout: 10000, // Timeout wait for SMTP greeting
+      socketTimeout: 10000, // Timeout wait for socket activity
       family: 4, // CRITICAL: Strictly force IPv4
       auth: {
         user: mailbox.smtp_username || mailbox.email,
