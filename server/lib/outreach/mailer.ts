@@ -27,6 +27,9 @@ export async function initializeGlobalMailer() {
         host: 'smtp.gmail.com', // Force Gmail host for reliability
         port: 465, // Implicit SSL port
         secure: true, // Use implicit SSL
+        pool: true, // Enable connection pooling
+        maxConnections: 1, // Be gentle with Gmail Limits
+        maxMessages: 10, // Max messages per connection
         auth: {
           user,
           pass,
