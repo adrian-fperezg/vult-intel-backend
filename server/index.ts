@@ -1556,10 +1556,9 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
 
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
-        // ✅ CÓDIGO CORREGIDO
         const result = await ai.models.generateContent({
           model: 'gemini-1.5-flash',
-          contents: [{ role: 'user', parts: [{ text: aiPrompt }] }]
+          contents: [{ parts: [{ text: aiPrompt }] }]
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
       } catch (err: any) {
@@ -4936,9 +4935,10 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
 
   try {
     const systemPrompt = `You are a world-class AI video director. Enhance the following prompt to make it more cinematic and detailed for ${mode || 'video'} generation in ${style || 'cinematic'} style. Return ONLY the enhanced prompt text, nothing else, no quotes, max 200 words.\n\nOriginal: ${prompt}`;
-    const result = await (new GoogleGenAI({ apiKey: geminiKey }) as any).models.generateContent({
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    const result = await ai.models.generateContent({
       model: 'gemini-1.5-flash',
-      contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+      contents: [{ parts: [{ text: systemPrompt }] }],
     });
     const enhanced = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;
     res.json({ enhanced });

@@ -60,7 +60,7 @@ export function matchKeyword(body: string, keyword: string | null): boolean {
   const cleanBody = cleanEmailBody(body);
   
   // Log showing the cleaned string it is evaluating
-  console.log(`[DEBUG] Cleaned body excerpt for evaluation: "${cleanBody.substring(0, 150).replace(/\n/g, ' ')}..."`);
+  console.log(`[DEBUG] Cleaned body excerpt for evaluation (Length: ${cleanBody.length}): "${cleanBody.substring(0, 150).replace(/\n/g, ' ')}${cleanBody.length > 150 ? '...' : ''}"`);
 
   const cleanKeyword = keyword.trim()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")

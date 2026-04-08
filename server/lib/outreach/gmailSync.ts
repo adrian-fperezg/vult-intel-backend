@@ -18,43 +18,41 @@ interface GmailMessage {
 }
 
 export function extractGmailBody(payload: any): string {
-  // 1. Check for data at the current level
-  if (payload.body?.data) {
+  let body = '';
+
+  // 1. Recursive helper to find all text parts
+  function findParts(p: any) {
+    if (p.body?.data && (p.mimeType === 'text/plain' || p.mimeType === 'text/html')) {
+      const data = p.body.data;
+      const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+      
+      // If we find text/plain, we prioritize it (or append it if we already have some)
+      if (p.mimeType === 'text/plain') {
+        // Collect all plain text parts
+        body += (body ? '\n' : '') + decoded;
+      } else if (p.mimeType === 'text/html' && !body) {
+        // Only use HTML if we haven't found any plain text yet
+        // (This will be overwritten if a later part is text/plain)
+        body = decoded;
+      }
+    }
+
+    if (p.parts) {
+      for (const part of p.parts) {
+        findParts(part);
+      }
+    }
+  }
+
+  findParts(payload);
+
+  // 2. Final Fallback: If still empty, check if top-level body.data exists (simple messages)
+  if (!body && payload.body?.data) {
     const data = payload.body.data;
-    const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-    if (decoded && decoded.trim().length > 0) return decoded;
+    body = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
   }
 
-  // 2. If no data, check parts recursively
-  if (payload.parts) {
-    // Priority 1: text/plain
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/plain' && part.body?.data) {
-        const data = part.body.data;
-        const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-        if (decoded && decoded.trim().length > 0) return decoded;
-      }
-    }
-
-    // Priority 2: text/html
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/html' && part.body?.data) {
-        const data = part.body.data;
-        const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-        if (decoded && decoded.trim().length > 0) return decoded;
-      }
-    }
-
-    // Priority 3: Nested multipart (mixed, alternative, etc)
-    for (const part of payload.parts) {
-      if (part.parts || (part.mimeType && part.mimeType.startsWith('multipart/'))) {
-        const result = extractGmailBody(part);
-        if (result && result.trim().length > 0) return result;
-      }
-    }
-  }
-
-  return '';
+  return body.trim();
 }
 
 export async function syncMailbox(mailboxId: string, getAccessToken: (id: string) => Promise<string>) {

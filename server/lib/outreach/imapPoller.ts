@@ -13,27 +13,36 @@ export interface ImapConfig {
 }
 
 async function extractEmailBody(msg: imap.Message): Promise<string> {
-  // 1. Try to find content in known parts (TEXT or empty string which usually means full body)
-  const partsToTry = ['TEXT', ''];
-  for (const which of partsToTry) {
-    const part = msg.parts.find((p: any) => p.which === which);
-    if (part?.body) {
+  let fullBody = '';
+  
+  // Sort parts so text/plain comes first
+  const sortedParts = [...msg.parts].sort((a: any, b: any) => {
+    if (a.which === 'TEXT' && b.which !== 'TEXT') return -1;
+    if (a.which !== 'TEXT' && b.which === 'TEXT') return 1;
+    return 0;
+  });
+
+  for (const part of sortedParts) {
+    if (part.body && (part.which === 'TEXT' || part.which === '')) {
       try {
         const parsed = await simpleParser(part.body);
-        const body = (parsed.text || parsed.html || '').trim();
-        if (body) {
-          console.log(`[IMAP] Extracted body from part "${which}" (Length: ${body.length})`);
-          return body;
+        const partText = (parsed.text || parsed.html || '').trim();
+        if (partText) {
+          // If we find plain text, we prioritize it
+          if (parsed.text) {
+            fullBody += (fullBody ? '\n' : '') + parsed.text.trim();
+          } else if (parsed.html && !fullBody) {
+             // Use HTML only if no plain text found yet
+             fullBody = parsed.html.trim();
+          }
         }
       } catch (err) { 
-        console.error(`[IMAP] Error parsing part "${which}":`, err); 
+        console.error(`[IMAP] Error parsing part "${part.which}":`, err); 
       }
     }
   }
 
-  // 2. Fallback: If no body was found in parts, try parsing the whole message if available
-  // This is a safety net for complex multipart structures.
-  return '';
+  return fullBody.trim();
 }
 
 export async function pollImap(mailboxId: string) {

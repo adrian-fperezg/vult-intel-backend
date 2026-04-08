@@ -494,8 +494,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
                   }
                 }
 
-                const snippet = body.substring(0, 50).replace(/\n/g, ' ');
-                console.log(`[DEBUG] Evaluating reply (Length: ${body.length}): "${snippet}${body.length > 50 ? '...' : ''}" against keyword: '${step.condition_keyword}'`);
+                const snippet = body.substring(0, 150).replace(/\n/g, ' ');
+                console.log(`[DEBUG] Evaluating reply (Length: ${body.length}): "${snippet}${body.length > 150 ? '...' : ''}" against keyword: '${step.condition_keyword}'`);
                 
                 if (matchKeyword(body, step.condition_keyword)) {
                   keywordFound = true;
