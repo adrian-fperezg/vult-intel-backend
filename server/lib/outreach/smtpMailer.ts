@@ -29,20 +29,17 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
       lookup: (hostname, options, callback) => {
         dns.lookup(hostname, { family: 4 }, (err, address, family) => {
           callback(err, address, family);
         });
       },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
       auth: {
         user: mailbox.smtp_username || mailbox.email,
         pass: password,
-      },
-      tls: {
-        family: 4, // Secondary IPv4 enforcement
       },
     } as any);
 

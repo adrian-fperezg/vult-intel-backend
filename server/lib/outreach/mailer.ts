@@ -28,20 +28,17 @@ export async function initializeGlobalMailer() {
         host: 'smtp.gmail.com',
         port: 465,
         secure: true,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
         lookup: (hostname, options, callback) => {
           dns.lookup(hostname, { family: 4 }, (err, address, family) => {
             callback(err, address, family);
           });
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
         auth: {
           user,
           pass,
-        },
-        tls: {
-          family: 4, // Secondary IPv4 enforcement
         },
       } as any);
 
