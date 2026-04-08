@@ -506,6 +506,7 @@ export const initDb = async () => {
         thread_id TEXT,
         message_id TEXT,
         is_reply BOOLEAN DEFAULT FALSE,
+        replied_at TIMESTAMP,
         error_code TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -522,7 +523,8 @@ export const initDb = async () => {
       { name: 'opened_at', type: 'TIMESTAMP' },
       { name: 'is_reply', type: 'BOOLEAN DEFAULT FALSE' },
       { name: 'error_code', type: 'TEXT' },
-      { name: 'body', type: 'TEXT' }
+      { name: 'body', type: 'TEXT' },
+      { name: 'replied_at', type: 'TIMESTAMP' }
     ];
 
     for (const col of newEmailCols) {
