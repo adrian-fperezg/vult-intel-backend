@@ -146,12 +146,12 @@ export async function pollImap(mailboxId: string) {
         const replyId = uuidv4();
         await db.run(`
           INSERT INTO outreach_individual_emails 
-          (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, status, message_id, thread_id, is_reply, sent_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
           replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
           originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-          from, '', mailbox.email, subject, rawBody, 'received', messageId, originalEmail.thread_id, true
+          from, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, originalEmail.thread_id, true
         ]);
 
         // 5. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO

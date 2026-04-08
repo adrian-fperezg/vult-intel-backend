@@ -19,19 +19,19 @@ interface GmailMessage {
 
 function getGmailBody(payload: any): string {
   if (payload.body?.data) {
-    return Buffer.from(payload.body.data, 'base64').toString('utf-8');
+    return Buffer.from(payload.body.data, 'base64url').toString('utf-8');
   }
   if (payload.parts) {
     // 1. Try plain text first
     for (const part of payload.parts) {
       if (part.mimeType === 'text/plain' && part.body?.data) {
-        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+        return Buffer.from(part.body.data, 'base64url').toString('utf-8');
       }
     }
     // 2. Try HTML as fallback
     for (const part of payload.parts) {
       if (part.mimeType === 'text/html' && part.body?.data) {
-        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+        return Buffer.from(part.body.data, 'base64url').toString('utf-8');
       }
     }
     // 3. Recursive check for nested parts
@@ -114,6 +114,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     if (originalEmail) {
       console.log(`[Gmail Sync] [ID: ${msgRef.id}] Linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
       const rawBody = getGmailBody(msg.payload);
+      console.log(`[Gmail Sync] [ID: ${msgRef.id}] Extracted body length: ${rawBody.length}`);
 
       // 1. EVALUACIÓN DE INTENCIÓN (El Cerebro de Adrian)
       let intentResult = { branched: false, keyword: null as string | null, matched: false };
@@ -148,12 +149,12 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       const replyId = uuidv4();
       await db.run(`
         INSERT INTO outreach_individual_emails 
-        (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, status, message_id, thread_id, is_reply, sent_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `, [
         replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
         originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-        fromEmail, '', mailbox.email, subject, rawBody, 'received', messageId, msg.threadId, true
+        fromEmail, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, msg.threadId, true
       ]);
 
       // 4. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO

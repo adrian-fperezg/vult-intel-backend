@@ -521,7 +521,8 @@ export const initDb = async () => {
       { name: 'campaign_id', type: 'TEXT' },
       { name: 'opened_at', type: 'TIMESTAMP' },
       { name: 'is_reply', type: 'BOOLEAN DEFAULT FALSE' },
-      { name: 'error_code', type: 'TEXT' }
+      { name: 'error_code', type: 'TEXT' },
+      { name: 'body', type: 'TEXT' }
     ];
 
     for (const col of newEmailCols) {
