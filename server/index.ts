@@ -7,7 +7,7 @@ import fs from "fs";
 import cityTimezones from 'city-timezones';
 import { DateTime } from 'luxon';
 import Papa from 'papaparse';
-import { initializeGlobalMailer, getMailerHealth } from "./lib/outreach/mailer.js";
+import { getMailerHealth } from "./lib/outreach/mailer.js";
 import { getImapHealth } from "./lib/outreach/imapHealth.js";
 
 // ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
   } catch (err) {
     console.error('[REDIS] Flush failed on startup:', err);
   }
-  await initializeGlobalMailer();
+  // SMTP initialization is decommissioned in favor of Gmail REST API.
 
   // Custom verification for Outreach Emergency (Matches user request)
   try {
@@ -341,9 +341,9 @@ app.get("/api/health", async (_req, res) => {
   // 5. Firebase Admin Check
   health.dependencies.firebase = admin.apps.length > 0 ? 'initialized' : 'uninitialized';
 
-  // 6. Email Infrastructure Check (Verbose diagnostics)
-  // SMTP Health (from global mailer state)
-  health.dependencies.email_smtp = getMailerHealth();
+  // Email Infrastructure Check
+  // Gmail API Configuration Health (from global mailer state)
+  health.dependencies.gmail_api = getMailerHealth();
   
   // IMAP Health (Performing a live dry-run connection check)
   health.dependencies.email_imap = await getImapHealth();
