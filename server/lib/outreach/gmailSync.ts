@@ -135,10 +135,13 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
     const emailMatch = fromHeader.match(/<(.+)>/) || [null, fromHeader.trim()];
     const fromEmail = emailMatch[1];
-    if (!fromEmail) continue;
+    if (!fromEmail) {
+      console.log(`[REASON] Skipping Gmail message ${msg.id} - Could not parse From email header: ${fromHeader}`);
+      continue;
+    }
 
     const potentialIds = [messageId].filter(Boolean);
-    console.log(`[Gmail Sync] [ID: ${msgRef.id}] Potential Message-IDs for linking: ${JSON.stringify(potentialIds)} (Thread: ${msg.threadId})`);
+    console.log(`[IMAP DEBUG] [ID: ${msgRef.id}] Potential Message-IDs for linking: ${JSON.stringify(potentialIds)} (Thread: ${msg.threadId})`);
     const originalEmail = await findOriginalEmail(potentialIds, msg.threadId);
 
     if (originalEmail) {
@@ -219,6 +222,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       });
 
       newCount++;
+    } else {
+      console.log(`[REASON] Skipping Gmail message ${msg.id} from ${fromEmail} (Subject: ${subject}) - No matching original outreach email found in DB.`);
     }
   } // <--- Cierre del loop FOR
   return newCount;

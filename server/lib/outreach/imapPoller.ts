@@ -135,14 +135,14 @@ export async function pollImap(mailboxId: string) {
         console.log(`[IMAP] [UID: ${uid}] Extracted potential Message-IDs for linking: ${JSON.stringify(potentialMessageIds)}`);
 
         if (potentialMessageIds.length === 0) {
-          console.log(`[IMAP] [UID: ${uid}] No In-Reply-To or References found. Skipping link attempt.`);
+          console.log(`[REASON] Skipping IMAP email ${uid} from ${from} - No In-Reply-To or References found in headers.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
 
         const originalEmail = await findOriginalEmail(potentialMessageIds);
         if (!originalEmail || !originalEmail.contact_id) {
-          console.warn(`[IMAP] [UID: ${uid}] Could NOT find original email for IDs: ${potentialMessageIds.join(', ')}`);
+          console.log(`[REASON] Skipping email from ${from} (Subject: ${subject}) - No matching outreach email or contact_id found in DB for Message-IDs: ${potentialMessageIds.join(', ')}`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
