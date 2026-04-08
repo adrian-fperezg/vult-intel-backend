@@ -29,10 +29,11 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
       port: 465, // Implicit SSL port
       secure: true, // Use implicit SSL
       pool: false, // Use single connections to avoid hung idle sockets
+      family: 4, // Strictly force IPv4
+      localAddress: '0.0.0.0', // CRITICAL: Forces IPv4 network interface
       connectionTimeout: 10000, // Timeout wait for connection to establish
       greetingTimeout: 10000, // Timeout wait for SMTP greeting
       socketTimeout: 10000, // Timeout wait for socket activity
-      family: 4, // CRITICAL: Strictly force IPv4
       auth: {
         user: mailbox.smtp_username || mailbox.email,
         pass: password,
