@@ -58,6 +58,10 @@ export function matchKeyword(body: string, keyword: string | null): boolean {
   if (!keyword || keyword.trim() === '') return false;
 
   const cleanBody = cleanEmailBody(body);
+  
+  // Log showing the cleaned string it is evaluating
+  console.log(`[DEBUG] Cleaned body excerpt for evaluation: "${cleanBody.substring(0, 150).replace(/\n/g, ' ')}..."`);
+
   const cleanKeyword = keyword.trim()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
@@ -139,17 +143,27 @@ export async function handleSequenceIntent(originalEmail: any, rawBody: string) 
 export async function findOriginalEmail(potentialIds: string[], threadId?: string) {
   for (const mid of potentialIds) {
     const cleanId = mid.replace(/[<>]/g, '').trim();
+    console.log(`[DEBUG] Checking Message-ID for link: ${cleanId}`);
     const original = await db.prepare(`
       SELECT * FROM outreach_individual_emails 
       WHERE message_id = ? OR message_id LIKE ?
     `).get(cleanId, `%${cleanId}%`) as any;
-    if (original) return original;
+    if (original) {
+      console.log(`[DEBUG] Successfully linked reply to Original Email ID: ${original.id} via Message-ID`);
+      return original;
+    }
   }
 
   if (threadId) {
+    console.log(`[DEBUG] Checking Thread-ID for link: ${threadId}`);
     const original = await db.prepare(`SELECT * FROM outreach_individual_emails WHERE thread_id = ?`).get(threadId) as any;
-    if (original) return original;
+    if (original) {
+      console.log(`[DEBUG] Successfully linked reply to Original Email ID: ${original.id} via Thread-ID`);
+      return original;
+    }
   }
+
+  console.warn(`[DEBUG] FAILED to link reply. Checked ${potentialIds.length} Message-IDs and Thread-ID: ${threadId || 'N/A'}`);
 
   return null;
 }

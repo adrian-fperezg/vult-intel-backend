@@ -72,6 +72,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
     const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || '';
 
+    console.log(`[Gmail Sync] [ID: ${msgRef.id}] Processing email from ${fromHeader}: "${subject}"`);
+
     if (isBounce(fromHeader, subject)) {
       const original = await findOriginalEmail([messageId].filter(Boolean), msg.threadId);
       if (original) {
@@ -96,9 +98,11 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     if (!fromEmail) continue;
 
     const potentialIds = [messageId].filter(Boolean);
+    console.log(`[Gmail Sync] [ID: ${msgRef.id}] Potential Message-IDs for linking: ${JSON.stringify(potentialIds)} (Thread: ${msg.threadId})`);
     const originalEmail = await findOriginalEmail(potentialIds, msg.threadId);
 
     if (originalEmail) {
+      console.log(`[Gmail Sync] [ID: ${msgRef.id}] Linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
       const rawBody = getGmailBody(msg.payload);
 
       // 1. EVALUACIÓN DE INTENCIÓN (El Cerebro de Adrian)
@@ -130,10 +134,21 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         console.log(`[Cerebro] NO MATCH: El contacto sigue en el flujo principal.`);
       }
 
-      // 3. Update individual email record (Postgres syntax)
-      await db.run("UPDATE outreach_individual_emails SET is_reply = True WHERE id = ?", originalEmail.id);
+      // 3. PERSIST REPLY TO INDIVIDUAL EMAILS (Crucial for Deep Scan)
+      const replyId = uuidv4();
+      await db.run(`
+        INSERT INTO outreach_individual_emails 
+        (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, status, message_id, thread_id, is_reply, sent_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `, [
+        replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
+        originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
+        fromEmail, '', mailbox.email, subject, rawBody, 'received', messageId, msg.threadId, true
+      ]);
 
-      // 4. Record Event
+      // 4. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO
+      await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
+
       await recordOutreachEvent({
         project_id: mailbox.project_id,
         sequence_id: originalEmail.sequence_id,
@@ -144,6 +159,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         event_key: `replied:${msg.id}`,
         metadata: { matched: intentResult.matched, keyword: intentResult.keyword }
       });
+
+      console.log(`[Gmail Sync] [ID: ${msgRef.id}] Successfully saved reply to DB for contact ${originalEmail.contact_id}`);
 
       // 5. Mark as read
       await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {

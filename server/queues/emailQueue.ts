@@ -11,7 +11,7 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
 import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
-import { recordOutreachEvent } from '../lib/outreach/utils.js';
+import { recordOutreachEvent, matchKeyword } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
 
 
@@ -435,19 +435,46 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         let branchPath = event ? 'yes' : 'no';
 
-        if (step.condition_type === 'replied' && step.condition_keyword) {
-          const matched = (branchPath === 'yes');
-          let keywordFound = false;
-          
-          if (matched && event?.metadata) {
-            try {
-              const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
-              keywordFound = meta.matched === true || meta.keyword_matched === true;
-              if (!keywordFound) branchPath = 'no';
-            } catch { }
+        // --- DEEP SCAN FOR REPLIES (Aggressive Detection) ---
+        if (step.condition_type === 'replied') {
+          const replies = await db.prepare(`
+            SELECT * FROM outreach_individual_emails 
+            WHERE contact_id = ? AND is_reply = True
+          `).all(contactId) as any[];
+
+          console.log(`[DEBUG] Found ${replies.length} replies in DB for contact ID ${contactId}`);
+
+          if (step.condition_keyword) {
+            let keywordFound = false;
+            
+            // 1. Try metadata from the latest event first
+            if (event?.metadata) {
+              try {
+                const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
+                keywordFound = meta.matched === true || meta.keyword_matched === true;
+              } catch { }
+            }
+
+            // 2. Fallback: Loop through ALL replies in DB and match manually
+            if (!keywordFound && replies.length > 0) {
+              console.log(`[DEBUG] Keyword not found in event metadata. Scanning ${replies.length} replies manually...`);
+              for (const reply of replies) {
+                const snippet = (reply.body || '').substring(0, 100).replace(/\n/g, ' ');
+                console.log(`[DEBUG] Evaluating reply snippet: "${snippet}..." against keyword: '${step.condition_keyword}'`);
+                // Ensure we use the clean body for evaluation
+                if (matchKeyword(reply.body || '', step.condition_keyword)) {
+                  keywordFound = true;
+                  break;
+                }
+              }
+            }
+
+            branchPath = keywordFound ? 'yes' : 'no';
+            console.log(`[DEBUG] Final keyword evaluation for contact ${contactId}: '${step.condition_keyword}' found? ${keywordFound ? 'Yes' : 'No'}. (Branch: ${branchPath.toUpperCase()})`);
+          } else if (replies.length > 0) {
+            // If no keyword, ANY reply found in the DB means YES
+            branchPath = 'yes';
           }
-          
-          console.log(`[DEBUG] Checking reply for contact ${contactId}: Keyword '${step.condition_keyword}' found? ${keywordFound ? 'Yes' : 'No'}. (Branch: ${branchPath.toUpperCase()})`);
         }
 
         console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);

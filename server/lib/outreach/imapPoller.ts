@@ -72,6 +72,8 @@ export async function pollImap(mailboxId: string) {
         const messageId = (headers['message-id']?.[0] || '').toString();
         const inReplyTo = headers['in-reply-to']?.[0];
 
+        console.log(`[IMAP] [UID: ${uid}] Processing UNSEEN email from ${from}: "${subject}"`);
+
         // 1. BOUNCE DETECTION
         if (isBounce(from, subject)) {
           const original = await findOriginalEmail([messageId || uid].filter(Boolean));
@@ -93,16 +95,22 @@ export async function pollImap(mailboxId: string) {
         const references = Array.isArray(referencesRaw) ? referencesRaw : [referencesRaw];
         const potentialMessageIds = [inReplyTo, ...references].filter(Boolean).map(id => id.replace(/[<>]/g, '').trim());
 
+        console.log(`[IMAP] [UID: ${uid}] Extracted potential Message-IDs for linking: ${JSON.stringify(potentialMessageIds)}`);
+
         if (potentialMessageIds.length === 0) {
+          console.log(`[IMAP] [UID: ${uid}] No In-Reply-To or References found. Skipping link attempt.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
 
         const originalEmail = await findOriginalEmail(potentialMessageIds);
         if (!originalEmail || !originalEmail.contact_id) {
+          console.warn(`[IMAP] [UID: ${uid}] Could NOT find original email for IDs: ${potentialMessageIds.join(', ')}`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
+
+        console.log(`[IMAP] [UID: ${uid}] Successfully linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
 
         // 2. CEREBRO DE INTENCIÓN (Adrian's Rules)
         const rawBody = await extractEmailBody(msg);
@@ -132,7 +140,19 @@ export async function pollImap(mailboxId: string) {
           console.log(`[IMAP] Sin match. La secuencia continúa en flujo principal.`);
         }
 
-        // 4. ACTUALIZAR EMAIL Y REGISTRAR EVENTO (Postgres Syntax)
+        // 4. PERSIST REPLY TO INDIVIDUAL EMAILS (Crucial for Deep Scan)
+        const replyId = uuidv4();
+        await db.run(`
+          INSERT INTO outreach_individual_emails 
+          (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, status, message_id, thread_id, is_reply, sent_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `, [
+          replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
+          originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
+          from, '', mailbox.email, subject, rawBody, 'received', messageId, originalEmail.thread_id, true
+        ]);
+
+        // 5. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO
         await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
 
         await recordOutreachEvent({
@@ -140,8 +160,10 @@ export async function pollImap(mailboxId: string) {
           step_id: originalEmail.step_id, contact_id: originalEmail.contact_id,
           email_id: originalEmail.id, event_type: 'replied',
           event_key: `replied:imap:${uid}`,
-          metadata: { matched: intentResult.matched, keyword: intentResult.keyword }
+          metadata: { matched: intentResult.matched, keyword: intentResult.keyword, reply_id: replyId }
         });
+
+        console.log(`[IMAP] [UID: ${uid}] Successfully saved reply ${replyId} to DB for contact ${originalEmail.contact_id}`);
 
         await connection.addFlags(uid, ['\\Seen']);
 
