@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { sendAlert } from '../notifier.js';
@@ -28,7 +29,11 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
-      family: 4, // Prevents IPv6 resolution issues
+      lookup: (hostname, options, callback) => {
+        dns.lookup(hostname, { family: 4 }, (err, address, family) => {
+          callback(err, address, family);
+        });
+      },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 10000,
