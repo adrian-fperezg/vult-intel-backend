@@ -31,11 +31,11 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
       pool: true, // Enable connection pooling
       maxConnections: 1, // Be gentle with Gmail Limits
       maxMessages: 10, // Max messages per connection
+      family: 4, // CRITICAL: Strictly force IPv4
       auth: {
         user: mailbox.smtp_username || mailbox.email,
         pass: password,
       },
-      family: 4, // Strictly force IPv4
       tls: {
         family: 4, // Redundant IPv4 enforcement for TLS handshake
       },

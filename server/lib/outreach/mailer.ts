@@ -30,11 +30,11 @@ export async function initializeGlobalMailer() {
         pool: true, // Enable connection pooling
         maxConnections: 1, // Be gentle with Gmail Limits
         maxMessages: 10, // Max messages per connection
+        family: 4, // CRITICAL: Strictly force IPv4
         auth: {
           user,
           pass,
         },
-        family: 4, // Strictly force IPv4
         tls: {
           family: 4, // Redundant IPv4 enforcement for TLS handshake
         },
