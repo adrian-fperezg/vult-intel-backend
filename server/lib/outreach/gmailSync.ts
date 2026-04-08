@@ -17,31 +17,43 @@ interface GmailMessage {
   internalDate: string;
 }
 
-function getGmailBody(payload: any): string {
+function extractGmailBody(payload: any): string {
+  // 1. Check for data at the current level
   if (payload.body?.data) {
-    return Buffer.from(payload.body.data, 'base64url').toString('utf-8');
+    const data = payload.body.data;
+    const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    if (decoded && decoded.trim().length > 0) return decoded;
   }
+
+  // 2. If no data, check parts recursively
   if (payload.parts) {
-    // 1. Try plain text first
+    // Priority 1: text/plain
     for (const part of payload.parts) {
       if (part.mimeType === 'text/plain' && part.body?.data) {
-        return Buffer.from(part.body.data, 'base64url').toString('utf-8');
+        const data = part.body.data;
+        const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+        if (decoded && decoded.trim().length > 0) return decoded;
       }
     }
-    // 2. Try HTML as fallback
+
+    // Priority 2: text/html
     for (const part of payload.parts) {
       if (part.mimeType === 'text/html' && part.body?.data) {
-        return Buffer.from(part.body.data, 'base64url').toString('utf-8');
+        const data = part.body.data;
+        const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+        if (decoded && decoded.trim().length > 0) return decoded;
       }
     }
-    // 3. Recursive check for nested parts
+
+    // Priority 3: Nested multipart (mixed, alternative, etc)
     for (const part of payload.parts) {
-      if (part.parts) {
-        const body = getGmailBody(part);
-        if (body) return body;
+      if (part.parts || (part.mimeType && part.mimeType.startsWith('multipart/'))) {
+        const result = extractGmailBody(part);
+        if (result && result.trim().length > 0) return result;
       }
     }
   }
+
   return '';
 }
 
@@ -113,7 +125,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
     if (originalEmail) {
       console.log(`[Gmail Sync] [ID: ${msgRef.id}] Linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
-      const rawBody = getGmailBody(msg.payload);
+      const rawBody = extractGmailBody(msg.payload);
       console.log(`[Gmail Sync] [ID: ${msgRef.id}] Extracted body length: ${rawBody.length}`);
 
       // 1. EVALUACIÓN DE INTENCIÓN (El Cerebro de Adrian)

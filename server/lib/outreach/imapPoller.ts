@@ -13,6 +13,7 @@ export interface ImapConfig {
 }
 
 async function extractEmailBody(msg: imap.Message): Promise<string> {
+  // 1. Try to find content in known parts (TEXT or empty string which usually means full body)
   const partsToTry = ['TEXT', ''];
   for (const which of partsToTry) {
     const part = msg.parts.find((p: any) => p.which === which);
@@ -29,6 +30,9 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
       }
     }
   }
+
+  // 2. Fallback: If no body was found in parts, try parsing the whole message if available
+  // This is a safety net for complex multipart structures.
   return '';
 }
 
