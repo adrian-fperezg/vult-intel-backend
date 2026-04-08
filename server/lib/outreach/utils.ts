@@ -137,7 +137,7 @@ export async function handleSequenceIntent(originalEmail: any, rawBody: string) 
 /**
  * Encuentra el email original al que se está respondiendo (Compatible con Postgres).
  */
-export async function findOriginalEmail(potentialIds: string[], threadId?: string) {
+export async function findOriginalEmail(potentialIds: string[], threadId?: string, fromEmail?: string, projectId?: string) {
   for (const mid of potentialIds) {
     const cleanId = mid.replace(/[<>]/g, '').trim();
     console.log(`[DEBUG] Checking Message-ID for link: ${cleanId}`);
@@ -160,7 +160,29 @@ export async function findOriginalEmail(potentialIds: string[], threadId?: strin
     }
   }
 
-  console.warn(`[DEBUG] FAILED to link reply. Checked ${potentialIds.length} Message-IDs and Thread-ID: ${threadId || 'N/A'}`);
+  // FALLBACK: Identity-Based Matching (Adrian's Fallback)
+  if (fromEmail && projectId) {
+    console.log(`[DEBUG] [FALLBACK] No header match. Searching sender identity: ${fromEmail} in project: ${projectId}`);
+    const original = await db.prepare(`
+      SELECT e.* 
+      FROM outreach_individual_emails e
+      JOIN outreach_contacts c ON e.contact_id = c.id
+      JOIN outreach_sequence_enrollments en ON e.sequence_id = en.sequence_id AND e.contact_id = en.contact_id
+      WHERE c.email = ? 
+        AND c.project_id = ?
+        AND en.status = 'active'
+        AND e.is_reply = FALSE
+      ORDER BY e.sent_at DESC
+      LIMIT 1
+    `).get(fromEmail, projectId) as any;
+
+    if (original) {
+      console.log(`[FALLBACK] Successfully linked reply via sender identity: ${fromEmail} for Sequence: ${original.sequence_id}`);
+      return original;
+    }
+  }
+
+  console.warn(`[DEBUG] FAILED to link reply. Checked ${potentialIds.length} IDs, Thread-ID: ${threadId || 'N/A'}, From: ${fromEmail || 'N/A'}`);
 
   return null;
 }

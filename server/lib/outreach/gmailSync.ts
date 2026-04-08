@@ -142,7 +142,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
     const potentialIds = [messageId].filter(Boolean);
     console.log(`[IMAP DEBUG] [ID: ${msgRef.id}] Potential Message-IDs for linking: ${JSON.stringify(potentialIds)} (Thread: ${msg.threadId})`);
-    const originalEmail = await findOriginalEmail(potentialIds, msg.threadId);
+    const originalEmail = await findOriginalEmail(potentialIds, msg.threadId, fromEmail, mailbox.project_id);
 
     if (originalEmail) {
       console.log(`[Gmail Sync] [ID: ${msgRef.id}] Linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
