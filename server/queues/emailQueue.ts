@@ -38,7 +38,7 @@ export const campaignQueue = new Queue('campaign-queue', {
   }
 });
 
-import { syncMailbox, syncMailboxHistory, setupGmailWatch } from '../lib/outreach/gmailSync.js';
+import { syncMailbox, syncMailboxHistory, setupGmailWatch, extractGmailBody } from '../lib/outreach/gmailSync.js';
 import { getValidAccessToken } from '../oauth.js';
 
 export async function pollMailboxes() {
@@ -458,8 +458,42 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             // 2. Fallback: Loop through ALL replies in DB and match manually
             if (!keywordFound && replies.length > 0) {
               console.log(`[DEBUG] Keyword not found in event metadata. Scanning ${replies.length} replies manually...`);
+              
+              // Resolve mailbox info for re-hydration if needed
+              const sequenceInfo = await db.prepare('SELECT mailbox_id FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
+              
               for (const reply of replies) {
-                const body = (reply.body || '').trim();
+                let body = (reply.body || '').trim();
+                
+                // HIGH-PRIORITY RE-HYDRATION: If body is empty and it's a Gmail mailbox
+                if (body.length === 0 && reply.message_id && sequenceInfo?.mailbox_id) {
+                  console.log(`[RECOVERY] High-priority re-hydration triggered for message_id: ${reply.message_id}`);
+                  try {
+                    const accessToken = await getValidAccessToken(sequenceInfo.mailbox_id);
+                    const msgRes = await fetch(
+                      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${reply.message_id}`,
+                      { headers: { Authorization: `Bearer ${accessToken}` } }
+                    );
+                    
+                    if (msgRes.ok) {
+                      const msgData = await msgRes.json();
+                      body = extractGmailBody(msgData.payload);
+                      
+                      if (body.length > 0) {
+                        console.log(`[RECOVERY] Successfully recovered body (Length: ${body.length}) for message_id: ${reply.message_id}. Updating DB.`);
+                        await db.run(
+                          "UPDATE outreach_individual_emails SET body = ?, body_html = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                          [body, body, reply.id]
+                        );
+                      }
+                    } else {
+                      console.error(`[RECOVERY] Failed to fetch message ${reply.message_id} from Gmail: ${msgRes.status}`);
+                    }
+                  } catch (recErr: any) {
+                    console.error(`[RECOVERY] Error during on-demand re-hydration:`, recErr.message);
+                  }
+                }
+
                 const snippet = body.substring(0, 50).replace(/\n/g, ' ');
                 console.log(`[DEBUG] Evaluating reply (Length: ${body.length}): "${snippet}${body.length > 50 ? '...' : ''}" against keyword: '${step.condition_keyword}'`);
                 

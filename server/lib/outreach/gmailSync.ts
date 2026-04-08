@@ -17,7 +17,7 @@ interface GmailMessage {
   internalDate: string;
 }
 
-function extractGmailBody(payload: any): string {
+export function extractGmailBody(payload: any): string {
   // 1. Check for data at the current level
   if (payload.body?.data) {
     const data = payload.body.data;
