@@ -84,8 +84,21 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
   let newCount = 0;
 
   for (const msgRef of messages) {
-    const existing = await db.prepare("SELECT id FROM outreach_events WHERE type = 'email_replied' AND metadata LIKE ?").get(`%${msgRef.id}%`);
-    if (existing) continue;
+    // 1. Check if we already have this event recorded
+    const existingEvent = await db.prepare("SELECT id FROM outreach_events WHERE type = 'email_replied' AND event_key = ?").get(`replied:${msgRef.id}`);
+    
+    // 2. Check if we have the individual email record and if it needs re-hydration
+    const existingEmail = await db.prepare("SELECT id, body FROM outreach_individual_emails WHERE message_id = ?").get(msgRef.id) as any;
+    
+    const needsRehydration = existingEmail && (!existingEmail.body || existingEmail.body.trim().length === 0);
+
+    if (existingEvent && !needsRehydration) {
+      continue;
+    }
+
+    if (needsRehydration) {
+      console.log(`[IMAP DEBUG] Re-hydrating body for existing Gmail message: ${msgRef.id}`);
+    }
 
     const msgRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
@@ -163,16 +176,24 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       }
 
       // 3. PERSIST REPLY TO INDIVIDUAL EMAILS (Crucial for Deep Scan)
-      const replyId = uuidv4();
-      await db.run(`
-        INSERT INTO outreach_individual_emails 
-        (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `, [
-        replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
-        originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-        fromEmail, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, msg.threadId, true
-      ]);
+      if (needsRehydration) {
+        await db.run(`
+          UPDATE outreach_individual_emails 
+          SET body = ?, body_html = ?, updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `, [rawBody, rawBody, existingEmail.id]);
+      } else {
+        const replyId = uuidv4();
+        await db.run(`
+          INSERT INTO outreach_individual_emails 
+          (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `, [
+          replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
+          originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
+          fromEmail, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, msg.threadId, true
+        ]);
+      }
 
       // 4. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO
       await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);

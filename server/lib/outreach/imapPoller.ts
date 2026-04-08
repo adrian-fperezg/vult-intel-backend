@@ -82,12 +82,27 @@ export async function pollImap(mailboxId: string) {
         if (!headers) continue;
 
         const messageId = (headers?.['message-id']?.[0] || '').toString();
+        
+        let needsRehydration = false;
+        let existingEmailId = null;
+
         if (messageId) {
-          const existing = await db.prepare("SELECT id FROM outreach_individual_emails WHERE message_id = ?").get(messageId);
-          if (existing) {
-            // console.log(`[IMAP DEBUG] Skipping already processed message: ${messageId}`);
-            continue;
+          const existingEmail = await db.prepare("SELECT id, body FROM outreach_individual_emails WHERE message_id = ?").get(messageId) as any;
+          const existingEvent = await db.prepare("SELECT id FROM outreach_events WHERE type = 'email_replied' AND event_key = ?").get(`replied:${messageId}`);
+          
+          if (existingEmail) {
+            needsRehydration = (!existingEmail.body || existingEmail.body.trim().length === 0);
+            existingEmailId = existingEmail.id;
+            
+            if (existingEvent && !needsRehydration) {
+              // Already fully processed
+              continue;
+            }
           }
+        }
+
+        if (needsRehydration) {
+          console.log(`[IMAP DEBUG] Re-hydrating body for existing IMAP message: ${messageId}`);
         }
 
         const from = (headers.from?.[0] || '').toString();
@@ -163,16 +178,24 @@ export async function pollImap(mailboxId: string) {
         }
 
         // 4. PERSIST REPLY TO INDIVIDUAL EMAILS (Crucial for Deep Scan)
-        const replyId = uuidv4();
-        await db.run(`
-          INSERT INTO outreach_individual_emails 
-          (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `, [
-          replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
-          originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-          from, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, originalEmail.thread_id, true
-        ]);
+        if (needsRehydration && existingEmailId) {
+          await db.run(`
+            UPDATE outreach_individual_emails 
+            SET body = ?, body_html = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+          `, [rawBody, rawBody, existingEmailId]);
+        } else {
+          const replyId = uuidv4();
+          await db.run(`
+            INSERT INTO outreach_individual_emails 
+            (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          `, [
+            replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
+            originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
+            from, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, originalEmail.thread_id, true
+          ]);
+        }
 
         // 5. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO
         await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
@@ -182,10 +205,10 @@ export async function pollImap(mailboxId: string) {
           step_id: originalEmail.step_id, contact_id: originalEmail.contact_id,
           email_id: originalEmail.id, event_type: 'replied',
           event_key: `replied:imap:${uid}`,
-          metadata: { matched: intentResult.matched, keyword: intentResult.keyword, reply_id: replyId }
+          metadata: { matched: intentResult.matched, keyword: intentResult.keyword, rehydrated: needsRehydration }
         });
 
-        console.log(`[IMAP] [UID: ${uid}] Successfully saved reply ${replyId} to DB for contact ${originalEmail.contact_id}`);
+        console.log(`[IMAP] [UID: ${uid}] Successfully processed reply (Rehydrated: ${needsRehydration}) for contact ${originalEmail.contact_id}`);
 
         await connection.addFlags(uid, ['\\Seen']);
 
