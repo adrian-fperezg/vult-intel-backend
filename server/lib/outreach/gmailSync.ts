@@ -22,10 +22,20 @@ function getGmailBody(payload: any): string {
     return Buffer.from(payload.body.data, 'base64').toString('utf-8');
   }
   if (payload.parts) {
+    // 1. Try plain text first
     for (const part of payload.parts) {
       if (part.mimeType === 'text/plain' && part.body?.data) {
         return Buffer.from(part.body.data, 'base64').toString('utf-8');
       }
+    }
+    // 2. Try HTML as fallback
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      }
+    }
+    // 3. Recursive check for nested parts
+    for (const part of payload.parts) {
       if (part.parts) {
         const body = getGmailBody(part);
         if (body) return body;

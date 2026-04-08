@@ -459,10 +459,11 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             if (!keywordFound && replies.length > 0) {
               console.log(`[DEBUG] Keyword not found in event metadata. Scanning ${replies.length} replies manually...`);
               for (const reply of replies) {
-                const snippet = (reply.body || '').substring(0, 100).replace(/\n/g, ' ');
-                console.log(`[DEBUG] Evaluating reply snippet: "${snippet}..." against keyword: '${step.condition_keyword}'`);
-                // Ensure we use the clean body for evaluation
-                if (matchKeyword(reply.body || '', step.condition_keyword)) {
+                const body = (reply.body || '').trim();
+                const snippet = body.substring(0, 50).replace(/\n/g, ' ');
+                console.log(`[DEBUG] Evaluating reply (Length: ${body.length}): "${snippet}${body.length > 50 ? '...' : ''}" against keyword: '${step.condition_keyword}'`);
+                
+                if (matchKeyword(body, step.condition_keyword)) {
                   keywordFound = true;
                   break;
                 }

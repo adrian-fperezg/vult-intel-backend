@@ -13,19 +13,21 @@ export interface ImapConfig {
 }
 
 async function extractEmailBody(msg: imap.Message): Promise<string> {
-  const textPart = msg.parts.find((p: any) => p.which === 'TEXT');
-  if (textPart?.body) {
-    try {
-      const parsed = await simpleParser(textPart.body);
-      return parsed.text || '';
-    } catch (err) { console.error(`[IMAP] Error parseando TEXT:`, err); }
-  }
-  const rawPart = msg.parts.find((p: any) => p.which === '');
-  if (rawPart?.body) {
-    try {
-      const parsed = await simpleParser(rawPart.body);
-      return parsed.text || '';
-    } catch (err) { console.error(`[IMAP] Error parseando RAW:`, err); }
+  const partsToTry = ['TEXT', ''];
+  for (const which of partsToTry) {
+    const part = msg.parts.find((p: any) => p.which === which);
+    if (part?.body) {
+      try {
+        const parsed = await simpleParser(part.body);
+        const body = (parsed.text || parsed.html || '').trim();
+        if (body) {
+          console.log(`[IMAP] Extracted body from part "${which}" (Length: ${body.length})`);
+          return body;
+        }
+      } catch (err) { 
+        console.error(`[IMAP] Error parsing part "${which}":`, err); 
+      }
+    }
   }
   return '';
 }

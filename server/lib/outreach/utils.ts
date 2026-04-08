@@ -66,9 +66,6 @@ export function matchKeyword(body: string, keyword: string | null): boolean {
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-  // Log showing the cleaned string it is evaluating
-  console.log(`[DEBUG] Cleaned body excerpt for evaluation: "${cleanBody.substring(0, 150).replace(/\n/g, ' ')}..."`);
-
   // Fuzzy Match: Use .includes() rather than strict word boundaries or exact equality
   const isMatched = cleanBody.includes(cleanKeyword);
 
