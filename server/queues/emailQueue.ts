@@ -4,7 +4,7 @@ import db from '../db.js';
 import dotenv from 'dotenv';
 import { getValidGmailClient } from '../oauth.js';
 import redis from '../redis.js';
-import { sendSmtpMessage } from '../lib/outreach/smtpMailer.js';
+import { sendGmailMessage } from '../lib/outreach/smtpMailer.js';
 import { pollImap } from '../lib/outreach/imapPoller.js';
 import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 // @ts-ignore
@@ -602,13 +602,13 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   // Use resilient attachment resolver to handle missing files on ephemeral hosts
   const attachments = await resolveAttachments(email.attachments);
 
-  if (mailbox.connection_type === 'smtp') {
-    // Hard check for SMTP credentials before even calling sendSmtpMessage
-    if (!mailbox.smtp_host || !mailbox.smtp_password) {
-      throw new Error('No mailbox configured for this sequence');
+  if (mailbox.connection_type === 'smtp' || mailbox.connection_type === 'gmail') {
+    // Hard check for OAuth2 credentials before calling Gmail API
+    if (!mailbox.access_token || !mailbox.refresh_token) {
+      throw new Error('Mailbox is missing OAuth2 tokens. Please reconnect in Settings.');
     }
 
-    const result = await sendSmtpMessage(mailboxId, {
+    const result = await sendGmailMessage(mailboxId, {
       to: email.to_email,
       subject: email.subject || "(No Subject)",
       bodyHtml: bodyWithTracking,
@@ -617,7 +617,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       attachments
     });
 
-    console.log(`[processEmail] SMTP email sent. messageId: ${result.messageId}`);
+    console.log(`[processEmail] Gmail API email sent. messageId: ${result.messageId}`);
     
     await db.prepare(`
       UPDATE outreach_individual_emails 

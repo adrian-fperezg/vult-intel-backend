@@ -1,78 +1,98 @@
-import nodemailer from 'nodemailer';
-import dns from 'dns';
+import { google } from 'googleapis';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { sendAlert } from '../notifier.js';
 
-export interface SmtpConfig {
-  host: string;
-  port: number;
-  secure: boolean;
-  user: string;
-  enc_pass: string;
+/**
+ * Base64url encode a buffer according to RFC 4648
+ */
+function toBase64Url(buffer: Buffer): string {
+  return buffer.toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 /**
- * Sends an email via SMTP.
+ * Sends an email via Gmail REST API.
+ * This completely replaces the SMTP dispatch layer to overcome networking/port restrictions.
  */
-export async function sendSmtpMessage(mailboxId: string, emailData: { to: string, subject: string, bodyHtml: string, fromEmail?: string, fromName?: string, attachments?: any[] }) {
+export async function sendGmailMessage(mailboxId: string, emailData: { to: string, subject: string, bodyHtml: string, fromEmail?: string, fromName?: string, attachments?: any[] }) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   
   if (!mailbox) throw new Error("Mailbox not found");
-  if (mailbox.connection_type !== 'smtp') throw new Error("Mailbox is not configured for SMTP");
-  if (!mailbox.smtp_host) throw new Error("SMTP host configuration missing");
-
-  const password = decryptToken(mailbox.smtp_password);
+  
+  // Decrypt tokens
+  let accessToken: string;
+  let refreshToken: string;
+  try {
+    accessToken = decryptToken(mailbox.access_token);
+    refreshToken = decryptToken(mailbox.refresh_token);
+  } catch (err: any) {
+    throw new Error(`Failed to decrypt mailbox tokens: ${err.message}`);
+  }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-      lookup: (hostname, options, callback) => {
-        dns.lookup(hostname, { family: 4 }, (err, address, family) => {
-          callback(err, address, family);
-        });
-      },
-      auth: {
-        user: mailbox.smtp_username || mailbox.email,
-        pass: password,
-      },
-    } as any);
+    // 1. Setup Google OAuth2 client
+    const auth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
 
-    // Ensure the from address matches the authenticated user to prevent spam rejection
+    auth.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken
+    });
+
+    const gmail = google.gmail({ version: 'v1', auth });
+
+    // 2. Build MIME message using Nodemailer's MailComposer
+    // This maintains all our complex logic for attachments, HTML, and signatures
     const fromEmail = mailbox.smtp_username || mailbox.email;
     const fromName = emailData.fromName || mailbox.name;
     const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
-    console.log(`[SMTP] Sending email from ${fromHeader} to ${emailData.to}`);
-
-    const info = await transporter.sendMail({
+    const mailOptions = {
       from: fromHeader,
       to: emailData.to,
       subject: emailData.subject,
       html: emailData.bodyHtml,
-      attachments: emailData.attachments || [] // Pre-resolved and verified by resolveAttachments()
+      attachments: emailData.attachments || []
+    };
+
+    const mail = new MailComposer(mailOptions);
+    const messageBuffer = await mail.compile().build();
+    const rawMessage = toBase64Url(messageBuffer);
+
+    console.log(`[GMAIL API] Dispatching email from ${fromHeader} to ${emailData.to} via REST API...`);
+
+    // 3. Send via Gmail API
+    const res = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: rawMessage
+      }
     });
 
-    console.log(`[SMTP] Email sent successfully. Message ID: ${info.messageId}`);
-    return { messageId: info.messageId };
+    const messageId = res.data.id || 'unknown-gmail-id';
+    console.log(`[GMAIL API] Email sent successfully. Gmail ID: ${messageId}`);
+
+    return { messageId };
   } catch (err: any) {
-    console.error(`[SMTP] Dispatch failed for ${emailData.to}:`, err.message);
+    console.error(`[GMAIL API] Dispatch failed for ${emailData.to}:`, err.message);
     
     await sendAlert({
       source: 'Backend',
-      customTitle: '🚨 SMTP Dispatch Error',
+      customTitle: '🚨 Gmail API Dispatch Error',
       errorMessage: err.message,
       stackTrace: err.stack,
       payload: { 
         mailboxId, 
         to: emailData.to, 
         subject: emailData.subject,
-        smtp_host: mailbox.smtp_host
+        api_method: 'gmail.users.messages.send'
       }
     });
 
@@ -80,3 +100,5 @@ export async function sendSmtpMessage(mailboxId: string, emailData: { to: string
   }
 }
 
+// Keep the old function name for a moment as an alias to prevent immediate runtime crashes until dependencies are updated
+export const sendSmtpMessage = sendGmailMessage;
