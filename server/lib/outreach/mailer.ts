@@ -24,21 +24,19 @@ export async function initializeGlobalMailer() {
     try {
       // Create transporter with strict, provider-agnostic configuration
       globalTransporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com', // Force Gmail host for reliability
-        port: 465, // Implicit SSL port
-        secure: true, // Use implicit SSL
-        pool: false, // Use single connections to avoid hung idle sockets
-        family: 4, // Strictly force IPv4
-        localAddress: '0.0.0.0', // CRITICAL: Forces IPv4 network interface
-        connectionTimeout: 10000, // Timeout wait for connection to establish
-        greetingTimeout: 10000, // Timeout wait for SMTP greeting
-        socketTimeout: 10000, // Timeout wait for socket activity
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        family: 4, // Prevents IPv6 resolution issues
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
         auth: {
           user,
           pass,
         },
         tls: {
-          family: 4, // Redundant IPv4 enforcement for TLS handshake
+          family: 4, // Secondary IPv4 enforcement
         },
       } as any);
 
