@@ -1557,7 +1557,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const result = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-1.5-flash-8b',
           contents: [{ parts: [{ text: aiPrompt }] }]
         });
         insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
@@ -1689,7 +1689,7 @@ Use professional, encouraging, and data-driven language. Use Markdown for format
   // ✅ CÓDIGO CORREGIDO
   try {
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-8b',
       contents: [{ role: 'user', parts: [{ text: reportPrompt }] }]
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
@@ -3577,7 +3577,7 @@ app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
     `;
 
     const response = await client.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-1.5-flash-8b",
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
 
@@ -3676,7 +3676,7 @@ app.get("/api/track/open/:id", async (req, res) => {
         WHERE id = ? AND opened_at IS NULL
       `, [emailId]);
 
-      // 3. Record standardized 'opened' event
+      // 3. Record standardized 'opened' event (ensure type matches analytics)
       await recordOutreachEvent({
         project_id: email.project_id,
         sequence_id: email.sequence_id,
@@ -3712,19 +3712,32 @@ app.get("/api/outreach/track/:emailId/click", async (req, res) => {
   if (!targetUrl) return res.status(400).send("Missing URL parameter");
 
   try {
-    const email = await db.prepare("SELECT id, contact_id, project_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
     if (email) {
+      // 1. Record raw click hit
       await db.prepare(`
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent, link_url)
         VALUES (?, ?, 'click', ?, ?, ?)
       `).run(uuidv4(), emailId, String(ip), String(userAgent), targetUrl);
 
-      if (email.contact_id) {
-        await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, type, metadata)
-          VALUES (?, ?, ?, 'click', ?)
-        `).run(uuidv4(), email.contact_id, email.project_id, JSON.stringify({ email_id: emailId, url: targetUrl }));
-      }
+      // 2. Update parent email record
+      await db.run(`
+        UPDATE outreach_individual_emails 
+        SET clicked_at = CURRENT_TIMESTAMP, status = 'clicked'
+        WHERE id = ? AND clicked_at IS NULL
+      `, [emailId]);
+
+      // 3. Record standardized 'clicked' event (Critical for Analytics)
+      await recordOutreachEvent({
+        project_id: email.project_id,
+        sequence_id: email.sequence_id,
+        step_id: email.step_id,
+        contact_id: email.contact_id,
+        email_id: emailId,
+        event_type: 'clicked' as any,
+        event_key: `clicked:${emailId}:${Buffer.from(targetUrl).toString('base64').substring(0, 16)}`,
+        metadata: { url: targetUrl, ip, userAgent }
+      });
     }
   } catch (err) {
     console.error("Tracking click error:", err);
@@ -4899,7 +4912,7 @@ Number of shots: ${shotCount || 4}
 Brief: ${brief}`;
 
     const result = await (ai as any).models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-8b',
       contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
     });
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -4937,7 +4950,7 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
     const systemPrompt = `You are a world-class AI video director. Enhance the following prompt to make it more cinematic and detailed for ${mode || 'video'} generation in ${style || 'cinematic'} style. Return ONLY the enhanced prompt text, nothing else, no quotes, max 200 words.\n\nOriginal: ${prompt}`;
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-8b',
       contents: [{ parts: [{ text: systemPrompt }] }],
     });
     const enhanced = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;

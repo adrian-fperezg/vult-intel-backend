@@ -653,13 +653,36 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     }
   }
 
-  // INJECT TRACKING PIXEL
-  const backendUrl = process.env.APP_URL || "http://localhost:3000";
-  if (!process.env.APP_URL) {
-    console.warn(`[Tracking] APP_URL environment variable is MISSING. Open tracking will fall back to localhost and likely fail in production.`);
+  // ─── TRACKING & LINK WRAPPING ─────────────────────────────────────────────
+  let backendUrl = process.env.APP_URL || "http://localhost:3000";
+  
+  // Ensure protocol is present
+  if (backendUrl && !backendUrl.startsWith('http://') && !backendUrl.startsWith('https://')) {
+    backendUrl = `https://${backendUrl}`;
+    console.log(`[Tracking] Protocol missing in APP_URL. Auto-prepended https:// -> ${backendUrl}`);
   }
+
+  if (!process.env.APP_URL && !backendUrl.includes('localhost')) {
+    console.warn(`[Tracking] APP_URL environment variable is MISSING. Open tracking will fall back to ${backendUrl} and may fail in production.`);
+  }
+
+  // 1. Wrap clickable links for tracking
+  const wrapLinks = (html: string, id: string, base: string) => {
+    const regex = /<a\s+(?:[^>]*?\s+)?href=["'](.*?)["']([^>]*)>/gi;
+    return html.replace(regex, (match, url, rest) => {
+      if (!url || url.startsWith('#') || url.startsWith('mailto:') || url.startsWith('tel:') || url.includes('/api/outreach/track')) {
+        return match;
+      }
+      const trackedUrl = `${base}/api/outreach/track/${id}/click?url=${encodeURIComponent(url)}`;
+      return `<a href="${trackedUrl}"${rest}>`;
+    });
+  };
+
+  const bodyWithWrappedLinks = wrapLinks(bodyWithSignature, emailId, backendUrl);
+
+  // 2. Inject tracking pixel
   const trackingPixel = `\n<img src="${backendUrl}/api/track/open/${emailId}" width="1" height="1" style="display:none;" alt="" />`;
-  const bodyWithTracking = bodyWithSignature + trackingPixel;
+  const bodyWithTracking = bodyWithWrappedLinks + trackingPixel;
 
   // Use resilient attachment resolver to handle missing files on ephemeral hosts
   const attachments = await resolveAttachments(email.attachments);
