@@ -1445,7 +1445,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         )
       `, projectId, startDateStr, endDateStr),
       db.get(`
-        SELECT COUNT(*) as totalOpenedCount 
+        SELECT COUNT(DISTINCT outreach_events.event_key) as totalOpenedCount 
         FROM outreach_events 
         WHERE project_id = ? AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?
         AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)
@@ -1456,7 +1456,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         )
       `, projectId, startDateStr, endDateStr),
       db.get(`
-        SELECT COUNT(*) as totalRepliedCount 
+        SELECT COUNT(DISTINCT outreach_events.event_key) as totalRepliedCount 
         FROM outreach_events 
         WHERE project_id = ? AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?
         AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)
@@ -1490,7 +1490,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         )
       `, projectId, todayStr),
       db.get(`
-        SELECT COUNT(*) as openedToday 
+        SELECT COUNT(DISTINCT outreach_events.event_key) as openedToday 
         FROM outreach_events 
         WHERE project_id = ? AND type IN ('opened', 'email_opened') AND created_at >= ? 
         AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)
@@ -1501,7 +1501,7 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
         )
       `, projectId, todayStr),
       db.get(`
-        SELECT COUNT(*) as repliedToday 
+        SELECT COUNT(DISTINCT outreach_events.event_key) as repliedToday 
         FROM outreach_events 
         WHERE project_id = ? AND type IN ('replied', 'reply', 'email_replied') AND created_at >= ? 
         AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)
@@ -1534,15 +1534,15 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
       SELECT 
         name,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at BETWEEN ? AND ?) as sent,
-        (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
-        (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied
+        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
+        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied
       FROM outreach_sequences s WHERE project_id = ? AND status = 'active'
       UNION ALL
       SELECT 
         name,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'sent' AND sent_at BETWEEN ? AND ?) as sent,
-        (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
-        (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied
+        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
+        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied
       FROM outreach_campaigns c WHERE project_id = ? AND status = 'sending'
     `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId);
 
@@ -1629,8 +1629,8 @@ async function generateOutreachReport(projectId: string, timeframe?: string, tim
     db.get<{ totalSent: number; totalOpened: number; totalReplied: number; totalBounced: number }>(`
       SELECT 
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE project_id = ? AND status = 'sent' AND sent_at BETWEEN ? AND ?) as totalSent,
-        (SELECT COUNT(*) FROM outreach_events WHERE project_id = ? AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as totalOpened,
-        (SELECT COUNT(*) FROM outreach_events WHERE project_id = ? AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as totalReplied,
+        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE project_id = ? AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as totalOpened,
+        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE project_id = ? AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as totalReplied,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE project_id = ? AND status = 'bounced' AND sent_at BETWEEN ? AND ?) as totalBounced
     `, projectId, startDateStr, endDateStr, projectId, startDateStr, endDateStr, projectId, startDateStr, endDateStr, projectId, startDateStr, endDateStr),
 
@@ -1638,16 +1638,16 @@ async function generateOutreachReport(projectId: string, timeframe?: string, tim
       WITH sequence_stats AS (
         SELECT s.name, s.status, 'sequence' as type,
                (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at BETWEEN ? AND ?) as sent,
-               (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
-               (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied,
+               (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
+               (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied,
                (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND sent_at BETWEEN ? AND ?) as bounced
         FROM outreach_sequences s WHERE s.project_id = ? AND s.status != 'archived'
       ),
       campaign_stats AS (
         SELECT c.name, c.status, 'campaign' as type,
                (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'sent' AND sent_at BETWEEN ? AND ?) as sent,
-               (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
-               (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied,
+               (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
+               (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied,
                (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'bounced' AND sent_at BETWEEN ? AND ?) as bounced
         FROM outreach_campaigns c WHERE c.project_id = ? AND c.status != 'archived'
       )
@@ -1755,9 +1755,9 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
              (SELECT COUNT(*) FROM outreach_sequence_enrollments e WHERE sequence_id = s.id AND project_id = s.project_id AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as contact_count,
              
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as sent_in_period,
-             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as opened_in_period,
-             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as replied_in_period,
-             (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('clicked', 'click', 'email_clicked') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as clicked_in_period,
+             (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as opened_in_period,
+             (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as replied_in_period,
+             (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('clicked', 'click', 'email_clicked') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as clicked_in_period,
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND updated_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as bounced_in_period,
              (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('unsubscribed', 'unsubscribe') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as unsub_in_period
       FROM outreach_sequences s

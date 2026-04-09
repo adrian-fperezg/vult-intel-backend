@@ -108,7 +108,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const headers = msg.payload.headers;
     const fromHeader = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
     const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
-    const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || '';
+    const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || msg.id;
 
     console.log(`[Gmail Sync] [ID: ${msgRef.id}] Processing email from ${fromHeader}: "${subject}"`);
 
@@ -189,6 +189,7 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           INSERT INTO outreach_individual_emails 
           (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT (message_id) DO NOTHING
         `, [
           replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
           originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,

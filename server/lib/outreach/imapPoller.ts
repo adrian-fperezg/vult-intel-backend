@@ -196,6 +196,7 @@ export async function pollImap(mailboxId: string) {
             INSERT INTO outreach_individual_emails 
             (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT (message_id) DO NOTHING
           `, [
             replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
             originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
