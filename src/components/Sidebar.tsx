@@ -79,7 +79,7 @@ export default function Sidebar() {
 
   const SidebarContent = () => (
     <>
-      <div className="flex flex-col gap-6 p-5 md:p-6">
+      <div className="flex flex-col gap-6 p-4 md:p-5 lg:p-6">
         <div className="flex items-center justify-between px-1">
           <Link to="/projects-hub" className="hover:opacity-80 transition-opacity">
             <Logo className="h-[4.2rem] md:h-[4.9rem]" dark={theme === 'dark'} />
@@ -87,7 +87,7 @@ export default function Sidebar() {
           {/* Close button — mobile only */}
           <button
             onClick={() => setIsMobileOpen(false)}
-            className="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
           >
             <X className="size-5" />
           </button>
@@ -107,7 +107,7 @@ export default function Sidebar() {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group",
+                  "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group",
                   isActive
                     ? isTeal
                       ? "bg-teal-500/10 border border-teal-500/20 text-white"
@@ -146,7 +146,7 @@ export default function Sidebar() {
                   />
                 )}
                 <span className={cn(
-                  "text-[15px] font-medium truncate",
+                  "text-sm md:text-base font-medium truncate",
                   isActive && "font-semibold",
                   isActive && isAmber && "text-amber-100"
                 )}>
@@ -165,7 +165,7 @@ export default function Sidebar() {
       </div>
 
       {/* Bottom user area */}
-      <div className="p-4 md:p-6 border-t border-surface-border space-y-5 mt-auto bg-surface-dark/30 backdrop-blur-sm">
+      <div className="p-4 md:p-5 lg:p-6 border-t border-surface-border space-y-5 mt-auto bg-surface-dark/30 backdrop-blur-sm">
         {currentUser && (
           <div className="space-y-2.5 px-0.5">
             <div className="flex items-center justify-between gap-2">
@@ -195,7 +195,7 @@ export default function Sidebar() {
           <div className="flex flex-col gap-2">
             <Link
               to="/settings"
-              className="flex items-center gap-3 p-2 rounded-xl transition-colors hover:bg-white/5 cursor-pointer border border-transparent hover:border-surface-border"
+              className="flex items-center gap-3 p-3 min-h-[44px] rounded-xl transition-colors hover:bg-white/5 cursor-pointer border border-transparent hover:border-surface-border"
             >
               <div className="relative shrink-0">
                 <img
@@ -215,16 +215,16 @@ export default function Sidebar() {
                 await logout();
                 navigate('/');
               }}
-              className="flex items-center justify-center gap-2 w-full py-2.5 text-[15px] text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 w-full py-3 min-h-[44px] text-sm md:text-base text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
             >
-              <LogOut className="size-4" />
+              <LogOut className="size-4 md:size-5" />
               {t('signOut')}
             </button>
           </div>
         ) : (
           <button
             onClick={() => setIsAuthModalOpen(true)}
-            className="flex items-center justify-center gap-2 w-full py-3 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-xl transition-colors font-medium text-[15px]"
+            className="flex items-center justify-center gap-2 w-full py-3 min-h-[44px] bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-xl transition-colors font-medium text-sm md:text-base"
           >
             <LogIn className="size-4" />
             {t('signInToVultIntel')}
@@ -239,7 +239,7 @@ export default function Sidebar() {
       {/* ── MOBILE HAMBURGER BUTTON (top-left, visible on <lg) ── */}
       <button
         onClick={() => setIsMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-40 p-2.5 rounded-xl bg-surface-dark border border-surface-border text-slate-300 hover:text-white shadow-lg backdrop-blur-sm"
+        className="lg:hidden fixed top-4 left-4 z-40 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-surface-dark border border-surface-border text-slate-300 hover:text-white shadow-lg backdrop-blur-sm"
         aria-label="Open menu"
       >
         <Menu className="size-5" />
@@ -256,7 +256,7 @@ export default function Sidebar() {
       {/* ── MOBILE DRAWER (slide in from left) ── */}
       <aside
         className={cn(
-          "lg:hidden fixed top-0 left-0 h-full w-[280px] z-50 flex flex-col justify-between",
+          "lg:hidden fixed top-0 left-0 h-full w-64 z-50 flex flex-col justify-between",
           theme === 'dark' ? "bg-[#171b23]" : "bg-[#ffffff]",
           "border-r border-surface-border shadow-2xl",
           "transition-transform duration-300 ease-in-out",
@@ -268,7 +268,7 @@ export default function Sidebar() {
 
       {/* ── DESKTOP SIDEBAR (fixed, always visible on lg+) ── */}
       <aside className={cn(
-        "hidden lg:flex w-[260px] xl:w-[280px] h-screen flex-shrink-0 flex-col justify-between border-r border-surface-border z-20 fixed left-0 top-0",
+        "hidden lg:flex w-64 xl:w-72 h-screen flex-shrink-0 flex-col justify-between border-r border-surface-border z-20 fixed left-0 top-0",
         theme === 'dark' ? "bg-[#171b23]" : "bg-[#ffffff]"
       )}>
         <SidebarContent />

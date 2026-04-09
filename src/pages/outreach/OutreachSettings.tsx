@@ -4,7 +4,7 @@ import {
   Mail, Plus, MoreHorizontal, CheckCircle2, AlertTriangle, XCircle,
   Zap, Code2, Bell, Shield, Copy, Eye, EyeOff, ChevronDown,
   Wifi, Thermometer, Search, Key, Webhook, Users2, RefreshCw, Loader2, FolderOpen,
-  Settings2, ExternalLink, User, Globe
+  Settings2, ExternalLink, User, Globe, Pencil
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
@@ -739,9 +739,11 @@ export default function OutreachSettings() {
                               setSnippetBody(snippet.body);
                               setSnippetModalType('standard');
                             }}
-                            className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
+                            className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                            title="Edit Snippet"
                           >
-                            <Settings2 className="size-3.5" />
+                            <Pencil className="size-3.5" />
+                            <span className="text-[10px] font-bold uppercase">Edit</span>
                           </button>
                           <button onClick={() => handleDeleteSnippet(snippet.id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors">
                             <XCircle className="size-3.5" />
@@ -806,9 +808,11 @@ export default function OutreachSettings() {
                               setSnippetBody(snippet.body);
                               setSnippetModalType('signature');
                             }}
-                            className="p-1.5 hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-colors"
+                            className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                            title="Edit Signature"
                           >
-                            <Settings2 className="size-3.5" />
+                            <Pencil className="size-3.5" />
+                            <span className="text-[10px] font-bold uppercase">Edit</span>
                           </button>
                           <button onClick={() => handleDeleteSnippet(snippet.id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors">
                             <XCircle className="size-3.5" />

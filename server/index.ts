@@ -5050,7 +5050,7 @@ app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, 
 
   try {
     // 1. Fetch dynamic/custom snippets from DB
-    const dbSnippets = await db.all("SELECT id, name, snippet_key, type FROM outreach_snippets WHERE project_id = ? ORDER BY type, name ASC", projectId);
+    const dbSnippets = await db.all("SELECT id, name, snippet_key, body, type FROM outreach_snippets WHERE project_id = ? ORDER BY type, name ASC", projectId);
 
     // 2. Define Standard system fields
     const standardFields = [
@@ -5065,8 +5065,11 @@ app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, 
 
     // 3. Map DB snippets to the same structure
     const customSnippets = dbSnippets.map((s: any) => ({
+      id: s.id,
       key: s.snippet_key || s.name,
       label: s.name,
+      name: s.name,
+      body: s.body,
       type: s.type || 'snippet'
     }));
 

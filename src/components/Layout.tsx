@@ -44,9 +44,9 @@ export default function Layout() {
       <Sidebar />
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col overflow-x-hidden lg:ml-[260px] xl:ml-[280px]">
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col overflow-x-hidden lg:ml-64 xl:ml-72">
         {/* Mobile Header Spacer - Provides room for fixed hamburger menu */}
-        <div className="lg:hidden h-16 w-full shrink-0" />
+        <div className="lg:hidden h-14 md:h-16 w-full shrink-0" />
 
         {/* Page Content */}
         <div className="flex-1 w-full overflow-y-auto relative z-0" key={activeProjectId || 'no-project'}>
