@@ -514,7 +514,7 @@ export default function OutreachContacts() {
           )}
         </AnimatePresence>
 
-        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20">
+        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-40">
           {filtered.length === 0 ? (
             <OutreachEmptyState
               icon={<User />}
