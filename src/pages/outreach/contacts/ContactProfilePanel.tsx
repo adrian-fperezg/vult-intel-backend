@@ -8,7 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge } from '../OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-import { format } from 'date-fns';
+
 
 interface ContactProfilePanelProps {
   contact: any | null;
@@ -46,7 +46,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
           id: e.id,
           type: e.type,
           title: getEventTitle(e),
-          date: format(new Date(e.created_at), 'MMM d, h:mm a'),
+          date: new Date(e.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
           timestamp: new Date(e.created_at),
           icon: getEventIcon(e.type),
           color: getEventColor(e.type),
@@ -58,7 +58,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
           type: m.is_reply ? 'reply' : 'sent',
           title: m.is_reply ? 'Reply Received' : 'Email Sent',
           body: m.subject,
-          date: format(new Date(m.sent_at || m.created_at), 'MMM d, h:mm a'),
+          date: new Date(m.sent_at || m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
           timestamp: new Date(m.sent_at || m.created_at),
           icon: m.is_reply ? Mail : Mail,
           color: m.is_reply ? 'text-green-400' : 'text-blue-400'
