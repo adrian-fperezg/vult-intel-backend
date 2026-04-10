@@ -572,7 +572,8 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                   </label>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
 
             {step === 'review' && (
