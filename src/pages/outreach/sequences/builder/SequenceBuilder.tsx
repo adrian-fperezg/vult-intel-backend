@@ -58,6 +58,7 @@ interface Sequence {
   smart_intent_bypass: boolean;
   use_recipient_timezone?: boolean;
   funnel_stage: 'TOFU' | 'MOFU' | 'BOFU';
+  smart_send: boolean;
 }
 
 interface SequenceBuilderProps {
@@ -863,7 +864,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         from_email: sequence.from_email,
         from_name: sequence.from_name,
         use_recipient_timezone: sequence.use_recipient_timezone,
-        funnel_stage: sequence.funnel_stage || 'TOFU'
+        funnel_stage: sequence.funnel_stage || 'TOFU',
+        smart_send: sequence.smart_send ?? true
       });
 
       // Aseguramos que la fecha se envíe en formato ISO (o null si se borró)
@@ -1448,6 +1450,38 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                         )} />
                       </div>
                     </button>
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Reputation Protection</label>
+                    <button
+                      onClick={() => setSequence(prev => prev ? { ...prev, smart_send: !prev.smart_send } : null)}
+                      className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
+                    >
+                      <div className="flex flex-col items-start gap-0.5 text-left">
+                        <span className="text-sm text-slate-300">Smart Send</span>
+                        <span className="text-[10px] text-slate-500">Gradual delivery to protect domain rep</span>
+                      </div>
+                      <div className={cn(
+                        "w-10 h-5 rounded-full relative transition-colors p-1",
+                        (sequence?.smart_send ?? true) ? "bg-teal-600" : "bg-white/10"
+                      )}>
+                        <div className={cn(
+                          "size-3 rounded-full bg-white transition-all shadow-sm",
+                          (sequence?.smart_send ?? true) ? "translate-x-5" : "translate-x-0"
+                        )} />
+                      </div>
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Reputation Guard Note */}
+                <div className="mt-6 flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
+                  <ShieldCheck className="size-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-bold text-emerald-400">🛡️ Reputation Guard Active</h4>
+                    <p className="text-sm text-emerald-500/80 leading-relaxed mt-1">
+                      Emails are being sent gradually to mimic human behavior and protect your domain reputation. Exceeding limits will move pending sends to the next day's queue.
+                    </p>
                   </div>
                 </div>
               </section>

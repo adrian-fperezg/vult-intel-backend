@@ -2,9 +2,11 @@ import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATABASE_URL = process.env.DATABASE_URL;
 
 export class DbWrapper {
   private pgPool?: pg.Pool;
@@ -13,9 +15,10 @@ export class DbWrapper {
 
   constructor(pgPool?: pg.Pool) {
     this.isPostgres = true; // Always Postgres after driver cleanup
+    const connectionString = process.env.DATABASE_URL;
     this.pgPool = pgPool || new pg.Pool({
-      connectionString: DATABASE_URL,
-      ssl: DATABASE_URL && DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
+      connectionString,
+      ssl: connectionString && connectionString.includes('railway') ? { rejectUnauthorized: false } : false,
     });
   }
 
@@ -549,7 +552,8 @@ export const initDb = async () => {
     const newSettingsCols = [
       { name: 'hunter_api_key', type: 'TEXT' },
       { name: 'zerobounce_api_key', type: 'TEXT' },
-      { name: 'pdl_api_key', type: 'TEXT' }
+      { name: 'pdl_api_key', type: 'TEXT' },
+      { name: 'global_daily_limit', type: 'INTEGER DEFAULT 50' }
     ];
 
     for (const col of newSettingsCols) {

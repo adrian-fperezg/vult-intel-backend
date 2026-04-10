@@ -159,6 +159,11 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         );
       }
 
+      // Fetch sequence config for smart intent
+      const sequenceObj = originalEmail.sequence_id ? await db.prepare("SELECT stop_on_reply, smart_intent_bypass FROM outreach_sequences WHERE id = ?").get(originalEmail.sequence_id) as any : null;
+      const stopOnReply = sequenceObj?.stop_on_reply !== false;
+      const smartIntentBypass = sequenceObj?.smart_intent_bypass === true;
+
       // 2. LÓGICA DE DECISIÓN ÚNICA
       if (intentResult.matched) {
         // MATCH: Pausamos rama principal (NO) y el motor del YES ya se activó en evaluateIntent
@@ -168,12 +173,33 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         );
         console.log(`[Cerebro] MATCH: Rama YES activa para "${intentResult.keyword}".`);
       } else {
-        // NO MATCH: Sigue ACTIVA para que le llegue el siguiente correo de seguimiento (NO)
-        await db.run(
-          "UPDATE outreach_sequence_enrollments SET status = 'active' WHERE sequence_id = ? AND contact_id = ?",
-          [originalEmail.sequence_id, originalEmail.contact_id]
-        );
-        console.log(`[Cerebro] NO MATCH: El contacto sigue en el flujo principal.`);
+        // NO MATCH: Evaluate Smart Intent Bypass
+        if (smartIntentBypass) {
+          // If bypass is ON, we assume it's an auto-reply or non-interested unless matched otherwise.
+          // The prompt says: "solo debe pausarse si la intención es de baja o no interesado".
+          // Since we already checked the global intent match above, we pause for human review instead of completely stopping.
+          // The prompt says: "solo debe pausarse si la intención es de baja o no interesado".
+          // To allow the sequence to continue natively for auto-replies, we preserve 'active' status.
+          await db.run(
+            "UPDATE outreach_sequence_enrollments SET status = 'active' WHERE sequence_id = ? AND contact_id = ?",
+            [originalEmail.sequence_id, originalEmail.contact_id]
+          );
+          console.log(`[Cerebro] NO MATCH (Smart Bypass ON): Respuesta no concluyente, la secuencia SIGUE ACTIVA (Bypass auto-reply).`);
+        } else if (stopOnReply) {
+          // Normal behavior: Stop on any reply
+          await db.run(
+            "UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?",
+            [originalEmail.sequence_id, originalEmail.contact_id]
+          );
+          console.log(`[Cerebro] NO MATCH (Stop On Reply ON): Deteniendo secuencia completamente.`);
+        } else {
+          // Stop on reply is OFF, and no match. Keep active.
+          await db.run(
+            "UPDATE outreach_sequence_enrollments SET status = 'active' WHERE sequence_id = ? AND contact_id = ?",
+            [originalEmail.sequence_id, originalEmail.contact_id]
+          );
+          console.log(`[Cerebro] NO MATCH (Stop On Reply OFF): El contacto sigue en el flujo principal.`);
+        }
       }
 
       // 3. PERSIST REPLY TO INDIVIDUAL EMAILS (Crucial for Deep Scan)

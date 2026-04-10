@@ -51,7 +51,7 @@ interface Mailbox {
 
 
 
-const MOCK_API_KEY = 'vlt_live_9f4e2b7c3d1a8e6f0b5c9a2d7f4e1b8c3d6a9f2e5b8c1d4f7a0e3b6c9d2f5a8';
+
 
 export default function OutreachSettings() {
   const api = useOutreachApi();
@@ -109,6 +109,10 @@ export default function OutreachSettings() {
   const [fetchingZb, setFetchingZb] = useState(false);
   const [fetchingPdl, setFetchingPdl] = useState(false);
 
+  // Global Safety Limits
+  const [globalDailyLimit, setGlobalDailyLimit] = useState<number | string>(50);
+  const [savingGlobalLimit, setSavingGlobalLimit] = useState(false);
+
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectMode, setConnectMode] = useState<'picker' | 'smtp'>('picker');
@@ -119,7 +123,7 @@ export default function OutreachSettings() {
 
   // Reload data when the tab changes (within the same project)
   useEffect(() => {
-    if (activeTab === 'integrations' && api.activeProjectId) {
+    if ((activeTab === 'integrations' || activeTab === 'mailboxes') && api.activeProjectId) {
       loadIntegrationStatus();
     }
     if (activeTab === 'snippets' && api.activeProjectId) {
@@ -245,6 +249,11 @@ export default function OutreachSettings() {
       // Update PDL
       setHasPdl(settings?.pdl?.connected || false);
 
+      // Global Limit
+      if (settings?.global_daily_limit !== undefined) {
+        setGlobalDailyLimit(settings.global_daily_limit);
+      }
+
     } catch (err) {
       console.error('Failed to load integration status:', err);
       toast.error('Failed to load integration status.');
@@ -335,6 +344,32 @@ export default function OutreachSettings() {
     setSavingPdl(true);
     await handleSaveIntegrationKeys(undefined, undefined, pdlKeyInput.trim() || undefined);
     setSavingPdl(false);
+  };
+
+  const handleSaveGlobalLimit = async () => {
+    const lim = Number(globalDailyLimit);
+    if (!lim || lim <= 0) {
+      toast.error('Limit must be a valid number greater than 0');
+      return;
+    }
+    if (lim > 50) {
+      toast.error('⚠️ Safety Error: To protect your domain reputation, the maximum limit is 50 emails per day.');
+      return;
+    }
+    if (!api.activeProjectId) {
+      toast.error('No project selected.');
+      return;
+    }
+    setSavingGlobalLimit(true);
+    try {
+      await api.updateSettings({ global_daily_limit: lim });
+      toast.success('Global daily limit updated successfully');
+      await loadIntegrationStatus();
+    } catch (err: any) {
+      toast.error('Failed to update limit: ' + (err.message || 'Unknown error'));
+    } finally {
+      setSavingGlobalLimit(false);
+    }
   };
 
   const loadMailboxes = async () => {
@@ -453,7 +488,41 @@ export default function OutreachSettings() {
               />
             ) : (
               <>
-                {/* 1. DOMAIN VERIFICATION (TOP) */}
+                {/* 1. GLOBAL SAFETY LIMITS */}
+                <section className="space-y-4 bg-teal-500/5 border border-teal-500/20 p-6 rounded-2xl mb-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="w-5 h-5 text-teal-400" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-teal-400">Global Outreach Limits</h3>
+                      </div>
+                      <p className="text-sm text-slate-300 pt-1">Set a hard cap on the total number of emails dispatched per day across all sequences and campaigns to strictly protect your domain reputation. Setting this over 50 is strictly prohibited for your safety.</p>
+                      
+                      <div className="mt-5 flex items-end gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Daily Outreach Limit</label>
+                          <div className="relative">
+                            <input 
+                              type="number" 
+                              value={globalDailyLimit}
+                              onChange={(e) => setGlobalDailyLimit(e.target.value)}
+                              max={50}
+                              min={1}
+                              className="bg-black/20 border border-white/10 rounded-xl pl-4 pr-16 py-2.5 w-48 text-sm focus:border-teal-500 outline-none text-white font-medium"
+                              placeholder="e.g. 50"
+                            />
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">/ Day</span>
+                          </div>
+                        </div>
+                        <TealButton onClick={handleSaveGlobalLimit} loading={savingGlobalLimit} className="px-6 h-[42px] font-bold">
+                          Apply Safety Cap
+                        </TealButton>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 2. DOMAIN VERIFICATION */}
                 <section className="space-y-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Shield className="w-5 h-5 text-teal-400" />
@@ -849,7 +918,7 @@ export default function OutreachSettings() {
               </div>
               <div className="flex items-center gap-3">
                 <code className="flex-1 font-mono text-xs bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-slate-300 truncate">
-                  {showApiKey ? MOCK_API_KEY : '•'.repeat(48)}
+                  {showApiKey ? 'Project ID: ' + (api.activeProjectId || 'None') : '•'.repeat(48)}
                 </code>
                 <button onClick={() => setShowApiKey(!showApiKey)} className="p-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
                   {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}

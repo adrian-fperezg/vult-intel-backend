@@ -331,6 +331,9 @@ export function useOutreachApi() {
   const fetchContacts = useCallback((listId?: string) => 
     get<any[]>(listId ? `/contacts?list_id=${listId}` : '/contacts'), [get]);
 
+  const fetchContactActivity = useCallback((contactId: string) => 
+    get<any>(`/contacts/${contactId}/activity`), [get]);
+
   const createContact = useCallback(
     (contactData: Record<string, unknown>) => post<any>('/contacts', contactData),
     [post],
@@ -691,6 +694,7 @@ export function useOutreachApi() {
     fetchGlobalStats,
     // Contacts
     fetchContacts,
+    fetchContactActivity,
     createContact,
     createContactsBulk,
     saveContactsToList,

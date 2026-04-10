@@ -6,11 +6,17 @@ import { db } from '../../db.js';
  */
 export async function checkAndIncrementGlobalLimit(projectId: string): Promise<boolean> {
   const today = new Date().toISOString().split('T')[0];
-  const GLOBAL_DAILY_LIMIT = 100;
 
   let result = false;
   try {
     await db.transaction(async (tx) => {
+      // Get settings limit
+      const settings = await tx.get<{ global_daily_limit: number }>(
+        'SELECT global_daily_limit FROM outreach_settings WHERE project_id = ?',
+        projectId
+      );
+      const GLOBAL_DAILY_LIMIT = (settings && settings.global_daily_limit !== null) ? settings.global_daily_limit : 50;
+
       // Get current count
       const counter = await tx.get<{ sends_count: number }>(
         'SELECT sends_count FROM outreach_global_send_counters WHERE project_id = ? AND date = ?',
@@ -57,7 +63,12 @@ export async function checkAndIncrementGlobalLimit(projectId: string): Promise<b
  */
 export async function getGlobalLimitStatus(projectId: string) {
   const today = new Date().toISOString().split('T')[0];
-  const GLOBAL_DAILY_LIMIT = 100;
+
+  const settings = await db.get<{ global_daily_limit: number }>(
+    'SELECT global_daily_limit FROM outreach_settings WHERE project_id = ?',
+    projectId
+  );
+  const GLOBAL_DAILY_LIMIT = (settings && settings.global_daily_limit !== null) ? settings.global_daily_limit : 50;
 
   const counter = await db.get<{ sends_count: number }>(
     'SELECT sends_count FROM outreach_global_send_counters WHERE project_id = ? AND date = ?',

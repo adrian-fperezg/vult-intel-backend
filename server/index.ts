@@ -9,6 +9,7 @@ import { DateTime } from 'luxon';
 import Papa from 'papaparse';
 import { getMailerHealth } from "./lib/outreach/mailer.js";
 import { getImapHealth } from "./lib/outreach/imapHealth.js";
+import { cleanName, cleanCompany } from "./lib/outreach/dataSanitizer.js";
 
 // ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -528,6 +529,37 @@ app.get("/api/tracking/open", async (req, res) => {
     "Expires": "0",
   });
   res.end(pixel);
+});
+
+// ─── UNSUBSCRIBE (PUBLIC) ─────────────────────────────────────────────────────
+app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "Token is required" });
+
+  try {
+    const rawCipher = Buffer.from(token, 'base64').toString('utf8');
+    const email = decryptToken(rawCipher);
+    
+    if (!email || !email.includes('@')) {
+       return res.status(400).json({ error: "Invalid or malformed token." });
+    }
+
+    const id = uuidv4();
+    await db.prepare(`
+      INSERT INTO suppression_list (id, email, reason)
+      VALUES (?, ?, 'user_request')
+      ON CONFLICT(email) DO NOTHING
+    `).run(id, email);
+    
+    await db.prepare(`
+      UPDATE outreach_contacts SET status = 'blacklisted' WHERE email = ?
+    `).run(email);
+
+    res.json({ success: true, message: "Unsubscribed successfully" });
+  } catch (err: any) {
+    console.error("[Unsubscribe Error]:", err.message);
+    res.status(500).json({ error: "Failed to process unsubscribe" });
+  }
 });
 
 // ─── Protected routes (require Firebase token) ────────────────────────────────
@@ -1890,7 +1922,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end',
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
     'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic', 'smart_intent_bypass',
-    'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage'
+    'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage', 'smart_send'
   ];
 
   const filteredUpdates: Record<string, any> = {};
@@ -2474,6 +2506,11 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "project_id is required" });
   if (!email) return res.status(400).json({ error: "email is required" });
 
+  const suppressed = await db.prepare("SELECT email FROM suppression_list WHERE email = ?").get(email);
+  if (suppressed) {
+    return res.status(403).json({ error: "Unauthorized action: This email is in the global suppression list and cannot be re-added per compliance regulations." });
+  }
+
   const id = uuidv4();
   const timezone = inferTimezone(locationCity || location, locationCountry);
 
@@ -2780,6 +2817,8 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
     };
 
     const savedContactIds: string[] = [];
+    let suppressedCount = 0;
+    const suppressedEmails: string[] = [];
     const fileName = req.file?.originalname || 'Imported CSV';
     const autoListId = uuidv4();
     const autoListName = `Import - ${fileName}`;
@@ -2846,12 +2885,25 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
 
         if (!contactData.email || !contactData.email.includes('@')) continue;
 
+        // --- IMMUTABLE GUARDRAIL ---
+        const suppressed = await tx.prepare("SELECT email FROM suppression_list WHERE email = ?").get(contactData.email);
+        if (suppressed) {
+          suppressedCount++;
+          suppressedEmails.push(contactData.email);
+          console.warn(`[CSV Import] Skipped suppressed email: ${contactData.email}`);
+          continue; // Reject record insertion
+        }
+
         // Infer timezone
         const city = contactData.location_city || contactData.location;
         const country = contactData.location_country;
         const timezone = inferTimezone(city, country);
 
         const contactId = uuidv4();
+        const cleanedFirstName = contactData.first_name ? cleanName(contactData.first_name) : null;
+        const cleanedLastName = contactData.last_name ? cleanName(contactData.last_name) : null;
+        const cleanedCompany = contactData.company ? cleanCompany(contactData.company) : null;
+
         const upsertRes = await tx.prepare(`
           INSERT INTO outreach_contacts (
             id, user_id, project_id, email, first_name, last_name, company, job_title, phone, linkedin, location, website, location_city, location_country, custom_fields, inferred_timezone, status
@@ -2873,8 +2925,8 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
           RETURNING id
         `).get(
           contactId, userId, project_id, contactData.email,
-          contactData.first_name || null, contactData.last_name || null,
-          contactData.company || null, contactData.job_title || null,
+          cleanedFirstName, cleanedLastName,
+          cleanedCompany, contactData.job_title || null,
           contactData.phone || null, contactData.linkedin || null,
           contactData.location || null, contactData.website || null,
           contactData.location_city || null, contactData.location_country || null,
@@ -2897,7 +2949,14 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
       }
     });
 
-    res.json({ success: true, count: savedContactIds.length, list_id: autoListId, list_name: autoListName });
+    res.json({ 
+      success: true, 
+      count: savedContactIds.length, 
+      list_id: autoListId, 
+      list_name: autoListName,
+      suppressed_count: suppressedCount,
+      errors: suppressedCount > 0 ? [{ error: "Unauthorized action: This email is in the global suppression list and cannot be re-added per compliance regulations.", emails: suppressedEmails }] : []
+    });
   } catch (err: any) {
     console.error("[CSV Import] Critical Failure:", err);
     res.status(500).json({ error: err.message || "Failed to import contacts" });
@@ -2972,6 +3031,47 @@ app.post("/api/outreach/contacts/bulk-delete", async (req: AuthRequest, res) => 
     });
 
     res.json({ success: true, count: contact_ids.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/outreach/contacts/:id/activity
+app.get("/api/outreach/contacts/:id/activity", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+
+  try {
+    // Fetch events (opens, clicks, replies, etc.)
+    const events = await db.all(`
+      SELECT * FROM outreach_events 
+      WHERE contact_id = ? AND project_id = ?
+      ORDER BY created_at DESC
+    `, id, req.projectId);
+
+    // Fetch individual emails (sent, scheduled)
+    const emails = await db.all(`
+      SELECT id, subject, status, sent_at, created_at, is_reply, from_email, to_email 
+      FROM outreach_individual_emails 
+      WHERE contact_id = ? AND project_id = ?
+      ORDER BY created_at DESC
+    `, id, req.projectId);
+
+    // Fetch contact details (to verify name, etc.)
+    const contact = await db.get(`
+      SELECT * FROM outreach_contacts
+      WHERE id = ? AND project_id = ?
+    `, id, req.projectId);
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    res.json({
+      events: events || [],
+      emails: emails || [],
+      contact
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -4336,16 +4436,21 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
     if (!userId) return res.status(401).json({ error: "Auth required" });
     if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
 
     // Default response structure
     const response: any = {
       hunter: { connected: false },
       zerobounce: { connected: false },
-      pdl: { connected: false }
+      pdl: { connected: false },
+      global_daily_limit: 50 // Default fallback
     };
 
     if (row) {
+      if (row.global_daily_limit !== undefined && row.global_daily_limit !== null) {
+        response.global_daily_limit = row.global_daily_limit;
+      }
+      
       // 1. Hunter.io Live Fetch
       if (row.hunter_api_key) {
         try {
@@ -4427,10 +4532,20 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
 app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
   try {
     const userId = req.user?.uid;
-    const { project_id, hunter_api_key, zerobounce_api_key, pdl_api_key } = req.body;
+    const { project_id, hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit } = req.body;
 
     if (!userId) return res.status(401).json({ error: "Auth required" });
     if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+    if (global_daily_limit !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, global_daily_limit, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          global_daily_limit = excluded.global_daily_limit,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, global_daily_limit);
+    }
 
     if (hunter_api_key !== undefined) {
       const encrypted = hunter_api_key ? encryptToken(hunter_api_key) : null;

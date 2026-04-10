@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Settings, Mail, Users, Search, 
   Upload, ChevronRight, ChevronLeft, Loader2,
-  Clock, GitBranch, Plus, Trash2, X, CheckCircle2
+  Clock, GitBranch, Plus, Trash2, X, CheckCircle2, Shield
 } from 'lucide-react';
 import { TealButton } from '../OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
@@ -59,6 +59,7 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
 
   // 4. Scheduling
   const [scheduling, setScheduling] = useState({
+    smart_send: true,
     daily_limit: 50,
     min_delay: 2,
     max_delay: 5,
@@ -434,6 +435,24 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
               </div>
 
               <div className="bg-[#161b22] border border-white/5 rounded-2xl p-6 space-y-6">
+                <div className="flex items-center justify-between pb-6 border-b border-white/5">
+                  <div>
+                    <h4 className="font-bold text-white">Smart Send</h4>
+                    <p className="text-sm text-slate-400">Randomize sending intervals to mimic human behavior</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={scheduling.smart_send} onChange={e => setScheduling({...scheduling, smart_send: e.target.checked})} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
+                  </label>
+                </div>
+
+                {scheduling.smart_send && (
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl mb-6 text-sm text-emerald-400 font-medium flex items-start gap-3">
+                    <Shield className="size-5 shrink-0 mt-0.5" />
+                    <p>🛡️ Reputation Protection Active: Emails are being sent gradually to mimic human behavior and protect your domain reputation. If daily limits are reached, pending emails will be automatically queued for the next business day.</p>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between pb-6 border-b border-white/5">
                   <div>
                     <h4 className="font-bold text-white">Daily Limits</h4>

@@ -13,6 +13,7 @@ import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
 import { recordOutreachEvent, matchKeyword } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
+import { encryptToken } from '../lib/outreach/encrypt.js';
 
 
 dotenv.config();
@@ -232,9 +233,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       // 2. Check Global Send Limit
       const canSend = await checkAndIncrementGlobalLimit(projectId);
       if (!canSend) {
-        console.log(`[Sequence] Global limit reached. Delaying job 1 hour.`);
-        // Re-queue with 1 hour delay
-        await emailQueue.add(name, data, { delay: 60 * 60 * 1000 });
+        console.log(`[Sequence] Global limit reached. Delaying job for tomorrow with priority.`);
+        // Re-queue with 24 hour delay and High Priority
+        await emailQueue.add(name, data, { delay: 24 * 60 * 60 * 1000, priority: 1 });
         return;
       }
 
@@ -604,6 +605,62 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
+  // --- SMART THROTTLING & PRE-FLIGHT ---
+  let sequenceLimit = 50;
+  let stopOnReply = true;
+  
+  if (email.sequence_id) {
+    const seqData = await db.prepare("SELECT daily_send_limit, stop_on_reply FROM outreach_sequences WHERE id = ?").get(email.sequence_id) as any;
+    if (seqData) {
+      stopOnReply = seqData.stop_on_reply !== false;
+      sequenceLimit = seqData.daily_send_limit || 50;
+
+      // Check Stop on Reply Safety
+      if (stopOnReply) {
+        const hasReplied = await db.prepare("SELECT id FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND type = 'replied' LIMIT 1").get(email.contact_id, email.sequence_id);
+        if (hasReplied) {
+           console.log(`[processEmail] Contact ${email.contact_id} replied. Sequence aborted for this job.`);
+           await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', error_code = 'STOP_ON_REPLY' WHERE id = ?").run(emailId);
+           return;
+        }
+      }
+
+      // Check Sequence Daily Limits
+      const todayStr = new Date().toISOString().split('T')[0];
+      const countData = await db.prepare("SELECT COUNT(*) as count FROM outreach_individual_emails WHERE sequence_id = ? AND DATE(sent_at) = ?").get(email.sequence_id, todayStr) as any;
+      
+      if (countData && countData.count >= sequenceLimit) {
+        console.log(`[processEmail] Sequence daily limit reached (${countData.count}/${sequenceLimit}). Rescheduling for tomorrow.`);
+        await emailQueue.add('send-email', { emailId }, {
+          delay: 24 * 60 * 60 * 1000,
+          priority: 1
+        });
+        return;
+      }
+    }
+  } else if (email.campaign_id) {
+    // Campaign limit check
+    const campObj = await db.prepare("SELECT settings FROM outreach_campaigns WHERE id = ?").get(email.campaign_id) as any;
+    if (campObj && campObj.settings) {
+      try {
+        const parsed = JSON.parse(campObj.settings);
+        sequenceLimit = parsed.daily_limit || 50;
+        
+        const todayStr = new Date().toISOString().split('T')[0];
+        const countData = await db.prepare("SELECT COUNT(*) as count FROM outreach_individual_emails WHERE campaign_id = ? AND DATE(sent_at) = ?").get(email.campaign_id, todayStr) as any;
+        
+        if (countData && countData.count >= sequenceLimit) {
+          console.log(`[processEmail] Campaign daily limit reached (${countData.count}/${sequenceLimit}). Rescheduling for tomorrow.`);
+          await emailQueue.add('send-email', { emailId }, {
+            delay: 24 * 60 * 60 * 1000,
+            priority: 1
+          });
+          return;
+        }
+      } catch (e) { }
+    }
+  }
+
   // INJECT SIGNATURES (Enhanced for dynamic sig_... tags)
   let bodyWithSignature = email.body_html || "";
   const dynamicSigRegex = /\{\{(sig_[A-Za-z0-9_]+|signature)\}\}/gi;
@@ -678,7 +735,47 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     });
   };
 
-  const bodyWithWrappedLinks = wrapLinks(bodyWithSignature, emailId, backendUrl);
+  let bodyWithWrappedLinks = wrapLinks(bodyWithSignature, emailId, backendUrl);
+
+  // --- FAIL-SAFE SUPPRESSION CHECK ---
+  const suppressed = await db.prepare("SELECT email FROM suppression_list WHERE email = ?").get(email.to_email);
+  if (suppressed) {
+    console.error(`[processEmail] Suppressed email aborted: ${email.to_email}`);
+    await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', error_code = 'SUPPRESSED' WHERE id = ?").run(emailId);
+    throw new Error("Email is on the global suppression list. Job discarded.");
+  }
+
+  // --- DYNAMIC FOOTER INJECTION ---
+  // Using simple base64 wrapping the AES encryption token so it is URL-safe
+  let safeToken = "";
+  try {
+    const encrypted = encryptToken(email.to_email);
+    safeToken = encodeURIComponent(Buffer.from(encrypted).toString('base64'));
+  } catch (err: any) {
+    console.warn("[Footer Injection] Failed to encrypt token, using base64 fallback:", err.message);
+    safeToken = encodeURIComponent(Buffer.from(email.to_email).toString('base64'));
+  }
+  
+  // Clean frontend URL resolution (removes /api or trailing slashes for the link)
+  let frontendBase = backendUrl.replace(/\/api$/, '').replace(/\/$/, '');
+  // Because backendUrl might point strictly to the API on railway, if FRONTEND_URL is set we should use that
+  if (process.env.FRONTEND_URL) {
+    frontendBase = process.env.FRONTEND_URL.replace(/\/$/, '');
+  }
+
+  const unsubscribeUrl = `${frontendBase}/unsubscribe/${safeToken}`;
+  const customFooter = `
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+      <tr>
+        <td style="font-family: Arial, sans-serif; font-size: 11px; color: #94a3b8; text-align: center;">
+          [[BUSINESS_ADDRESS]]<br><br>
+          If you no longer wish to receive these emails, you may <a href="${unsubscribeUrl}" style="color: #64748b; text-decoration: underline;">Unsubscribe here</a>.
+        </td>
+      </tr>
+    </table>
+  `;
+
+  bodyWithWrappedLinks = bodyWithWrappedLinks + customFooter;
 
   // 2. Inject tracking pixel
   const trackingPixel = `\n<img src="${backendUrl}/api/track/open/${emailId}" width="1" height="1" style="display:none;" alt="" />`;

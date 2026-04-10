@@ -20,6 +20,7 @@ import VeoStudioLayout from './pages/VeoStudioLayout';
 import AuthPage from './pages/AuthPage';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import Unsubscribe from './pages/Unsubscribe';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 import { logPageView } from './services/analytics';
 
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/unsubscribe/:token" element={<Unsubscribe />} />
           <Route path="/pending-checkout" element={<PendingCheckout />} />
 
           <Route element={<Layout />}>

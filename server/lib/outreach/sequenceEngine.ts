@@ -312,9 +312,6 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
  * Calculates the next available sending slot based on sequence windows and weekdays.
  */
 export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime {
-  // Adrian: Temporarily bypass window/weekday constraints for immediate testing dispatch.
-  // Return baseTime directly to schedule strictly based on the configured step delay.
-  return baseTime;
 
   const windowStart = sequence.send_window_start || '09:00';
   const windowEnd = sequence.send_window_end || '17:00';

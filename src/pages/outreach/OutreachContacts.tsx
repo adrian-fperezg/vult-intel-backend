@@ -142,7 +142,7 @@ export default function OutreachContacts() {
     if (!api.activeProjectId) return;
     setIsLoading(true);
     try {
-      const data = await api.fetchContacts(listFilter === 'all' || listFilter === 'unassigned' ? undefined : listFilter);
+      const data = await api.fetchContacts(listFilter === 'all' ? undefined : listFilter);
       setContacts((data ?? []).map((m: any) => {
         const createdAt = m.created_at ? new Date(m.created_at) : null;
         const isValidDate = createdAt && !isNaN(createdAt.getTime());

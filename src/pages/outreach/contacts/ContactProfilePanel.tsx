@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Mail, Phone, Building2, Globe, Linkedin, 
   MapPin, Clock, ArrowUpRight, Tag, Activity,
-  Calendar, CheckCircle2, XCircle
+  Calendar, CheckCircle2, XCircle, MousePointer2, Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge } from '../OutreachCommon';
+import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { format } from 'date-fns';
 
 interface ContactProfilePanelProps {
   contact: any | null;
@@ -14,15 +16,11 @@ interface ContactProfilePanelProps {
   onClose: () => void;
 }
 
-const MOCK_TIMELINE = [
-  { id: 1, type: 'reply', title: 'Replied to email', date: 'Today, 10:42 AM', body: 'Hi, thanks for reaching out. Yes, we are looking into this.' },
-  { id: 2, type: 'sent', title: 'Email sent', date: 'Yesterday, 2:15 PM', body: 'Subject: Quick question about your sales process' },
-  { id: 3, type: 'enrolled', title: 'Enrolled in Sequence "Q1 Outreach"', date: 'Mar 15, 2026, 9:00 AM' },
-  { id: 4, type: 'created', title: 'Contact created', date: 'Mar 15, 2026, 8:45 AM', body: 'Imported via CSV' }
-];
-
 export default function ContactProfilePanel({ contact, isOpen, onClose }: ContactProfilePanelProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'activity'>('overview');
+  const [timeline, setTimeline] = useState<any[]>([]);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(false);
+  const { fetchContactActivity } = useOutreachApi();
 
   // Lock body scroll when open
   useEffect(() => {
@@ -30,6 +28,84 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
     else document.body.style.overflow = '';
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
+
+  // Fetch activity
+  useEffect(() => {
+    if (isOpen && activeTab === 'activity' && contact?.id) {
+      loadActivity();
+    }
+  }, [isOpen, activeTab, contact?.id]);
+
+  const loadActivity = async () => {
+    if (!contact?.id) return;
+    setIsLoadingActivity(true);
+    try {
+      const data = await fetchContactActivity(contact.id);
+      if (data) {
+        const events = data.events.map((e: any) => ({
+          id: e.id,
+          type: e.type,
+          title: getEventTitle(e),
+          date: format(new Date(e.created_at), 'MMM d, h:mm a'),
+          timestamp: new Date(e.created_at),
+          icon: getEventIcon(e.type),
+          color: getEventColor(e.type),
+          metadata: e.metadata ? (typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata) : null
+        }));
+
+        const emails = data.emails.map((m: any) => ({
+          id: m.id,
+          type: m.is_reply ? 'reply' : 'sent',
+          title: m.is_reply ? 'Reply Received' : 'Email Sent',
+          body: m.subject,
+          date: format(new Date(m.sent_at || m.created_at), 'MMM d, h:mm a'),
+          timestamp: new Date(m.sent_at || m.created_at),
+          icon: m.is_reply ? Mail : Mail,
+          color: m.is_reply ? 'text-green-400' : 'text-blue-400'
+        }));
+
+        // Merge and sort
+        const combined = [...events, ...emails].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        setTimeline(combined);
+      }
+    } catch (err) {
+      console.error('Failed to load activity:', err);
+    } finally {
+      setIsLoadingActivity(false);
+    }
+  };
+
+  const getEventTitle = (e: any) => {
+    switch (e.type) {
+      case 'email_opened': return 'Email Opened';
+      case 'link_clicked': return 'Link Clicked';
+      case 'replied': return 'Reply Detected';
+      case 'enrolled': return 'Enrolled in Sequence';
+      case 'bounced': return 'Email Bounced';
+      default: return e.type.replace('_', ' ').toUpperCase();
+    }
+  };
+
+  const getEventIcon = (type: string) => {
+    switch (type) {
+      case 'email_opened': return Eye;
+      case 'link_clicked': return MousePointer2;
+      case 'replied': return Mail;
+      case 'enrolled': return Activity;
+      case 'bounced': return XCircle;
+      default: return Activity;
+    }
+  };
+
+  const getEventColor = (type: string) => {
+    switch (type) {
+      case 'email_opened': return 'text-purple-400';
+      case 'link_clicked': return 'text-orange-400';
+      case 'replied': return 'text-green-400';
+      case 'bounced': return 'text-red-400';
+      default: return 'text-slate-400';
+    }
+  };
 
   if (!contact) return null;
 
@@ -183,28 +259,46 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="relative border-l border-white/10 ml-3 md:ml-4 space-y-8 pb-8">
-                    {MOCK_TIMELINE.map((event, idx) => (
-                      <div key={event.id} className="relative pl-6">
-                        <div className={cn(
-                          "absolute left-0 top-1 -translate-x-1/2 size-2.5 rounded-full border-2 border-[#161b22]",
-                          event.type === 'reply' ? 'bg-green-400' : 
-                          event.type === 'enrolled' ? 'bg-teal-400' : 'bg-slate-400'
-                        )} />
-                        
-                        <div className="flex items-center justify-between gap-4 mb-1">
-                          <p className="text-sm font-semibold text-white">{event.title}</p>
-                          <span className="text-[10px] text-slate-500 whitespace-nowrap">{event.date}</span>
-                        </div>
-                        
-                        {event.body && (
-                          <div className="mt-2 p-3 rounded-lg border border-white/5 bg-white/[0.02] text-xs text-slate-400 leading-relaxed">
-                            {event.body}
+                  {isLoadingActivity ? (
+                    <div className="flex justify-center py-12">
+                      <div className="size-8 rounded-full border-2 border-teal-500/20 border-t-teal-500 animate-spin" />
+                    </div>
+                  ) : timeline.length > 0 ? (
+                    <div className="relative border-l border-white/10 ml-3 md:ml-4 space-y-8 pb-8">
+                      {timeline.map((event) => (
+                        <div key={event.id} className="relative pl-6">
+                          <div className={cn(
+                            "absolute left-0 top-1 -translate-x-1/2 size-2.5 rounded-full border-2 border-[#161b22]",
+                            event.type === 'replied' || event.type === 'reply' ? 'bg-green-400' : 
+                            event.type === 'enrolled' ? 'bg-teal-400' : 
+                            event.type === 'bounced' ? 'bg-red-400' : 'bg-slate-400'
+                          )} />
+                          
+                          <div className="flex items-center justify-between gap-4 mb-1">
+                            <div className="flex items-center gap-2">
+                              {event.icon && <event.icon className={cn("size-3", event.color)} />}
+                              <p className="text-sm font-semibold text-white">{event.title}</p>
+                            </div>
+                            <span className="text-[10px] text-slate-500 whitespace-nowrap">{event.date}</span>
                           </div>
-                        )}
+                          
+                          {(event.body || event.metadata?.subject) && (
+                            <div className="mt-2 p-3 rounded-lg border border-white/5 bg-white/[0.02] text-xs text-slate-400 leading-relaxed italic">
+                              "{event.body || event.metadata?.subject}"
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <div className="size-12 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                        <Activity className="size-6 text-slate-500" />
                       </div>
-                    ))}
-                  </div>
+                      <p className="text-sm font-medium text-slate-400">No activity recorded yet</p>
+                      <p className="text-xs text-slate-500 mt-1">Events will appear here once outreach begins.</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
