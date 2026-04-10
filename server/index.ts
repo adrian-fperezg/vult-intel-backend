@@ -4453,19 +4453,23 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
     if (!userId) return res.status(401).json({ error: "Auth required" });
     if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit, business_address FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
 
     // Default response structure
     const response: any = {
       hunter: { connected: false },
       zerobounce: { connected: false },
       pdl: { connected: false },
-      global_daily_limit: 50 // Default fallback
+      global_daily_limit: 50, // Default fallback
+      business_address: ''
     };
 
     if (row) {
       if (row.global_daily_limit !== undefined && row.global_daily_limit !== null) {
         response.global_daily_limit = row.global_daily_limit;
+      }
+      if (row.business_address !== undefined && row.business_address !== null) {
+        response.business_address = row.business_address;
       }
       
       // 1. Hunter.io Live Fetch
@@ -4549,7 +4553,7 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
 app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
   try {
     const userId = req.user?.uid;
-    const { project_id, hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit } = req.body;
+    const { project_id, hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit, business_address } = req.body;
 
     if (!userId) return res.status(401).json({ error: "Auth required" });
     if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -4595,6 +4599,16 @@ app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
           pdl_api_key = excluded.pdl_api_key,
           updated_at = CURRENT_TIMESTAMP
       `).run(project_id, encrypted);
+    }
+
+    if (business_address !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, business_address, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          business_address = excluded.business_address,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, business_address || null);
     }
 
     res.json({ success: true });

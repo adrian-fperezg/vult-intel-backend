@@ -553,7 +553,8 @@ export const initDb = async () => {
       { name: 'hunter_api_key', type: 'TEXT' },
       { name: 'zerobounce_api_key', type: 'TEXT' },
       { name: 'pdl_api_key', type: 'TEXT' },
-      { name: 'global_daily_limit', type: 'INTEGER DEFAULT 50' }
+      { name: 'global_daily_limit', type: 'INTEGER DEFAULT 50' },
+      { name: 'business_address', type: 'TEXT' }
     ];
 
     for (const col of newSettingsCols) {

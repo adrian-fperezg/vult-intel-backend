@@ -763,13 +763,21 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     frontendBase = process.env.FRONTEND_URL.replace(/\/$/, '');
   }
 
+  // Fetch business address for this project from settings
+  let businessAddress = '';
+  try {
+    const addrRow = await db.prepare('SELECT business_address FROM outreach_settings WHERE project_id = ?').get(email.project_id) as any;
+    businessAddress = addrRow?.business_address || '';
+  } catch (err: any) {
+    console.warn('[Footer Injection] Could not fetch business_address:', err.message);
+  }
+
   const unsubscribeUrl = `${frontendBase}/unsubscribe/${safeToken}`;
   const customFooter = `
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
       <tr>
         <td style="font-family: Arial, sans-serif; font-size: 11px; color: #94a3b8; text-align: center;">
-          [[BUSINESS_ADDRESS]]<br><br>
-          If you no longer wish to receive these emails, you may <a href="${unsubscribeUrl}" style="color: #64748b; text-decoration: underline;">Unsubscribe here</a>.
+          ${businessAddress ? `${businessAddress}<br><br>` : ''}If you no longer wish to receive these emails, you may <a href="${unsubscribeUrl}" style="color: #64748b; text-decoration: underline;">Unsubscribe here</a>.
         </td>
       </tr>
     </table>

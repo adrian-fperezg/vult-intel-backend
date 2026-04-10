@@ -113,6 +113,9 @@ export default function OutreachSettings() {
   const [globalDailyLimit, setGlobalDailyLimit] = useState<number | string>(50);
   const [savingGlobalLimit, setSavingGlobalLimit] = useState(false);
 
+  // Compliance & Footer
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [savingBusinessAddress, setSavingBusinessAddress] = useState(false);
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectMode, setConnectMode] = useState<'picker' | 'smtp'>('picker');
@@ -254,6 +257,11 @@ export default function OutreachSettings() {
         setGlobalDailyLimit(settings.global_daily_limit);
       }
 
+      // Business Address
+      if (settings?.business_address !== undefined) {
+        setBusinessAddress(settings.business_address || '');
+      }
+
     } catch (err) {
       console.error('Failed to load integration status:', err);
       toast.error('Failed to load integration status.');
@@ -369,6 +377,22 @@ export default function OutreachSettings() {
       toast.error('Failed to update limit: ' + (err.message || 'Unknown error'));
     } finally {
       setSavingGlobalLimit(false);
+    }
+  };
+
+  const handleSaveBusinessAddress = async () => {
+    if (!api.activeProjectId) {
+      toast.error('No project selected.');
+      return;
+    }
+    setSavingBusinessAddress(true);
+    try {
+      await api.updateSettings({ business_address: businessAddress.trim() });
+      toast.success('Business address saved');
+    } catch (err: any) {
+      toast.error('Failed to save address: ' + (err.message || 'Unknown error'));
+    } finally {
+      setSavingBusinessAddress(false);
     }
   };
 
@@ -516,6 +540,43 @@ export default function OutreachSettings() {
                         </div>
                         <TealButton onClick={handleSaveGlobalLimit} loading={savingGlobalLimit} className="px-6 h-[42px] font-bold">
                           Apply Safety Cap
+                        </TealButton>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* COMPLIANCE & FOOTER */}
+                <section className="space-y-4 bg-amber-500/5 border border-amber-500/15 p-6 rounded-2xl">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="w-5 h-5 text-amber-400" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-amber-400">Compliance &amp; Footer</h3>
+                      </div>
+                      <p className="text-sm text-slate-300 pt-1">
+                        This address is injected into the footer of every outreach email, replacing the{' '}
+                        <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-amber-300">{'[[BUSINESS_ADDRESS]]'}</code>{' '}
+                        placeholder. Required for CAN-SPAM / GDPR compliance.
+                      </p>
+                      <div className="mt-5 space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Physical Business Address</label>
+                        <textarea
+                          value={businessAddress}
+                          onChange={(e) => setBusinessAddress(e.target.value)}
+                          rows={2}
+                          placeholder="e.g. 123 Main St, Suite 100, San Francisco, CA 94105"
+                          className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-amber-500/60 outline-none text-white resize-none placeholder:text-slate-600"
+                        />
+                      </div>
+                      <div className="mt-3">
+                        <TealButton
+                          onClick={handleSaveBusinessAddress}
+                          loading={savingBusinessAddress}
+                          disabled={!api.activeProjectId}
+                          className="px-6 h-[40px] font-bold"
+                        >
+                          Save Address
                         </TealButton>
                       </div>
                     </div>
