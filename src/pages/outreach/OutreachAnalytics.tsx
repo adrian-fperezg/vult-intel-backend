@@ -12,6 +12,39 @@ import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader } from './Outr
 import { cn } from '@/lib/utils';
 import { useOutreachApi, AnalyticsData, FunnelStat } from '@/hooks/useOutreachApi';
 
+// Industry benchmark constants — legitimate B2B email averages, not fake data.
+// Source: Mailchimp 2024 industry averages for B2B / Technology sector.
+const BENCHMARKS = {
+  openRate:   { label: 'Industry avg', value: 21.5 },
+  replyRate:  { label: 'Industry avg', value: 10.0 },
+  bounceRate: { label: 'Safety limit', value: 2.5, lowerIsBetter: true },
+};
+
+/** Returns a sub-label like "Industry avg: 21.5% (you: +3.2pp)" */
+function getBenchmarkSub(
+  metric: keyof typeof BENCHMARKS,
+  actualValue: number
+): string {
+  const b = BENCHMARKS[metric];
+  const diff = parseFloat((actualValue - b.value).toFixed(1));
+  const sign = diff > 0 ? '+' : '';
+  return `${b.label}: ${b.value}% (you: ${sign}${diff}pp)`;
+}
+
+/** Converts a numeric percentage-point change to a display string like "+2.1" or "-0.4" */
+function formatTrendValue(change: number | null | undefined): string {
+  if (change == null) return '';
+  const sign = change > 0 ? '+' : '';
+  return `${sign}${change}pp`;
+}
+
+/** Maps a numeric change to a trend direction for the MetricCard arrow. */
+function trendDir(change: number | null | undefined, lowerIsBetter = false): 'up' | 'down' | 'neutral' {
+  if (change == null || change === 0) return 'neutral';
+  if (lowerIsBetter) return change < 0 ? 'up' : 'down';
+  return change > 0 ? 'up' : 'down';
+}
+
 const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
@@ -187,31 +220,31 @@ export default function OutreachAnalytics() {
             teal 
             icon={<Mail className="size-4" />} 
             trend={Number(data.sent_change ?? 0) >= 0 ? "up" : "down"}
-            trendValue={`${Math.abs(Number(data.sent_change ?? 0))}%`} 
+            trendValue={`${data.sent_change ?? '0'}%`} 
           />
           <OutreachMetricCard 
             label="Unified Open Rate" 
             value={`${data.open_rate ?? '0.0'}%`} 
             icon={<TrendingUp className="size-4" />} 
-            trend="neutral" 
-            trendValue="vs ecosystem" 
-            sub="Enterprise avg: 21.5%" 
+            trend={trendDir(data.open_rate_change)}
+            trendValue={formatTrendValue(data.open_rate_change)}
+            sub={getBenchmarkSub('openRate', parseFloat(data.open_rate ?? '0'))}
           />
           <OutreachMetricCard 
             label="Engagement / Reply Rate" 
             value={`${data.reply_rate ?? '0.0'}%`} 
             icon={<MessageSquare className="size-4" />} 
-            trend="neutral" 
-            trendValue="vs ecosystem" 
-            sub="Enterprise avg: 3.2%"
+            trend={trendDir(data.reply_rate_change)}
+            trendValue={formatTrendValue(data.reply_rate_change)}
+            sub={getBenchmarkSub('replyRate', parseFloat(data.reply_rate ?? '0'))}
           />
           <OutreachMetricCard 
             label="Unified Bounce Rate" 
             value={`${data.bounce_rate ?? '0.0'}%`} 
             icon={<Shield className="size-4" />} 
-            trend="neutral" 
-            trendValue="Monitoring" 
-            sub="Safety threshold: <2.5%"
+            trend={trendDir(data.bounce_rate_change, true)}
+            trendValue={formatTrendValue(data.bounce_rate_change)}
+            sub={getBenchmarkSub('bounceRate', parseFloat(data.bounce_rate ?? '0'))}
           />
         </div>
 

@@ -2,7 +2,14 @@ export interface AnalyticsData {
   total_sent: number;
   sent_change: string;
   open_rate: string;
+  /** Percentage-point change in open rate vs previous period. null = no previous data. */
+  open_rate_change: number | null;
   reply_rate: string;
+  /** Percentage-point change in reply rate vs previous period. null = no previous data. */
+  reply_rate_change: number | null;
+  bounce_rate?: string;
+  /** Percentage-point change in bounce rate vs previous period. null = no previous data. */
+  bounce_rate_change: number | null;
   active_sequences: number;
   total_recipients: number;
   pending_tasks: number;
@@ -36,7 +43,6 @@ export interface AnalyticsData {
     reply: string;
     bounce: string;
   }[];
-  bounce_rate?: string;
 }
 
 export interface FunnelStat {

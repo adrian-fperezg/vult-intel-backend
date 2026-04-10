@@ -4280,12 +4280,29 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     const calcRate = (part: any, total: number) => total > 0 ? ((Number(part) / total) * 100).toFixed(1) : "0.0";
     const calcChange = (curr: number, prev: number) => prev > 0 ? (((curr - prev) / prev) * 100).toFixed(1) : "0.0";
 
+    // Per-metric rate values for current and previous period
+    const openRateCurrent = sentValue > 0 ? (Number(currentMetric?.opens || 0) / sentValue) * 100 : 0;
+    const openRatePrevious = prevSentValue > 0 ? (Number(prevMetric?.opens || 0) / prevSentValue) * 100 : 0;
+
+    const replyRateCurrent = sentValue > 0 ? (Number(currentMetric?.replies || 0) / sentValue) * 100 : 0;
+    const replyRatePrevious = prevSentValue > 0 ? (Number(prevMetric?.replies || 0) / prevSentValue) * 100 : 0;
+
+    const bounceRateCurrent = sentValue > 0 ? (Number(currentMetric?.bounces || 0) / sentValue) * 100 : 0;
+    const bounceRatePrevious = prevSentValue > 0 ? (Number(prevMetric?.bounces || 0) / prevSentValue) * 100 : 0;
+
+    // Trend = percentage-point change (e.g. 25% → 28% = +3pp)
+    const calcRateTrend = (curr: number, prev: number) =>
+      prev === 0 ? (curr > 0 ? null : null) : parseFloat((curr - prev).toFixed(1));
+
     res.json({
       total_sent: sentValue,
       sent_change: calcChange(sentValue, prevSentValue),
       open_rate: calcRate(currentMetric?.opens, sentValue),
+      open_rate_change: calcRateTrend(openRateCurrent, openRatePrevious),
       reply_rate: calcRate(currentMetric?.replies, sentValue),
+      reply_rate_change: calcRateTrend(replyRateCurrent, replyRatePrevious),
       bounce_rate: calcRate(currentMetric?.bounces, sentValue),
+      bounce_rate_change: calcRateTrend(bounceRateCurrent, bounceRatePrevious),
       active_sequences: (Number(activeStats?.seq_count || 0) + Number(activeStats?.camp_count || 0)),
       total_recipients: totalRecipients?.count || 0,
       pending_tasks: pendingTasks?.count || 0,

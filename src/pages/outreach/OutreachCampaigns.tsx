@@ -58,6 +58,7 @@ export default function OutreachCampaigns() {
   const [funnelStage, setFunnelStage] = useState<'ALL' | 'TOFU' | 'MOFU' | 'BOFU'>('ALL');
   const [funnelStats, setFunnelStats] = useState<any[]>([]);
   const [timeframe, setTimeframe] = useState<string>('30d');
+  const [analyticsData, setAnalyticsData] = useState<{ open_rate_change: number | null; reply_rate_change: number | null } | null>(null);
 
   const loadFunnelStats = useCallback(async (tf?: string, tz?: string) => {
     try {
@@ -73,8 +74,9 @@ export default function OutreachCampaigns() {
     setIsLoading(true);
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const [data] = await Promise.all([
+      const [data, analytics] = await Promise.all([
         api.fetchCampaigns(timeframe, tz),
+        api.fetchAnalytics(timeframe, undefined, tz),
         loadFunnelStats(timeframe, tz)
       ]);
       setCampaigns((data ?? []).map((c: any) => ({
@@ -86,12 +88,18 @@ export default function OutreachCampaigns() {
         pendingTasks: c.pendingTasks || 0,
         createdAt: c.created_at ? c.created_at.slice(0, 10) : 'N/A',
       })));
+      if (analytics) {
+        setAnalyticsData({
+          open_rate_change: analytics.open_rate_change ?? null,
+          reply_rate_change: analytics.reply_rate_change ?? null,
+        });
+      }
     } catch (error) {
       console.error('Error fetching campaigns:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [api.activeProjectId, api.fetchCampaigns, loadFunnelStats, timeframe]);
+  }, [api.activeProjectId, api.fetchCampaigns, api.fetchAnalytics, loadFunnelStats, timeframe]);
 
   // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
@@ -251,15 +259,15 @@ export default function OutreachCampaigns() {
           label="Avg. Open Rate" 
           value={`${avgOpenRate}%`} 
           icon={<MousePointer2 className="text-amber-400" />}
-          trend="up"
-          trendValue="+2.4%"
+          trend={analyticsData?.open_rate_change == null ? 'neutral' : analyticsData.open_rate_change > 0 ? 'up' : 'down'}
+          trendValue={analyticsData?.open_rate_change != null ? `${analyticsData.open_rate_change > 0 ? '+' : ''}${analyticsData.open_rate_change}pp` : undefined}
         />
         <OutreachMetricCard 
           label="Avg. Reply Rate" 
           value={`${avgReplyRate}%`} 
           icon={<MessageSquare className="text-emerald-400" />}
-          trend="up"
-          trendValue="+0.8%"
+          trend={analyticsData?.reply_rate_change == null ? 'neutral' : analyticsData.reply_rate_change > 0 ? 'up' : 'down'}
+          trendValue={analyticsData?.reply_rate_change != null ? `${analyticsData.reply_rate_change > 0 ? '+' : ''}${analyticsData.reply_rate_change}pp` : undefined}
         />
         <OutreachMetricCard 
           label="Conversion Engine" 
