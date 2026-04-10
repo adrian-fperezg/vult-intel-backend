@@ -531,30 +531,63 @@ app.get("/api/tracking/open", async (req, res) => {
   res.end(pixel);
 });
 
-// ─── UNSUBSCRIBE (PUBLIC) ─────────────────────────────────────────────────────
-app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ error: "Token is required" });
+// ─── UNSUBSCRIBE (PUBLIC — no auth required) ──────────────────────────────────
+// NEW: Accepts email, contact_id (c), project_id (p) as query params or POST body.
+// LEGACY: Also accepts the old encrypted token in the POST body for backwards compat.
+app.get("/api/outreach/unsubscribe", express.json(), async (req, res) => {
+  // This GET endpoint lets the frontend confirm an email is valid before showing the confirm page.
+  const { email } = req.query as { email?: string };
+  if (!email || !email.includes('@')) return res.status(400).json({ error: "Valid email required" });
+  res.json({ email, ready: true });
+});
 
+app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
   try {
-    const rawCipher = Buffer.from(token, 'base64').toString('utf8');
-    const email = decryptToken(rawCipher);
-    
-    if (!email || !email.includes('@')) {
-       return res.status(400).json({ error: "Invalid or malformed token." });
+    const {
+      email: directEmail,
+      contact_id,
+      project_id,
+      token // legacy encrypted-token path
+    } = req.body;
+
+    let resolvedEmail = directEmail;
+
+    // Legacy token path — keep working for any old links still in circulation
+    if (!resolvedEmail && token) {
+      try {
+        const rawCipher = Buffer.from(token, 'base64').toString('utf8');
+        resolvedEmail = decryptToken(rawCipher);
+      } catch {
+        return res.status(400).json({ error: "Invalid or expired token." });
+      }
     }
 
+    if (!resolvedEmail || !resolvedEmail.includes('@')) {
+      return res.status(400).json({ error: "Valid email is required." });
+    }
+
+    const emailLower = resolvedEmail.toLowerCase().trim();
+
+    // 1. Add to global suppression list (idempotent)
     const id = uuidv4();
     await db.prepare(`
       INSERT INTO suppression_list (id, email, reason)
       VALUES (?, ?, 'user_request')
       ON CONFLICT(email) DO NOTHING
-    `).run(id, email);
-    
-    await db.prepare(`
-      UPDATE outreach_contacts SET status = 'blacklisted' WHERE email = ?
-    `).run(email);
+    `).run(id, emailLower);
 
+    // 2. Mark contact as 'unsubscribed' (by contact_id if provided, else by email)
+    if (contact_id) {
+      await db.prepare(
+        `UPDATE outreach_contacts SET status = 'unsubscribed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).run(contact_id);
+    } else {
+      await db.prepare(
+        `UPDATE outreach_contacts SET status = 'unsubscribed', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?`
+      ).run(emailLower);
+    }
+
+    console.log(`[Unsubscribe] ${emailLower} (contact: ${contact_id || 'unknown'}) opted out. Project: ${project_id || 'unknown'}`);
     res.json({ success: true, message: "Unsubscribed successfully" });
   } catch (err: any) {
     console.error("[Unsubscribe Error]:", err.message);

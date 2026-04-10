@@ -246,8 +246,20 @@ export default function OutreachContacts() {
     else { setSortKey(key); setSortDir('asc'); }
   };
 
+  // Compliance guard: prevent deletion of unsubscribed contacts
+  const hasUnsubscribedSelected = useMemo(() => {
+    return contacts.some(c => selectedIds.has(c.id) && c.status === 'unsubscribed');
+  }, [contacts, selectedIds]);
+
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
+
+    // Hard compliance block: refuse to delete unsubscribed contacts
+    if (hasUnsubscribedSelected) {
+      toast.error('Selection includes unsubscribed contacts. Remove them from the selection before deleting.');
+      return;
+    }
+
     setIsDeleting(true);
     try {
       await api.deleteContactsBulk(Array.from(selectedIds));
@@ -497,12 +509,22 @@ export default function OutreachContacts() {
                   {isVerifying ? 'Verifying...' : 'Verify Emails'}
                 </button>
                 <div className="h-6 w-px bg-white/5" />
-                <button
-                  onClick={() => setDeleteDialog(true)}
-                  className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-400 hover:text-white hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-all"
+                <div
+                  title={hasUnsubscribedSelected ? 'Unsubscribed contacts cannot be deleted to maintain compliance records.' : undefined}
                 >
-                  <Trash2 className="size-4" /> Delete
-                </button>
+                  <button
+                    onClick={() => setDeleteDialog(true)}
+                    disabled={hasUnsubscribedSelected}
+                    className={cn(
+                      'flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all border',
+                      hasUnsubscribedSelected
+                        ? 'text-slate-600 border-slate-700 cursor-not-allowed opacity-50'
+                        : 'text-red-400 hover:text-white hover:bg-red-500/20 border-red-500/20'
+                    )}
+                  >
+                    <Trash2 className="size-4" /> Delete
+                  </button>
+                </div>
                 <button
                   onClick={() => setSelectedIds(new Set())}
                   className="p-2 text-slate-500 hover:text-white"

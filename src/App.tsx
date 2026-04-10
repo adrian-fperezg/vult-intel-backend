@@ -54,6 +54,7 @@ export default function App() {
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/unsubscribe" element={<Unsubscribe />} />
           <Route path="/unsubscribe/:token" element={<Unsubscribe />} />
           <Route path="/pending-checkout" element={<PendingCheckout />} />
 

@@ -745,6 +745,17 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     throw new Error("Email is on the global suppression list. Job discarded.");
   }
 
+  // --- UNSUBSCRIBED CONTACT CHECK ---
+  // This is the CAN-SPAM hard stop. Never send to a contact who opted out.
+  if (email.contact_id) {
+    const contactStatus = await db.prepare("SELECT status FROM outreach_contacts WHERE id = ?").get(email.contact_id) as any;
+    if (contactStatus && (contactStatus.status === 'unsubscribed' || contactStatus.status === 'blacklisted')) {
+      console.warn(`[processEmail] COMPLIANCE BLOCK: Contact ${email.contact_id} is ${contactStatus.status}. Aborting send.`);
+      await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', error_code = 'UNSUBSCRIBED' WHERE id = ?").run(emailId);
+      return;
+    }
+  }
+
   // --- DYNAMIC FOOTER INJECTION ---
   // Using simple base64 wrapping the AES encryption token so it is URL-safe
   let safeToken = "";
@@ -772,7 +783,14 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     console.warn('[Footer Injection] Could not fetch business_address:', err.message);
   }
 
-  const unsubscribeUrl = `${frontendBase}/unsubscribe/${safeToken}`;
+  // Build a clean, transparent unsubscribe URL using query params
+  // This avoids Railway 404s caused by /unsubscribe/:token hitting the API server
+  const unsubParams = new URLSearchParams({
+    email: email.to_email,
+    ...(email.contact_id ? { c: email.contact_id } : {}),
+    ...(email.project_id ? { p: email.project_id } : {}),
+  });
+  const unsubscribeUrl = `${frontendBase}/unsubscribe?${unsubParams.toString()}`;
   const customFooter = `
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
       <tr>
