@@ -73,8 +73,6 @@ interface StepNodeProps {
   onAddStep: (parentId: string | null) => void;
   isOptimizing: boolean;
   handleOptimizeStep: (stepId: string) => void;
-  activeStepId: string | null;
-  setActiveStepId: (id: string | null) => void;
   onPreview: (subject: string, body: string) => void;
   analytics?: Record<string, any>;
   handleActivate: () => void;
@@ -93,8 +91,6 @@ function StepNode({
   onAddStep,
   isOptimizing,
   handleOptimizeStep,
-  activeStepId,
-  setActiveStepId,
   onPreview,
   analytics,
   handleActivate,
@@ -104,7 +100,6 @@ function StepNode({
 }: StepNodeProps) {
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
-  const isExpanded = activeStepId === step.id;
 
   const children = allSteps.filter(s => s.parent_step_id === step.id);
   const nextStepNode = children[0]; // Strict linear: only one next step possible
@@ -176,69 +171,33 @@ function StepNode({
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn(
-          "group relative w-full flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
-          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
-        )}
+        className="group relative w-full flex-shrink-0 bg-[#161b22] border border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-6 rounded-2xl"
       >
-        <div className={cn(
-          "flex items-start justify-between gap-4 cursor-pointer",
-          !isExpanded && "items-center"
-        )} onClick={() => setActiveStepId(isExpanded ? null : step.id)}>
+        <div className="flex items-start justify-between gap-4 border-b border-white/5 pb-4 mb-6">
           <div className="flex items-center gap-3">
-            <div className={cn(
-              "rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
-              isExpanded ? "size-10" : "size-8",
-              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" : "bg-white/5 border-white/10 text-slate-400"
-            )}>
-              {step.step_type === 'email' ? <Mail className={cn(isExpanded ? "size-5" : "size-4")} /> : <Clock className={cn(isExpanded ? "size-5" : "size-4")} />}
+            <div className="rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105 size-10 bg-teal-500/10 border-teal-500/20 text-teal-400">
+              <Mail className="size-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                   Step {step.step_number}
                 </span>
-                {!isExpanded && <span className="text-[10px] text-slate-600 font-bold">•</span>}
-                {!isExpanded && (
-                  <span className={cn(
-                    "text-[10px] font-bold uppercase tracking-wider",
-                    step.step_type === 'email' ? "text-teal-500/70" : "text-slate-500/70"
-                  )}>{step.step_type}</span>
-                )}
+                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-500/70">email</span>
               </div>
-              <h4 className={cn(
-                "font-semibold text-white truncate",
-                isExpanded ? "text-sm" : "text-xs"
-              )}>
+              <h4 className="font-semibold text-white truncate text-sm">
                 {step.config.subject || 'Untitled Step'}
               </h4>
-              {isExpanded && step.step_type === 'email' && (
-                <p className="text-xs text-slate-500 mt-1 line-clamp-1 opacity-80">
-                  {step.config.body_html?.replace(/<[^>]*>?/gm, '') || 'Set up your message...'}
-                </p>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {!isExpanded && step.step_type === 'email' && (
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/5 border border-white/5 mr-2">
-                <SendHorizontal className="size-2.5 text-teal-500/70" />
-                <span className="text-[10px] font-bold text-white">{analytics?.[step.id]?.sent ?? 0}</span>
-                <span className="mx-1 opacity-20 text-white leading-none">|</span>
-                <Eye className="size-2.5 text-blue-500/70" />
-                <span className="text-[10px] font-bold text-white">{(analytics?.[step.id]?.openRate ?? 0).toFixed(0)}%</span>
-              </div>
-            )}
-            {!isExpanded && <FileText className="size-3.5 text-slate-500" />}
-            {step.step_type === 'email' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onPreview(step.config.subject, step.config.body_html); }}
-                className="p-2 hover:bg-teal-500/10 rounded-lg text-slate-500 hover:text-teal-400 transition-colors"
-                title="Preview Email"
-              >
-                <Eye className="size-3.5" />
-              </button>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onPreview(step.config.subject, step.config.body_html); }}
+              className="p-2 hover:bg-teal-500/10 rounded-lg text-slate-500 hover:text-teal-400 transition-colors"
+              title="Preview Email"
+            >
+              <Eye className="size-3.5" />
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(step.id); }}
               className="p-2 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
@@ -248,8 +207,7 @@ function StepNode({
           </div>
         </div>
 
-        {isExpanded && step.step_type === 'email' && (
-          <div className="mt-4 grid grid-cols-4 gap-2">
+        <div className="mt-4 grid grid-cols-4 gap-2 mb-6">
             <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
               <div className="p-1.5 rounded-lg bg-teal-500/10 text-teal-400 group-hover/pill:bg-teal-500/20 transition-colors">
                 <SendHorizontal className="size-3.5" />
@@ -292,15 +250,8 @@ function StepNode({
           </div>
         )}
 
-        <AnimatePresence>
-          {isExpanded && step.step_type === 'email' && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 space-y-4 overflow-hidden"
-            >
-              <div className="space-y-4">
+        <div className="space-y-6">
+          <div className="space-y-4">
                 <div className="flex items-end gap-4">
                   {!isFirst ? (
                     <div className="flex-1">
@@ -485,9 +436,8 @@ function StepNode({
                   </p>
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          </div>
+        </div>
       </motion.div>
 
       <div className="flex flex-col items-center w-full">
@@ -502,8 +452,6 @@ function StepNode({
             onAddStep={onAddStep}
             isOptimizing={isOptimizing}
             handleOptimizeStep={handleOptimizeStep}
-            activeStepId={activeStepId}
-            setActiveStepId={setActiveStepId}
             onPreview={onPreview}
             analytics={analytics}
             handleActivate={handleActivate}
@@ -514,10 +462,10 @@ function StepNode({
         )}
         {!nextStepNode && (
           <div className="flex flex-col items-center w-full">
-            <div className="h-5 w-px bg-white/10" />
+            <div className="h-8 w-px bg-white/10" />
             <button
               onClick={() => onAddStep(step.id)}
-              className="flex items-center justify-center gap-2 w-[280px] py-3 rounded-xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold shadow-lg hover:shadow-teal-500/5 active:scale-95"
+              className="flex items-center justify-center gap-2 w-[280px] py-3 rounded-2xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold shadow-lg hover:shadow-teal-500/5 active:scale-95"
             >
               <Plus className="size-4" />
               Add Next Step
@@ -555,7 +503,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
 
 
-  const [activeStepId, setActiveStepId] = useState<string | null>(null);
 
   const [previewData, setPreviewData] = useState<{
     subject: string;
@@ -758,7 +705,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       },
     };
     setSteps([...steps, newStep]);
-    setActiveStepId(newStep.id);
     setHasUnsavedChanges(true);
   };
 
@@ -1046,8 +992,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   onAddStep={addStep}
                   isOptimizing={isOptimizing}
                   handleOptimizeStep={handleOptimizeStep}
-                  activeStepId={activeStepId}
-                  setActiveStepId={setActiveStepId}
                   onPreview={handlePreview}
                   analytics={stepAnalytics}
                   handleActivate={handleActivate}
