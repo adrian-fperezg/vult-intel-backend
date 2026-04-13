@@ -55,7 +55,6 @@ interface Sequence {
   from_email?: string;
   from_name?: string;
   recipients?: any[];
-  smart_intent_bypass: boolean;
   use_recipient_timezone?: boolean;
   funnel_stage: 'TOFU' | 'MOFU' | 'BOFU';
   smart_send: boolean;
@@ -858,7 +857,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         mailbox_id: sequence.mailbox_id,
         daily_send_limit: sequence.daily_send_limit,
         stop_on_reply: sequence.stop_on_reply,
-        smart_intent_bypass: sequence.smart_intent_bypass,
         smart_send_min_delay: sequence.smart_send_min_delay,
         smart_send_max_delay: sequence.smart_send_max_delay,
         from_email: sequence.from_email,
@@ -1409,27 +1407,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                       </div>
                     </button>
                   </div>
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Intelligent Flow</label>
-                    <button
-                      onClick={() => setSequence(prev => prev ? { ...prev, smart_intent_bypass: !prev.smart_intent_bypass } : null)}
-                      className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
-                    >
-                      <div className="flex flex-col items-start gap-0.5">
-                        <span className="text-sm text-slate-300">Smart Intent Bypass</span>
-                        <span className="text-[10px] text-slate-500">Keep sequence active if no keyword match is found</span>
-                      </div>
-                      <div className={cn(
-                        "w-10 h-5 rounded-full relative transition-colors p-1",
-                        sequence?.smart_intent_bypass ? "bg-purple-600" : "bg-white/10"
-                      )}>
-                        <div className={cn(
-                          "size-3 rounded-full bg-white transition-all shadow-sm",
-                          sequence?.smart_intent_bypass ? "translate-x-5" : "translate-x-0"
-                        )} />
-                      </div>
-                    </button>
-                  </div>
+
                   <div className="space-y-4">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Advanced Scheduling</label>
                     <button

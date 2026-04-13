@@ -30,7 +30,6 @@ interface Sequence {
   reply_rate: number;
   bounce_rate: number;
   created_at: string;
-  smart_intent_bypass: boolean;
 }
 
 export default function OutreachSequences() {

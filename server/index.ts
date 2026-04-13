@@ -1593,51 +1593,8 @@ app.get("/api/outreach/stats", verifyFirebaseToken, async (req: AuthRequest, res
     const overallReplyRate = Number(totalSentCount) > 0 ? (Number(totalRepliedCount) / Number(totalSentCount)) * 100 : 0;
     const overallBounceRate = Number(totalSentCount) > 0 ? (Number(totalBouncedCount) / Number(totalSentCount)) * 100 : 0;
 
-    // AI Insight Engine (One-liner for Dashboard)
-    let insight = "Fetching performance insights...";
-    const activeEntities = await db.all<{ name: string; sent: number; opened: number; replied: number }>(`
-      SELECT 
-        name,
-        (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at BETWEEN ? AND ?) as sent,
-        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
-        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied
-      FROM outreach_sequences s WHERE project_id = ? AND status = 'active'
-      UNION ALL
-      SELECT 
-        name,
-        (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'sent' AND sent_at BETWEEN ? AND ?) as sent,
-        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ?) as opened,
-        (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ?) as replied
-      FROM outreach_campaigns c WHERE project_id = ? AND status = 'sending'
-    `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, projectId);
-
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    if (geminiKey && activeEntities.length > 0) {
-      const entityData = activeEntities.map(s => `${s.name}: Sent ${s.sent}, Opened ${s.opened}, Replied ${s.replied}`).join("\n");
-      const aiPrompt = `Analyze these outreach campaigns/sequences for the period [${timeframe || 'last 30 days'}] and provide exactly ONE sentence of minimalist, high-impact performance insight. Identify the top performer and the core reason (open rate vs reply rate) for its success. Stay professional and concise.
-        
-        Activities Performance:
-        ${entityData}`;
-
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const result = await ai.models.generateContent({
-          model: 'gemini-1.5-flash-8b',
-          contents: [{ parts: [{ text: aiPrompt }] }]
-        });
-        insight = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || insight;
-      } catch (err: any) {
-        await sendAlert({
-          source: 'Backend',
-          customTitle: '🚨 AI Provider Error: Gemini (Insights)',
-          errorMessage: err.message,
-          stackTrace: err.stack,
-          requestPath: '/api/outreach/stats',
-          payload: { prompt: aiPrompt.slice(0, 500) }
-        });
-        insight = "Send more emails to unlock AI-powered growth insights.";
-      }
-    }
+    // Static insight — AI insights removed to prevent unnecessary errors
+    const insight = "Send more emails to unlock performance insights.";
 
     const stats = {
       sendVelocity,
@@ -1954,7 +1911,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const allowedFields = [
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end',
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
-    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name', 'custom_intent_logic', 'smart_intent_bypass',
+    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name',
     'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage', 'smart_send'
   ];
 
@@ -2008,10 +1965,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
       await db.run("UPDATE outreach_sequences SET project_id = ? WHERE id = ?", req.projectId, id);
       await db.run("UPDATE outreach_sequence_steps SET project_id = ? WHERE sequence_id = ?", req.projectId, id);
     }
-    // Inyección forzada para guardar el estado del botón Bypass
-    if (req.body.smart_intent_bypass !== undefined) {
-      (filteredUpdates as any)['smart_intent_bypass'] = req.body.smart_intent_bypass ? 1 : 0;
-    }
+
     const sets = Object.keys(filteredUpdates).map(key => `${key} = ?`).join(', ');
     const values = Object.values(filteredUpdates);
 

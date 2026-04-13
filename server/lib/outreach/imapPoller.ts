@@ -3,8 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
-import { cleanEmailBody, matchKeyword, findOriginalEmail, findRepliedConditionAhead, handleSequenceIntent, recordOutreachEvent, isBounce } from './utils.js';
-import { scheduleNextStep, evaluateIntent } from './sequenceEngine.js';
+import { findOriginalEmail, recordOutreachEvent, isBounce } from './utils.js';
 import { sendAlert } from '../notifier.js';
 
 
@@ -15,7 +14,6 @@ export interface ImapConfig {
 async function extractEmailBody(msg: imap.Message): Promise<string> {
   let fullBody = '';
   
-  // Sort parts so text/plain comes first
   const sortedParts = [...msg.parts].sort((a: any, b: any) => {
     if (a.which === 'TEXT' && b.which !== 'TEXT') return -1;
     if (a.which !== 'TEXT' && b.which === 'TEXT') return 1;
@@ -28,11 +26,9 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
         const parsed = await simpleParser(part.body);
         const partText = (parsed.text || parsed.html || '').trim();
         if (partText) {
-          // If we find plain text, we prioritize it
           if (parsed.text) {
             fullBody += (fullBody ? '\n' : '') + parsed.text.trim();
           } else if (parsed.html && !fullBody) {
-             // Use HTML only if no plain text found yet
              fullBody = parsed.html.trim();
           }
         }
@@ -57,7 +53,7 @@ export async function pollImap(mailboxId: string) {
       host: mailbox.imap_host,
       port: mailbox.imap_port,
       tls: mailbox.imap_secure === 1 || mailbox.imap_secure === true,
-      tlsOptions: { rejectUnauthorized: false }, // Bypass self-signed cert check
+      tlsOptions: { rejectUnauthorized: false },
       authTimeout: 10000
     }
   };
@@ -71,7 +67,7 @@ export async function pollImap(mailboxId: string) {
     yesterday.setDate(yesterday.getDate() - 1);
     
     const searchCriteria = [['SINCE', yesterday]];
-    console.log(`[IMAP DEBUG] Searching IMAP with criteria: ${JSON.stringify(searchCriteria)}`);
+    console.log(`[IMAP] Searching IMAP with criteria: ${JSON.stringify(searchCriteria)}`);
 
     const fetchOptions = {
       bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)', 'TEXT', ''],
@@ -79,46 +75,29 @@ export async function pollImap(mailboxId: string) {
     };
 
     const messages = await connection.search(searchCriteria, fetchOptions);
-    console.log(`[IMAP DEBUG] IMAP returned ${messages.length} raw messages.`);
+    console.log(`[IMAP] IMAP returned ${messages.length} raw messages.`);
 
     for (const msg of messages) {
       const uid = msg.attributes.uid;
       
       try {
-        // DE-DUPLICATION CHECK: Skip if we already have this email recorded as a reply or sent email
         const headerPart = msg.parts.find((p: any) => p.which.includes('HEADER.FIELDS'));
         const headers = headerPart?.body;
         if (!headers) continue;
 
         const messageId = (headers?.['message-id']?.[0] || '').toString();
         
-        let needsRehydration = false;
-        let existingEmailId = null;
-
+        // De-duplication: skip if already recorded as a reply event
         if (messageId) {
-          const existingEmail = await db.prepare("SELECT id, body FROM outreach_individual_emails WHERE message_id = ?").get(messageId) as any;
-          const existingEvent = await db.prepare("SELECT id FROM outreach_events WHERE type = 'email_replied' AND event_key = ?").get(`replied:${messageId}`);
-          
-          if (existingEmail) {
-            needsRehydration = (!existingEmail.body || existingEmail.body.trim().length === 0);
-            existingEmailId = existingEmail.id;
-            
-            if (existingEvent && !needsRehydration) {
-              // Already fully processed
-              continue;
-            }
-          }
-        }
-
-        if (needsRehydration) {
-          console.log(`[IMAP DEBUG] Re-hydrating body for existing IMAP message: ${messageId}`);
+          const existingEvent = await db.prepare("SELECT id FROM outreach_events WHERE type = 'replied' AND event_key = ?").get(`replied:imap:${uid}`);
+          if (existingEvent) continue;
         }
 
         const from = (headers.from?.[0] || '').toString();
         const subject = (headers.subject?.[0] || '').toString();
         const inReplyTo = headers['in-reply-to']?.[0];
 
-        console.log(`[IMAP] [UID: ${uid}] Processing UNSEEN email from ${from}: "${subject}"`);
+        console.log(`[IMAP] [UID: ${uid}] Processing email from ${from}: "${subject}"`);
 
         // 1. BOUNCE DETECTION
         if (isBounce(from, subject)) {
@@ -141,70 +120,42 @@ export async function pollImap(mailboxId: string) {
         const references = Array.isArray(referencesRaw) ? referencesRaw : [referencesRaw];
         const potentialMessageIds = [inReplyTo, ...references].filter(Boolean).map(id => id.replace(/[<>]/g, '').trim());
 
-        console.log(`[IMAP] [UID: ${uid}] Extracted potential Message-IDs for linking: ${JSON.stringify(potentialMessageIds)}`);
-
         const fromEmailMatch = (from || '').match(/<(.+)>/) || [null, from.trim()];
         const fromEmail = fromEmailMatch[1] || from.trim();
 
         const originalEmail = await findOriginalEmail(potentialMessageIds, undefined, fromEmail, mailbox.project_id);
         if (!originalEmail || !originalEmail.contact_id) {
-          console.log(`[REASON] Skipping email from ${from} (Subject: ${subject}) - No matching outreach email or active contact found in DB.`);
+          console.log(`[IMAP] Skipping email from ${from} (Subject: ${subject}) - No matching outreach email or active contact found in DB.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }
 
         console.log(`[IMAP] [UID: ${uid}] Successfully linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
 
-        // 2. CEREBRO DE INTENCIÓN (Adrian's Rules)
-        const rawBody = await extractEmailBody(msg);
-        let intentResult = { branched: false, matched: false, keyword: null as string | null };
-
+        // SIMPLE RULE: Any reply stops the sequence for this contact.
         if (originalEmail.sequence_id) {
-          intentResult = await evaluateIntent(
-            mailbox.project_id, originalEmail.sequence_id,
-            originalEmail.contact_id, rawBody, originalEmail
-          );
-        }
-
-        // 3. LÓGICA DE DECISIÓN ÚNICA
-        if (intentResult.matched) {
-          // MATCH: Rama YES activa, pausamos flujo principal
           await db.run(
-            "UPDATE outreach_sequence_enrollments SET status = 'replied', last_executed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?",
+            "UPDATE outreach_sequence_enrollments SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?",
             [originalEmail.sequence_id, originalEmail.contact_id]
           );
-          console.log(`[IMAP] MATCH detectado para "${intentResult.keyword}". YES activado.`);
-        } else {
-          // NO MATCH: Mantenemos ACTIVA para que siga con el NO
-          await db.run(
-            "UPDATE outreach_sequence_enrollments SET status = 'active' WHERE sequence_id = ? AND contact_id = ?",
-            [originalEmail.sequence_id, originalEmail.contact_id]
-          );
-          console.log(`[IMAP] Sin match. La secuencia continúa en flujo principal.`);
+          console.log(`[IMAP] Reply detected. Sequence STOPPED for contact ${originalEmail.contact_id}.`);
         }
 
-        // 4. PERSIST REPLY TO INDIVIDUAL EMAILS (Crucial for Deep Scan)
-        if (needsRehydration && existingEmailId) {
-          await db.run(`
-            UPDATE outreach_individual_emails 
-            SET body = ?, body_html = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-          `, [rawBody, rawBody, existingEmailId]);
-        } else {
-          const replyId = uuidv4();
-          await db.run(`
-            INSERT INTO outreach_individual_emails 
-            (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT (message_id) DO NOTHING
-          `, [
-            replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
-            originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-            from, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, originalEmail.thread_id, true
-          ]);
-        }
+        // Persist reply record
+        const rawBody = await extractEmailBody(msg);
+        const replyId = uuidv4();
+        await db.run(`
+          INSERT INTO outreach_individual_emails 
+          (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT (message_id) DO NOTHING
+        `, [
+          replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
+          originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
+          from, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, originalEmail.thread_id, true
+        ]);
 
-        // 5. ACTUALIZAR EMAIL ORIGINAL Y REGISTRAR EVENTO
+        // Mark original as replied
         await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
 
         await recordOutreachEvent({
@@ -212,10 +163,10 @@ export async function pollImap(mailboxId: string) {
           step_id: originalEmail.step_id, contact_id: originalEmail.contact_id,
           email_id: originalEmail.id, event_type: 'replied',
           event_key: `replied:imap:${uid}`,
-          metadata: { matched: intentResult.matched, keyword: intentResult.keyword, rehydrated: needsRehydration }
+          metadata: { subject }
         });
 
-        console.log(`[IMAP] [UID: ${uid}] Successfully processed reply (Rehydrated: ${needsRehydration}) for contact ${originalEmail.contact_id}`);
+        console.log(`[IMAP] [UID: ${uid}] Successfully processed reply for contact ${originalEmail.contact_id}`);
 
         await connection.addFlags(uid, ['\\Seen']);
 

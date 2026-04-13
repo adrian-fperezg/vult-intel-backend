@@ -2,7 +2,6 @@ import db, { DbWrapper } from '../../db.js';
 import { emailQueue } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
 import { DateTime } from 'luxon';
-import { handleSequenceIntent, matchKeyword, findRepliedConditionAhead } from './utils.js';
 
 export interface SequenceStep {
   id: string;
@@ -27,7 +26,6 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
     const sequence = await d.get<any>('SELECT status FROM outreach_sequences WHERE id = ?', [sequenceId]);
     const isScheduled = sequence?.status === 'scheduled';
 
-    // Usamos sintaxis limpia para Postgres
     await d.run(
       `INSERT INTO outreach_sequence_enrollments 
       (id, sequence_id, contact_id, project_id, status) 
@@ -35,8 +33,6 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
       [enrollmentId, sequenceId, contactId, projectId]
     );
 
-    // Solo arrancamos el paso 1 si la secuencia ya está activa.
-    // Si está 'scheduled', el master Job despertará a todos los contactos después.
     if (!isScheduled) {
       console.log(`[SequenceEngine] Sequence is ${sequence?.status}. Starting step 1 for contact ${contactId}.`);
       await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx);
@@ -54,8 +50,9 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
 }
 
 /**
- * Programa el siguiente paso. 
- * Si es un Match de Intención (YES), se puede configurar para ser instantáneo.
+ * Programa el siguiente paso en la rama indicada.
+ * RULE: Only a 'replied' event (set by the IMAP/Gmail poller) stops a sequence.
+ * Opens and clicks do NOT stop the sequence.
  */
 export async function scheduleNextStep(
   projectId: string,
@@ -63,19 +60,17 @@ export async function scheduleNextStep(
   contactId: string,
   parentStepId: string | null = null,
   branchPath: string = 'default',
-  tx?: DbWrapper,
-  isIntentMatch: boolean = false // Nuevo flag para envíos urgentes
+  tx?: DbWrapper
 ) {
   const d = tx || db;
 
-  // 0. Verificamos que el contacto deba seguir recibiendo correos
+  // 0. Only 'active' enrollments continue — if status is anything else (stopped, completed, replied), abort.
   const enrollment = await d.get<any>(
     'SELECT status FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
     [sequenceId, contactId]
   );
 
-  // Adrian: Permitimos 'active' (flujo normal) y 'replied' (cuando entra el YES)
-  if (!enrollment || (enrollment.status !== 'active' && enrollment.status !== 'replied')) {
+  if (!enrollment || enrollment.status !== 'active') {
     console.log(`[SequenceEngine] Flujo detenido para contacto ${contactId} (Status: ${enrollment?.status})`);
     return;
   }
@@ -86,7 +81,7 @@ export async function scheduleNextStep(
   const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]);
   if (!sequence) throw new Error('Sequence not found');
 
-  // 2. Buscamos el siguiente paso en la rama correcta (YES, NO o DEFAULT)
+  // 2. Buscamos el siguiente paso en la rama correcta
   let step: SequenceStep | undefined;
   if (parentStepId === null) {
     step = await d.get<SequenceStep>(
@@ -113,26 +108,16 @@ export async function scheduleNextStep(
   // 3. CÁLCULO DE TIEMPO
   let delayMs = 0;
   
-  // Fetch contact and sequence timezone info
   const contact = await d.get<any>('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?', [contactId]);
   const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
   const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'UTC');
 
-  // Calculate base intended time in the target zone
   let targetTime = DateTime.now().setZone(targetTz);
 
-  if (isIntentMatch) {
-    // Intent matches are urgent, but will still be subjected to window checks below
-    targetTime = targetTime.plus({ seconds: 5 });
-    console.log(`[SequenceEngine] INTENT MATCH! Target set for immediate (within window).`);
-  } else if (parentStepId === null) {
+  if (parentStepId === null) {
     if (step.scheduled_start_at) {
       if (useRecipientTz) {
-        // Re-align the scheduled start time to the recipient's timezone
-        // We take the local hour of the intended time and apply it to the recipient's zone
         const sequenceTz = sequence.send_timezone || 'UTC';
-        
-        // Robust parsing: PG returns Date objects, SQLite/API might return strings
         const rawDate = step.scheduled_start_at as any;
         const intendedTime = (rawDate instanceof Date) 
           ? DateTime.fromJSDate(rawDate, { zone: sequenceTz })
@@ -167,11 +152,11 @@ export async function scheduleNextStep(
   delayMs = Math.max(0, delayMs);
 
   // Smart Send (Variación humana)
-  const smartDelayMs = isIntentMatch ? 0 : (Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000);
+  const smartDelayMs = Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000;
   const totalDelay = delayMs + smartDelayMs;
   const scheduledAt = new Date(Date.now() + totalDelay);
 
-  // 4. ACTUALIZACIÓN Y COLA
+  // 5. ACTUALIZACIÓN Y COLA
   await d.run(
     `UPDATE outreach_sequence_enrollments 
      SET next_step_id = ?, scheduled_at = ?, last_error = NULL 
@@ -216,61 +201,6 @@ export async function cancelPendingSequenceJobs(sequenceId: string, contactId: s
     "UPDATE outreach_individual_emails SET status = 'cancelled' WHERE sequence_id = ? AND contact_id = ? AND status = 'scheduled'",
     [sequenceId, contactId]
   );
-}
-
-/**
- * EVALUADOR DE INTENCIONES (El Cerebro de Adrian)
- */
-export async function evaluateIntent(projectId: string, sequenceId: string, contactId: string, rawBody: string, originalEmail: any) {
-  console.log(`[SequenceEngine] Analizando respuesta del contacto ${contactId}...`);
-
-  // 1. Verificamos palabra clave GLOBAL (La del Sequence Builder)
-  const intent = await handleSequenceIntent(originalEmail, rawBody);
-
-  if (intent.hijacked && intent.yesStepId) {
-    console.log(`[SequenceEngine] MATCH GLOBAL detectado: "${intent.keyword}". Saltando a rama YES.`);
-
-    await db.run(`
-      INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [uuidv4(), contactId, projectId, sequenceId, intent.parentStepId, 'sequence_condition_evaluated', JSON.stringify({
-      evaluatedBranch: 'yes',
-      result: true,
-      reason: `Match palabra clave: '${intent.keyword}'`
-    })]);
-
-    // Mandamos el YES inmediatamente (usando isIntentMatch: true)
-    await scheduleNextStep(projectId, sequenceId, contactId, intent.parentStepId, 'yes', undefined, true);
-    return { branched: true, matched: true, keyword: intent.keyword };
-  }
-
-  // 2. Verificamos si hay pasos de CONDICIÓN específicos adelante
-  if (originalEmail.step_id) {
-    const steps = await db.all("SELECT * FROM outreach_sequence_steps WHERE sequence_id = ?", [sequenceId]) as any[];
-    const conditionStep = findRepliedConditionAhead(steps, originalEmail.step_id);
-
-    if (conditionStep?.condition_keyword) {
-      const keywordMatched = matchKeyword(rawBody, conditionStep.condition_keyword);
-      console.log(`[DEBUG] Checking reply for contact ${contactId}: Keyword '${conditionStep.condition_keyword}' found in body? ${keywordMatched ? 'Yes' : 'No'}.`);
-
-      if (keywordMatched) {
-        console.log(`[SequenceEngine] Match en paso de condición: "${conditionStep.condition_keyword}".`);
-
-        await db.run(`
-          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [uuidv4(), contactId, projectId, sequenceId, conditionStep.id, 'sequence_condition_evaluated', JSON.stringify({
-          evaluatedBranch: 'yes',
-          result: true
-        })]);
-
-        await scheduleNextStep(projectId, sequenceId, contactId, conditionStep.id, 'yes', undefined, true);
-        return { branched: true, matched: true, keyword: conditionStep.condition_keyword };
-      }
-    }
-  }
-
-  return { branched: false, matched: false, keyword: null };
 }
 
 /**
@@ -322,7 +252,6 @@ export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime
     if (sequence.send_on_weekdays) {
       const raw = sequence.send_on_weekdays;
       if (typeof raw === 'string' && raw.startsWith('{') && raw.endsWith('}')) {
-        // Postgres array format: {"true","false",...}
         allowedDays = raw.slice(1, -1).split(',').map((v: string) => v.replace(/"/g, '').trim().toLowerCase() === 'true');
       } else if (typeof raw === 'string') {
         const parsed = JSON.parse(raw);

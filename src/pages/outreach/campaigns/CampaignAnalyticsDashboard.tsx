@@ -35,7 +35,7 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
   const loadAnalytics = async () => {
     setIsLoading(true);
     try {
-      const result = await api.fetchAnalytics(timeRange, campaignId);
+      const result = await api.fetchAnalytics(timeRange.toString(), campaignId);
       setData(result);
     } catch (error) {
       console.error('Error fetching campaign analytics:', error);

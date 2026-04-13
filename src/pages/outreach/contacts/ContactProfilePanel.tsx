@@ -1,14 +1,13 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, Mail, Phone, Building2, Globe, Linkedin, 
+import {
+  X, Mail, Phone, Building2, Globe, Linkedin,
   MapPin, Clock, ArrowUpRight, Tag, Activity,
   Calendar, CheckCircle2, XCircle, MousePointer2, Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge } from '../OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-
 
 interface ContactProfilePanelProps {
   contact: any | null;
@@ -36,6 +35,13 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
     }
   }, [isOpen, activeTab, contact?.id]);
 
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
   const loadActivity = async () => {
     if (!contact?.id) return;
     setIsLoadingActivity(true);
@@ -46,7 +52,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
           id: e.id,
           type: e.type,
           title: getEventTitle(e),
-          date: new Date(e.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
+          date: formatDate(e.created_at),
           timestamp: new Date(e.created_at),
           icon: getEventIcon(e.type),
           color: getEventColor(e.type),
@@ -58,7 +64,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
           type: m.is_reply ? 'reply' : 'sent',
           title: m.is_reply ? 'Reply Received' : 'Email Sent',
           body: m.subject,
-          date: new Date(m.sent_at || m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
+          date: formatDate(m.sent_at || m.created_at),
           timestamp: new Date(m.sent_at || m.created_at),
           icon: m.is_reply ? Mail : Mail,
           color: m.is_reply ? 'text-green-400' : 'text-blue-400'
@@ -132,7 +138,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
               <div className="flex items-center gap-4">
                 <div className="size-16 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
                   <span className="text-xl font-bold text-teal-400">
-                    {contact.firstName?.[0]}{contact.lastName?.[0]}
+                    {contact.firstName?.[0] || '?'}{contact.lastName?.[0] || ''}
                   </span>
                 </div>
                 <div>
@@ -140,10 +146,10 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                     {contact.firstName} {contact.lastName}
                   </h2>
                   <p className="text-sm text-slate-400">{contact.title} at {contact.company}</p>
-                  
+
                   <div className="flex items-center gap-2 mt-2">
                     <OutreachBadge variant={contact.status === 'replied' ? 'green' : contact.status === 'active' ? 'teal' : 'gray'}>
-                      {contact.status.replace('_', ' ').toUpperCase()}
+                      {contact.status?.replace('_', ' ').toUpperCase() || 'NOT ENROLLED'}
                     </OutreachBadge>
                     {contact.emailVerified && (
                       <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-400/20">
@@ -153,7 +159,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                   </div>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={onClose}
                 className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
               >
@@ -169,8 +175,8 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                   onClick={() => setActiveTab(tab)}
                   className={cn(
                     "px-4 py-3 text-sm font-semibold capitalize border-b-2 transition-colors",
-                    activeTab === tab 
-                      ? "border-teal-400 text-teal-400" 
+                    activeTab === tab
+                      ? "border-teal-400 text-teal-400"
                       : "border-transparent text-slate-400 hover:text-slate-200"
                   )}
                 >
@@ -196,7 +202,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                           <a href={`mailto:${contact.email}`} className="text-sm text-blue-400 hover:underline">{contact.email}</a>
                         </div>
                       </div>
-                      
+
                       {contact.phone && (
                         <div className="flex items-center gap-3">
                           <div className="size-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 shrink-0">
@@ -269,11 +275,11 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                         <div key={event.id} className="relative pl-6">
                           <div className={cn(
                             "absolute left-0 top-1 -translate-x-1/2 size-2.5 rounded-full border-2 border-[#161b22]",
-                            event.type === 'replied' || event.type === 'reply' ? 'bg-green-400' : 
-                            event.type === 'enrolled' ? 'bg-teal-400' : 
-                            event.type === 'bounced' ? 'bg-red-400' : 'bg-slate-400'
+                            event.type === 'replied' || event.type === 'reply' ? 'bg-green-400' :
+                              event.type === 'enrolled' ? 'bg-teal-400' :
+                                event.type === 'bounced' ? 'bg-red-400' : 'bg-slate-400'
                           )} />
-                          
+
                           <div className="flex items-center justify-between gap-4 mb-1">
                             <div className="flex items-center gap-2">
                               {event.icon && <event.icon className={cn("size-3", event.color)} />}
@@ -281,7 +287,7 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                             </div>
                             <span className="text-[10px] text-slate-500 whitespace-nowrap">{event.date}</span>
                           </div>
-                          
+
                           {(event.body || event.metadata?.subject) && (
                             <div className="mt-2 p-3 rounded-lg border border-white/5 bg-white/[0.02] text-xs text-slate-400 leading-relaxed italic">
                               "{event.body || event.metadata?.subject}"
@@ -302,12 +308,12 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                 </div>
               )}
             </div>
-            
+
             {/* Footer actions */}
             <div className="p-4 border-t border-white/10 flex gap-3 shrink-0">
-               <button className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-xl transition-colors">
-                 Edit Contact
-               </button>
+              <button className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-xl transition-colors">
+                Edit Contact
+              </button>
             </div>
           </motion.div>
         </>

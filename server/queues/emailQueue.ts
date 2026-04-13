@@ -11,7 +11,7 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
 import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
-import { recordOutreachEvent, matchKeyword } from '../lib/outreach/utils.js';
+import { recordOutreachEvent } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
 import { encryptToken } from '../lib/outreach/encrypt.js';
 
@@ -39,7 +39,7 @@ export const campaignQueue = new Queue('campaign-queue', {
   }
 });
 
-import { syncMailbox, syncMailboxHistory, setupGmailWatch, extractGmailBody } from '../lib/outreach/gmailSync.js';
+import { syncMailbox, syncMailboxHistory, setupGmailWatch } from '../lib/outreach/gmailSync.js';
 import { getValidAccessToken } from '../oauth.js';
 
 export async function pollMailboxes() {
@@ -400,25 +400,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           return;
         }
         
-        // --- REFRESH IMAP STATE (Sync-First for Replies) ---
-        if (step.condition_type === 'replied') {
-          console.log(`[Sequence] [Sync-First] Triggering fresh IMAP sync for condition evaluation of step ${stepId}`);
-          try {
-            const sequence = await db.prepare('SELECT mailbox_id FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
-            if (sequence?.mailbox_id) {
-               console.log(`[Sequence] [Sync-First] Awaiting blocking IMAP poll for mailbox ${sequence.mailbox_id}...`);
-               await pollImap(sequence.mailbox_id);
-               console.log(`[Sequence] [Sync-First] IMAP poll completed successfully for step ${stepId}.`);
-            } else {
-               console.warn(`[Sequence] [Sync-First] No mailbox_id found for sequence ${sequenceId}. Skipping sync.`);
-            }
-          } catch (syncErr: any) {
-            console.error(`[Sequence] [Sync-First] CRITICAL FAILURE: Priority IMAP sync failed for step ${stepId}: ${syncErr.message}`);
-            // We should NOT swallow this failure if we want reliable branching
-            throw new Error(`Sync-First failed: ${syncErr.message}`);
-          }
-        }
-
+        // SIMPLE RULE: Check for a 'replied' event in the events table.
+        // Opens and clicks are evaluated from outreach_events normally.
+        // Replies are evaluated by checking if ANY reply event exists for this contact in this sequence.
         const eventTypeMapping: Record<string, string> = {
           'opened': 'opened',
           'clicked': 'clicked',
@@ -426,91 +410,26 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         };
         const targetEventType = eventTypeMapping[step.condition_type] || 'opened';
 
-        // Get the latest event for this step/contact
-        const event = await db.prepare(`
-          SELECT * FROM outreach_events 
-          WHERE contact_id = ? AND type = ? AND step_id = ?
-          ORDER BY created_at DESC
-          LIMIT 1
-        `).get(contactId, targetEventType, parentEmailStepId) as any;
+        let branchPath: string;
 
-        let branchPath = event ? 'yes' : 'no';
-
-        // --- DEEP SCAN FOR REPLIES (Aggressive Detection) ---
         if (step.condition_type === 'replied') {
-          const replies = await db.prepare(`
-            SELECT * FROM outreach_individual_emails 
-            WHERE contact_id = ? AND is_reply = True
-          `).all(contactId) as any[];
+          // Check if a reply event exists for this contact in this sequence
+          const replyEvent = await db.prepare(`
+            SELECT id FROM outreach_events 
+            WHERE contact_id = ? AND sequence_id = ? AND type = 'replied'
+            LIMIT 1
+          `).get(contactId, sequenceId);
 
-          console.log(`[DEBUG] Found ${replies.length} replies in DB for contact ID ${contactId}`);
-
-          if (step.condition_keyword) {
-            let keywordFound = false;
-            
-            // 1. Try metadata from the latest event first
-            if (event?.metadata) {
-              try {
-                const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
-                keywordFound = meta.matched === true || meta.keyword_matched === true;
-              } catch { }
-            }
-
-            // 2. Fallback: Loop through ALL replies in DB and match manually
-            if (!keywordFound && replies.length > 0) {
-              console.log(`[DEBUG] Keyword not found in event metadata. Scanning ${replies.length} replies manually...`);
-              
-              // Resolve mailbox info for re-hydration if needed
-              const sequenceInfo = await db.prepare('SELECT mailbox_id FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
-              
-              for (const reply of replies) {
-                let body = (reply.body || '').trim();
-                
-                // HIGH-PRIORITY RE-HYDRATION: If body is empty and it's a Gmail mailbox
-                if (body.length === 0 && reply.message_id && sequenceInfo?.mailbox_id) {
-                  console.log(`[RECOVERY] High-priority re-hydration triggered for message_id: ${reply.message_id}`);
-                  try {
-                    const accessToken = await getValidAccessToken(sequenceInfo.mailbox_id);
-                    const msgRes = await fetch(
-                      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${reply.message_id}`,
-                      { headers: { Authorization: `Bearer ${accessToken}` } }
-                    );
-                    
-                    if (msgRes.ok) {
-                      const msgData = await msgRes.json();
-                      body = extractGmailBody(msgData.payload);
-                      
-                      if (body.length > 0) {
-                        console.log(`[RECOVERY] Successfully recovered body (Length: ${body.length}) for message_id: ${reply.message_id}. Updating DB.`);
-                        await db.run(
-                          "UPDATE outreach_individual_emails SET body = ?, body_html = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                          [body, body, reply.id]
-                        );
-                      }
-                    } else {
-                      console.error(`[RECOVERY] Failed to fetch message ${reply.message_id} from Gmail: ${msgRes.status}`);
-                    }
-                  } catch (recErr: any) {
-                    console.error(`[RECOVERY] Error during on-demand re-hydration:`, recErr.message);
-                  }
-                }
-
-                const snippet = body.substring(0, 150).replace(/\n/g, ' ');
-                console.log(`[DEBUG] Evaluating reply (Length: ${body.length}): "${snippet}${body.length > 150 ? '...' : ''}" against keyword: '${step.condition_keyword}'`);
-                
-                if (matchKeyword(body, step.condition_keyword)) {
-                  keywordFound = true;
-                  break;
-                }
-              }
-            }
-
-            branchPath = keywordFound ? 'yes' : 'no';
-            console.log(`[DEBUG] Final keyword evaluation for contact ${contactId}: '${step.condition_keyword}' found? ${keywordFound ? 'Yes' : 'No'}. (Branch: ${branchPath.toUpperCase()})`);
-          } else if (replies.length > 0) {
-            // If no keyword, ANY reply found in the DB means YES
-            branchPath = 'yes';
-          }
+          branchPath = replyEvent ? 'yes' : 'no';
+          console.log(`[Sequence] Reply check for contact ${contactId}: ${replyEvent ? 'Reply FOUND → YES branch' : 'No reply → NO branch'}`);
+        } else {
+          // For opened/clicked: check the event table against the parent email step
+          const event = await db.prepare(`
+            SELECT id FROM outreach_events 
+            WHERE contact_id = ? AND type = ? AND step_id = ?
+            LIMIT 1
+          `).get(contactId, targetEventType, parentEmailStepId);
+          branchPath = event ? 'yes' : 'no';
         }
 
         console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);
