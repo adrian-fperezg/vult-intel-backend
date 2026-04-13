@@ -58,6 +58,7 @@ import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
+import { getTrueNextStep, scheduleNextStep } from "./lib/outreach/sequenceEngine.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -426,6 +427,62 @@ app.get("/api/admin/force-reset-queue", async (_req, res) => {
     });
   }
 });
+app.get("/api/admin/sequence/force-recovery", async (req, res) => {
+  const { sequence_id } = req.query as { sequence_id: string };
+  if (!sequence_id) return res.status(400).json({ error: "sequence_id query param is required" });
+
+  try {
+    // 1. Fetch sequence to get project_id
+    const sequence = await db.get("SELECT project_id FROM outreach_sequences WHERE id = ?", [sequence_id]) as any;
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    const projectId = sequence.project_id;
+
+    // 2. Fetch all active enrollments for this sequence
+    const enrollments = await db.all(
+      "SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'active'",
+      [sequence_id]
+    );
+
+    console.log(`[Admin Recovery] Found ${enrollments.length} active enrollments for sequence ${sequence_id}. Starting recovery...`);
+
+    let retriggeredCount = 0;
+    const results = [];
+
+    for (const e of enrollments) {
+      try {
+        const { stepId, isCompleted } = await getTrueNextStep(projectId, sequence_id, e.contact_id);
+        
+        if (!isCompleted && stepId) {
+          // Identify the parent of this stepId to pass to scheduleNextStep
+          const step = await db.get("SELECT parent_step_id FROM outreach_sequence_steps WHERE id = ?", [stepId]) as any;
+          
+          await scheduleNextStep(projectId, sequence_id, e.contact_id, step?.parent_step_id || null);
+          retriggeredCount++;
+          results.push({ contactId: e.contact_id, stepId, status: 'retriggered' });
+        } else {
+          results.push({ contactId: e.contact_id, status: isCompleted ? 'completed' : 'no_pending_step' });
+        }
+      } catch (err: any) {
+        console.error(`[Admin Recovery] Failed for contact ${e.contact_id}:`, err.message);
+        results.push({ contactId: e.contact_id, status: 'error', error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      sequence: sequence_id,
+      analyzed: enrollments.length,
+      retriggered: retriggeredCount,
+      details: results
+    });
+
+  } catch (error: any) {
+    console.error("[Admin Recovery] FATAL ERROR:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 
 // ─── Google OAuth — PUBLIC (no Firebase token required) ──────────────────────
