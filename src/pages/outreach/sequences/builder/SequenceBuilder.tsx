@@ -248,7 +248,6 @@ function StepNode({
               </div>
             </div>
           </div>
-        )}
 
         <div className="space-y-6">
           <div className="space-y-4">
@@ -436,8 +435,7 @@ function StepNode({
                   </p>
                 </div>
               </div>
-          </div>
-        </div>
+            </div>
       </motion.div>
 
       <div className="flex flex-col items-center w-full">
