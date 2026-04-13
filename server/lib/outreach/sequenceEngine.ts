@@ -59,7 +59,7 @@ export async function scheduleNextStep(
   sequenceId: string,
   contactId: string,
   parentStepId: string | null = null,
-  branchPath: string = 'default',
+  _unusedBranchPath: string = 'default',
   tx?: DbWrapper
 ) {
   const d = tx || db;
@@ -81,7 +81,7 @@ export async function scheduleNextStep(
   const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]);
   if (!sequence) throw new Error('Sequence not found');
 
-  // 2. Buscamos el siguiente paso en la rama correcta
+  // 2. Buscamos el siguiente paso (Ignoramos branch_path para forzar flujo lineal)
   let step: SequenceStep | undefined;
   if (parentStepId === null) {
     step = await d.get<SequenceStep>(
@@ -89,9 +89,10 @@ export async function scheduleNextStep(
       [sequenceId]
     );
   } else {
+    // Pick the next step in line
     step = await d.get<SequenceStep>(
-      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
-      [sequenceId, parentStepId, branchPath]
+      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? LIMIT 1',
+      [sequenceId, parentStepId]
     );
   }
 
@@ -211,31 +212,23 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
     'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id IS NULL',
     [sequenceId]
   );
-  if (!currentStep) return { stepId: null, branchPath: 'default', isCompleted: true };
+  if (!currentStep) return { stepId: null, isCompleted: true };
 
-  let branchPath = 'default';
   while (currentStep) {
     const executionEvent = await db.get<any>(
-      "SELECT type, metadata FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type IN ('sequence_step_executed', 'sequence_condition_evaluated') ORDER BY created_at DESC LIMIT 1",
+      "SELECT type, metadata FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_step_executed' ORDER BY created_at DESC LIMIT 1",
       [contactId, sequenceId, currentStep.id]
     );
-    if (!executionEvent) return { stepId: currentStep.id, branchPath, isCompleted: false };
-
-    if (currentStep.step_type === 'condition') {
-      try {
-        const meta = typeof executionEvent.metadata === 'string' ? JSON.parse(executionEvent.metadata) : executionEvent.metadata;
-        branchPath = meta.result || 'no';
-      } catch (e) { branchPath = 'no'; }
-    } else { branchPath = 'default'; }
+    if (!executionEvent) return { stepId: currentStep.id, isCompleted: false };
 
     const nextStep = await db.get<SequenceStep>(
-      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? AND branch_path = ?',
-      [sequenceId, currentStep.id, branchPath]
+      'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? LIMIT 1',
+      [sequenceId, currentStep.id]
     );
-    if (!nextStep) return { stepId: null, branchPath, isCompleted: true };
+    if (!nextStep) return { stepId: null, isCompleted: true };
     currentStep = nextStep;
   }
-  return { stepId: null, branchPath: 'default', isCompleted: true };
+  return { stepId: null, isCompleted: true };
 }
 
 /**

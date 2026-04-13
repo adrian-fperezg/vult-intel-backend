@@ -17,24 +17,22 @@ import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
 import toast from 'react-hot-toast';
 
-import ConditionSelectorModal from './ConditionSelectorModal';
+
 import SequenceAnalyticsDashboard from './SequenceAnalyticsDashboard';
 import EmailPreviewModal from '../../components/EmailPreviewModal';
 
 interface Step {
   id: string;
   step_number: number;
-  step_type: 'email' | 'delay' | 'condition';
+  step_type: 'email' | 'delay';
   parent_step_id?: string;
-  condition_type?: 'opened' | 'clicked' | 'replied';
-  condition_keyword?: string;
-  branch_path?: 'yes' | 'no' | 'default';
   delay_amount: number;
   delay_unit: 'minutes' | 'hours' | 'days';
   attachments: any[];
   config: {
     subject: string;
     body_html: string;
+    manual_reply_notes?: string;
   };
   scheduled_start_at?: string;
 }
@@ -72,8 +70,7 @@ interface StepNodeProps {
   onUpdate: (stepId: string, updates: Partial<Step>) => void;
   onUpdateConfig: (stepId: string, updates: any) => void;
   onRemove: (stepId: string) => void;
-  onAddStep: (parentId: string, branchPath: 'yes' | 'no' | 'default') => void;
-  onAddCondition: (parentId: string) => void;
+  onAddStep: (parentId: string | null) => void;
   isOptimizing: boolean;
   handleOptimizeStep: (stepId: string) => void;
   activeStepId: string | null;
@@ -94,7 +91,6 @@ function StepNode({
   onUpdateConfig,
   onRemove,
   onAddStep,
-  onAddCondition,
   isOptimizing,
   handleOptimizeStep,
   activeStepId,
@@ -111,9 +107,7 @@ function StepNode({
   const isExpanded = activeStepId === step.id;
 
   const children = allSteps.filter(s => s.parent_step_id === step.id);
-  const yesChild = children.find(c => c.branch_path === 'yes');
-  const noChild = children.find(c => c.branch_path === 'no');
-  const defaultChild = children.find(c => c.branch_path === 'default');
+  const nextStepNode = children[0]; // Strict linear: only one next step possible
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,15 +142,9 @@ function StepNode({
   const formatForInput = (isoString?: string | null) => {
     if (!isoString) return '';
     try {
-      // 1. Create a Date object from the UTC ISO string
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return '';
-
-      // 2. Adjust for the user's local timezone offset
-      // This prevents the input from showing a shifted time
       const localDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-
-      // 3. Return the first 16 chars (YYYY-MM-DDThh:mm)
       return localDate.toISOString().slice(0, 16);
     } catch (e) {
       console.error("[SequenceBuilder] Error formatting date:", e);
@@ -170,14 +158,9 @@ function StepNode({
       return;
     }
     try {
-      // 1. Create a Date object assuming the input 'val' is in local time
       const localDate = new Date(val);
       if (isNaN(localDate.getTime())) return;
-
-      // 2. Convert to strict UTC ISO string before sending to DB
       const utcIso = localDate.toISOString();
-
-      console.log(`[SequenceBuilder] Setting scheduled_start_at: ${utcIso}`);
       onUpdate(step.id, { scheduled_start_at: utcIso });
     } catch (e) {
       console.error("[SequenceBuilder] Invalid date selected:", e);
@@ -186,7 +169,7 @@ function StepNode({
 
   return (
     <div className="flex flex-col items-center w-full">
-      {!isFirst && !step.branch_path && (
+      {!isFirst && (
         <div className="h-4 w-px bg-white/10" />
       )}
 
@@ -195,8 +178,7 @@ function StepNode({
         animate={{ opacity: 1, y: 0 }}
         className={cn(
           "group relative w-full flex-shrink-0 bg-[#161b22] border rounded-2xl transition-all duration-200",
-          step.step_type === 'condition' ? "border-purple-500/30 bg-purple-500/[0.02] p-3" :
-            isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
+          isExpanded ? "border-teal-500/40 ring-1 ring-teal-500/20 shadow-[0_0_30px_rgba(20,184,166,0.05)] p-5" : "border-white/5 hover:border-white/15 hover:bg-[#1c2128] p-3"
         )}
       >
         <div className={cn(
@@ -207,24 +189,20 @@ function StepNode({
             <div className={cn(
               "rounded-xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
               isExpanded ? "size-10" : "size-8",
-              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" :
-                step.step_type === 'condition' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
-                  "bg-white/5 border-white/10 text-slate-400"
+              step.step_type === 'email' ? "bg-teal-500/10 border-teal-500/20 text-teal-400" : "bg-white/5 border-white/10 text-slate-400"
             )}>
-              {step.step_type === 'email' ? <Mail className={cn(isExpanded ? "size-5" : "size-4")} /> :
-                step.step_type === 'condition' ? <Filter className={cn(isExpanded ? "size-5" : "size-4")} /> :
-                  <Clock className={cn(isExpanded ? "size-5" : "size-4")} />}
+              {step.step_type === 'email' ? <Mail className={cn(isExpanded ? "size-5" : "size-4")} /> : <Clock className={cn(isExpanded ? "size-5" : "size-4")} />}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  {step.branch_path ? `${step.branch_path.toUpperCase()} Branch` : `Step ${step.step_number}`}
+                  Step {step.step_number}
                 </span>
                 {!isExpanded && <span className="text-[10px] text-slate-600 font-bold">•</span>}
                 {!isExpanded && (
                   <span className={cn(
                     "text-[10px] font-bold uppercase tracking-wider",
-                    step.step_type === 'email' ? "text-teal-500/70" : "text-purple-500/70"
+                    step.step_type === 'email' ? "text-teal-500/70" : "text-slate-500/70"
                   )}>{step.step_type}</span>
                 )}
               </div>
@@ -232,7 +210,7 @@ function StepNode({
                 "font-semibold text-white truncate",
                 isExpanded ? "text-sm" : "text-xs"
               )}>
-                {step.step_type === 'condition' ? `Check if user ${step.condition_type}` : (step.config.subject || 'Untitled Step')}
+                {step.config.subject || 'Untitled Step'}
               </h4>
               {isExpanded && step.step_type === 'email' && (
                 <p className="text-xs text-slate-500 mt-1 line-clamp-1 opacity-80">
@@ -270,7 +248,6 @@ function StepNode({
           </div>
         </div>
 
-        {/* Expanded Analytics Row */}
         {isExpanded && step.step_type === 'email' && (
           <div className="mt-4 grid grid-cols-4 gap-2">
             <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.05] transition-colors group/pill">
@@ -374,7 +351,6 @@ function StepNode({
                         </div>
 
                         <div className="flex gap-2">
-                          {/* BOTÓN 1: LANZAR AHORA */}
                           <button
                             onClick={async () => {
                               onUpdate(step.id, { scheduled_start_at: undefined });
@@ -401,7 +377,6 @@ function StepNode({
                             ) : "Launch Immediately"}
                           </button>
 
-                          {/* BOTÓN 2: PROGRAMAR */}
                           <button
                             onClick={async () => {
                               if (!step.scheduled_start_at) {
@@ -490,195 +465,66 @@ function StepNode({
                     </div>
                   )}
                 </div>
-              </div>
 
-              <div className="pt-2 flex justify-center">
-                <button
-                  onClick={() => onAddCondition(step.id)}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 text-purple-400 rounded-xl border border-purple-500/20 hover:bg-purple-500/20 transition-all text-[10px] font-bold uppercase tracking-widest"
-                >
-                  <Plus className="size-3" />
-                  Add Condition
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {isExpanded && step.step_type === 'condition' && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 p-4 rounded-xl bg-purple-500/5 border border-purple-500/10 text-xs text-slate-400 space-y-3"
-            >
-              <div>Wait for <span className="text-white font-bold">{step.delay_amount || 2} {step.delay_unit || 'days'}</span>, then check if contact <span className="text-white font-bold">"{step.condition_type}"</span>.</div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 bg-white/5 px-2 py-1 rounded-md border border-white/5">
-                  <input
-                    type="number"
-                    value={step.delay_amount || 2}
-                    onChange={e => onUpdate(step.id, { delay_amount: parseInt(e.target.value) || 0 })}
-                    className="w-8 bg-transparent text-center text-white outline-none text-[10px]"
-                  />
-                  <select
-                    value={step.delay_unit || 'days'}
-                    onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
-                    className="bg-transparent text-white outline-none cursor-pointer text-[10px]"
-                  >
-                    <option value="minutes">min</option>
-                    <option value="hours">hrs</option>
-                    <option value="days">days</option>
-                  </select>
-                </div>
-              </div>
-
-              {step.condition_type === 'replied' && (
-                <div className="pt-1 space-y-1.5">
-                  <label className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
-                    🔍 Intent Keyword <span className="text-slate-500 normal-case font-normal">(optional)</span>
-                  </label>
-                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-lg border border-purple-500/20">
-                    <input
-                      type="text"
-                      placeholder="e.g. interested, yes, schedule..."
-                      value={step.condition_keyword || ''}
-                      onChange={e => onUpdate(step.id, { condition_keyword: e.target.value })}
-                      onClick={e => e.stopPropagation()}
-                      className="flex-1 bg-transparent text-white text-[11px] outline-none placeholder:text-slate-600"
-                    />
+                <div className="pt-2 border-t border-white/5 mt-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
+                      <MessageSquare className="size-3.5" />
+                    </div>
+                    <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Manual Reply Playbook</label>
                   </div>
-                  <p className="text-[9px] text-slate-600 leading-relaxed">
-                    If set, the reply body will be scanned for this keyword.<br />
-                    ✅ <span className="text-green-500/60">Found</span> → YES branch · ❌ <span className="text-red-500/60">Not found</span> → NO branch &amp; email stays unread
+                  <textarea
+                    value={step.config.manual_reply_notes || ''}
+                    onChange={e => onUpdateConfig(step.id, { manual_reply_notes: e.target.value })}
+                    placeholder="If the prospect replies to this email, I should..."
+                    className="w-full h-24 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-emerald-500/40 transition-all placeholder:text-slate-600 resize-none font-medium leading-relaxed"
+                  />
+                  <p className="text-[9px] text-slate-600 mt-2 italic flex items-center gap-1.5 ml-1">
+                    <AlertCircle className="size-2.5" />
+                    Guidance for manual action if a reply is detected at this stage.
                   </p>
                 </div>
-              )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
 
-      {step.step_type === 'condition' ? (
-        <div className="w-full flex flex-col mt-1">
-          <div className="w-full flex flex-col">
-            <div className="flex items-center gap-2 py-1">
-              <div className="h-4 w-px bg-green-500/40 mx-auto" style={{ marginLeft: '16px' }} />
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-px w-6 bg-green-500/30" />
-              <span className="px-2.5 py-0.5 rounded-full bg-green-500/10 border border-green-500/30 text-[10px] font-black text-green-500 uppercase tracking-widest">Yes</span>
-            </div>
-            <div className="ml-6 pl-4 border-l-2 border-green-500/20 mt-2">
-              {yesChild ? (
-                <StepNode
-                  step={yesChild}
-                  allSteps={allSteps}
-                  isFirst={false}
-                  onUpdate={onUpdate}
-                  onUpdateConfig={onUpdateConfig}
-                  onRemove={onRemove}
-                  onAddStep={onAddStep}
-                  onAddCondition={onAddCondition}
-                  isOptimizing={isOptimizing}
-                  handleOptimizeStep={handleOptimizeStep}
-                  activeStepId={activeStepId}
-                  setActiveStepId={setActiveStepId}
-                  onPreview={onPreview}
-                  analytics={analytics}
-                  handleActivate={handleActivate}
-                  handleSaveAll={handleSaveAll}
-                  sequenceStatus={sequenceStatus}
-                  snippets={snippets}
-                />
-              ) : (
-                <button
-                  onClick={() => onAddStep(step.id, 'yes')}
-                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-green-500/20 text-green-500/50 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/5 transition-all text-xs font-bold"
-                >
-                  <Plus className="size-3.5" />
-                  Add Yes Step
-                </button>
-              )}
-            </div>
+      <div className="flex flex-col items-center w-full">
+        {nextStepNode && (
+          <StepNode
+            step={nextStepNode}
+            allSteps={allSteps}
+            isFirst={false}
+            onUpdate={onUpdate}
+            onUpdateConfig={onUpdateConfig}
+            onRemove={onRemove}
+            onAddStep={onAddStep}
+            isOptimizing={isOptimizing}
+            handleOptimizeStep={handleOptimizeStep}
+            activeStepId={activeStepId}
+            setActiveStepId={setActiveStepId}
+            onPreview={onPreview}
+            analytics={analytics}
+            handleActivate={handleActivate}
+            handleSaveAll={handleSaveAll}
+            sequenceStatus={sequenceStatus}
+            snippets={snippets}
+          />
+        )}
+        {!nextStepNode && (
+          <div className="flex flex-col items-center w-full">
+            <div className="h-5 w-px bg-white/10" />
+            <button
+              onClick={() => onAddStep(step.id)}
+              className="flex items-center justify-center gap-2 w-[280px] py-3 rounded-xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold shadow-lg hover:shadow-teal-500/5 active:scale-95"
+            >
+              <Plus className="size-4" />
+              Add Next Step
+            </button>
           </div>
-
-          <div className="w-full flex flex-col mt-4">
-            <div className="flex items-center gap-2">
-              <div className="h-px w-6 bg-red-500/30" />
-              <span className="px-2.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-black text-red-500 uppercase tracking-widest">No</span>
-            </div>
-            <div className="ml-6 pl-4 border-l-2 border-red-500/20 mt-2">
-              {noChild ? (
-                <StepNode
-                  step={noChild}
-                  allSteps={allSteps}
-                  isFirst={false}
-                  onUpdate={onUpdate}
-                  onUpdateConfig={onUpdateConfig}
-                  onRemove={onRemove}
-                  onAddStep={onAddStep}
-                  onAddCondition={onAddCondition}
-                  isOptimizing={isOptimizing}
-                  handleOptimizeStep={handleOptimizeStep}
-                  activeStepId={activeStepId}
-                  setActiveStepId={setActiveStepId}
-                  onPreview={onPreview}
-                  analytics={analytics}
-                  handleActivate={handleActivate}
-                  handleSaveAll={handleSaveAll}
-                  sequenceStatus={sequenceStatus}
-                  snippets={snippets}
-                />
-              ) : (
-                <button
-                  onClick={() => onAddStep(step.id, 'no')}
-                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-red-500/20 text-red-500/50 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/5 transition-all text-xs font-bold"
-                >
-                  <Plus className="size-3.5" />
-                  Add No Step
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center w-full">
-          {defaultChild && (
-            <StepNode
-              step={defaultChild}
-              allSteps={allSteps}
-              isFirst={false}
-              onUpdate={onUpdate}
-              onUpdateConfig={onUpdateConfig}
-              onRemove={onRemove}
-              onAddStep={onAddStep}
-              onAddCondition={onAddCondition}
-              isOptimizing={isOptimizing}
-              handleOptimizeStep={handleOptimizeStep}
-              activeStepId={activeStepId}
-              setActiveStepId={setActiveStepId}
-              onPreview={onPreview}
-              analytics={analytics}
-              handleActivate={handleActivate}
-              handleSaveAll={handleSaveAll}
-              sequenceStatus={sequenceStatus}
-              snippets={snippets}
-            />
-          )}
-          {step.step_type === 'email' && !defaultChild && !children.some(c => c.branch_path === 'yes') && (
-            <div className="flex flex-col items-center w-full">
-              <div className="h-5 w-px bg-white/10" />
-              <button
-                onClick={() => onAddStep(step.id, 'default')}
-                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold"
-              >
-                <Plus className="size-4" />
-                Add Step
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -705,13 +551,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       return newParams;
     }, { replace: true });
   };
-  const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
+  const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
+
 
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
-  const [isConditionModalOpen, setIsConditionModalOpen] = useState(false);
-  const [pendingConditionParentId, setPendingConditionParentId] = useState<string | null>(null);
 
   const [previewData, setPreviewData] = useState<{
     subject: string;
@@ -815,13 +659,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           ...s,
           delay_amount: s.delay_amount ?? s.config?.delay_days ?? 2,
           delay_unit: s.delay_unit || 'days',
-          condition_keyword: s.condition_keyword || '',
           attachments: typeof s.attachments === 'string' ? JSON.parse(s.attachments) : (s.attachments || []),
           config: {
             subject: s.config?.subject || '',
             body_html: s.config?.body_html || '',
+            manual_reply_notes: s.config?.manual_reply_notes || '',
           },
-          custom_intent_logic: !!s.custom_intent_logic,
           scheduled_start_at: s.scheduled_start_at
         }));
         setSteps(mappedSteps);
@@ -866,7 +709,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         smart_send: sequence.smart_send ?? true
       });
 
-      // Aseguramos que la fecha se envíe en formato ISO (o null si se borró)
       const stepsToSave = steps.map(s => {
         const scheduled = s.scheduled_start_at || null;
         return {
@@ -879,7 +721,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
 
       setHasUnsavedChanges(false);
-      setLastSavedTime(new Date());
     } catch (err: any) {
       const errorMsg = err.response?.data?.error || err.message || 'Failed to save changes';
       toast.error(errorMsg);
@@ -901,19 +742,19 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
   };
 
-  const addStep = (parentId: string | null = null, branchPath: 'yes' | 'no' | 'default' = 'default') => {
+  const addStep = (parentId: string | null = null) => {
     const newStep: Step = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       step_number: steps.length + 1,
       step_type: 'email',
       parent_step_id: parentId || undefined,
-      branch_path: parentId ? branchPath : undefined,
       delay_amount: 2,
       delay_unit: 'days',
       attachments: [],
       config: {
         subject: '',
         body_html: '',
+        manual_reply_notes: '',
       },
     };
     setSteps([...steps, newStep]);
@@ -921,34 +762,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     setHasUnsavedChanges(true);
   };
 
-  const addCondition = (parentId: string) => {
-    setPendingConditionParentId(parentId);
-    setIsConditionModalOpen(true);
-  };
-
-  const handleSelectCondition = (conditionType: 'opened' | 'clicked' | 'replied') => {
-    if (!pendingConditionParentId) return;
-
-    const newStep: Step = {
-      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      step_number: steps.length + 1,
-      step_type: 'condition',
-      parent_step_id: pendingConditionParentId,
-      branch_path: 'default',
-      condition_type: conditionType,
-      delay_amount: 2,
-      delay_unit: 'days',
-      attachments: [],
-      config: {
-        subject: '',
-        body_html: '',
-      },
-    };
-    setSteps([...steps, newStep]);
-    setActiveStepId(newStep.id);
-    setHasUnsavedChanges(true);
-    setPendingConditionParentId(null);
-  };
 
   const handleUpdateStep = (stepId: string, updates: Partial<Step>) => {
     setSteps(steps.map(s => s.id === stepId ? { ...s, ...updates } : s));
@@ -1088,13 +901,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
 
   const handleToggleRecipientStatus = async (contactId: string, currentStatus: string) => {
-    // If status is 'bounced', resuming it sets it to 'active'.
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
     const toastId = toast.loading(`${newStatus === 'active' ? 'Resuming' : 'Pausing'} contact...`);
     try {
       await api.toggleRecipientStatus(sequenceId, contactId, newStatus);
       toast.success(`Contact ${newStatus === 'active' ? 'resumed' : 'paused'} successfully`, { id: toastId });
-      loadData(); // Refetch to show new status
+      loadData();
     } catch (err) {
       console.error("Failed to toggle recipient status:", err);
       toast.error("Failed to update contact status", { id: toastId });
@@ -1232,7 +1044,6 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   onUpdateConfig={handleUpdateStepConfig}
                   onRemove={removeStep}
                   onAddStep={addStep}
-                  onAddCondition={addCondition}
                   isOptimizing={isOptimizing}
                   handleOptimizeStep={handleOptimizeStep}
                   activeStepId={activeStepId}
@@ -1254,7 +1065,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     Start by adding your first email step. You can later add conditions and branches to automate your outreach.
                   </p>
                   <button
-                    onClick={() => addStep(null, 'default')}
+                    onClick={() => addStep(null)}
                     className="flex items-center justify-center gap-2 w-full max-w-xs py-4 bg-teal-500 text-white font-bold rounded-2xl hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20"
                   >
                     <Plus className="size-5" />
@@ -1590,11 +1401,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         onConfirm={handleAssignRecipients}
         api={api}
       />
-      <ConditionSelectorModal
-        isOpen={isConditionModalOpen}
-        onClose={() => setIsConditionModalOpen(false)}
-        onSelect={handleSelectCondition}
-      />
+
       <EmailPreviewModal
         isOpen={previewData.isOpen}
         onClose={() => setPreviewData(prev => ({ ...prev, isOpen: false }))}

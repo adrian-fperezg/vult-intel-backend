@@ -374,85 +374,9 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           step.id, sequenceId, contactId
         );
         console.log(`[Sequence] [Heartbeat] Step ${stepId} executed successfully for contact ${contactId}`);
-      } else if (step.step_type === 'condition') {
-        // --- IDEMPOTENCY CHECK FOR CONDITION ---
-        const existingEval = await db.prepare(`
-          SELECT metadata FROM outreach_events 
-          WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_condition_evaluated'
-        `).get(contactId, sequenceId, stepId) as any;
-
-        if (existingEval) {
-          try {
-            const meta = typeof existingEval.metadata === 'string' ? JSON.parse(existingEval.metadata) : existingEval.metadata;
-            const branchPath = meta.result || 'no';
-            console.warn(`[Sequence] [Idempotency] Step ${stepId} already evaluated to '${branchPath}'. Skipping evaluation.`);
-            await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
-            return;
-          } catch (e) {
-            console.error('[Sequence] [Idempotency] Failed to parse existing condition metadata. Re-evaluating.');
-          }
-        }
-
-        // Evaluation Engine Logic
-        const parentEmailStepId = step.parent_step_id;
-        if (!parentEmailStepId) {
-          console.error(`[Sequence] Condition step ${stepId} has no parent email step`);
-          return;
-        }
-        
-        // SIMPLE RULE: Check for a 'replied' event in the events table.
-        // Opens and clicks are evaluated from outreach_events normally.
-        // Replies are evaluated by checking if ANY reply event exists for this contact in this sequence.
-        const eventTypeMapping: Record<string, string> = {
-          'opened': 'opened',
-          'clicked': 'clicked',
-          'replied': 'replied'
-        };
-        const targetEventType = eventTypeMapping[step.condition_type] || 'opened';
-
-        let branchPath: string;
-
-        if (step.condition_type === 'replied') {
-          // Check if a reply event exists for this contact in this sequence
-          const replyEvent = await db.prepare(`
-            SELECT id FROM outreach_events 
-            WHERE contact_id = ? AND sequence_id = ? AND type = 'replied'
-            LIMIT 1
-          `).get(contactId, sequenceId);
-
-          branchPath = replyEvent ? 'yes' : 'no';
-          console.log(`[Sequence] Reply check for contact ${contactId}: ${replyEvent ? 'Reply FOUND → YES branch' : 'No reply → NO branch'}`);
-        } else {
-          // For opened/clicked: check the event table against the parent email step
-          const event = await db.prepare(`
-            SELECT id FROM outreach_events 
-            WHERE contact_id = ? AND type = ? AND step_id = ?
-            LIMIT 1
-          `).get(contactId, targetEventType, parentEmailStepId);
-          branchPath = event ? 'yes' : 'no';
-        }
-
-        console.log(`[Sequence] Condition ${step.condition_type} for step ${stepId}: Result is ${branchPath}`);
-
-        // Record condition execution
-        await db.prepare(`
-          INSERT INTO outreach_events (id, contact_id, project_id, sequence_id, step_id, type, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(uuidv4(), contactId, projectId, sequenceId, stepId, 'sequence_condition_evaluated', JSON.stringify({ sequenceId, stepId, result: branchPath }));
-
-        // Schedule next step based on branch
-        await scheduleNextStep(projectId, sequenceId, contactId, step.id, branchPath);
-
-        // Update enrollment with success
-        await db.run(
-          `UPDATE outreach_sequence_enrollments 
-           SET last_executed_at = CURRENT_TIMESTAMP, 
-               current_step_id = ?,
-               last_error = NULL 
-           WHERE sequence_id = ? AND contact_id = ?`,
-          step.id, sequenceId, contactId
-        );
       } else {
+        // Handle delay, task, or other step types - Linear Advance
+
         // Handle delay, task, or other step types
         const existingEvent = await db.prepare(`
           SELECT id FROM outreach_events 
