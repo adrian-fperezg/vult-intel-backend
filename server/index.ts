@@ -360,6 +360,73 @@ app.get("/api/outreach/health", (_req, res) => {
   res.json({ status: "ok", service: "outreach-api" });
 });
 
+app.get("/api/admin/force-reset-queue", async (_req, res) => {
+  const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
+  const today = DateTime.now().setZone("UTC").toISODate();
+  
+  console.log(`[Admin Reset] Triggered for project ${TARGET_PROJECT_ID}`);
+
+  try {
+    // 1. Reset Global Send Counter (Persistent UI Counter)
+    await db.run(
+      `DELETE FROM outreach_global_send_counters WHERE project_id = ? AND date = ?`,
+      [TARGET_PROJECT_ID, today]
+    );
+    console.log(`[Admin Reset] Deleted global send counters for today (${today})`);
+
+    // 2. Reset "Real" Count by shifting sent_at for today's emails
+    const dayStart = DateTime.now().setZone("UTC").startOf('day').toJSDate().toISOString();
+    const shiftedTime = DateTime.now().setZone("UTC").minus({ days: 1 }).toJSDate().toISOString();
+    
+    const emailReset = await db.run(
+      `UPDATE outreach_individual_emails 
+       SET sent_at = ? 
+       WHERE project_id = ? AND status = 'sent' AND sent_at >= ?`,
+      [shiftedTime, TARGET_PROJECT_ID, dayStart]
+    );
+    console.log(`[Admin Reset] Shifted ${emailReset.changes} emails sent today to yesterday.`);
+
+    // 3. Reschedule Enrollments (Scheduled_at update)
+    const enrollResult = await db.run(
+      `UPDATE outreach_sequence_enrollments 
+       SET scheduled_at = CURRENT_TIMESTAMP, 
+           last_error = NULL 
+       WHERE project_id = ? AND status = 'active'`,
+      [TARGET_PROJECT_ID]
+    );
+    console.log(`[Admin Reset] Rescheduled ${enrollResult.changes} active enrollments.`);
+
+    // 4. Promote BullMQ Delayed Jobs
+    console.log("[Admin Reset] Scanning BullMQ for delayed jobs to promote...");
+    const delayedJobs = await emailQueue.getDelayed();
+    let promotedCount = 0;
+
+    for (const job of delayedJobs) {
+      if (job.data && job.data.projectId === TARGET_PROJECT_ID) {
+        await job.promote();
+        promotedCount++;
+      }
+    }
+    console.log(`[Admin Reset] Promoted ${promotedCount} delayed jobs in BullMQ.`);
+
+    res.json({
+      success: true,
+      message: "Queue and counters reset successfully",
+      project: TARGET_PROJECT_ID,
+      promotedJobs: promotedCount,
+      rescheduledEnrollments: enrollResult.changes,
+      emailsShifted: emailReset.changes,
+      counterReset: true
+    });
+  } catch (err: any) {
+    console.error("[Admin Reset] FATAL ERROR:", err);
+    res.status(500).json({ 
+      error: "Internal server error during reset", 
+      details: err.message 
+    });
+  }
+});
+
 
 // ─── Google OAuth — PUBLIC (no Firebase token required) ──────────────────────
 // The frontend hits this after getting a short-lived "auth init token" from the
