@@ -75,7 +75,7 @@ export default function GmailPreview({
        </div>
 
        <div className="px-[72px] pb-10 pt-4 flex-1 overflow-y-auto">
-          <div className="prose prose-sm max-w-none text-[#202124] leading-[1.5] text-[14px] font-[Arial,Helvetica,sans-serif]"
+          <div className="text-[#202124] leading-normal text-[14px] font-[Arial,Helvetica,sans-serif] [&>p]:m-0 [&>p]:mb-3 [&>ul]:m-0 [&>ul]:mb-3 [&>ol]:m-0 [&>ol]:mb-3"
                dangerouslySetInnerHTML={{ __html: parsedBody }} 
           />
           <div className="mt-6 flex items-center">
@@ -98,16 +98,53 @@ function parseWithChips(content: string, data?: Record<string, any>) {
      if (data.first_name) norm.name = data.first_name;
    }
 
+   const mockData: Record<string, string> = {
+     first_name: "Teja",
+     last_name: "Smith",
+     name: "Teja Smith",
+     company: "Acme Corp",
+     company_name: "Acme Corp",
+     title: "VP of Engineering",
+     industry: "Software Development",
+     signature: `
+       <div style="margin-top: 24px; font-family: Arial, sans-serif; font-size: 13px; color: #5f6368; line-height: 1.4;">
+         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+           <div style="width: 44px; height: 44px; border-radius: 50%; background-color: #1da1f2; color: white; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;">A</div>
+           <div>
+             <div style="font-weight: bold; color: #202124; font-size: 14px;">Adrian Perez</div>
+             <div style="color: #5f6368;">Founder & CEO</div>
+             <div><a href="https://vultintel.com" style="color: #1a73e8; text-decoration: none; font-weight: 500;">Vult Intel</a></div>
+           </div>
+         </div>
+         <div style="margin-bottom: 12px;">
+           <a href="https://vultintel.com" style="color: #1a73e8; text-decoration: none;">Website</a> &nbsp;|&nbsp; <a href="tel:+1234567890" style="color: #1a73e8; text-decoration: none;">Book a Call</a>
+         </div>
+         <hr style="border: none; border-top: 1px solid #dadce0; margin: 12px 0;" />
+         <div style="font-size: 10px; color: #9aa0a6; max-width: 400px; line-height: 1.3;">
+           This email and any attachments are confidential and may also be privileged. If you are not the intended recipient, please delete all copies and notify the sender immediately.
+         </div>
+       </div>`
+   };
+
    return content.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, tag) => {
      const key = tag.trim().toLowerCase();
+     
+     // Special override: always render the rich signature mock for previews
+     if (key === 'signature' && mockData['signature']) {
+       return mockData['signature'];
+     }
      
      // 1. Real data
      if (norm[key] !== undefined && norm[key] !== null && norm[key] !== "") {
        return String(norm[key]);
      }
      
-     // 2. Chip fallback
-     const display = key.replace(/_/g, ' ');
-     return `<span class="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-bold bg-[#e8f0fe] text-[#1a73e8] border border-[#d2e3fc] shadow-sm transform translate-y-px" title="Variable: ${key}">${display}</span>`;
+     // 2. Realistic Mock Data fallback
+     if (mockData[key]) {
+       return mockData[key];
+     }
+     
+     // 3. Fallback to generic mock
+     return `[${key}]`;
    });
 }
