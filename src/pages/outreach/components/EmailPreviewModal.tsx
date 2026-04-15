@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../../lib/utils';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useOutreachApi } from '../../../hooks/useOutreachApi';
-import { parsePreviewVariables } from '../../../utils/outreach/previewParser';
+import GmailPreview from './GmailPreview';
 
 interface EmailPreviewModalProps {
   isOpen: boolean;
@@ -46,8 +46,7 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
   const recipientName = recipientData ? `${recipientData.first_name || ''} ${recipientData.last_name || ''}`.trim() || recipientData.email : null;
   const displayTo = recipientData?.email || to;
 
-  const parsedSubject = parsePreviewVariables(subject || "(No Subject)", mergedRecipientData);
-  const parsedBody = parsePreviewVariables(body || "<p>(Empty Body)</p>", mergedRecipientData);
+
 
   if (!isOpen) return null;
 
@@ -142,32 +141,25 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                 </div>
               )}
 
-              {/* Email Client Header */}
-              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
-                <div className="flex items-start gap-3">
-                  <div className="size-10 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                    <User className="size-5 text-slate-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-slate-900 truncate">Vult Intel</span>
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Just now</span>
-                    </div>
-                    <div className="text-sm text-slate-500 flex flex-col gap-0.5">
-                      <p><span className="text-slate-400">To:</span> {displayTo}</p>
-                      <p><span className="text-slate-400">Sub:</span> <span className="font-semibold text-slate-900">{parsedSubject}</span></p>
-                    </div>
-                  </div>
+              {viewMode === 'desktop' ? (
+                <div className="flex-1 min-h-0 bg-white">
+                   <GmailPreview 
+                     subject={subject}
+                     bodyHtml={body}
+                     recipientData={mergedRecipientData}
+                     recipientEmail={displayTo}
+                   />
                 </div>
-              </div>
-
-              {/* Email Body */}
-              <div className="flex-1 p-6 overflow-y-auto bg-white text-slate-800 leading-relaxed font-sans">
-                <div 
-                  className="prose prose-slate max-w-none text-slate-800"
-                  dangerouslySetInnerHTML={{ __html: parsedBody }}
-                />
-              </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto bg-white rounded-b-[28px]">
+                   <GmailPreview 
+                     subject={subject}
+                     bodyHtml={body}
+                     recipientData={mergedRecipientData}
+                     recipientEmail={displayTo}
+                   />
+                </div>
+              )}
 
               {/* Mobile Home Indicator */}
               {viewMode === 'mobile' && (
