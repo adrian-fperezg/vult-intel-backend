@@ -97,3 +97,37 @@ export function isBounce(from: string, subject: string): boolean {
   const patterns = ['mailer-daemon', 'postmaster', 'delivery-status-notification', 'undelivered', 'returned mail', 'failure notice'];
   return patterns.some(p => f.includes(p) || s.includes(p));
 }
+
+/**
+ * Perform a critical AUTO-PAUSE and queue purge for a bounced contact.
+ * This is a high-safety operation to protect domain reputation.
+ */
+export async function handleCriticalBounce(contactId: string, sequenceId: string | null, projectId: string) {
+  console.warn(`[CRITICAL BOUNCE] Handling bounce for contact ${contactId} in project ${projectId}`);
+
+  try {
+    // 1. Update Contact Status
+    await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", contactId);
+
+    // 2. Stop ALL sequences for this contact across the project
+    await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE contact_id = ? AND project_id = ?", contactId, projectId);
+
+    // 3. Add to Global Suppression List (Immediate Hard Stop)
+    const contact = await db.get("SELECT email FROM outreach_contacts WHERE id = ?", contactId) as any;
+    if (contact?.email) {
+      await db.run(`
+        INSERT INTO suppression_list (id, email, reason, created_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(email) DO NOTHING
+      `, uuidv4(), contact.email, 'Hard Bounce Detected');
+    }
+
+    // 4. Purge Queue (Forcefully remove searching by contactId)
+    const { removeContactSequenceJobs } = await import('../../queues/emailQueue.js');
+    await removeContactSequenceJobs(contactId);
+
+    console.log(`[CRITICAL BOUNCE] Contact ${contactId} fully isolated and purged from queues.`);
+  } catch (err) {
+    console.error(`[CRITICAL BOUNCE ERROR] Failed to handle bounce for ${contactId}:`, err);
+  }
+}

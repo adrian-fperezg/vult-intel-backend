@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
-import { findOriginalEmail, recordOutreachEvent, isBounce } from './utils.js';
+import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce } from './utils.js';
 import { sendAlert } from '../notifier.js';
 
 
@@ -111,6 +111,9 @@ export async function pollImap(mailboxId: string) {
             });
             await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", [original.contact_id]);
             await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?", [original.sequence_id, original.contact_id]);
+            
+            // Critical Auto-Pause and Queue Purge
+            await handleCriticalBounce(original.contact_id, original.sequence_id, mailbox.project_id);
           }
           await connection.addFlags(uid, ['\\Seen']);
           continue;

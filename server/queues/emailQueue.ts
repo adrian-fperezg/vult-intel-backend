@@ -928,6 +928,34 @@ export async function cancelMailboxJobs(mailboxId: string) {
 }
 
 /**
+ * Searches and removes all pending (waiting/delayed) jobs for a specific contact.
+ * This is critical for bounce protection and stopping sequences immediately.
+ */
+export async function removeContactSequenceJobs(contactId: string) {
+  console.log(`[Purge] Scanning emailQueue for jobs linked to contact ${contactId}...`);
+  
+  try {
+    const delayedJobs = await emailQueue.getDelayed();
+    const waitingJobs = await emailQueue.getWaiting();
+    const allPending = [...delayedJobs, ...waitingJobs];
+
+    let removedCount = 0;
+    for (const job of allPending) {
+      if (job && job.data && job.data.contactId === contactId) {
+        await job.remove();
+        removedCount++;
+      }
+    }
+
+    console.log(`[Purge] Successfully removed ${removedCount} pending jobs for contact ${contactId}.`);
+    return removedCount;
+  } catch (err) {
+    console.error(`[Purge] Failed to purge jobs for contact ${contactId}:`, err);
+    return 0;
+  }
+}
+
+/**
  * The Sequence Watchdog polls for 'active' enrollments that have passed their
  * scheduled_at time but haven't been completed. It re-queues them in BullMQ
  * to ensure that Redis clearing or worker stalls don't stop the sequence.
