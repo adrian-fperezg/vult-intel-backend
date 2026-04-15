@@ -609,8 +609,9 @@ export default function OutreachSettings() {
                                     {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
                                     {mb.connection_type || 'gmail'}
                                   </span>
-                                  <span className="flex items-center gap-1">
-                                    <Zap className="size-3" /> {mb.sent ?? 0}/{mb.dailyLimit ?? 200} today
+                                  <span className="flex items-center gap-1.5 capitalize">
+                                    {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
+                                    {mb.connection_type || 'gmail'}
                                   </span>
                                 </div>
                               </div>

@@ -1138,24 +1138,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
               <section className="space-y-6">
                 <div>
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                    <ShieldCheck className="size-5 text-teal-400" /> Safety & Limits
+                    <ShieldCheck className="size-5 text-teal-400" /> Safety & Controls
                   </h3>
-                  <p className="text-sm text-slate-500 mt-1">Configure automated safeguards and daily sending volume.</p>
+                  <p className="text-sm text-slate-500 mt-1">Configure automated safeguards and sender behavior.</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Daily Send Limit</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={sequence?.daily_send_limit || 50}
-                        onChange={e => setSequence(prev => prev ? { ...prev, daily_send_limit: parseInt(e.target.value) } : null)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-teal-500/40"
-                      />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-slate-600 font-bold uppercase">Emails / Day</span>
-                    </div>
-                  </div>
+                <div className="grid grid-cols-1 gap-6">
                   <div className="space-y-4">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sequence Behavior</label>
                     <button

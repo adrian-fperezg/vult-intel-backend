@@ -36,7 +36,6 @@ export default function OutreachSequences() {
   const api = useOutreachApi();
   const { activeProjectId } = api;
   const [sequences, setSequences] = useState<Sequence[]>([]);
-  const [limitStatus, setLimitStatus] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
@@ -66,13 +65,11 @@ export default function OutreachSequences() {
     setIsLoading(true);
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const [seqs, limits, stats] = await Promise.all([
+      const [seqs, stats] = await Promise.all([
         api.fetchSequences(timeframe, tz),
-        api.getGlobalLimitStatus(activeProjectId),
         api.fetchGlobalStats(timeframe, tz)
       ]);
       setSequences(seqs || []);
-      setLimitStatus(limits);
       setGlobalStats(stats);
     } catch (error) {
       console.error('Error fetching sequences:', error);
@@ -84,7 +81,6 @@ export default function OutreachSequences() {
   // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
     setSequences([]);
-    setLimitStatus(null);
     loadData();
   }, [loadData]);
 
