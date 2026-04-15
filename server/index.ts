@@ -361,6 +361,40 @@ app.get("/api/outreach/health", (_req, res) => {
   res.json({ status: "ok", service: "outreach-api" });
 });
 
+app.get("/api/admin/flush-email-queue", async (_req, res) => {
+  try {
+    console.log("[Admin Flush Queue] Scanning BullMQ for delayed and waiting jobs...");
+    const delayedJobs = await emailQueue.getDelayed();
+    const waitingJobs = await emailQueue.getWaiting();
+    
+    let promotedCount = 0;
+    
+    // Waiting jobs are already ready to be processed.
+    for (const job of delayedJobs) {
+      if (job) {
+        await job.promote();
+        promotedCount++;
+      }
+    }
+
+    console.log(`[Admin Flush Queue] Found ${delayedJobs.length} delayed jobs, promoted ${promotedCount}. Found ${waitingJobs.length} waiting jobs.`);
+
+    res.json({
+      success: true,
+      message: "Queue flushed successfully by promoting delayed jobs.",
+      delayedJobsFound: delayedJobs.length,
+      waitingJobsFound: waitingJobs.length,
+      jobsPromoted: promotedCount
+    });
+  } catch (err: any) {
+    console.error("[Admin Flush Queue] FATAL ERROR:", err);
+    res.status(500).json({ 
+      error: "Internal server error during queue flush", 
+      details: err.message 
+    });
+  }
+});
+
 app.get("/api/admin/force-reset-queue", async (_req, res) => {
   const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
   const today = DateTime.now().setZone("UTC").toISODate();
