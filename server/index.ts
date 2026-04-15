@@ -30,8 +30,9 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
 (async () => {
   try {
     const { redis } = await import("./redis.js"); // Dynamic import to ensure redis is ready
-    await redis.flushall();
-    console.log('[REDIS] Cache flushed on startup');
+    // Removed to prevent wiping BullMQ delayed jobs
+    // await redis.flushall();
+    // console.log('[REDIS] Cache flushed on startup');
   } catch (err) {
     console.error('[REDIS] Flush failed on startup:', err);
   }
