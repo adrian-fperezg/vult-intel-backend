@@ -423,12 +423,14 @@ function StepNode({
                     </div>
                     <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Manual Reply Playbook</label>
                   </div>
-                  <textarea
-                    value={step.config.manual_reply_notes || ''}
-                    onChange={e => onUpdateConfig(step.id, { manual_reply_notes: e.target.value })}
-                    placeholder="If the prospect replies to this email, I should..."
-                    className="w-full h-24 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-emerald-500/40 transition-all placeholder:text-slate-600 resize-none font-medium leading-relaxed"
-                  />
+                  <div className="w-full bg-[#161b22] border border-white/10 rounded-xl overflow-hidden focus-within:border-emerald-500/40 transition-all">
+                    <TipTapEditor
+                      value={step.config.manual_reply_notes || ''}
+                      onChange={val => onUpdateConfig(step.id, { manual_reply_notes: val })}
+                      placeholder="If the prospect replies to this email, I should..."
+                      className="min-h-[120px] bg-transparent border-0"
+                    />
+                  </div>
                   <p className="text-[9px] text-slate-600 mt-2 italic flex items-center gap-1.5 ml-1">
                     <AlertCircle className="size-2.5" />
                     Guidance for manual action if a reply is detected at this stage.

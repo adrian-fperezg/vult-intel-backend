@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { Sparkles, Loader2, Building2, User, Phone, Linkedin, Globe } from 'lucide-react';
+import TipTapEditor from './components/TipTapEditor';
 
 type IntentLabel = 'INTERESTED' | 'MEETING_REQUEST' | 'NOT_NOW' | 'UNSUBSCRIBE' | 'OUT_OF_OFFICE' | 'WRONG_PERSON' | 'NEUTRAL';
 
@@ -345,7 +346,7 @@ export default function OutreachInbox() {
                       ? 'bg-teal-600/20 border border-teal-500/20 text-teal-50 rounded-tr-sm'
                       : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-sm'
                   )}>
-                    <p className="whitespace-pre-wrap">{msg.body || ''}</p>
+                    <div className="prose prose-sm prose-invert max-w-none text-current [&_a]:text-teal-400 [&_a]:underline" dangerouslySetInnerHTML={{ __html: msg.body || '' }} />
                     <p className={cn('text-[10px] mt-2', msg.role === 'sent' ? 'text-teal-400/60' : 'text-slate-600')}>
                       {msg.role === 'sent' ? 'You' : (activeThread.contact.name || 'Contact')} · {msg.at || ''}
                     </p>
@@ -357,14 +358,15 @@ export default function OutreachInbox() {
             {/* Reply Composer */}
             <div className="p-4 border-t border-white/5 shrink-0">
               <div className="bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden focus-within:border-teal-500/30 transition-colors">
-                <textarea
-                  value={replyText}
-                  onChange={e => setReplyText(e.target.value)}
-                  placeholder={`Reply to ${activeThread.contact.name}...`}
-                  rows={3}
-                  className="w-full bg-transparent text-sm text-white px-5 py-4 outline-none resize-none placeholder:text-slate-600"
-                />
-                <div className="flex items-center justify-between px-4 pb-3">
+                <div className="border-b border-[#30363d]">
+                  <TipTapEditor
+                    value={replyText}
+                    onChange={setReplyText}
+                    placeholder={`Reply to ${activeThread.contact.name}...`}
+                    className="bg-transparent border-0 min-h-[120px]"
+                  />
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2 text-xs text-slate-600">
                     <CheckCircle2 className="size-3.5 text-green-400" />
                     <span>Sending from {activeThread.mailbox}</span>
