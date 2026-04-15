@@ -3992,17 +3992,29 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
       GROUP BY step_id
     `, id, req.projectId) as any[];
 
+    // 3. Get Next Scheduled Send from pending active enrollments
+    const scheduledStats = await db.all(`
+      SELECT 
+        current_step_id as step_id,
+        MIN(scheduled_at) as next_send_at
+      FROM outreach_sequence_enrollments
+      WHERE sequence_id = ? AND project_id = ? AND status = 'active' AND scheduled_at > CURRENT_TIMESTAMP
+      GROUP BY current_step_id
+    `, id, req.projectId) as any[];
+
     const analytics: Record<string, any> = {};
 
     // Combine results
     const allStepIds = new Set([
       ...deliveryStats.map(s => s.step_id),
-      ...engagementStats.map(s => s.step_id)
+      ...engagementStats.map(s => s.step_id),
+      ...scheduledStats.map(s => s.step_id)
     ]);
 
     allStepIds.forEach(stepId => {
       const d = deliveryStats.find(s => s.step_id === stepId) || {};
       const e = engagementStats.find(s => s.step_id === stepId) || {};
+      const sch = scheduledStats.find(s => s.step_id === stepId) || {};
 
       const sent = parseInt(d.sent) || 0;
       const bounced = parseInt(d.bounced) || 0;
@@ -4018,7 +4030,8 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
         replies,
         openRate: sent > 0 ? (opens / sent) * 100 : 0,
         clickRate: sent > 0 ? (clicks / sent) * 100 : 0,
-        replyRate: sent > 0 ? (replies / sent) * 100 : 0
+        replyRate: sent > 0 ? (replies / sent) * 100 : 0,
+        next_send_at: sch.next_send_at || null
       };
     });
 

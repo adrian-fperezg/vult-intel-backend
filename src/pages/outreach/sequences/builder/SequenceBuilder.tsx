@@ -273,6 +273,18 @@ function StepNode({
                           <option value="days" className="bg-[#161b22]">days</option>
                         </select>
                       </div>
+
+                      {sequenceStatus === 'active' && analytics?.[step.id]?.next_send_at ? (
+                        <p className="text-[10px] text-teal-400/80 mt-2 flex items-center gap-1.5 font-medium">
+                          <Clock className="size-2.5" />
+                          Next scheduled send: {new Date(analytics[step.id].next_send_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1.5">
+                          <Clock className="size-2.5" />
+                          Calculated as {step.delay_amount || 0} {step.delay_unit || 'days'} after the previous step.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="flex-1">
