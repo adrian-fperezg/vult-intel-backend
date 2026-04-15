@@ -283,7 +283,7 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
   ];
 
   const deliveryEstimate = contacts.length > 0 
-    ? (Math.ceil(contacts.length / scheduling.daily_limit) <= 1 ? "within 24 hours" : `approximately ${Math.ceil(contacts.length / scheduling.daily_limit)} days`)
+    ? "Emails will be processed continuously immediately upon launch."
     : "loading...";
 
   return (
@@ -453,13 +453,7 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
                   </div>
                 )}
 
-                <div className="flex items-center justify-between pb-6 border-b border-white/5">
-                  <div>
-                    <h4 className="font-bold text-white">Daily Limits</h4>
-                    <p className="text-sm text-slate-400">Max emails to send per day to avoid spam filters</p>
-                  </div>
-                  <input type="number" value={scheduling.daily_limit} onChange={e => setScheduling({...scheduling, daily_limit: Number(e.target.value)})} className="bg-black/40 border border-white/10 rounded-lg w-24 px-3 py-2 text-white text-center" />
-                </div>
+
                 
                 <div className="flex items-center justify-between pb-6 border-b border-white/5">
                   <div>
@@ -489,7 +483,7 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
                 <Search className="size-6 text-blue-400 shrink-0" />
                 <div>
                   <h4 className="font-bold text-blue-400 mb-1">Delivery Estimate</h4>
-                  <p className="text-sm text-blue-300/80 mb-3">Based on your {scheduling.daily_limit}/day limit and {contacts.length} recipients.</p>
+                  <p className="text-sm text-blue-300/80 mb-3">Processing {contacts.length} recipients.</p>
                   <p className="text-xl font-black text-white">{deliveryEstimate}</p>
                 </div>
               </div>
@@ -531,7 +525,7 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
                 <div className="bg-[#161b22] border border-white/5 rounded-2xl p-6 flex justify-between">
                   <div>
                     <p className="text-sm text-slate-500 mb-1">Sending Speed</p>
-                    <p className="text-lg font-bold text-white">{scheduling.daily_limit} emails / day</p>
+                    <p className="text-lg font-bold text-white">Unlimited</p>
                     <p className="text-sm text-slate-400">{deliveryEstimate}</p>
                   </div>
                   <button onClick={() => setStep('scheduling')} className="text-teal-400 text-sm hover:underline">Edit</button>

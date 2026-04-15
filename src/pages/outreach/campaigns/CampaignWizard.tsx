@@ -170,7 +170,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
   };
 
   const deliveryEstimate = contacts.length > 0 
-    ? (Math.ceil(contacts.length / 200) <= 1 ? "within 24 hours" : `approximately ${Math.ceil(contacts.length / 200)} days`)
+    ? "Emails will be processed continuously immediately upon launch."
     : "loading...";
 
   const steps: { key: WizardStep; label: string; icon: any }[] = [
@@ -515,23 +515,8 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                     </div>
                   )}
 
-                  <div className="grid md:grid-cols-2 gap-8 pt-2">
-                  <div className="p-6 bg-[#161b22] border border-[#30363d] rounded-2xl space-y-4">
-                    <div className="flex items-center justify-between mb-2">
-                       <h4 className="text-sm font-bold text-white">Daily Limit</h4>
-                       <span className="text-teal-400 font-mono text-xs">{scheduling.daily_limit} emails / day</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="10" 
-                      max="200" 
-                      step="10"
-                      value={scheduling.daily_limit}
-                      onChange={e => setScheduling({...scheduling, daily_limit: parseInt(e.target.value)})}
-                      className="w-full h-1.5 bg-white/5 rounded-lg appearance-none cursor-pointer accent-teal-500"
-                    />
-                    <p className="text-[10px] text-slate-500">Limits per mailbox. Higher limits increase bounce risk.</p>
-                  </div>
+                  <div className="grid md:grid-cols-1 gap-8 pt-2">
+
 
                   <div className="p-6 bg-[#161b22] border border-[#30363d] rounded-2xl space-y-4">
                     <div className="flex items-center justify-between mb-2">

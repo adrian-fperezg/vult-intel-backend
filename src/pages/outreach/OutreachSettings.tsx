@@ -109,10 +109,6 @@ export default function OutreachSettings() {
   const [fetchingZb, setFetchingZb] = useState(false);
   const [fetchingPdl, setFetchingPdl] = useState(false);
 
-  // Global Safety Limits
-  const [globalDailyLimit, setGlobalDailyLimit] = useState<number | string>(50);
-  const [savingGlobalLimit, setSavingGlobalLimit] = useState(false);
-
   // Compliance & Footer
   const [businessAddress, setBusinessAddress] = useState('');
   const [savingBusinessAddress, setSavingBusinessAddress] = useState(false);
@@ -252,11 +248,6 @@ export default function OutreachSettings() {
       // Update PDL
       setHasPdl(settings?.pdl?.connected || false);
 
-      // Global Limit
-      if (settings?.global_daily_limit !== undefined) {
-        setGlobalDailyLimit(settings.global_daily_limit);
-      }
-
       // Business Address
       if (settings?.business_address !== undefined) {
         setBusinessAddress(settings.business_address || '');
@@ -354,31 +345,7 @@ export default function OutreachSettings() {
     setSavingPdl(false);
   };
 
-  const handleSaveGlobalLimit = async () => {
-    const lim = Number(globalDailyLimit);
-    if (!lim || lim <= 0) {
-      toast.error('Limit must be a valid number greater than 0');
-      return;
-    }
-    if (lim > 50) {
-      toast.error('⚠️ Safety Error: To protect your domain reputation, the maximum limit is 50 emails per day.');
-      return;
-    }
-    if (!api.activeProjectId) {
-      toast.error('No project selected.');
-      return;
-    }
-    setSavingGlobalLimit(true);
-    try {
-      await api.updateSettings({ global_daily_limit: lim });
-      toast.success('Global daily limit updated successfully');
-      await loadIntegrationStatus();
-    } catch (err: any) {
-      toast.error('Failed to update limit: ' + (err.message || 'Unknown error'));
-    } finally {
-      setSavingGlobalLimit(false);
-    }
-  };
+
 
   const handleSaveBusinessAddress = async () => {
     if (!api.activeProjectId) {
@@ -512,41 +479,9 @@ export default function OutreachSettings() {
               />
             ) : (
               <>
-                {/* 1. GLOBAL SAFETY LIMITS */}
-                <section className="space-y-4 bg-teal-500/5 border border-teal-500/20 p-6 rounded-2xl mb-8">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shield className="w-5 h-5 text-teal-400" />
-                        <h3 className="text-sm font-bold uppercase tracking-widest text-teal-400">Global Outreach Limits</h3>
-                      </div>
-                      <p className="text-sm text-slate-300 pt-1">Set a hard cap on the total number of emails dispatched per day across all sequences and campaigns to strictly protect your domain reputation. Setting this over 50 is strictly prohibited for your safety.</p>
-                      
-                      <div className="mt-5 flex items-end gap-3">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Daily Outreach Limit</label>
-                          <div className="relative">
-                            <input 
-                              type="number" 
-                              value={globalDailyLimit}
-                              onChange={(e) => setGlobalDailyLimit(e.target.value)}
-                              max={50}
-                              min={1}
-                              className="bg-black/20 border border-white/10 rounded-xl pl-4 pr-16 py-2.5 w-48 text-sm focus:border-teal-500 outline-none text-white font-medium"
-                              placeholder="e.g. 50"
-                            />
-                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">/ Day</span>
-                          </div>
-                        </div>
-                        <TealButton onClick={handleSaveGlobalLimit} loading={savingGlobalLimit} className="px-6 h-[42px] font-bold">
-                          Apply Safety Cap
-                        </TealButton>
-                      </div>
-                    </div>
-                  </div>
-                </section>
 
-                {/* COMPLIANCE & FOOTER */}
+
+                {/* 1. COMPLIANCE & FOOTER */}
                 <section className="space-y-4 bg-amber-500/5 border border-amber-500/15 p-6 rounded-2xl">
                   <div className="flex items-start gap-4">
                     <div className="flex-1">
@@ -695,19 +630,7 @@ export default function OutreachSettings() {
                                   className="overflow-hidden border-t border-white/5"
                                 >
                                   <div className="p-5 space-y-6">
-                                    {/* Quota Bar */}
-                                    <div>
-                                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
-                                        <span>Daily Sending Quota</span>
-                                        <span className="text-teal-400">{mb.sent ?? 0} / {mb.dailyLimit ?? 200} used</span>
-                                      </div>
-                                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                        <div 
-                                          className="h-full bg-teal-500 rounded-full" 
-                                          style={{ width: `${Math.min(100, ((mb.sent ?? 0) / (mb.dailyLimit ?? 200)) * 100)}%` }} 
-                                        />
-                                      </div>
-                                    </div>
+
 
                                     {/* DNS Checks */}
                                     <div>

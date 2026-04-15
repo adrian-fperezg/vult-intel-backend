@@ -190,8 +190,8 @@ export default function OutreachSequences() {
         <div className="grid grid-cols-4 gap-4">
           <OutreachMetricCard
             label="Daily Send Velocity"
-            value={`${globalStats?.dailySendVelocity || 0} / 100`}
-            sub="Global Project Limit"
+            value={`${globalStats?.dailySendVelocity || 0}`}
+            sub="Emails sent today"
             teal={(globalStats?.dailySendVelocity || 0) > 0}
             icon={<Zap className="size-4" />}
           />

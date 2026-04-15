@@ -230,14 +230,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       // Heartbeat: Log start of processing
       console.log(`[Sequence] [Heartbeat] Processing step ${stepId} (${stepNumber}) for contact ${contactId} in sequence ${sequenceId}`);
 
-      // 2. Check Global Send Limit
-      const canSend = await checkAndIncrementGlobalLimit(projectId);
-      if (!canSend) {
-        console.log(`[Sequence] Global limit reached. Delaying job for tomorrow with priority.`);
-        // Re-queue with 24 hour delay and High Priority
-        await emailQueue.add(name, data, { delay: 24 * 60 * 60 * 1000, priority: 1 });
-        return;
-      }
+      // 2. Global Send Limit check removed (Always proceed)
 
       // 3. Process the step
       const step = await db.prepare('SELECT * FROM outreach_sequence_steps WHERE id = ?').get(stepId) as any;
@@ -468,18 +461,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
         }
       }
 
-      // Check Sequence Daily Limits
-      const todayStr = new Date().toISOString().split('T')[0];
-      const countData = await db.prepare("SELECT COUNT(*) as count FROM outreach_individual_emails WHERE sequence_id = ? AND DATE(sent_at) = ?").get(email.sequence_id, todayStr) as any;
-      
-      if (countData && countData.count >= sequenceLimit) {
-        console.log(`[processEmail] Sequence daily limit reached (${countData.count}/${sequenceLimit}). Rescheduling for tomorrow.`);
-        await emailQueue.add('send-email', { emailId }, {
-          delay: 24 * 60 * 60 * 1000,
-          priority: 1
-        });
-        return;
-      }
+      // Limit checks completely removed (Unlimited)
     }
   } else if (email.campaign_id) {
     // Campaign limit check
@@ -489,17 +471,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
         const parsed = JSON.parse(campObj.settings);
         sequenceLimit = parsed.daily_limit || 50;
         
-        const todayStr = new Date().toISOString().split('T')[0];
-        const countData = await db.prepare("SELECT COUNT(*) as count FROM outreach_individual_emails WHERE campaign_id = ? AND DATE(sent_at) = ?").get(email.campaign_id, todayStr) as any;
-        
-        if (countData && countData.count >= sequenceLimit) {
-          console.log(`[processEmail] Campaign daily limit reached (${countData.count}/${sequenceLimit}). Rescheduling for tomorrow.`);
-          await emailQueue.add('send-email', { emailId }, {
-            delay: 24 * 60 * 60 * 1000,
-            priority: 1
-          });
-          return;
-        }
+        // Limit checks completely removed (Unlimited)
       } catch (e) { }
     }
   }
