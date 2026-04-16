@@ -4,14 +4,27 @@ import { v4 as uuidv4 } from 'uuid';
 /**
  * Encuentra el email original al que se está respondiendo (Compatible con Postgres).
  */
-export async function findOriginalEmail(potentialIds: string[], threadId?: string, fromEmail?: string, projectId?: string) {
+export async function findOriginalEmail(params: {
+  potentialIds: string[];
+  threadId?: string;
+  fromEmail?: string;
+  projectId?: string;
+  expectedContactEmail?: string; // STRICT MATCHING
+}) {
+  const { potentialIds, threadId, fromEmail, projectId, expectedContactEmail } = params;
+
   for (const mid of potentialIds) {
     const cleanId = mid.replace(/[<>]/g, '').trim();
     const original = await db.prepare(`
       SELECT * FROM outreach_individual_emails 
       WHERE message_id = ? OR message_id LIKE ?
     `).get(cleanId, `%${cleanId}%`) as any;
+
     if (original) {
+      if (expectedContactEmail && original.to_email?.toLowerCase() !== expectedContactEmail.toLowerCase()) {
+         console.warn(`[DEBUG] Potential match via Message-ID for ${original.id}, but Contact Email Mismatch: Expected ${expectedContactEmail}, found ${original.to_email}`);
+         continue; 
+      }
       console.log(`[DEBUG] Successfully linked reply to Original Email ID: ${original.id} via Message-ID`);
       return original;
     }
@@ -20,8 +33,12 @@ export async function findOriginalEmail(potentialIds: string[], threadId?: strin
   if (threadId) {
     const original = await db.prepare(`SELECT * FROM outreach_individual_emails WHERE thread_id = ?`).get(threadId) as any;
     if (original) {
-      console.log(`[DEBUG] Successfully linked reply to Original Email ID: ${original.id} via Thread-ID`);
-      return original;
+      if (expectedContactEmail && original.to_email?.toLowerCase() !== expectedContactEmail.toLowerCase()) {
+         console.warn(`[DEBUG] Potential match via Thread-ID for ${original.id}, but Contact Email Mismatch: Expected ${expectedContactEmail}, found ${original.to_email}`);
+      } else {
+        console.log(`[DEBUG] Successfully linked reply to Original Email ID: ${original.id} via Thread-ID`);
+        return original;
+      }
     }
   }
 
@@ -94,7 +111,11 @@ export async function recordOutreachEvent(params: {
 export function isBounce(from: string, subject: string): boolean {
   const f = from.toLowerCase();
   const s = subject.toLowerCase();
-  const patterns = ['mailer-daemon', 'postmaster', 'delivery-status-notification', 'undelivered', 'returned mail', 'failure notice'];
+  const patterns = [
+    'mailer-daemon', 'postmaster', 'delivery-status-notification', 
+    'undelivered', 'returned mail', 'failure notice',
+    'system administrator', 'address not found', 'could not be delivered'
+  ];
   return patterns.some(p => f.includes(p) || s.includes(p));
 }
 

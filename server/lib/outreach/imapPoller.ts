@@ -101,7 +101,7 @@ export async function pollImap(mailboxId: string) {
 
         // 1. BOUNCE DETECTION
         if (isBounce(from, subject)) {
-          const original = await findOriginalEmail([messageId || uid].filter(Boolean));
+          const original = await findOriginalEmail({ potentialIds: [messageId || uid].filter(Boolean) });
           if (original) {
             await recordOutreachEvent({
               project_id: mailbox.project_id, sequence_id: original.sequence_id,
@@ -126,9 +126,22 @@ export async function pollImap(mailboxId: string) {
         const fromEmailMatch = (from || '').match(/<(.+)>/) || [null, from.trim()];
         const fromEmail = fromEmailMatch[1] || from.trim();
 
-        const originalEmail = await findOriginalEmail(potentialMessageIds, undefined, fromEmail, mailbox.project_id);
+        // ❌ SELF-REPLY PROTECTION: If sender is the mailbox itself, it's not a prospect reply.
+        if (fromEmail.toLowerCase() === mailbox.email.toLowerCase()) {
+          console.log(`[IMAP] Skipping email from ${fromEmail} - Sender is the mailbox itself (Self-thread).`);
+          await connection.addFlags(uid, ['\\Seen']);
+          continue;
+        }
+
+        const originalEmail = await findOriginalEmail({
+          potentialIds: potentialMessageIds,
+          fromEmail,
+          projectId: mailbox.project_id,
+          expectedContactEmail: fromEmail // STRICT MATCH: Sender must be the prospect email we sent to
+        });
+
         if (!originalEmail || !originalEmail.contact_id) {
-          console.log(`[IMAP] Skipping email from ${from} (Subject: ${subject}) - No matching outreach email or active contact found in DB.`);
+          console.log(`[IMAP] Skipping email from ${from} (Subject: ${subject}) - No matching outreach email or strict contact verification failed.`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }

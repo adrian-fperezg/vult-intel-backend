@@ -754,6 +754,93 @@ app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
   }
 });
 
+// ─── PUBLIC TRACKING ROUTES ──────────────────────────────────────────────────
+// These routes must be BEFORE verifyFirebaseToken to allow open/click tracking from external clients.
+app.get("/api/track/open/:emailId", async (req, res) => {
+  const { emailId } = req.params;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const userAgent = req.headers['user-agent'];
+
+  try {
+    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    if (email) {
+      await db.prepare(`
+        INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
+        VALUES (?, ?, 'open', ?, ?)
+      `).run(uuidv4(), emailId, String(ip), String(userAgent));
+
+      await db.run(`
+        UPDATE outreach_individual_emails 
+        SET opened_at = CURRENT_TIMESTAMP, status = 'opened'
+        WHERE id = ? AND opened_at IS NULL
+      `, [emailId]);
+
+      await recordOutreachEvent({
+        project_id: email.project_id,
+        sequence_id: email.sequence_id,
+        step_id: email.step_id,
+        contact_id: email.contact_id,
+        email_id: emailId,
+        event_type: 'opened',
+        event_key: `opened:${emailId}`,
+        metadata: { ip, userAgent, source: 'invisible_tracking_pixel' }
+      });
+      console.log(`[Tracking] Recorded open for email ${emailId}`);
+    }
+  } catch (err) {
+    console.error("[Tracking] Pixel error:", err);
+  }
+
+  const buf = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+  res.writeHead(200, {
+    "Content-Type": "image/gif",
+    "Content-Length": buf.length,
+    "Cache-Control": "no-store, no-cache, must-revalidate, private",
+    "Pragma": "no-cache",
+    "Expires": "0"
+  });
+  res.end(buf);
+});
+
+app.get("/api/track/click/:emailId", async (req, res) => {
+  const { emailId } = req.params;
+  const targetUrl = req.query.url as string;
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const userAgent = req.headers["user-agent"];
+
+  if (!targetUrl) return res.status(400).send("Missing URL parameter");
+
+  try {
+    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    if (email) {
+      await db.prepare(`
+        INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent, link_url)
+        VALUES (?, ?, 'click', ?, ?, ?)
+      `).run(uuidv4(), emailId, String(ip), String(userAgent), targetUrl);
+
+      await db.run(`
+        UPDATE outreach_individual_emails 
+        SET clicked_at = CURRENT_TIMESTAMP, status = 'clicked'
+        WHERE id = ? AND clicked_at IS NULL
+      `, [emailId]);
+
+      await recordOutreachEvent({
+        project_id: email.project_id,
+        sequence_id: email.sequence_id,
+        step_id: email.step_id,
+        contact_id: email.contact_id,
+        email_id: emailId,
+        event_type: 'clicked' as any,
+        event_key: `clicked:${emailId}:${Buffer.from(targetUrl).toString('base64').substring(0, 16)}`,
+        metadata: { url: targetUrl, ip, userAgent }
+      });
+    }
+  } catch (err) {
+    console.error("Tracking click error:", err);
+  }
+  res.redirect(targetUrl);
+});
+
 // ─── Protected routes (require Firebase token) ────────────────────────────────
 
 app.use("/api/outreach", verifyFirebaseToken as any);
@@ -3846,100 +3933,6 @@ app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
     });
     res.status(500).json({ error: "Failed to optimize content", details: err.message });
   }
-});
-
-// ✅ INVISIBLE TRACKING PIXEL (User Requested)
-app.get("/api/track/open/:emailId", async (req, res) => {
-  const { emailId } = req.params;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const userAgent = req.headers['user-agent'];
-
-  try {
-    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
-    if (email) {
-      // 1. Record raw pixel hit
-      await db.prepare(`
-        INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
-        VALUES (?, ?, 'open', ?, ?)
-      `).run(uuidv4(), emailId, String(ip), String(userAgent));
-
-      // 2. Update parent email record
-      await db.run(`
-        UPDATE outreach_individual_emails 
-        SET opened_at = CURRENT_TIMESTAMP, status = 'opened'
-        WHERE id = ? AND opened_at IS NULL
-      `, [emailId]);
-
-      // 3. Record standardized 'opened' event
-      await recordOutreachEvent({
-        project_id: email.project_id,
-        sequence_id: email.sequence_id,
-        step_id: email.step_id,
-        contact_id: email.contact_id,
-        email_id: emailId,
-        event_type: 'opened',
-        event_key: `opened:${emailId}`,
-        metadata: { ip, userAgent, source: 'invisible_tracking_pixel' }
-      });
-      console.log(`[Tracking] Recorded open for email ${emailId}`);
-    }
-  } catch (err) {
-    console.error("[Tracking] Pixel error:", err);
-  }
-
-  // Return a 1x1 transparent GIF
-  const buf = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
-  res.writeHead(200, {
-    "Content-Type": "image/gif",
-    "Content-Length": buf.length,
-    "Cache-Control": "no-store, no-cache, must-revalidate, private",
-    "Pragma": "no-cache",
-    "Expires": "0"
-  });
-  res.end(buf);
-});
-
-// GET /api/outreach/track/:emailId/click?url=...
-app.get("/api/outreach/track/:emailId/click", async (req, res) => {
-  const { emailId } = req.params;
-  const targetUrl = req.query.url as string;
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  const userAgent = req.headers["user-agent"];
-
-  if (!targetUrl) return res.status(400).send("Missing URL parameter");
-
-  try {
-    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
-    if (email) {
-      // 1. Record raw click hit
-      await db.prepare(`
-        INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent, link_url)
-        VALUES (?, ?, 'click', ?, ?, ?)
-      `).run(uuidv4(), emailId, String(ip), String(userAgent), targetUrl);
-
-      // 2. Update parent email record
-      await db.run(`
-        UPDATE outreach_individual_emails 
-        SET clicked_at = CURRENT_TIMESTAMP, status = 'clicked'
-        WHERE id = ? AND clicked_at IS NULL
-      `, [emailId]);
-
-      // 3. Record standardized 'clicked' event (Critical for Analytics)
-      await recordOutreachEvent({
-        project_id: email.project_id,
-        sequence_id: email.sequence_id,
-        step_id: email.step_id,
-        contact_id: email.contact_id,
-        email_id: emailId,
-        event_type: 'clicked' as any,
-        event_key: `clicked:${emailId}:${Buffer.from(targetUrl).toString('base64').substring(0, 16)}`,
-        metadata: { url: targetUrl, ip, userAgent }
-      });
-    }
-  } catch (err) {
-    console.error("Tracking click error:", err);
-  }
-  res.redirect(targetUrl);
 });
 
 // GET /api/outreach/sequences/:id/step-analytics

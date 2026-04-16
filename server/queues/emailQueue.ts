@@ -545,7 +545,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       if (!url || url.startsWith('#') || url.startsWith('mailto:') || url.startsWith('tel:') || url.includes('/api/outreach/track')) {
         return match;
       }
-      const trackedUrl = `${base}/api/outreach/track/${id}/click?url=${encodeURIComponent(url)}`;
+      const trackedUrl = `${base}/api/track/click/${id}?url=${encodeURIComponent(url)}`;
       return `<a href="${trackedUrl}"${rest}>`;
     });
   };

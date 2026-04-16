@@ -93,7 +93,10 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     console.log(`[Gmail Sync] [ID: ${msgRef.id}] Processing email from ${fromHeader}: "${subject}"`);
 
     if (isBounce(fromHeader, subject)) {
-      const original = await findOriginalEmail([messageId].filter(Boolean), msg.threadId);
+      const original = await findOriginalEmail({
+        potentialIds: [messageId].filter(Boolean),
+        threadId: msg.threadId
+      });
       if (original) {
         await recordOutreachEvent({
           project_id: mailbox.project_id,
@@ -115,14 +118,26 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     }
 
     const emailMatch = fromHeader.match(/<(.+)>/) || [null, fromHeader.trim()];
-    const fromEmail = emailMatch[1];
+    const fromEmail = emailMatch[1] || fromHeader.trim();
     if (!fromEmail) {
       console.log(`[Gmail Sync] Skipping Gmail message ${msg.id} - Could not parse From email header: ${fromHeader}`);
       continue;
     }
 
+    // ❌ SELF-REPLY PROTECTION: If sender is the mailbox itself, it's not a prospect reply.
+    if (fromEmail.toLowerCase() === mailbox.email.toLowerCase()) {
+      console.log(`[Gmail Sync] Skipping Gmail message ${msg.id} - Sender is the mailbox itself (Self-thread).`);
+      continue;
+    }
+
     const potentialIds = [messageId].filter(Boolean);
-    const originalEmail = await findOriginalEmail(potentialIds, msg.threadId, fromEmail, mailbox.project_id);
+    const originalEmail = await findOriginalEmail({
+      potentialIds,
+      threadId: msg.threadId,
+      fromEmail,
+      projectId: mailbox.project_id,
+      expectedContactEmail: fromEmail // STRICT MATCHING
+    });
 
     if (originalEmail) {
       console.log(`[Gmail Sync] [ID: ${msgRef.id}] Linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);

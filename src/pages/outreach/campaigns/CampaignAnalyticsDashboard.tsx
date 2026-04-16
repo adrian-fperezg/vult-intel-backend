@@ -137,6 +137,14 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
                           <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3}/>
                           <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
                         </linearGradient>
+                        <linearGradient id="colorReplies" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorBounces" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
+                        </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                       <XAxis 
@@ -156,8 +164,10 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
                         contentStyle={{ backgroundColor: '#1c2128', border: '1px solid #30363d', borderRadius: '12px' }}
                         itemStyle={{ fontSize: '12px' }}
                       />
-                      <Area type="monotone" dataKey="sent" stroke="#14B8A6" fillOpacity={1} fill="url(#colorSent)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="opens" stroke="#8B5CF6" fillOpacity={1} fill="url(#colorOpens)" strokeWidth={2} />
+                      <Area type="monotone" dataKey="sent" stroke="#14B8A6" fillOpacity={1} fill="url(#colorSent)" strokeWidth={2} name="Sent" />
+                      <Area type="monotone" dataKey="opens" stroke="#8B5CF6" fillOpacity={1} fill="url(#colorOpens)" strokeWidth={2} name="Opens" />
+                      <Area type="monotone" dataKey="replies" stroke="#10B981" fillOpacity={1} fill="url(#colorReplies)" strokeWidth={2} name="Replies" />
+                      <Area type="monotone" dataKey="bounces" stroke="#EF4444" fillOpacity={1} fill="url(#colorBounces)" strokeWidth={2} name="Bounces" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
