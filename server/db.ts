@@ -347,9 +347,10 @@ export const initDb = async () => {
         last_contacted_at TIMESTAMP,
         location_city TEXT,
         location_country TEXT,
-        job_title TEXT,
+        Job_title TEXT,
         custom_fields JSONB DEFAULT '{}',
         inferred_timezone TEXT,
+        is_read BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(project_id, email)
@@ -367,6 +368,7 @@ export const initDb = async () => {
       { name: 'job_title', type: 'TEXT' },
       { name: 'custom_fields', type: "JSONB DEFAULT '{}'" },
       { name: 'inferred_timezone', type: 'TEXT' },
+      { name: 'is_read', type: 'BOOLEAN DEFAULT TRUE' },
       { name: 'updated_at', type: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
     ];
 

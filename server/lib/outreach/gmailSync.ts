@@ -212,8 +212,9 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         aiResponse.intent, aiResponse.score
       ]);
 
-      // Mark original as replied
+      // Mark original as replied and contact as unread
       await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
+      await db.run("UPDATE outreach_contacts SET is_read = FALSE WHERE id = ?", [originalEmail.contact_id]);
 
       await recordOutreachEvent({
         project_id: mailbox.project_id,
