@@ -312,14 +312,16 @@ export default function OutreachInbox() {
                       <div className="size-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-lg font-bold shadow-inner shrink-0">
                         {(selectedMessage.first_name?.[0] || selectedMessage.from_email[0]).toUpperCase()}
                       </div>
-                        {selectedMessage.first_name?.[0] || selectedMessage.from_email[0]?.toUpperCase() || <User />}
-                      </div>
                       <div>
                         <p className="text-sm font-bold text-white flex items-center gap-2">
                           {selectedMessage.first_name || selectedMessage.last_name 
                             ? `${selectedMessage.first_name || ''} ${selectedMessage.last_name || ''}`.trim()
-                            : 'Lead Response'}
-                          <span className="text-xs font-normal text-slate-500">&lt;{selectedMessage.from_email}&gt;</span>
+                            : selectedMessage.from_email}
+                          {selectedMessage.intent && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                              {selectedMessage.intent}
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 font-medium">
                           <Calendar className="size-3" />
