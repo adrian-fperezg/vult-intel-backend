@@ -637,7 +637,9 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       bodyHtml: bodyWithTracking,
       fromEmail: email.from_email,
       fromName: email.from_name,
-      attachments
+      attachments,
+      threadId: email.thread_id,
+      parentMessageId: email.parent_message_id
     });
 
     console.log(`[processEmail] Gmail API email sent. messageId: ${result.messageId}`);

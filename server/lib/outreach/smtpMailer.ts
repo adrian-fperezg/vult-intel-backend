@@ -18,7 +18,19 @@ function toBase64Url(buffer: Buffer): string {
  * Sends an email via Gmail REST API.
  * This completely replaces the SMTP dispatch layer to overcome networking/port restrictions.
  */
-export async function sendGmailMessage(mailboxId: string, emailData: { to: string, subject: string, bodyHtml: string, fromEmail?: string, fromName?: string, attachments?: any[] }) {
+export async function sendGmailMessage(
+  mailboxId: string, 
+  emailData: { 
+    to: string, 
+    subject: string, 
+    bodyHtml: string, 
+    fromEmail?: string, 
+    fromName?: string, 
+    attachments?: any[],
+    threadId?: string,
+    parentMessageId?: string
+  }
+) {
   const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
   
   if (!mailbox) throw new Error("Mailbox not found");
@@ -54,13 +66,20 @@ export async function sendGmailMessage(mailboxId: string, emailData: { to: strin
     const fromName = emailData.fromName || mailbox.name;
     const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
-    const mailOptions = {
+    const mailOptions: any = {
       from: fromHeader,
       to: emailData.to,
       subject: emailData.subject,
       html: emailData.bodyHtml,
       attachments: emailData.attachments || []
     };
+
+    if (emailData.parentMessageId) {
+      mailOptions.headers = {
+        'In-Reply-To': emailData.parentMessageId,
+        'References': emailData.parentMessageId
+      };
+    }
 
     const mail = new MailComposer(mailOptions);
     const messageBuffer = await mail.compile().build();
@@ -72,7 +91,8 @@ export async function sendGmailMessage(mailboxId: string, emailData: { to: strin
     const res = await gmail.users.messages.send({
       userId: 'me',
       requestBody: {
-        raw: rawMessage
+        raw: rawMessage,
+        threadId: emailData.threadId
       }
     });
 

@@ -3,13 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Reply, Star, Mail, Clock, Inbox, Filter,
   CheckCircle2, AlertCircle, User, Calendar, Loader2,
-  ChevronRight, RefreshCw, Bookmark
+  ChevronRight, RefreshCw, Bookmark, PenLine
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachSectionHeader } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
 import { DateTime } from 'luxon';
+import TipTapEditor from './components/TipTapEditor';
+import toast from 'react-hot-toast';
 
 interface InboxMessage {
   id: string;
@@ -32,26 +34,31 @@ interface InboxMessage {
 
 export default function OutreachInbox() {
   const { activeProjectId } = useProject();
-  const api = useOutreachApi();
+  const { fetchUnifiedInbox, markInboxMessageAsRead } = useOutreachApi();
 
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Reply State
+  const [isReplyMode, setIsReplyMode] = useState(false);
+  const [replyBody, setReplyBody] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
   // 1. Fetch Data
   const loadInbox = useCallback(async () => {
     if (!activeProjectId) return;
     setIsLoading(true);
     try {
-      const data = await api.fetchUnifiedInbox(activeProjectId);
+      const data = await fetchUnifiedInbox(activeProjectId);
       setMessages(data || []);
     } catch (error) {
       console.error('[Inbox Fetch Error]:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [activeProjectId, api]);
+  }, [activeProjectId, fetchUnifiedInbox]);
 
   useEffect(() => {
     loadInbox();
@@ -66,13 +73,29 @@ export default function OutreachInbox() {
       setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, is_read: true } : m));
       
       try {
-        await api.markInboxMessageAsRead(msg.id);
+        await markInboxMessageAsRead(msg.id);
       } catch (error) {
         console.error('[Mark Read Error]:', error);
-        // Rollback if needed, but usually minor enough to skip
       }
     }
-  }, [api]);
+  }, [markInboxMessageAsRead]);
+
+  const handleSendReply = async () => {
+    if (!selectedId || !replyBody.trim() || isSending) return;
+    
+    setIsSending(true);
+    const loadId = toast.loading('Sending reply...');
+    try {
+      await sendInboxReply(selectedId, replyBody);
+      toast.success('Reply queued successfully!', { id: loadId });
+      setIsReplyMode(false);
+      setReplyBody('');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send reply', { id: loadId });
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   // 3. Filtering
   const filteredMessages = useMemo(() => {
@@ -215,16 +238,35 @@ export default function OutreachInbox() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <TealButton variant="outline" size="sm" className="rounded-xl px-4 py-2 opacity-50 cursor-not-allowed">
-                       <Reply className="size-3.5 mr-2" />
-                       Reply (Coming Soon)
-                    </TealButton>
+                    {!isReplyMode ? (
+                      <TealButton 
+                        variant="solid" 
+                        size="sm" 
+                        className="rounded-xl px-4 py-2"
+                        onClick={() => setIsReplyMode(true)}
+                      >
+                         <Reply className="size-3.5 mr-2" />
+                         Reply
+                      </TealButton>
+                    ) : (
+                      <TealButton 
+                        variant="outline" 
+                        size="sm" 
+                        className="rounded-xl px-4 py-2"
+                        onClick={() => {
+                          setIsReplyMode(false);
+                          setReplyBody('');
+                        }}
+                      >
+                         Cancel
+                      </TealButton>
+                    )}
                   </div>
                 </div>
 
                 {/* Body Content */}
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-black/[0.1]">
-                  <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-8 shadow-2xl">
+                  <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-8 shadow-2xl mb-8">
                     {selectedMessage.body_html ? (
                       <div 
                         className="prose prose-invert prose-sm max-w-none text-slate-200 leading-relaxed font-sans"
@@ -236,6 +278,48 @@ export default function OutreachInbox() {
                       </div>
                     )}
                   </div>
+
+                  {/* Reply Editor */}
+                  {isReplyMode && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-white/[0.03] border border-teal-500/20 rounded-2xl p-6 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
+                    >
+                      <div className="flex items-center gap-2 mb-4 text-teal-400">
+                        <PenLine className="size-4" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Drafting Reply</span>
+                      </div>
+                      
+                      <TipTapEditor 
+                        value={replyBody}
+                        onChange={setReplyBody}
+                        placeholder="Type your response..."
+                        className="min-h-[250px] bg-[#0d1117] border-white/5"
+                      />
+
+                      <div className="mt-4 flex justify-end gap-3">
+                        <TealButton 
+                          variant="solid" 
+                          disabled={!replyBody.trim() || isSending}
+                          onClick={handleSendReply}
+                          className="px-6 py-2.5 rounded-xl shadow-[0_0_20px_rgba(45,212,191,0.2)] hover:shadow-[0_0_25px_rgba(45,212,191,0.4)] transition-all"
+                        >
+                          {isSending ? (
+                            <>
+                              <Loader2 className="size-4 mr-2 animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Reply className="size-4 mr-2" />
+                              Send Reply
+                            </>
+                          )}
+                        </TealButton>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
               </div>
             ) : (

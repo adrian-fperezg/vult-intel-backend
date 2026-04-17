@@ -199,13 +199,13 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       const inboxMessageId = uuidv4();
       await db.run(`
         INSERT INTO outreach_inbox_messages 
-        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
         ON CONFLICT (message_id) DO NOTHING
       `, [
         inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
         originalEmail.sequence_id, msg.threadId, messageId, fromEmail, 
-        mailbox.email, subject, content.text, content.html, isRead
+        mailbox.email, subject, content.text, content.html, isRead, mailbox.id
       ]);
 
       // Mark original as replied

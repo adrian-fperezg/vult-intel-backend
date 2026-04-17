@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useProject } from '@/contexts/ProjectContext';
 
 const BASE_URL = (import.meta.env.VITE_OUTREACH_API_URL ?? 'http://localhost:3001') + '/api/outreach';
+const ROOT_URL = (import.meta.env.VITE_OUTREACH_API_URL ?? 'http://localhost:3001') + '/api';
 
 import type { AnalyticsData, FunnelStat, AiReportResponse } from '@shared/types/outreach';
 export type { AnalyticsData, FunnelStat, AiReportResponse };
@@ -651,14 +652,45 @@ export function useOutreachApi() {
 
   // ── Unified Inbox ─────────────────────────────────────────────────────────
   const fetchUnifiedInbox = useCallback(
-    (projectId: string) => get<any[]>(`/inbox/${projectId}`),
-    [get]
+    async (projectId: string) => {
+      if (!projectId) return null;
+      const headers = await authHeaders();
+      const res = await fetch(`${ROOT_URL}/inbox/${projectId}`, { headers });
+      if (!res.ok) throw new Error(`Fetch inbox failed: ${res.status}`);
+      return res.json() as Promise<any[]>;
+    },
+    [authHeaders]
   );
 
   const markInboxMessageAsRead = useCallback(
-    (messageId: string, isRead: boolean = true) =>
-      patch<any>(`/inbox/${messageId}/read`, { is_read: isRead }),
-    [patch]
+    async (messageId: string, isRead: boolean = true) => {
+      const headers = await authHeaders();
+      const res = await fetch(`${ROOT_URL}/inbox/${messageId}/read`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ is_read: isRead })
+      });
+      if (!res.ok) throw new Error(`Mark read failed: ${res.status}`);
+      return res.json();
+    },
+    [authHeaders]
+  );
+
+  const sendInboxReply = useCallback(
+    async (messageId: string, bodyHtml: string) => {
+      const headers = await authHeaders();
+      const res = await fetch(`${ROOT_URL}/inbox/${messageId}/reply`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ body_html: bodyHtml })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `Reply failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    [authHeaders]
   );
 
   const syncGmailAliases = useCallback(

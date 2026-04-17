@@ -528,7 +528,9 @@ export const initDb = async () => {
       { name: 'is_reply', type: 'BOOLEAN DEFAULT FALSE' },
       { name: 'error_code', type: 'TEXT' },
       { name: 'body', type: 'TEXT' },
-      { name: 'replied_at', type: 'TIMESTAMP' }
+      { name: 'replied_at', type: 'TIMESTAMP' },
+      { name: 'thread_id', type: 'TEXT' },
+      { name: 'parent_message_id', type: 'TEXT' }
     ];
 
     for (const col of newEmailCols) {
@@ -840,9 +842,17 @@ export const initDb = async () => {
         body_html TEXT,
         received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         is_read BOOLEAN DEFAULT FALSE,
+        mailbox_id TEXT REFERENCES outreach_mailboxes(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for outreach_inbox_messages
+    try {
+      await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS mailbox_id TEXT REFERENCES outreach_mailboxes(id)`);
+    } catch (err) {
+      console.warn(`[DB] PG Migration for inbox mailbox_id failed:`, (err as Error).message);
+    }
 
     // 20.5 Campaign Enrollments (¡NUEVA TABLA PARA EL EMBUDO!)
     await db.run(`
