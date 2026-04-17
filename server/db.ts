@@ -366,7 +366,8 @@ export const initDb = async () => {
       { name: 'location_country', type: 'TEXT' },
       { name: 'job_title', type: 'TEXT' },
       { name: 'custom_fields', type: "JSONB DEFAULT '{}'" },
-      { name: 'inferred_timezone', type: 'TEXT' }
+      { name: 'inferred_timezone', type: 'TEXT' },
+      { name: 'updated_at', type: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
     ];
 
     for (const col of newContactCols) {

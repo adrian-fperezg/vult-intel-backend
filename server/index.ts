@@ -2858,7 +2858,8 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           location_city = EXCLUDED.location_city,
           location_country = EXCLUDED.location_country,
           job_title = EXCLUDED.job_title,
-          inferred_timezone = EXCLUDED.inferred_timezone
+          inferred_timezone = EXCLUDED.inferred_timezone,
+          updated_at = CURRENT_TIMESTAMP
         RETURNING id
       `;
 
