@@ -3542,19 +3542,18 @@ app.get("/api/outreach/inbox", verifyFirebaseToken, async (req: AuthRequest, res
   const messages = await db
     .prepare(
       `
-    SELECT c.*, e.type as last_event, e.created_at as event_at
+    SELECT c.*, 
+           m.subject, m.body_text, m.body_html, m.received_at, m.from_email as sender_email
     FROM outreach_contacts c
     LEFT JOIN (
-      SELECT contact_id, type, created_at
-      FROM outreach_events
-      WHERE type IN ('reply')
-      GROUP BY contact_id, type, created_at
-      HAVING outreach_events.created_at = MAX(outreach_events.created_at)
-    ) e ON c.id = e.contact_id
+      SELECT contact_id, subject, body_text, body_html, received_at, from_email,
+             ROW_NUMBER() OVER (PARTITION BY contact_id ORDER BY received_at DESC) as rn
+      FROM outreach_inbox_messages
+    ) m ON c.id = m.contact_id AND m.rn = 1
     WHERE c.user_id = ?
       AND c.project_id = ?
       AND c.status != 'unsubscribed'
-    ORDER BY event_at DESC
+    ORDER BY m.received_at DESC NULLS LAST, c.updated_at DESC
   `,
     )
     .all(userId, project_id);

@@ -249,10 +249,10 @@ export default function OutreachInbox() {
                       )}>
                         {msg.first_name || msg.last_name 
                           ? `${msg.first_name || ''} ${msg.last_name || ''}`.trim()
-                          : msg.from_email.split('@')[0]}
+                          : msg.sender_email || msg.email}
                       </p>
                       <span className="text-[10px] text-slate-500 font-medium">
-                        {DateTime.fromISO(msg.received_at).toRelative()}
+                        {msg.received_at ? new Date(msg.received_at).toLocaleDateString() : 'Just now'}
                       </span>
                     </div>
                     <p className={cn(
@@ -280,7 +280,7 @@ export default function OutreachInbox() {
                     )}
 
                     <p className="text-[12px] text-slate-500 line-clamp-2 leading-relaxed">
-                      {msg.body_text || 'No preview available'}
+                      {msg.body_text?.substring(0, 80) || 'No preview available'}
                     </p>
                   </motion.div>
                 ))}
@@ -316,7 +316,7 @@ export default function OutreachInbox() {
                         <p className="text-sm font-bold text-white flex items-center gap-2">
                           {selectedMessage.first_name || selectedMessage.last_name 
                             ? `${selectedMessage.first_name || ''} ${selectedMessage.last_name || ''}`.trim()
-                            : selectedMessage.from_email}
+                            : selectedMessage.sender_email || selectedMessage.email}
                           {selectedMessage.intent && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-teal-500/10 text-teal-400 border border-teal-500/20">
                               {selectedMessage.intent}
@@ -324,8 +324,9 @@ export default function OutreachInbox() {
                           )}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 font-medium">
-                          <Calendar className="size-3" />
-                          {new Date(selectedMessage.received_at).toLocaleString([], { dateStyle: 'long', timeStyle: 'short' })}
+                          {selectedMessage.received_at 
+                            ? new Date(selectedMessage.received_at).toLocaleString([], { dateStyle: 'long', timeStyle: 'short' }) 
+                            : 'Date unavailable'}
                         </p>
                       </div>
                     </div>
