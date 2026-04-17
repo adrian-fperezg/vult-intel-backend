@@ -1,23 +1,18 @@
 import {
-  Activity,
-  Search,
-  Palette,
-  Cpu,
-  LayoutGrid,
-  Share2,
-  Mail,
+  BarChart3,
+  PenSquare,
+  Layers,
   Zap,
+  Inbox,
+  Users,
+  Search,
   Settings,
   LogOut,
   LogIn,
-  Compass,
   Menu,
   X,
   ChevronRight,
-  Briefcase,
-  UserCircle,
-  Target,
-  Clapperboard
+  UserCircle
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -32,17 +27,14 @@ import ProjectSelector from './ProjectSelector';
 import { formatTokens } from '@/utils/formatters';
 
 const navItems = [
-  { icon: Activity, key: 'navProjectsHub', path: '/projects-hub' },
-  { icon: Search, key: 'navFullScanReport', path: '/deep-scan' },
-  { icon: Palette, key: 'navContentGenerator', path: '/content-generator' },
-  { icon: Cpu, key: 'navWebGrowthPlan', path: '/web-growth-plan' },
-  { icon: Compass, key: 'navGlobalBrandStrategy', path: '/global-brand-strategy' },
-  { icon: UserCircle, key: 'navPersonaStudio', path: '/persona-studio' },
-  { icon: Target, key: 'Growth Mastermind', path: '/growth-mastermind' },
-  { icon: Briefcase, key: 'navCampaignArchitect', path: '/campaign-architect' },
-  { icon: LayoutGrid, key: 'navVisualWorkflows', path: '/visual-workflows' },
-  { icon: null, key: 'Outreach', path: '/outreach', teal: true },
-  { icon: Clapperboard, key: 'Veo Studio', path: '/veo-studio', amber: true },
+  { icon: BarChart3, label: 'Analytics', path: '/outreach', tab: 'analytics' },
+  { icon: PenSquare, label: 'Compose', path: '/outreach', tab: 'compose' },
+  { icon: Layers, label: 'Campaigns', path: '/outreach', tab: 'campaigns' },
+  { icon: Zap, label: 'Sequences', path: '/outreach', tab: 'sequences' },
+  { icon: Inbox, label: 'Inbox', path: '/outreach', tab: 'inbox' },
+  { icon: Users, label: 'Contacts', path: '/outreach', tab: 'contacts' },
+  { icon: Search, label: 'Lead Finder', path: '/outreach', tab: 'lead-finder' },
+  { icon: Settings, label: 'Settings', path: '/outreach', tab: 'settings' },
 ];
 
 export default function Sidebar() {
@@ -99,64 +91,35 @@ export default function Sidebar() {
 
         <nav className="flex flex-col gap-0.5 mt-2">
           {navItems.map((item) => {
-            const isActive = location.pathname.startsWith(item.path);
-            const isTeal = (item as any).teal;
-            const isAmber = (item as any).amber;
+            const isActive = location.pathname === item.path && 
+                            (new URLSearchParams(location.search).get('tab') === item.tab || 
+                             (!new URLSearchParams(location.search).get('tab') && item.tab === 'analytics'));
+            
             return (
               <Link
-                key={item.path}
-                to={item.path}
+                key={`${item.path}-${item.tab}`}
+                to={`${item.path}?tab=${item.tab}`}
                 className={cn(
                   "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group",
                   isActive
-                    ? isTeal
-                      ? "bg-teal-500/10 border border-teal-500/20 text-white"
-                      : isAmber
-                        ? "bg-amber-500/10 border border-amber-500/20 text-white"
-                        : "bg-primary/10 border border-primary/20 text-white"
+                    ? "bg-teal-500/10 border border-teal-500/20 text-white"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
-                {isTeal ? (
-                  <svg
-                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
-                    className={cn(
-                      "size-4 md:size-5 transition-colors shrink-0",
-                      isActive ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )}
-                    aria-hidden="true"
-                  >
-                    <path d="M22 2L11 13" />
-                    <path d="M22 2L15 22l-4-9-9-4 20-7z" />
-                  </svg>
-                ) : isAmber ? (
-                  <item.icon
-                    className={cn(
-                      "size-4 md:size-5 transition-colors shrink-0",
-                      isActive ? "text-amber-400" : "text-slate-500 group-hover:text-amber-400"
-                    )}
-                  />
-                ) : (
-                  <item.icon
-                    className={cn(
-                      "size-4 md:size-5 transition-colors shrink-0",
-                      isActive ? "text-primary" : "text-slate-500 group-hover:text-white"
-                    )}
-                  />
-                )}
+                <item.icon
+                  className={cn(
+                    "size-4 md:size-5 transition-colors shrink-0",
+                    isActive ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                  )}
+                />
                 <span className={cn(
                   "text-sm md:text-base font-medium truncate",
-                  isActive && "font-semibold",
-                  isActive && isAmber && "text-amber-100"
+                  isActive && "font-semibold"
                 )}>
-                  {isTeal ? 'Outreach' : isAmber ? 'Veo Studio' : t(item.key)}
+                  {item.label}
                 </span>
                 {isActive && (
-                  <ChevronRight className={cn(
-                    "size-3 ml-auto shrink-0",
-                    isTeal ? "text-teal-400/60" : isAmber ? "text-amber-400/60" : "text-primary/60"
-                  )} />
+                  <ChevronRight className="size-3 ml-auto shrink-0 text-teal-400/60" />
                 )}
               </Link>
             );
