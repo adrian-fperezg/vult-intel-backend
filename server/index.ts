@@ -40,10 +40,10 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
 
   // One-time Backfill for Unified Inbox
   try {
-    const checkCount = await (db as any).get("SELECT COUNT(*) as count FROM outreach_inbox_messages");
+    const checkCount = await (db as any).get("SELECT COUNT(*) as count FROM outreach_inbox_messages") as any;
     if (checkCount?.count === 0 || checkCount?.count === "0") {
-      console.log("🚀 [BACKFILL] Starting Unified Inbox backfill...");
-      await (db as any).exec(`
+      console.log("[BACKFILL] Starting Unified Inbox backfill...");
+      await db.exec(`
         -- Cleanup: Remove any outbound emails that accidentally entered the inbox table
         DELETE FROM outreach_inbox_messages 
         WHERE from_email IN (SELECT email FROM outreach_mailboxes);
@@ -72,10 +72,10 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
 
         UPDATE outreach_contacts SET is_read = TRUE WHERE id IN (SELECT contact_id FROM outreach_individual_emails WHERE is_reply = True);
       `);
-      console.log("✅ [BACKFILL] Unified Inbox backfill completed.");
+      console.log("[BACKFILL] Unified Inbox backfill completed.");
     }
   } catch (err) {
-    console.error("❌ [BACKFILL] Failed during startup:", err);
+    console.error("[BACKFILL] Failed during startup:", err);
   }
 
   // Custom verification for Outreach Emergency (Matches user request)
@@ -83,10 +83,10 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
     const count = await (db as any).mailbox.count();
     console.log("DB_CHECK: Total mailboxes in DB is: " + count);
     if (count > 0) {
-      console.warn("⚠️ [DB_CHECK] Mailboxes still exist! Purge may have failed.");
+      console.warn("[DB_CHECK] Mailboxes still exist! Purge may have failed.");
     }
   } catch (err) {
-    console.error("❌ [DB_CHECK] Fatal error during mailbox count check:", err);
+    console.error("[DB_CHECK] Fatal error during mailbox count check:", err);
   }
 })();
 import { v4 as uuidv4 } from "uuid";
