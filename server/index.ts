@@ -43,7 +43,10 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
     const checkCount = await (db as any).get("SELECT COUNT(*) as count FROM outreach_inbox_messages");
     if (checkCount?.count === 0 || checkCount?.count === "0") {
       console.log("🚀 [BACKFILL] Starting Unified Inbox backfill...");
-      await (db as any).exec(`
+        -- Cleanup: Remove any outbound emails that accidentally entered the inbox table
+        DELETE FROM outreach_inbox_messages 
+        WHERE from_email IN (SELECT email FROM outreach_mailboxes);
+
         INSERT INTO outreach_inbox_messages 
         (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id)
         SELECT 
@@ -62,7 +65,8 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
           TRUE, 
           mailbox_id
         FROM outreach_individual_emails
-        WHERE is_reply = True
+        WHERE is_reply = True 
+          AND from_email NOT IN (SELECT email FROM outreach_mailboxes)
         ON CONFLICT (message_id) DO NOTHING;
 
         UPDATE outreach_contacts SET is_read = TRUE WHERE id IN (SELECT contact_id FROM outreach_individual_emails WHERE is_reply = True);
@@ -3584,6 +3588,7 @@ app.get("/api/outreach/inbox", verifyFirebaseToken, async (req: AuthRequest, res
       SELECT contact_id, subject, body_text, body_html, received_at, from_email,
              ROW_NUMBER() OVER (PARTITION BY contact_id ORDER BY received_at DESC) as rn
       FROM outreach_inbox_messages
+      WHERE from_email NOT IN (SELECT email FROM outreach_mailboxes)
     ) m ON c.id = m.contact_id AND m.rn = 1
     WHERE c.user_id = ?
       AND c.project_id = ?

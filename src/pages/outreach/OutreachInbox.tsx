@@ -281,7 +281,9 @@ export default function OutreachInbox() {
                     )}
 
                     <p className="text-[12px] text-slate-500 line-clamp-2 leading-relaxed">
-                      {msg.body_text?.substring(0, 80) || 'No preview available'}
+                      {(msg.body_text || msg.body_html || '')
+                        .replace(/<[^>]*>?/gm, '')
+                        .substring(0, 80) || 'No preview available'}
                     </p>
                   </motion.div>
                 ))}
