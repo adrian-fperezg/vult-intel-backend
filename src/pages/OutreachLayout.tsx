@@ -67,7 +67,6 @@ export default function OutreachLayout() {
     window.addEventListener('outreach-tab-change', handleTabChange);
     return () => window.removeEventListener('outreach-tab-change', handleTabChange);
   }, [setSearchParams]);
-  }, [setSearchParams]);
 
 
   // Poll for draft and unread inbox counts
