@@ -64,15 +64,9 @@ export default function OutreachLayout() {
       window.history.replaceState({}, '', window.location.pathname);
     }
 
-    // Listen for cross-tab navigation events
-    const handleTabChange = (e: any) => {
-      const target = e.detail as OutreachTab;
-      if (TABS.some(t => t.id === target)) {
-        setActiveTab(target);
-      }
-    };
     window.addEventListener('outreach-tab-change', handleTabChange);
     return () => window.removeEventListener('outreach-tab-change', handleTabChange);
+  }, [setSearchParams]);
   }, [setSearchParams]);
 
 
@@ -83,13 +77,14 @@ export default function OutreachLayout() {
     let isMounted = true;
     const loadCounts = async () => {
       try {
-        // Fetch drafts
-        const draftData = await fetchIndividualEmails('draft');
-        if (isMounted && draftData) setDraftCount(draftData.length);
-  
-        // Fetch unread inbox messages
-        const unreadCount = await fetchInboxUnreadCount(activeProjectId);
-        if (isMounted) setUnreadInboxCount(unreadCount);
+        const [draftData, unreadCount] = await Promise.all([
+          fetchIndividualEmails('draft'),
+          fetchInboxUnreadCount(activeProjectId)
+        ]);
+        if (isMounted) {
+          if (draftData) setDraftCount(draftData.length);
+          setUnreadInboxCount(unreadCount);
+        }
       } catch (error) {
         console.error('[OutreachLayout Polling Error]:', error);
       }
@@ -97,9 +92,15 @@ export default function OutreachLayout() {
   
     loadCounts();
     const interval = setInterval(loadCounts, 15000); // Check every 15s
+
+    // Listen for manual refresh requests (e.g. from children marking messages as read)
+    const handleManualRefresh = () => loadCounts();
+    window.addEventListener('refresh-outreach-counts', handleManualRefresh);
+
     return () => {
       isMounted = false;
       clearInterval(interval);
+      window.removeEventListener('refresh-outreach-counts', handleManualRefresh);
     }
   }, [fetchIndividualEmails, fetchInboxUnreadCount, status, activeProjectId]);
 

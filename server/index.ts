@@ -3660,6 +3660,58 @@ app.post("/api/inbox/:id/summarize", async (req: AuthRequest, res) => {
   }
 });
 
+// POST /api/inbox/:id/reply
+app.post("/api/inbox/:id/reply", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params; // inbox_messages.id (not message_id)
+  const { body_html } = req.body;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!body_html) return res.status(400).json({ error: "Reply body is required" });
+
+  try {
+    // 1. Fetch the inbox message we are replying to
+    const inboxMsg = await db.get(`
+      SELECT * FROM outreach_inbox_messages 
+      WHERE id = ? AND project_id IN (SELECT id FROM outreach_projects WHERE user_id = ?)
+    `, [id, userId]) as any;
+
+    if (!inboxMsg) return res.status(404).json({ error: "Original message not found" });
+
+    // 2. Fetch the mailbox to use for sending
+    const mailbox = await db.get(`
+      SELECT * FROM outreach_mailboxes WHERE id = ?
+    `, [inboxMsg.mailbox_id]) as any;
+
+    if (!mailbox) return res.status(404).json({ error: "Mailbox not found" });
+
+    // 3. Build the reply
+    const replyId = uuidv4();
+    const replySubject = inboxMsg.subject.toLowerCase().startsWith('re:') 
+      ? inboxMsg.subject 
+      : `Re: ${inboxMsg.subject}`;
+
+    // 4. Insert into standard queue
+    await db.run(`
+      INSERT INTO outreach_individual_emails (
+        id, user_id, project_id, mailbox_id, contact_id, sequence_id,
+        from_email, from_name, to_email, subject, body_html, 
+        status, thread_id, parent_message_id, is_reply, scheduled_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `, [
+      replyId, userId, inboxMsg.project_id, mailbox.id, inboxMsg.contact_id, inboxMsg.sequence_id,
+      mailbox.email, mailbox.name, inboxMsg.from_email, replySubject, body_html,
+      'scheduled', inboxMsg.thread_id, inboxMsg.message_id, true
+    ]);
+
+    res.json({ success: true, id: replyId });
+  } catch (err: any) {
+    console.error("[Inbox Reply Error]:", err);
+    res.status(500).json({ error: err.message || "Failed to queue reply" });
+  }
+});
+
 // POST /api/outreach/projects/:projectId/sync-inbox
 app.post("/api/outreach/projects/:projectId/sync-inbox", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

@@ -770,9 +770,11 @@ export function useOutreachApi() {
     deleteContact,
     deleteContactsBulk,
     // Inbox
-    fetchInbox,
-    summarizeInbox,
-    syncInbox,
+    fetchUnifiedInbox,
+    markInboxMessageAsRead,
+    sendInboxReply,
+    summarizeInboxThread,
+    fetchInboxUnreadCount,
     // Compose
     fetchIndividualEmails,
     getIndividualEmail,

@@ -55,7 +55,7 @@ export default function OutreachInbox() {
   const [summarizedId, setSummarizedId] = useState<string | null>(null);
 
   // 1. Fetch Data
-  const loadInbox = useCallback(async () => {
+  const fetchInbox = useCallback(async () => {
     if (!activeProjectId) return;
     setIsLoading(true);
     try {
@@ -63,16 +63,15 @@ export default function OutreachInbox() {
       setMessages(data || []);
     } catch (error) {
       console.error('[Inbox Fetch Error]:', error);
+      toast.error('Failed to load inbox');
     } finally {
       setIsLoading(false);
     }
   }, [activeProjectId, fetchUnifiedInbox]);
 
   useEffect(() => {
-    if (activeProjectId) {
-      loadInbox();
-    }
-  }, [activeProjectId]); // Strictly depend on projectId as requested to kill the loop
+    fetchInbox();
+  }, [activeProjectId, fetchInbox]); // Explicitly following requested dependency structure
 
   // 2. Mark as Read logic
   const handleSelectMessage = useCallback(async (msg: InboxMessage) => {
@@ -86,6 +85,7 @@ export default function OutreachInbox() {
       
       try {
         await markInboxMessageAsRead(msg.id);
+        window.dispatchEvent(new CustomEvent('refresh-outreach-counts'));
       } catch (error) {
         console.error('[Mark Read Error]:', error);
       }
@@ -118,6 +118,7 @@ export default function OutreachInbox() {
       toast.success('Reply queued successfully!', { id: loadId });
       setIsReplyMode(false);
       setReplyBody('');
+      window.dispatchEvent(new CustomEvent('refresh-outreach-counts'));
     } catch (error: any) {
       toast.error(error.message || 'Failed to send reply', { id: loadId });
     } finally {
@@ -166,9 +167,9 @@ export default function OutreachInbox() {
         title="Unified Inbox"
         subtitle="Consolidated replies from all your outreach sequences"
         actions={
-          <TealButton variant="outline" size="sm" onClick={loadInbox} loading={isLoading}>
+          <TealButton variant="outline" size="sm" onClick={fetchInbox} loading={isLoading}>
             <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
-            Sync Now
+            Refresh
           </TealButton>
         }
       />
@@ -184,7 +185,10 @@ export default function OutreachInbox() {
       ) : (
         <div className="flex-1 flex gap-6 overflow-hidden min-h-0 mt-2">
           {/* LEFT PANE: Message List */}
-          <div className="w-[400px] flex flex-col bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden min-h-0 p-4">
+          <div className={cn(
+            "w-full md:w-[400px] flex flex-col bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden min-h-0 p-4 shrink-0",
+            selectedId && "hidden md:flex"
+          )}>
             <div className="mb-4">
               <p className="text-xs text-slate-500 font-medium">
                 {filteredMessages.length} {filteredMessages.length === 1 ? 'result' : 'results'}
@@ -285,15 +289,29 @@ export default function OutreachInbox() {
           </div>
 
           {/* RIGHT PANE: Message View */}
-          <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col min-h-0">
+          <div className={cn(
+            "flex-1 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col min-h-0",
+            !selectedId && "hidden md:flex"
+          )}>
             {selectedMessage ? (
-              <div className="flex flex-col h-full min-h-0">
+              <div className="flex flex-col h-full min-h-0 font-sans">
                 {/* Header */}
-                <div className="p-8 border-b border-white/5 flex justify-between items-start">
-                  <div>
-                    <h2 className="text-xl font-bold text-white mb-6 pr-20">{selectedMessage.subject}</h2>
+                <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-6">
+                      <button 
+                        onClick={() => setSelectedId(null)}
+                        className="md:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors"
+                      >
+                        <ChevronRight className="size-5 rotate-180" />
+                      </button>
+                      <h2 className="text-xl font-bold text-white truncate pr-4">{selectedMessage.subject || '(No Subject)'}</h2>
+                    </div>
+                    
                     <div className="flex items-center gap-4">
-                      <div className="size-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-lg font-bold shadow-inner">
+                      <div className="size-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-lg font-bold shadow-inner shrink-0">
+                        {(selectedMessage.first_name?.[0] || selectedMessage.from_email[0]).toUpperCase()}
+                      </div>
                         {selectedMessage.first_name?.[0] || selectedMessage.from_email[0]?.toUpperCase() || <User />}
                       </div>
                       <div>
