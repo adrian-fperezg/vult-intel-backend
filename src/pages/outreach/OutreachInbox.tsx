@@ -60,7 +60,8 @@ export default function OutreachInbox() {
     setIsLoading(true);
     try {
       const data = await fetchUnifiedInbox(activeProjectId);
-      setMessages(data || []);
+      console.log("Inbox JSON Payload:", data);
+      if (data) setMessages(data as any);
     } catch (error) {
       console.error('[Inbox Fetch Error]:', error);
       toast.error('Failed to load inbox');
