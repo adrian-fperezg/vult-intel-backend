@@ -3482,15 +3482,17 @@ app.get("/api/inbox/:projectId", async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/inbox/unread-count
-app.get("/api/inbox/unread-count", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { projectId } = req.query as { projectId?: string };
+// ─── INBOX ────────────────────────────────────────────────────────────────────
 
-  if (!userId || !projectId) return res.status(401).json({ error: "Auth required" });
+// GET /api/outreach/inbox/unread-count?project_id=xxx
+app.get("/api/outreach/inbox/unread-count", authenticateToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.query as { project_id?: string };
+
+  if (!userId || !project_id) return res.status(400).json({ error: "Missing project_id" });
 
   try {
-    const row = await db.prepare("SELECT COUNT(*) as count FROM outreach_inbox_messages WHERE project_id = ? AND is_read = false").get(projectId) as any;
+    const row = await db.get("SELECT COUNT(*) as count FROM outreach_inbox_messages WHERE project_id = ? AND is_read = false", [project_id]) as any;
     res.json({ count: row?.count || 0 });
   } catch (error) {
     console.error("[Inbox Count Error]:", error);
@@ -3498,10 +3500,10 @@ app.get("/api/inbox/unread-count", async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /api/inbox/:messageId/read
-app.patch("/api/inbox/:messageId/read", async (req: AuthRequest, res) => {
+// PATCH /api/outreach/inbox/:id/read
+app.patch("/api/outreach/inbox/:id/read", authenticateToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { messageId } = req.params;
+  const { id } = req.params;
   const { is_read } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
@@ -3510,8 +3512,8 @@ app.patch("/api/inbox/:messageId/read", async (req: AuthRequest, res) => {
     await db.run(`
       UPDATE outreach_inbox_messages 
       SET is_read = ? 
-      WHERE id = ?
-    `, [is_read === true, messageId]);
+      WHERE id = ? AND project_id IN (SELECT id FROM outreach_projects WHERE user_id = ?)
+    `, [is_read === true, id, userId]);
     res.json({ success: true });
   } catch (error) {
     console.error("[Inbox Update Error]:", error);
@@ -3519,63 +3521,10 @@ app.patch("/api/inbox/:messageId/read", async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/inbox/:messageId/reply
-app.post("/api/inbox/:messageId/reply", async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
-  const { messageId } = req.params;
-  const { body_html } = req.body;
-
-  if (!userId) return res.status(401).json({ error: "Auth required" });
-  if (!body_html) return res.status(400).json({ error: "Message body is required" });
-
-  try {
-    // 1. Fetch parent message details
-    const parent = await db.prepare(`
-      SELECT m.*, mb.name as mailbox_name, mb.email as mailbox_email
-      FROM outreach_inbox_messages m
-      LEFT JOIN outreach_mailboxes mb ON m.mailbox_id = mb.id
-      WHERE m.id = ?
-    `).get(messageId) as any;
-
-    if (!parent) return res.status(404).json({ error: "Original message not found" });
-
-    // 2. Prepare reply metadata
-    const replySubject = parent.subject.toLowerCase().startsWith("re:") 
-      ? parent.subject 
-      : `Re: ${parent.subject}`;
-    
-    const emailId = uuidv4();
-
-    // 3. Insert into individual emails (as a scheduled reply)
-    await db.run(`
-      INSERT INTO outreach_individual_emails (
-        id, user_id, project_id, mailbox_id, contact_id, sequence_id, 
-        from_email, from_name, to_email, subject, body_html, status, 
-        thread_id, parent_message_id, is_reply
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      emailId, userId, parent.project_id, parent.mailbox_id, 
-      parent.contact_id, parent.sequence_id,
-      parent.mailbox_email, parent.mailbox_name, parent.from_email, 
-      replySubject, body_html, 'scheduled', 
-      parent.thread_id, parent.message_id, true
-    ]);
-
-    // 4. Queue the send job
-    await emailQueue.add('send-individual-email', { emailId });
-
-    res.json({ success: true, emailId });
-  } catch (error) {
-    console.error("[Inbox Reply Error]:", error);
-    res.status(500).json({ error: "Failed to queue reply" });
-  }
-});
-
 // ─── INBOX ────────────────────────────────────────────────────────────────────
 
-// GET /api/inbox?project_id=xxx
-app.get("/api/inbox", async (req: AuthRequest, res) => {
+// GET /api/outreach/inbox
+app.get("/api/outreach/inbox", authenticateToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
@@ -3604,8 +3553,8 @@ app.get("/api/inbox", async (req: AuthRequest, res) => {
   res.json(messages);
 });
 
-// POST /api/inbox/:id/summarize
-app.post("/api/inbox/:id/summarize", async (req: AuthRequest, res) => {
+// POST /api/outreach/inbox/:id/summarize
+app.post("/api/outreach/inbox/:id/summarize", authenticateToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params; // Using the contact_id or thread_id here. Based on our inbox query, thread ID is the contact's ID because inbox merges by contact.
 
@@ -3660,8 +3609,8 @@ app.post("/api/inbox/:id/summarize", async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/inbox/:id/reply
-app.post("/api/inbox/:id/reply", async (req: AuthRequest, res) => {
+// POST /api/outreach/inbox/:id/reply
+app.post("/api/outreach/inbox/:id/reply", authenticateToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params; // inbox_messages.id (not message_id)
   const { body_html } = req.body;

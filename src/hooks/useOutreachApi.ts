@@ -652,69 +652,40 @@ export function useOutreachApi() {
   const fetchUnifiedInbox = useCallback(
     async (projectId: string) => {
       if (!projectId) return null;
-      const headers = await authHeaders();
-      const res = await fetch(`${ROOT_URL}/inbox/${projectId}`, { headers });
-      if (!res.ok) throw new Error(`Fetch inbox failed: ${res.status}`);
-      return res.json() as Promise<any[]>;
+      return get<any[]>('/inbox', { project_id: projectId });
     },
-    [authHeaders]
+    [get]
   );
 
   const fetchInboxUnreadCount = useCallback(
     async (projectId: string) => {
       if (!projectId) return 0;
-      const headers = await authHeaders();
-      const res = await fetch(`${ROOT_URL}/inbox/unread-count?projectId=${projectId}`, { headers });
-      if (!res.ok) throw new Error(`Fetch unread count failed: ${res.status}`);
-      const data = await res.json();
-      return data.count as number;
+      const data = await get<{ count: number }>('/inbox/unread-count', { project_id: projectId });
+      return data?.count || 0;
     },
-    [authHeaders]
+    [get]
   );
 
   const markInboxMessageAsRead = useCallback(
-    async (messageId: string, isRead: boolean = true) => {
-      const headers = await authHeaders();
-      const res = await fetch(`${ROOT_URL}/inbox/${messageId}/read`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ is_read: isRead })
-      });
-      if (!res.ok) throw new Error(`Mark read failed: ${res.status}`);
-      return res.json();
+    async (id: string, isRead: boolean = true) => {
+      return patch<{ success: boolean }>(`/inbox/${id}/read`, { is_read: isRead });
     },
-    [authHeaders]
+    [patch]
   );
 
   const summarizeInboxThread = useCallback(
     async (contactId: string) => {
-      const headers = await authHeaders();
-      const res = await fetch(`${ROOT_URL}/inbox/${contactId}/summarize`, {
-        method: 'POST',
-        headers
-      });
-      if (!res.ok) throw new Error(`Summarize failed: ${res.status}`);
-      const data = await res.json();
-      return data.summary as string;
+      const data = await post<{ summary: string }>(`/inbox/${contactId}/summarize`, {});
+      return data.summary;
     },
-    [authHeaders]
+    [post]
   );
 
   const sendInboxReply = useCallback(
-    async (messageId: string, bodyHtml: string) => {
-      const headers = await authHeaders();
-      const res = await fetch(`${ROOT_URL}/inbox/${messageId}/reply`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ body_html: bodyHtml })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `Reply failed: ${res.status}`);
-      }
-      return res.json();
+    async (id: string, bodyHtml: string) => {
+      return post<{ success: boolean; id: string }>(`/inbox/${id}/reply`, { body_html: bodyHtml });
     },
-    [authHeaders]
+    [post]
   );
 
   const syncGmailAliases = useCallback(
