@@ -28,7 +28,6 @@ export const verifyFirebaseToken = async (req: AuthRequest, res: Response, next:
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    console.log(`[AUTH SUCCESS] Valid token for uid: ${decodedToken.uid} (${decodedToken.email})`);
     req.user = decodedToken;
     next();
   } catch (error: any) {
