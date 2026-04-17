@@ -23,12 +23,12 @@ type OutreachTab = 'analytics' | 'lead-finder' | 'contacts' | 'compose' | 'campa
 
 const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
   { id: 'analytics',    label: 'Analytics' },
-  { id: 'lead-finder',   label: 'Lead Finder' },
-  { id: 'contacts',     label: 'Contacts' },
   { id: 'compose',      label: 'Compose', badge: true },
   { id: 'campaigns',    label: 'Campaigns' },
   { id: 'sequences',    label: 'Sequences' },
   { id: 'inbox',        label: 'Inbox' },
+  { id: 'contacts',     label: 'Contacts' },
+  { id: 'lead-finder',   label: 'Lead Finder' },
   { id: 'settings',     label: 'Settings' },
 ];
 
