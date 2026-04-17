@@ -3509,11 +3509,14 @@ app.patch("/api/outreach/inbox/:id/read", verifyFirebaseToken, async (req: AuthR
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
+    const projectId = (req as any).projectId;
     await db.run(`
       UPDATE outreach_inbox_messages 
       SET is_read = ? 
-      WHERE id = ? AND project_id IN (SELECT id FROM outreach_projects WHERE user_id = ?)
-    `, [is_read === true, id, userId]);
+      WHERE id = ? 
+        AND project_id = ?
+        AND contact_id IN (SELECT id FROM outreach_contacts WHERE user_id = ?)
+    `, [is_read === true, id, projectId, userId]);
     res.json({ success: true });
   } catch (error) {
     console.error("[Inbox Update Error]:", error);
