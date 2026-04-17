@@ -586,8 +586,8 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
 
     const mailboxId = uuidv4();
 
-    // Save or update mailbox
-    await db.prepare(
+    // Save or update mailbox and capture the stable ID (Postgres RETURNING support)
+    const savedMailbox = await db.prepare(
       `
       INSERT INTO outreach_mailboxes (id, user_id, project_id, email, name, access_token, refresh_token, expires_at, scope)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -597,8 +597,9 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
         expires_at = excluded.expires_at,
         scope = excluded.scope,
         status = 'active'
+      RETURNING id
     `,
-    ).run(
+    ).get(
       mailboxId,
       userId,
       projectId,
@@ -608,15 +609,18 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
       encryptedRefresh,
       expiresAt,
       tokens.scope,
-    );
+    ) as any;
 
-    // Initial sync and setup watch
-    syncMailbox(mailboxId, getValidAccessToken).catch(console.error);
-    setupGmailWatch(mailboxId, getValidAccessToken).catch(err => {
+    const stableId = savedMailbox?.id || mailboxId;
+    console.log(`[OAuth] Mailbox record finalized. Stable ID: ${stableId}`);
+
+    // Initial sync and setup watch using the stable ID
+    syncMailbox(stableId, getValidAccessToken).catch(console.error);
+    setupGmailWatch(stableId, getValidAccessToken).catch(err => {
       console.error(`[GmailWatch] Auto-setup failed for ${userInfo.email}:`, err.message);
     });
     // Fetch aliases
-    fetchGmailAliases(mailboxId).catch(console.error);
+    fetchGmailAliases(stableId).catch(console.error);
 
     return res.redirect(
       `${frontendBase}/outreach?gmail_connected=1&email=${encodeURIComponent(userInfo.email)}`,

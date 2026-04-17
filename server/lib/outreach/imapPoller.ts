@@ -11,8 +11,9 @@ export interface ImapConfig {
   host: string; port: number; secure: boolean; user: string; enc_pass: string;
 }
 
-async function extractEmailBody(msg: imap.Message): Promise<string> {
-  let fullBody = '';
+async function extractEmailContent(msg: imap.Message): Promise<{ text: string; html: string }> {
+  let bodyText = '';
+  let bodyHtml = '';
   
   const sortedParts = [...msg.parts].sort((a: any, b: any) => {
     if (a.which === 'TEXT' && b.which !== 'TEXT') return -1;
@@ -24,21 +25,18 @@ async function extractEmailBody(msg: imap.Message): Promise<string> {
     if (part.body && (part.which === 'TEXT' || part.which === '')) {
       try {
         const parsed = await simpleParser(part.body);
-        const partText = (parsed.text || parsed.html || '').trim();
-        if (partText) {
-          if (parsed.text) {
-            fullBody += (fullBody ? '\n' : '') + parsed.text.trim();
-          } else if (parsed.html && !fullBody) {
-             fullBody = parsed.html.trim();
-          }
-        }
+        if (parsed.text) bodyText += (bodyText ? '\n' : '') + parsed.text.trim();
+        if (parsed.html) bodyHtml += (bodyHtml ? '\n' : '') + parsed.html.trim();
       } catch (err) { 
         console.error(`[IMAP] Error parsing part "${part.which}":`, err); 
       }
     }
   }
 
-  return fullBody.trim();
+  return {
+    text: bodyText.trim(),
+    html: bodyHtml.trim() || bodyText.trim() // Fallback to text if HTML empty
+  };
 }
 
 export async function pollImap(mailboxId: string) {
@@ -179,8 +177,10 @@ export async function pollImap(mailboxId: string) {
         }
 
         // Persist reply record
-        const rawBody = await extractEmailBody(msg);
+        const content = await extractEmailContent(msg);
         const replyId = uuidv4();
+        
+        // 1. Existing Individual Email Record (for sequencing logic)
         await db.run(`
           INSERT INTO outreach_individual_emails 
           (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
@@ -189,7 +189,20 @@ export async function pollImap(mailboxId: string) {
         `, [
           replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
           originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-          from, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, originalEmail.thread_id, true
+          from, '', mailbox.email, subject, content.text, content.html, 'received', messageId, originalEmail.thread_id, true
+        ]);
+
+        // 2. New Unified Inbox Record (for Phase 1 CRM)
+        const inboxMessageId = uuidv4();
+        await db.run(`
+          INSERT INTO outreach_inbox_messages 
+          (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+          ON CONFLICT (message_id) DO NOTHING
+        `, [
+          inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
+          originalEmail.sequence_id, originalEmail.thread_id, messageId, from, 
+          mailbox.email, subject, content.text, content.html, false
         ]);
 
         // Mark original as replied
