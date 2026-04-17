@@ -649,6 +649,18 @@ export function useOutreachApi() {
     [get]
   );
 
+  // ── Unified Inbox ─────────────────────────────────────────────────────────
+  const fetchUnifiedInbox = useCallback(
+    (projectId: string) => get<any[]>(`/inbox/${projectId}`),
+    [get]
+  );
+
+  const markInboxMessageAsRead = useCallback(
+    (messageId: string, isRead: boolean = true) =>
+      patch<any>(`/inbox/${messageId}/read`, { is_read: isRead }),
+    [patch]
+  );
+
   const syncGmailAliases = useCallback(
     (mailboxId: string) => post<any>(`/mailboxes/${mailboxId}/sync-aliases`, {}),
     [post]
@@ -769,5 +781,8 @@ export function useOutreachApi() {
     generateAiReport,
     exportAiReport,
     getFunnelStats,
+    // Unified Inbox
+    fetchUnifiedInbox,
+    markInboxMessageAsRead,
   };
 }
