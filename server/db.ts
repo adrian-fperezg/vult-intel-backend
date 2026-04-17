@@ -823,6 +823,26 @@ export const initDb = async () => {
       }
     }
 
+    // 21. Unified Inbox Messages (CRM phase 1)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS outreach_inbox_messages (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT REFERENCES outreach_contacts(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        sequence_id TEXT,
+        thread_id TEXT,
+        message_id TEXT UNIQUE,
+        from_email TEXT,
+        to_email TEXT,
+        subject TEXT,
+        body_text TEXT,
+        body_html TEXT,
+        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // 20.5 Campaign Enrollments (¡NUEVA TABLA PARA EL EMBUDO!)
     await db.run(`
       CREATE TABLE IF NOT EXISTS outreach_campaign_enrollments (

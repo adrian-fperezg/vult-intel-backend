@@ -15,8 +15,9 @@ interface GmailMessage {
   internalDate: string;
 }
 
-export function extractGmailBody(payload: any): string {
-  let body = '';
+export function extractGmailContent(payload: any): { text: string; html: string } {
+  let bodyText = '';
+  let bodyHtml = '';
 
   function findParts(p: any) {
     if (p.body?.data && (p.mimeType === 'text/plain' || p.mimeType === 'text/html')) {
@@ -24,9 +25,9 @@ export function extractGmailBody(payload: any): string {
       const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
       
       if (p.mimeType === 'text/plain') {
-        body += (body ? '\n' : '') + decoded;
-      } else if (p.mimeType === 'text/html' && !body) {
-        body = decoded;
+        bodyText += (bodyText ? '\n' : '') + decoded;
+      } else if (p.mimeType === 'text/html') {
+        bodyHtml += (bodyHtml ? '\n' : '') + decoded;
       }
     }
 
@@ -39,12 +40,17 @@ export function extractGmailBody(payload: any): string {
 
   findParts(payload);
 
-  if (!body && payload.body?.data) {
+  if (!bodyText && !bodyHtml && payload.body?.data) {
     const data = payload.body.data;
-    body = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const decoded = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    if (payload.mimeType === 'text/html') bodyHtml = decoded;
+    else bodyText = decoded;
   }
 
-  return body.trim();
+  return { 
+    text: bodyText.trim(), 
+    html: bodyHtml.trim() || bodyText.trim() // Fallback to text if HTML is empty
+  };
 }
 
 export async function syncMailbox(mailboxId: string, getAccessToken: (id: string) => Promise<string>) {
@@ -174,7 +180,10 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
       // Persist reply record
       const replyId = uuidv4();
-      const rawBody = extractGmailBody(msg.payload);
+      const content = extractGmailContent(msg.payload);
+      const isRead = false;
+
+      // 1. Existing Individual Email Record (for sequencing logic)
       await db.run(`
         INSERT INTO outreach_individual_emails 
         (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body, body_html, status, message_id, thread_id, is_reply, sent_at)
@@ -183,7 +192,20 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       `, [
         replyId, originalEmail.user_id, originalEmail.project_id, mailbox.id,
         originalEmail.contact_id, originalEmail.sequence_id, originalEmail.step_id,
-        fromEmail, '', mailbox.email, subject, rawBody, rawBody, 'received', messageId, msg.threadId, true
+        fromEmail, '', mailbox.email, subject, content.text, content.html, 'received', messageId, msg.threadId, true
+      ]);
+
+      // 2. New Unified Inbox Record (for Phase 1 CRM)
+      const inboxMessageId = uuidv4();
+      await db.run(`
+        INSERT INTO outreach_inbox_messages 
+        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+        ON CONFLICT (message_id) DO NOTHING
+      `, [
+        inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
+        originalEmail.sequence_id, msg.threadId, messageId, fromEmail, 
+        mailbox.email, subject, content.text, content.html, isRead
       ]);
 
       // Mark original as replied

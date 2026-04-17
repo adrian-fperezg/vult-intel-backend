@@ -3453,6 +3453,51 @@ app.delete("/api/outreach/suppression-list", async (req: AuthRequest, res) => {
   res.json({ success: true });
 });
 
+// ─── UNIFIED INBOX ────────────────────────────────────────────────────────────
+
+// GET /api/outreach/inbox/:projectId
+app.get("/api/outreach/inbox/:projectId", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { projectId } = req.params;
+
+  if (!userId || !projectId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const messages = await db.all(`
+      SELECT m.*, c.first_name, c.last_name, c.email as contact_email
+      FROM outreach_inbox_messages m
+      LEFT JOIN outreach_contacts c ON m.contact_id = c.id
+      WHERE m.project_id = ?
+      ORDER BY m.received_at DESC
+    `, projectId);
+    res.json(messages);
+  } catch (error) {
+    console.error("[Inbox Fetch Error]:", error);
+    res.status(500).json({ error: "Failed to fetch inbox" });
+  }
+});
+
+// PATCH /api/outreach/inbox/:messageId/read
+app.patch("/api/outreach/inbox/:messageId/read", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { messageId } = req.params;
+  const { is_read } = req.body;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    await db.run(`
+      UPDATE outreach_inbox_messages 
+      SET is_read = ? 
+      WHERE id = ?
+    `, [is_read === true, messageId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[Inbox Update Error]:", error);
+    res.status(500).json({ error: "Failed to update read status" });
+  }
+});
+
 // ─── INBOX ────────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/inbox?project_id=xxx
