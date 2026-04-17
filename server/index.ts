@@ -43,6 +43,7 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
     const checkCount = await (db as any).get("SELECT COUNT(*) as count FROM outreach_inbox_messages");
     if (checkCount?.count === 0 || checkCount?.count === "0") {
       console.log("🚀 [BACKFILL] Starting Unified Inbox backfill...");
+      await (db as any).exec(`
         -- Cleanup: Remove any outbound emails that accidentally entered the inbox table
         DELETE FROM outreach_inbox_messages 
         WHERE from_email IN (SELECT email FROM outreach_mailboxes);
