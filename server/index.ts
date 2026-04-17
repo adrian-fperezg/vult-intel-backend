@@ -3485,7 +3485,7 @@ app.get("/api/inbox/:projectId", async (req: AuthRequest, res) => {
 // ─── INBOX ────────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/inbox/unread-count?project_id=xxx
-app.get("/api/outreach/inbox/unread-count", authenticateToken, async (req: AuthRequest, res) => {
+app.get("/api/outreach/inbox/unread-count", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
@@ -3501,7 +3501,7 @@ app.get("/api/outreach/inbox/unread-count", authenticateToken, async (req: AuthR
 });
 
 // PATCH /api/outreach/inbox/:id/read
-app.patch("/api/outreach/inbox/:id/read", authenticateToken, async (req: AuthRequest, res) => {
+app.patch("/api/outreach/inbox/:id/read", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
   const { is_read } = req.body;
@@ -3524,7 +3524,7 @@ app.patch("/api/outreach/inbox/:id/read", authenticateToken, async (req: AuthReq
 // ─── INBOX ────────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/inbox
-app.get("/api/outreach/inbox", authenticateToken, async (req: AuthRequest, res) => {
+app.get("/api/outreach/inbox", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
 
@@ -3554,7 +3554,7 @@ app.get("/api/outreach/inbox", authenticateToken, async (req: AuthRequest, res) 
 });
 
 // POST /api/outreach/inbox/:id/summarize
-app.post("/api/outreach/inbox/:id/summarize", authenticateToken, async (req: AuthRequest, res) => {
+app.post("/api/outreach/inbox/:id/summarize", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params; // Using the contact_id or thread_id here. Based on our inbox query, thread ID is the contact's ID because inbox merges by contact.
 
@@ -3610,7 +3610,7 @@ app.post("/api/outreach/inbox/:id/summarize", authenticateToken, async (req: Aut
 });
 
 // POST /api/outreach/inbox/:id/reply
-app.post("/api/outreach/inbox/:id/reply", authenticateToken, async (req: AuthRequest, res) => {
+app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params; // inbox_messages.id (not message_id)
   const { body_html } = req.body;
