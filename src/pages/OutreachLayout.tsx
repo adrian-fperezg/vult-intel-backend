@@ -64,6 +64,14 @@ export default function OutreachLayout() {
       window.history.replaceState({}, '', window.location.pathname);
     }
 
+    // Listen for cross-tab navigation events (e.g. from Dashboard cards)
+    const handleTabChange = (e: any) => {
+      const target = e.detail as OutreachTab;
+      if (TABS.some(t => t.id === target)) {
+        setActiveTab(target);
+      }
+    };
+
     window.addEventListener('outreach-tab-change', handleTabChange);
     return () => window.removeEventListener('outreach-tab-change', handleTabChange);
   }, [setSearchParams]);
