@@ -127,8 +127,29 @@ export async function pollImap(mailboxId: string) {
         const fromEmail = fromEmailMatch[1] || from.trim();
 
         // ❌ SELF-REPLY PROTECTION: If sender is the mailbox itself, it's not a prospect reply.
-        if (fromEmail.toLowerCase() === mailbox.email.toLowerCase()) {
-          console.log(`[IMAP] Skipping email from ${fromEmail} - Sender is the mailbox itself (Self-thread).`);
+        const normalizedFrom = fromEmail.toLowerCase().trim();
+        const mailboxEmail = (mailbox.email || '').toLowerCase().trim();
+        
+        // Check primary address
+        let isSelf = normalizedFrom === mailboxEmail;
+
+        // Check aliases
+        if (!isSelf && mailbox.aliases) {
+          try {
+            const aliases = typeof mailbox.aliases === 'string' ? JSON.parse(mailbox.aliases) : mailbox.aliases;
+            if (Array.isArray(aliases)) {
+              isSelf = aliases.some((a: any) => {
+                const aliasEmail = (typeof a === 'string' ? a : a.email || '').toLowerCase().trim();
+                return normalizedFrom === aliasEmail;
+              });
+            }
+          } catch (err) {
+            console.warn(`[IMAP] Failed to parse aliases for mailbox ${mailbox.id}:`, err);
+          }
+        }
+
+        if (isSelf) {
+          console.log(`[IMAP] Skipping email from ${normalizedFrom} - Sender is the mailbox itself (Primary or Alias).`);
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }

@@ -728,12 +728,11 @@ app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
     const emailLower = resolvedEmail.toLowerCase().trim();
 
     // 1. Add to global suppression list (idempotent)
-    const id = uuidv4();
     await db.prepare(`
-      INSERT INTO suppression_list (id, email, reason)
-      VALUES (?, ?, 'user_request')
-      ON CONFLICT(email) DO NOTHING
-    `).run(id, emailLower);
+      INSERT INTO suppression_list (project_id, email, reason, created_at)
+      VALUES (?, ?, 'user_request', CURRENT_TIMESTAMP)
+      ON CONFLICT(project_id, email) DO NOTHING
+    `).run(req.projectId || 'global', emailLower);
 
     // 2. Mark contact as 'unsubscribed' (by contact_id if provided, else by email)
     if (contact_id) {

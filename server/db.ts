@@ -627,15 +627,25 @@ export const initDb = async () => {
     }
 
     // 12. Suppression List
+    // Standardizing on project_id and email as PK, with both added_at and created_at for compatibility.
     await db.run(`
       CREATE TABLE IF NOT EXISTS suppression_list (
         project_id TEXT NOT NULL,
         email TEXT NOT NULL,
         reason TEXT,
         added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (project_id, email)
       )
     `);
+
+    try {
+      await db.run("ALTER TABLE suppression_list ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+    } catch (err: any) {
+      if (!err.message.includes('already exists')) {
+        console.warn("[DB] Migration for suppression_list.created_at failed:", err.message);
+      }
+    }
 
     // 13. Tracking Events
     await db.run(`

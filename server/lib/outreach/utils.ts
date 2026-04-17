@@ -137,10 +137,10 @@ export async function handleCriticalBounce(contactId: string, sequenceId: string
     const contact = await db.get("SELECT email FROM outreach_contacts WHERE id = ?", contactId) as any;
     if (contact?.email) {
       await db.run(`
-        INSERT INTO suppression_list (id, email, reason, created_at)
+        INSERT INTO suppression_list (project_id, email, reason, created_at)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(email) DO NOTHING
-      `, uuidv4(), contact.email, 'Hard Bounce Detected');
+        ON CONFLICT(project_id, email) DO NOTHING
+      `, projectId, contact.email, 'Hard Bounce Detected');
     }
 
     // 4. Purge Queue (Forcefully remove searching by contactId)

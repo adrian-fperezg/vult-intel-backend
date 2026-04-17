@@ -125,8 +125,29 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     }
 
     // ❌ SELF-REPLY PROTECTION: If sender is the mailbox itself, it's not a prospect reply.
-    if (fromEmail.toLowerCase() === mailbox.email.toLowerCase()) {
-      console.log(`[Gmail Sync] Skipping Gmail message ${msg.id} - Sender is the mailbox itself (Self-thread).`);
+    const normalizedFrom = fromEmail.toLowerCase().trim();
+    const mailboxEmail = (mailbox.email || '').toLowerCase().trim();
+    
+    // Check primary address
+    let isSelf = normalizedFrom === mailboxEmail;
+
+    // Check aliases
+    if (!isSelf && mailbox.aliases) {
+      try {
+        const aliases = typeof mailbox.aliases === 'string' ? JSON.parse(mailbox.aliases) : mailbox.aliases;
+        if (Array.isArray(aliases)) {
+          isSelf = aliases.some((a: any) => {
+            const aliasEmail = (typeof a === 'string' ? a : a.email || '').toLowerCase().trim();
+            return normalizedFrom === aliasEmail;
+          });
+        }
+      } catch (err) {
+        console.warn(`[Gmail Sync] Failed to parse aliases for mailbox ${mailbox.id}:`, err);
+      }
+    }
+
+    if (isSelf) {
+      console.log(`[Gmail Sync] Skipping Gmail message ${msg.id} - Sender is the mailbox itself (Primary or Alias: ${normalizedFrom}).`);
       continue;
     }
 
