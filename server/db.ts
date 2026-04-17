@@ -843,6 +843,8 @@ export const initDb = async () => {
         received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         is_read BOOLEAN DEFAULT FALSE,
         mailbox_id TEXT REFERENCES outreach_mailboxes(id),
+        intent TEXT,
+        intent_score REAL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -850,8 +852,10 @@ export const initDb = async () => {
     // Migration for outreach_inbox_messages
     try {
       await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS mailbox_id TEXT REFERENCES outreach_mailboxes(id)`);
+      await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS intent TEXT`);
+      await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS intent_score REAL`);
     } catch (err) {
-      console.warn(`[DB] PG Migration for inbox mailbox_id failed:`, (err as Error).message);
+      console.warn(`[DB] PG Migration for inbox columns failed:`, (err as Error).message);
     }
 
     // 20.5 Campaign Enrollments (¡NUEVA TABLA PARA EL EMBUDO!)

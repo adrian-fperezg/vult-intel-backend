@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Reply, Star, Mail, Clock, Inbox, Filter,
   CheckCircle2, AlertCircle, User, Calendar, Loader2,
-  ChevronRight, RefreshCw, Bookmark, PenLine
+  ChevronRight, RefreshCw, Bookmark, PenLine, Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachSectionHeader } from './OutreachCommon';
@@ -30,21 +30,29 @@ interface InboxMessage {
   first_name?: string;
   last_name?: string;
   contact_email?: string;
+  intent?: string;
+  intent_score?: number;
 }
 
 export default function OutreachInbox() {
   const { activeProjectId } = useProject();
-  const { fetchUnifiedInbox, markInboxMessageAsRead } = useOutreachApi();
+  const { fetchUnifiedInbox, markInboxMessageAsRead, summarizeInboxThread } = useOutreachApi();
 
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedIntent, setSelectedIntent] = useState<string>('All');
 
   // Reply State
   const [isReplyMode, setIsReplyMode] = useState(false);
   const [replyBody, setReplyBody] = useState('');
   const [isSending, setIsSending] = useState(false);
+  
+  // Summary State
+  const [summary, setSummary] = useState<string | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [summarizedId, setSummarizedId] = useState<string | null>(null);
 
   // 1. Fetch Data
   const loadInbox = useCallback(async () => {
@@ -61,12 +69,16 @@ export default function OutreachInbox() {
   }, [activeProjectId, fetchUnifiedInbox]);
 
   useEffect(() => {
-    loadInbox();
-  }, [loadInbox]);
+    if (activeProjectId) {
+      loadInbox();
+    }
+  }, [activeProjectId]); // Strictly depend on projectId as requested to kill the loop
 
   // 2. Mark as Read logic
   const handleSelectMessage = useCallback(async (msg: InboxMessage) => {
     setSelectedId(msg.id);
+    setSummary(null); // Clear summary on new select
+    setSummarizedId(null);
     
     if (!msg.is_read) {
       // Optimistic Update
@@ -79,6 +91,22 @@ export default function OutreachInbox() {
       }
     }
   }, [markInboxMessageAsRead]);
+
+  const handleSummarize = async () => {
+    if (!selectedMessage) return;
+    setIsSummarizing(true);
+    try {
+      const result = await summarizeInboxThread(selectedMessage.contact_id);
+      setSummary(result);
+      setSummarizedId(selectedMessage.id);
+      toast.success('Conversation summarized');
+    } catch (err) {
+      console.error('[Summarize Error]:', err);
+      toast.error('Failed to summarize');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
 
   const handleSendReply = async () => {
     if (!selectedId || !replyBody.trim() || isSending) return;
@@ -100,7 +128,12 @@ export default function OutreachInbox() {
   // 3. Filtering
   const filteredMessages = useMemo(() => {
     return messages.filter(m => {
+      // 1. Intent Filter
+      if (selectedIntent !== 'All' && m.intent !== selectedIntent) return false;
+
+      // 2. Search Filter
       const search = searchQuery.toLowerCase();
+      if (!search) return true;
       return (
         m.subject?.toLowerCase().includes(search) ||
         m.from_email?.toLowerCase().includes(search) ||
@@ -108,7 +141,7 @@ export default function OutreachInbox() {
         m.last_name?.toLowerCase().includes(search)
       );
     });
-  }, [messages, searchQuery]);
+  }, [messages, searchQuery, selectedIntent]);
 
   const selectedMessage = useMemo(() => 
     messages.find(m => m.id === selectedId), 
@@ -151,16 +184,38 @@ export default function OutreachInbox() {
       ) : (
         <div className="flex-1 flex gap-6 overflow-hidden min-h-0 mt-2">
           {/* LEFT PANE: Message List */}
-          <div className="w-[400px] flex flex-col bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden min-h-0">
-            <div className="p-4 border-b border-white/5 relative">
-              <Search className="absolute left-7 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Search messages..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500/50 transition-all font-medium"
-              />
+          <div className="w-[400px] flex flex-col bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden min-h-0 p-4">
+            <div className="mb-4">
+              <p className="text-xs text-slate-500 font-medium">
+                {filteredMessages.length} {filteredMessages.length === 1 ? 'result' : 'results'}
+              </p>
+            </div>
+
+            {/* Filter Hub */}
+            <div className="flex items-center gap-2 mb-4">
+              <div className="relative flex-1 group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search lead or subject..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-900/50 border border-white/5 rounded-lg py-1.5 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500/50 transition-all"
+                />
+              </div>
+              <select
+                value={selectedIntent}
+                onChange={(e) => setSelectedIntent(e.target.value)}
+                className="bg-slate-900/80 border border-white/5 rounded-lg py-1.5 px-3 text-xs font-semibold text-slate-300 focus:outline-none focus:border-teal-500/50 transition-all cursor-pointer"
+              >
+                <option value="All">All Intents</option>
+                <option value="Interested">Interested</option>
+                <option value="Meeting Requested">Meeting Requested</option>
+                <option value="Not Interested">Not Interested</option>
+                <option value="Wait / Later">Wait / Later</option>
+                <option value="Wrong Person">Wrong Person</option>
+                <option value="General Inquiry">General Inquiry</option>
+              </select>
             </div>
             
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -202,6 +257,24 @@ export default function OutreachInbox() {
                     )}>
                       {msg.subject || '(No Subject)'}
                     </p>
+                    
+                    {/* Intent Badge */}
+                    {msg.intent && (
+                      <div className="flex items-center gap-1.5 mb-2 mt-1">
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border",
+                          msg.intent === 'Interested' && "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 capitalize",
+                          msg.intent === 'Meeting Requested' && "bg-teal-500/10 border-teal-500/30 text-teal-300 capitalize",
+                          msg.intent === 'Not Interested' && "bg-rose-500/10 border-rose-500/30 text-rose-400 capitalize",
+                          msg.intent === 'Wait / Later' && "bg-amber-500/10 border-amber-500/30 text-amber-300 capitalize",
+                          msg.intent === 'Wrong Person' && "bg-slate-500/10 border-slate-500/30 text-slate-300 capitalize",
+                          msg.intent === 'General Inquiry' && "bg-blue-500/10 border-blue-500/30 text-blue-300 capitalize"
+                        )}>
+                          {msg.intent}
+                        </span>
+                      </div>
+                    )}
+
                     <p className="text-[12px] text-slate-500 line-clamp-2 leading-relaxed">
                       {msg.body_text || 'No preview available'}
                     </p>
@@ -237,36 +310,46 @@ export default function OutreachInbox() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    {!isReplyMode ? (
-                      <TealButton 
-                        variant="solid" 
-                        size="sm" 
-                        className="rounded-xl px-4 py-2"
-                        onClick={() => setIsReplyMode(true)}
-                      >
-                         <Reply className="size-3.5 mr-2" />
-                         Reply
-                      </TealButton>
-                    ) : (
-                      <TealButton 
-                        variant="outline" 
-                        size="sm" 
-                        className="rounded-xl px-4 py-2"
-                        onClick={() => {
-                          setIsReplyMode(false);
-                          setReplyBody('');
-                        }}
-                      >
-                         Cancel
-                      </TealButton>
-                    )}
+                  <div className="flex items-center gap-3">
+                    <TealButton
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSummarize}
+                      loading={isSummarizing}
+                      className="gap-2"
+                    >
+                      <Sparkles className="size-3.5 text-teal-400" />
+                      Summarize
+                    </TealButton>
+                    <TealButton 
+                      variant={isReplyMode ? "outline" : "primary"}
+                      size="sm"
+                      onClick={() => setIsReplyMode(!isReplyMode)}
+                      className="gap-2"
+                    >
+                      <Reply className="size-3.5" />
+                      {isReplyMode ? 'Cancel' : 'Reply'}
+                    </TealButton>
                   </div>
                 </div>
 
                 {/* Body Content */}
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-black/[0.1]">
                   <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-8 shadow-2xl mb-8">
+                    {/* AI Summary Box */}
+                    {summary && summarizedId === selectedMessage.id && (
+                      <div className="mb-6 p-4 rounded-2xl bg-teal-500/5 border border-teal-500/15 relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-teal-500/30" />
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles className="size-3.5 text-teal-400" />
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-teal-400/80">AI Conversation Summary</span>
+                        </div>
+                        <p className="text-sm text-slate-300 leading-relaxed italic">
+                          "{summary}"
+                        </p>
+                      </div>
+                    )}
+
                     {selectedMessage.body_html ? (
                       <div 
                         className="prose prose-invert prose-sm max-w-none text-slate-200 leading-relaxed font-sans"

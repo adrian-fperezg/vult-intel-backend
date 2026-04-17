@@ -4,6 +4,7 @@ import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
 import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce } from './utils.js';
+import { analyzeLeadIntent } from "./intentDetection.js";
 import { sendAlert } from '../notifier.js';
 
 
@@ -194,15 +195,18 @@ export async function pollImap(mailboxId: string) {
 
         // 2. New Unified Inbox Record (for Phase 1 CRM)
         const inboxMessageId = uuidv4();
+        const aiResponse = await analyzeLeadIntent(content.text);
+
         await db.run(`
           INSERT INTO outreach_inbox_messages 
-          (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+          (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, intent, intent_score)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
           ON CONFLICT (message_id) DO NOTHING
         `, [
           inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
           originalEmail.sequence_id, originalEmail.thread_id, messageId, from, 
-          mailbox.email, subject, content.text, content.html, false, mailbox.id
+          mailbox.email, subject, content.text, content.html, false, mailbox.id,
+          aiResponse.intent, aiResponse.score
         ]);
 
         // Mark original as replied

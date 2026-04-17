@@ -469,12 +469,10 @@ export function useOutreachApi() {
 
   // ── Inbox ────────────────────────────────────────────────────────────────
 
-  const fetchInbox = useCallback(() => get<any[]>('/inbox'), [get]);
+  // Legacy inbox methods removed
 
-  const summarizeInbox = useCallback(
-    (id: string) => post<{ summary: string }>(`/inbox/${id}/summarize`, {}),
-    [post]
-  );
+
+
 
   const syncInbox = useCallback(
     () => post<any>(`/projects/${activeProjectId}/sync-inbox`, {}),
@@ -662,6 +660,18 @@ export function useOutreachApi() {
     [authHeaders]
   );
 
+  const fetchInboxUnreadCount = useCallback(
+    async (projectId: string) => {
+      if (!projectId) return 0;
+      const headers = await authHeaders();
+      const res = await fetch(`${ROOT_URL}/inbox/unread-count?projectId=${projectId}`, { headers });
+      if (!res.ok) throw new Error(`Fetch unread count failed: ${res.status}`);
+      const data = await res.json();
+      return data.count as number;
+    },
+    [authHeaders]
+  );
+
   const markInboxMessageAsRead = useCallback(
     async (messageId: string, isRead: boolean = true) => {
       const headers = await authHeaders();
@@ -672,6 +682,20 @@ export function useOutreachApi() {
       });
       if (!res.ok) throw new Error(`Mark read failed: ${res.status}`);
       return res.json();
+    },
+    [authHeaders]
+  );
+
+  const summarizeInboxThread = useCallback(
+    async (contactId: string) => {
+      const headers = await authHeaders();
+      const res = await fetch(`${ROOT_URL}/inbox/${contactId}/summarize`, {
+        method: 'POST',
+        headers
+      });
+      if (!res.ok) throw new Error(`Summarize failed: ${res.status}`);
+      const data = await res.json();
+      return data.summary as string;
     },
     [authHeaders]
   );

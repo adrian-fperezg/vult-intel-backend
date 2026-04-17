@@ -3482,6 +3482,22 @@ app.get("/api/inbox/:projectId", async (req: AuthRequest, res) => {
   }
 });
 
+// GET /api/inbox/unread-count
+app.get("/api/inbox/unread-count", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { projectId } = req.query as { projectId?: string };
+
+  if (!userId || !projectId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    const row = await db.prepare("SELECT COUNT(*) as count FROM outreach_inbox_messages WHERE project_id = ? AND is_read = false").get(projectId) as any;
+    res.json({ count: row?.count || 0 });
+  } catch (error) {
+    console.error("[Inbox Count Error]:", error);
+    res.status(500).json({ error: "Failed to fetch unread count" });
+  }
+});
+
 // PATCH /api/inbox/:messageId/read
 app.patch("/api/inbox/:messageId/read", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
@@ -3596,40 +3612,47 @@ app.post("/api/inbox/:id/summarize", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const events = await db
-      .prepare(`
-        SELECT * FROM outreach_events 
-        WHERE contact_id = ? 
-        ORDER BY created_at ASC
-      `)
-      .all(id) as any[];
+    const sentEmails = await db.prepare("SELECT created_at, metadata FROM outreach_events WHERE contact_id = ? AND type = 'sent' ORDER BY created_at ASC").all(id) as any[];
+    const replies = await db.prepare("SELECT received_at, body_text FROM outreach_inbox_messages WHERE contact_id = ? ORDER BY received_at ASC").all(id) as any[];
 
-    if (!events.length) {
-      return res.status(404).json({ error: "No events found for this thread." });
+    const threadParts = [
+      ...sentEmails.map(s => {
+        const meta = JSON.parse(s.metadata || '{}');
+        return `[Sent ${s.created_at}] ME: ${meta.body || meta.text || '(No content)'}`;
+      }),
+      ...replies.map(r => `[Received ${r.received_at}] LEAD: ${r.body_text}`)
+    ];
+
+    if (threadParts.length === 0) {
+      return res.status(404).json({ error: "No conversation history found to summarize." });
     }
 
-    const messagesText = events
-      .filter((e: any) => e.type === "sent" || e.type === "reply")
-      .map((e: any) => {
-        const meta = JSON.parse(e.metadata || "{}");
-        const body = meta.body || meta.text || "";
-        return `[${e.created_at}] ${e.type.toUpperCase()}: ${body}`;
-      })
-      .join("\n\n");
+    const messagesText = threadParts.join("\n\n");
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY || "",
-    });
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (!geminiKey) throw new Error("Missing Gemini API Key");
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 300,
-      temperature: 0.2,
-      system: "You are a sales assistant analyzing an email thread. Provide a concise 2-3 sentence summary of the conversation's context, the prospect's intent, and suggest the next best action.",
-      messages: [{ role: "user", content: "Summarize this email thread:\\n\\n" + messagesText }],
-    });
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const summary = (response.content[0] as any).text;
+    const prompt = `
+      You are a professional sales assistant. Summarize the following email conversation between "ME" and a "LEAD".
+      Provide a concise 2-3 sentence summary explaining:
+      1. What has been discussed.
+      2. The lead's current intent or temperature.
+      3. The suggested next step.
+
+      CONVERSATION:
+      """
+      ${messagesText.slice(0, 4000)}
+      """
+
+      SUMMARY:
+    `;
+
+    const result = await model.generateContent(prompt);
+    const summary = result.response.text();
+
     res.json({ summary });
   } catch (error: any) {
     console.error("Error summarizing thread:", error);

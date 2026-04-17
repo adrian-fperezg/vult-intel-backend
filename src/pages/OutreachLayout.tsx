@@ -26,7 +26,7 @@ const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
   { id: 'compose',      label: 'Compose', badge: true },
   { id: 'campaigns',    label: 'Campaigns' },
   { id: 'sequences',    label: 'Sequences' },
-  { id: 'inbox',        label: 'Inbox' },
+  { id: 'inbox',        label: 'Inbox', badge: true },
   { id: 'contacts',     label: 'Contacts' },
   { id: 'lead-finder',   label: 'Lead Finder' },
   { id: 'settings',     label: 'Settings' },
@@ -34,7 +34,7 @@ const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
 
 export default function OutreachLayout() {
   const { status, daysRemaining, isLoading } = useOutreachSubscription();
-  const { fetchIndividualEmails } = useOutreachApi();
+  const { fetchIndividualEmails, fetchInboxUnreadCount } = useOutreachApi();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const activeTab = (searchParams.get('tab') as OutreachTab) || 'analytics';
@@ -48,6 +48,8 @@ export default function OutreachLayout() {
 
   const [trialBannerDismissed, setTrialBannerDismissed] = useState(false);
   const [draftCount, setDraftCount] = useState(0);
+  const [unreadInboxCount, setUnreadInboxCount] = useState(0);
+  const { activeProjectId } = useOutreachApi(); // Use project context handled by the hook or directly
 
   // Check URL array on mount for OAuth redirect parameters
   useEffect(() => {
@@ -74,26 +76,32 @@ export default function OutreachLayout() {
   }, [setSearchParams]);
 
 
-  // Poll for draft count
+  // Poll for draft and unread inbox counts
   useEffect(() => {
-    if (status === 'inactive' || status === 'expired' || status === 'cancelled') return;
-
+    if (status === 'inactive' || status === 'expired' || status === 'cancelled' || !activeProjectId) return;
+  
     let isMounted = true;
-    const loadDrafts = () => {
-      fetchIndividualEmails('draft').then((data) => {
-        if (isMounted && data) {
-          setDraftCount(data.length);
-        }
-      }).catch(console.error);
+    const loadCounts = async () => {
+      try {
+        // Fetch drafts
+        const draftData = await fetchIndividualEmails('draft');
+        if (isMounted && draftData) setDraftCount(draftData.length);
+  
+        // Fetch unread inbox messages
+        const unreadCount = await fetchInboxUnreadCount(activeProjectId);
+        if (isMounted) setUnreadInboxCount(unreadCount);
+      } catch (error) {
+        console.error('[OutreachLayout Polling Error]:', error);
+      }
     };
-
-    loadDrafts();
-    const interval = setInterval(loadDrafts, 15000); // Check every 15s
+  
+    loadCounts();
+    const interval = setInterval(loadCounts, 15000); // Check every 15s
     return () => {
       isMounted = false;
       clearInterval(interval);
     }
-  }, [fetchIndividualEmails, status]);
+  }, [fetchIndividualEmails, fetchInboxUnreadCount, status, activeProjectId]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -182,12 +190,14 @@ export default function OutreachLayout() {
                   )}
                 >
                   {label}
-                  {badge && draftCount > 0 && (
+                  {badge && (
                     <span className={cn(
                       "px-1.5 py-0.5 rounded-full text-[10px] font-bold",
-                      isActive ? "bg-teal-500/20 text-teal-300" : "bg-white/10 text-slate-400"
+                      isActive ? "bg-teal-500/20 text-teal-300" : "bg-white/10 text-slate-400",
+                      id === 'compose' && draftCount === 0 && "hidden",
+                      id === 'inbox' && unreadInboxCount === 0 && "hidden"
                     )}>
-                      {draftCount}
+                      {id === 'compose' ? draftCount : unreadInboxCount}
                     </span>
                   )}
                   {isActive && (

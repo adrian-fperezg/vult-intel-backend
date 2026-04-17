@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
 import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce } from './utils.js';
+import { analyzeLeadIntent } from "./intentDetection.js";
 import { google } from "googleapis";
 
 interface GmailMessage {
@@ -197,15 +198,18 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
       // 2. New Unified Inbox Record (for Phase 1 CRM)
       const inboxMessageId = uuidv4();
+      const aiResponse = await analyzeLeadIntent(content.text);
+
       await db.run(`
         INSERT INTO outreach_inbox_messages 
-        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, intent, intent_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
         ON CONFLICT (message_id) DO NOTHING
       `, [
         inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
         originalEmail.sequence_id, msg.threadId, messageId, fromEmail, 
-        mailbox.email, subject, content.text, content.html, isRead, mailbox.id
+        mailbox.email, subject, content.text, content.html, isRead, mailbox.id,
+        aiResponse.intent, aiResponse.score
       ]);
 
       // Mark original as replied
