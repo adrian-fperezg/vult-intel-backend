@@ -376,11 +376,11 @@ export default function OutreachInbox() {
 
                     {selectedMessage.body_html ? (
                       <div 
-                        className="prose prose-invert prose-sm max-w-none text-slate-200 leading-relaxed font-sans"
+                        className="[&_p]:mb-4 [&_ul]:mb-4 [&_li]:ml-4 [&_li]:list-disc whitespace-pre-wrap text-slate-200 leading-relaxed font-sans mt-6"
                         dangerouslySetInnerHTML={{ __html: selectedMessage.body_html }}
                       />
                     ) : (
-                      <div className="whitespace-pre-wrap text-[15px] text-slate-200 leading-relaxed font-sans">
+                      <div className="whitespace-pre-wrap text-[15px] text-slate-200 leading-relaxed font-sans mt-6">
                         {selectedMessage.body_text}
                       </div>
                     )}
