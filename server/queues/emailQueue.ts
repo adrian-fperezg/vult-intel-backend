@@ -542,10 +542,19 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   }
 
   // 1. Wrap clickable links for tracking
+  // IMPORTANT: Skip unsubscribe links — wrapping them through the click tracker
+  // would send recipients to the backend 404 instead of the frontend page.
   const wrapLinks = (html: string, id: string, base: string) => {
     const regex = /<a\s+(?:[^>]*?\s+)?href=["'](.*?)["']([^>]*)>/gi;
     return html.replace(regex, (match, url, rest) => {
-      if (!url || url.startsWith('#') || url.startsWith('mailto:') || url.startsWith('tel:') || url.includes('/api/outreach/track')) {
+      if (
+        !url ||
+        url.startsWith('#') ||
+        url.startsWith('mailto:') ||
+        url.startsWith('tel:') ||
+        url.includes('/api/outreach/track') ||
+        url.includes('/unsubscribe')   // ← never track unsubscribe links
+      ) {
         return match;
       }
       const trackedUrl = `${base}/api/track/click/${id}?url=${encodeURIComponent(url)}`;
@@ -585,11 +594,24 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     safeToken = encodeURIComponent(Buffer.from(email.to_email).toString('base64'));
   }
   
-  // Clean frontend URL resolution (removes /api or trailing slashes for the link)
-  let frontendBase = backendUrl.replace(/\/api$/, '').replace(/\/$/, '');
-  // Because backendUrl might point strictly to the API on railway, if FRONTEND_URL is set we should use that
+  // ── Frontend URL resolution ───────────────────────────────────────────────
+  // The unsubscribe link MUST point to the frontend (e.g. https://vultintel.com)
+  // NOT to the Railway API backend. Precedence:
+  //   1. FRONTEND_URL env var  (explicit, most reliable)
+  //   2. backendUrl stripped of /api suffix  (last-resort fallback, warns if used)
+  let frontendBase: string;
   if (process.env.FRONTEND_URL) {
     frontendBase = process.env.FRONTEND_URL.replace(/\/$/, '');
+  } else {
+    // Fallback: try to derive frontend base from backendUrl.
+    // This will be wrong whenever the backend lives on a different host (e.g. Railway)
+    // than the frontend (e.g. Firebase Hosting / vultintel.com). Set FRONTEND_URL!
+    frontendBase = backendUrl.replace(/\/api$/, '').replace(/\/$/, '');
+    console.warn(
+      `[Footer] FRONTEND_URL is not set. Unsubscribe link will point to "${frontendBase}". ` +
+      `If the API and frontend are on different domains, set FRONTEND_URL=https://vultintel.com ` +
+      `in your backend environment variables.`
+    );
   }
 
   // Fetch business address for this project from settings
