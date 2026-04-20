@@ -1034,25 +1034,49 @@ app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
   }
 
   try {
-    const mailboxId = uuidv4();
     const encryptedSmtpPass = encryptToken(sPass);
     const encryptedImapPass = iPass ? encryptToken(iPass) : encryptedSmtpPass;
+    const newMailboxId = uuidv4();
 
-    await db.prepare(`
+    // ── Upsert via ON CONFLICT ──────────
+    // This will attempt an insert. If a record with (user_id, project_id, email)
+    // already exists (e.g. from a disconnected state), it will atomically update
+    // the existing row with the newly provided credentials and reactivate it.
+    console.log(`[POST /mailboxes/smtp] Upserting mailbox for ${email}`);
+    
+    const result = await db.prepare(`
       INSERT INTO outreach_mailboxes (
-        id, user_id, project_id, email, name, connection_type, 
+        id, user_id, project_id, email, name, connection_type,
         smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password,
         imap_host, imap_port, imap_secure, imap_username, imap_password,
         status
       )
       VALUES (?, ?, ?, ?, ?, 'smtp_imap', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-    `).run(
-      mailboxId, userId, pId, email, name || email,
+      ON CONFLICT (user_id, project_id, email)
+      DO UPDATE SET
+        name             = EXCLUDED.name,
+        connection_type  = 'smtp_imap',
+        smtp_host        = EXCLUDED.smtp_host,
+        smtp_port        = EXCLUDED.smtp_port,
+        smtp_secure      = EXCLUDED.smtp_secure,
+        smtp_username    = EXCLUDED.smtp_username,
+        smtp_password    = EXCLUDED.smtp_password,
+        imap_host        = EXCLUDED.imap_host,
+        imap_port        = EXCLUDED.imap_port,
+        imap_secure      = EXCLUDED.imap_secure,
+        imap_username    = EXCLUDED.imap_username,
+        imap_password    = EXCLUDED.imap_password,
+        status           = 'active',
+        updated_at       = CURRENT_TIMESTAMP
+      RETURNING id
+    `).get(
+      newMailboxId, userId, pId, email, name || email,
       smtp_host, Number(smtp_port), !!smtp_secure, sUser, encryptedSmtpPass,
-      imap_host || null, imap_port ? Number(imap_port) : null, !!imap_secure, iUser, encryptedImapPass,
-    );
+      imap_host || null, imap_port ? Number(imap_port) : null, !!imap_secure, iUser, encryptedImapPass
+    ) as { id: string };
 
-    res.status(201).json({ id: mailboxId, email, name });
+    const mailboxId = result?.id || newMailboxId;
+    res.status(200).json({ id: mailboxId, email, name });
   } catch (err: any) {
     console.error("[POST /mailboxes/smtp] CRITICAL ERROR:", err.message, err.stack);
     res.status(500).json({ error: err.message || "Failed to connect SMTP mailbox" });
