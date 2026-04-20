@@ -527,29 +527,39 @@ export default function RecipientManagerModal({
         </div>
 
         {/* Footer */}
-        <div className="p-8 border-t border-white/5 bg-[#0d1117] flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="flex -space-x-2">
-              <div className="size-8 rounded-full bg-slate-800 border-2 border-[#0d1117] flex items-center justify-center text-[10px] font-bold text-slate-500">
-                <Users className="size-3.5" />
-              </div>
-            </div>
-            <p className="text-sm font-medium text-slate-400">
-              Total selected: <span className="text-white font-bold text-base ml-1">
-                {getTotalSelected()}
-              </span>
+        <div className="p-8 border-t border-white/5 bg-[#0d1117] shrink-0">
+          {/* Deliverability Protection Notice */}
+          <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+            <span className="text-lg leading-none mt-0.5">🛡️</span>
+            <p className="text-xs text-emerald-300 leading-relaxed">
+              <span className="font-bold">Deliverability Protection:</span> To protect your sender reputation, emails in this batch will be automatically spaced out to send every 15 minutes.
             </p>
           </div>
-          <div className="flex gap-4">
-            <button onClick={onClose} className="px-8 py-3 rounded-2xl font-bold text-slate-400 hover:text-white transition-colors">Cancel</button>
-            <TealButton
-              onClick={handleConfirm}
-              loading={isSaving}
-              disabled={getTotalSelected() === 0 || isSaving}
-              className="px-12 py-3 shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:shadow-[0_0_30px_rgba(20,184,166,0.5)]"
-            >
-              Enroll Recipients
-            </TealButton>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex -space-x-2">
+                <div className="size-8 rounded-full bg-slate-800 border-2 border-[#0d1117] flex items-center justify-center text-[10px] font-bold text-slate-500">
+                  <Users className="size-3.5" />
+                </div>
+              </div>
+              <p className="text-sm font-medium text-slate-400">
+                Total selected: <span className="text-white font-bold text-base ml-1">
+                  {getTotalSelected()}
+                </span>
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <button onClick={onClose} className="px-8 py-3 rounded-2xl font-bold text-slate-400 hover:text-white transition-colors">Cancel</button>
+              <TealButton
+                onClick={handleConfirm}
+                loading={isSaving}
+                disabled={getTotalSelected() === 0 || isSaving}
+                className="px-12 py-3 shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:shadow-[0_0_30px_rgba(20,184,166,0.5)]"
+              >
+                Enroll Recipients
+              </TealButton>
+            </div>
           </div>
         </div>
       </motion.div>

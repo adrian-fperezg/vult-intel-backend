@@ -173,8 +173,11 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       `, sequenceId, projectId, sequenceId, projectId) as any[];
 
       console.log(`[Worker] Enrolling ${recipients.length} recipients for scheduled sequence ${sequenceId}`);
-      for (const r of recipients) {
-        await enrollContactInSequence(projectId, sequenceId, r.contact_id);
+      if (recipients.length > 1) {
+        console.log(`[Worker-Drip] Staggered sending active: ${recipients.length} contacts will send every 15 minutes.`);
+      }
+      for (const [index, r] of recipients.entries()) {
+        await enrollContactInSequence(projectId, sequenceId, r.contact_id, undefined, index);
       }
     } catch (err: any) {
       console.error(`[Worker] Failed to start scheduled sequence ${sequenceId}:`, err.message);

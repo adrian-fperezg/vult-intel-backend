@@ -18,9 +18,24 @@ export interface SequenceStep {
 /**
  * Inscribe un contacto en la secuencia.
  */
-export async function enrollContactInSequence(projectId: string, sequenceId: string, contactId: string, tx?: DbWrapper) {
+/**
+ * Enrolls a single contact in a sequence.
+ * @param staggerIndex - Position of this contact in the batch (0-based).
+ *   A value of N applies an extra N * 15-minute delay to the first step,
+ *   protecting domain reputation when launching to large batches.
+ */
+export async function enrollContactInSequence(
+  projectId: string,
+  sequenceId: string,
+  contactId: string,
+  tx?: DbWrapper,
+  staggerIndex: number = 0
+) {
   const enrollmentId = uuidv4();
   const d = tx || db;
+
+  const STAGGER_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes per contact
+  const staggerDelayMs = staggerIndex * STAGGER_INTERVAL_MS;
 
   try {
     const sequence = await d.get<any>('SELECT status FROM outreach_sequences WHERE id = ?', [sequenceId]);
@@ -34,8 +49,12 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
     );
 
     if (!isScheduled) {
-      console.log(`[SequenceEngine] Sequence is ${sequence?.status}. Starting step 1 for contact ${contactId}.`);
-      await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx);
+      if (staggerDelayMs > 0) {
+        console.log(`[SequenceEngine] Staggered drip: Contact ${contactId} will start in ${staggerDelayMs / 60000} minutes (index ${staggerIndex}).`);
+      } else {
+        console.log(`[SequenceEngine] Sequence is ${sequence?.status}. Starting step 1 immediately for contact ${contactId}.`);
+      }
+      await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx, staggerDelayMs);
     } else {
       console.log(`[SequenceEngine] Sequence is SCHEDULED. Enrolling contact ${contactId} but waiting for master trigger.`);
     }
@@ -54,13 +73,20 @@ export async function enrollContactInSequence(projectId: string, sequenceId: str
  * RULE: Only a 'replied' event (set by the IMAP/Gmail poller) stops a sequence.
  * Opens and clicks do NOT stop the sequence.
  */
+/**
+ * Schedules the next step for a contact in a sequence.
+ * @param initialExtraDelayMs - Extra milliseconds added ONLY when scheduling
+ *   the very first step (parentStepId === null). Used by staggered enrollment.
+ *   The getNextBusinessSlot() call will push this past weekend/window boundaries.
+ */
 export async function scheduleNextStep(
   projectId: string,
   sequenceId: string,
   contactId: string,
   parentStepId: string | null = null,
   _unusedBranchPath: string = 'default',
-  tx?: DbWrapper
+  tx?: DbWrapper,
+  initialExtraDelayMs: number = 0
 ) {
   const d = tx || db;
 
@@ -116,6 +142,13 @@ export async function scheduleNextStep(
   let targetTime = DateTime.now().setZone(targetTz);
 
   if (parentStepId === null) {
+    // ── Staggered Drip: apply the per-contact batch offset BEFORE business-hour
+    // enforcement so the window check can push it to the next valid slot if needed.
+    if (initialExtraDelayMs > 0) {
+      targetTime = targetTime.plus({ milliseconds: initialExtraDelayMs });
+      console.log(`[SequenceEngine] [Drip] Applied stagger offset of ${initialExtraDelayMs}ms. Pre-window target: ${targetTime.toISO()}`);
+    }
+
     if (step.scheduled_start_at) {
       if (useRecipientTz) {
         const sequenceTz = sequence.send_timezone || 'UTC';
@@ -143,6 +176,8 @@ export async function scheduleNextStep(
   }
 
   // 4. ENFORCE BUSINESS HOURS & WEEKDAYS
+  // NOTE: getNextBusinessSlot will automatically push staggered times that land
+  // outside the allowed window (weekend, after-hours) to the next valid slot.
   const finalizedTime = getNextBusinessSlot(targetTime, sequence);
   delayMs = finalizedTime.diffNow().as('milliseconds');
   

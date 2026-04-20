@@ -2095,6 +2095,129 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
   }
 });
 
+// POST /api/outreach/sequences/:id/launch  (SequenceWizard one-shot launch)
+// Creates/updates steps, upserts contacts, and immediately activates the sequence
+// with staggered drip sending applied automatically.
+app.post("/api/outreach/sequences/:id/launch", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+  const { steps = [], contacts = [], columnMapping = {}, scheduling = {}, name } = req.body;
+  const project_id = req.projectId;
+
+  if (!userId || !project_id) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    // 1. Verify sequence ownership
+    const sequence = await db.get(
+      "SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?",
+      id, userId, project_id
+    ) as any;
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    await db.transaction(async (tx) => {
+      // 2. Apply scheduling settings to sequence
+      const smartSend = scheduling.smart_send !== undefined ? (scheduling.smart_send ? 1 : 0) : 1;
+      const sendWeekends = scheduling.send_weekends !== undefined ? (scheduling.send_weekends ? 1 : 0) : 0;
+      await tx.run(`
+        UPDATE outreach_sequences 
+        SET name = ?, smart_send = ?, daily_send_limit = ?,
+            smart_send_min_delay = ?, smart_send_max_delay = ?,
+            send_weekends = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+        name || sequence.name,
+        smartSend,
+        scheduling.daily_limit || 50,
+        (scheduling.min_delay || 2) * 60,
+        (scheduling.max_delay || 5) * 60,
+        sendWeekends,
+        id
+      );
+
+      // 3. Upsert sequence steps from the wizard
+      if (steps.length > 0) {
+        await tx.run("DELETE FROM outreach_sequence_steps WHERE sequence_id = ? AND project_id = ?", id, project_id);
+        const idMap = new Map<string, string>();
+        for (const step of steps) {
+          idMap.set(step.id, step.id && !step.id.startsWith('new-') ? step.id : uuidv4());
+        }
+        for (const [index, step] of steps.entries()) {
+          const dbId = idMap.get(step.id)!;
+          const parentDbId = index === 0 ? null : (idMap.get(steps[index - 1].id) || null);
+          await tx.run(`
+            INSERT INTO outreach_sequence_steps (id, sequence_id, project_id, step_number, step_type, config, delay_amount, delay_unit, attachments, parent_step_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, dbId, id, project_id, index + 1,
+            step.type || 'email',
+            JSON.stringify({ subject: step.subject || '', body_html: step.body_html || '' }),
+            step.delayDays || 2, 'days',
+            '[]', parentDbId
+          );
+        }
+      }
+
+      // 4. Upsert contacts and enroll them with stagger 
+      const emailCol = columnMapping['email'] || 'email';
+      const firstCol = columnMapping['first_name'] || 'first_name';
+      const lastCol = columnMapping['last_name'] || 'last_name';
+      const companyCol = columnMapping['company'] || 'company';
+
+      const contactIds: string[] = [];
+      for (const rawContact of contacts) {
+        const email = rawContact[emailCol];
+        if (!email || !email.includes('@')) continue;
+
+        // Upsert contact
+        const existingContact = await tx.get(
+          "SELECT id FROM outreach_contacts WHERE email = ? AND project_id = ?", email, project_id
+        ) as any;
+        let contactId: string;
+        if (existingContact) {
+          contactId = existingContact.id;
+        } else {
+          contactId = uuidv4();
+          await tx.run(`
+            INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'not_enrolled')
+          `, contactId, userId, project_id, rawContact[firstCol] || '', rawContact[lastCol] || '', email, rawContact[companyCol] || '');
+        }
+
+        // Add as sequence recipient if not already
+        const existingRecipient = await tx.get(
+          "SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, contactId
+        );
+        if (!existingRecipient) {
+          await tx.run(
+            "INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type) VALUES (?, ?, ?, ?, 'csv')",
+            uuidv4(), id, project_id, contactId
+          );
+        }
+
+        // Only enroll if not already enrolled
+        const existingEnrollment = await tx.get(
+          "SELECT id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?", id, contactId
+        );
+        if (!existingEnrollment) {
+          contactIds.push(contactId);
+        }
+      }
+
+      // 5. Enroll with staggered drip - contact 0 sends immediately, contact N sends in N*15 min
+      if (contactIds.length > 1) {
+        console.log(`[Launch] Drip-enrolling ${contactIds.length} contacts (15-min spacing).`);
+      }
+      for (const [index, contactId] of contactIds.entries()) {
+        await enrollContactInSequence(project_id, id, contactId, tx, index);
+      }
+    });
+
+    res.json({ success: true, message: `Sequence launched with ${contacts.length} contacts (staggered drip active).` });
+  } catch (error) {
+    console.error("[Launch Sequence Error]:", error);
+    res.status(500).json({ error: "Failed to launch sequence", details: (error as Error).message });
+  }
+});
+
 // POST /api/outreach/sequences
 app.post("/api/outreach/sequences", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
@@ -2424,10 +2547,13 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
         `, id, req.projectId, id, req.projectId) as any[];
 
         console.log(`[API-IMMEDIATE] Sequence ${id} is ACTIVE. Found ${recipients.length} recipients to enroll.`);
+        if (recipients.length > 1) {
+          console.log(`[API-DRIP] Staggered sending active: ${recipients.length} contacts will send every 15 minutes.`);
+        }
 
-        for (const r of recipients) {
-          // Assuming enrollContactInSequence handles the immediate execution logic
-          await enrollContactInSequence(req.projectId, id, r.contact_id, tx);
+        for (const [index, r] of recipients.entries()) {
+          // Pass the batch index so enrollContactInSequence applies the stagger delay
+          await enrollContactInSequence(req.projectId, id, r.contact_id, tx, index);
         }
         console.log(`[API-SUCCESS] Sequence ${id} activated immediately. Enrolled ${recipients.length} recipients.`);
       }
@@ -2530,10 +2656,16 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
             addedContacts.push(contactObj);
           }
 
-          // If active, enroll immediately
+          // If active, enroll immediately (with stagger index for drip protection)
           const seq = await tx.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
           if (seq?.status === 'active') {
-            await enrollContactInSequence(project_id, id, contact_id, tx);
+            // Count currently-enrolled contacts to determine stagger offset for this contact
+            const enrolledCount = await tx.get<{ n: number }>(
+              "SELECT COUNT(*) as n FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?",
+              id, project_id
+            );
+            const staggerIndex = (enrolledCount?.n ?? 1) - 1; // Use existing count as position
+            await enrollContactInSequence(project_id, id, contact_id, tx, staggerIndex);
           }
         }
       }

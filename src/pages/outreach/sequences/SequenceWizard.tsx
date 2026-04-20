@@ -549,32 +549,42 @@ export default function SequenceWizard({ isOpen, onClose, onComplete }: Sequence
                </button>
              )}
           </div>
-          <div>
-            {step === 'settings' && (
-              <TealButton onClick={() => setStep('logic')} disabled={!name}>
-                Continue to Logic <ChevronRight className="size-4" />
-              </TealButton>
+          <div className="flex items-center gap-4">
+            {step === 'review' && contacts.length > 0 && (
+              <div className="flex items-start gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl max-w-sm">
+                <span className="text-base leading-none mt-0.5">🛡️</span>
+                <p className="text-[11px] text-emerald-300 leading-relaxed">
+                  <span className="font-bold">Deliverability Protection:</span> To protect your sender reputation, emails in this batch will be automatically spaced out to send every 15 minutes.
+                </p>
+              </div>
             )}
-            {step === 'logic' && (
-              <TealButton onClick={() => setStep('contacts')} disabled={nodes.length === 0}>
-                Continue to Contacts <ChevronRight className="size-4" />
-              </TealButton>
-            )}
-            {step === 'contacts' && (
-              <TealButton onClick={() => setStep('scheduling')} disabled={!contacts.length || !columnMapping['email']}>
-                Continue to Scheduling <ChevronRight className="size-4" />
-              </TealButton>
-            )}
-            {step === 'scheduling' && (
-              <TealButton onClick={() => setStep('review')}>
-                Review Sequence <ChevronRight className="size-4" />
-              </TealButton>
-            )}
-            {step === 'review' && (
-              <TealButton onClick={handleLaunch} loading={isSubmitting} className="min-w-[140px] justify-center">
-                {isSubmitting ? 'Launching...' : 'Activate Sequence'}
-              </TealButton>
-            )}
+            <div>
+              {step === 'settings' && (
+                <TealButton onClick={() => setStep('logic')} disabled={!name}>
+                  Continue to Logic <ChevronRight className="size-4" />
+                </TealButton>
+              )}
+              {step === 'logic' && (
+                <TealButton onClick={() => setStep('contacts')} disabled={nodes.length === 0}>
+                  Continue to Contacts <ChevronRight className="size-4" />
+                </TealButton>
+              )}
+              {step === 'contacts' && (
+                <TealButton onClick={() => setStep('scheduling')} disabled={!contacts.length || !columnMapping['email']}>
+                  Continue to Scheduling <ChevronRight className="size-4" />
+                </TealButton>
+              )}
+              {step === 'scheduling' && (
+                <TealButton onClick={() => setStep('review')}>
+                  Review Sequence <ChevronRight className="size-4" />
+                </TealButton>
+              )}
+              {step === 'review' && (
+                <TealButton onClick={handleLaunch} loading={isSubmitting} className="min-w-[140px] justify-center">
+                  {isSubmitting ? 'Launching...' : 'Activate Sequence'}
+                </TealButton>
+              )}
+            </div>
           </div>
         </div>
       </div>
