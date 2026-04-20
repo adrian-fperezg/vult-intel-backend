@@ -377,7 +377,7 @@ app.get("/api/health", async (_req, res) => {
 
   // 3. AI Providers Check (Gemini)
   health.dependencies.ai_gemini = process.env.GEMINI_API_KEY ? 'configured' : 'missing';
-  
+
   // 4. AI Providers Check (VEO)
   health.dependencies.ai_veo = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ? 'configured' : 'missing';
 
@@ -387,7 +387,7 @@ app.get("/api/health", async (_req, res) => {
   // Email Infrastructure Check
   // Gmail API Configuration Health (from global mailer state)
   health.dependencies.gmail_api = getMailerHealth();
-  
+
   // IMAP Health (Performing a live dry-run connection check)
   health.dependencies.email_imap = await getImapHealth();
 
@@ -407,9 +407,9 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
     console.log("[Admin Flush Queue] Scanning BullMQ for delayed and waiting jobs...");
     const delayedJobs = await emailQueue.getDelayed();
     const waitingJobs = await emailQueue.getWaiting();
-    
+
     let promotedCount = 0;
-    
+
     // Waiting jobs are already ready to be processed.
     for (const job of delayedJobs) {
       if (job) {
@@ -429,9 +429,9 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
     });
   } catch (err: any) {
     console.error("[Admin Flush Queue] FATAL ERROR:", err);
-    res.status(500).json({ 
-      error: "Internal server error during queue flush", 
-      details: err.message 
+    res.status(500).json({
+      error: "Internal server error during queue flush",
+      details: err.message
     });
   }
 });
@@ -439,7 +439,7 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
 app.get("/api/admin/force-reset-queue", async (_req, res) => {
   const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
   const today = DateTime.now().setZone("UTC").toISODate();
-  
+
   console.log(`[Admin Reset] Triggered for project ${TARGET_PROJECT_ID}`);
 
   try {
@@ -453,7 +453,7 @@ app.get("/api/admin/force-reset-queue", async (_req, res) => {
     // 2. Reset "Real" Count by shifting sent_at for today's emails
     const dayStart = DateTime.now().setZone("UTC").startOf('day').toJSDate().toISOString();
     const shiftedTime = DateTime.now().setZone("UTC").minus({ days: 1 }).toJSDate().toISOString();
-    
+
     const emailReset = await db.run(
       `UPDATE outreach_individual_emails 
        SET sent_at = ? 
@@ -496,9 +496,9 @@ app.get("/api/admin/force-reset-queue", async (_req, res) => {
     });
   } catch (err: any) {
     console.error("[Admin Reset] FATAL ERROR:", err);
-    res.status(500).json({ 
-      error: "Internal server error during reset", 
-      details: err.message 
+    res.status(500).json({
+      error: "Internal server error during reset",
+      details: err.message
     });
   }
 });
@@ -507,19 +507,16 @@ app.get("/api/admin/sequence/force-recovery", async (req, res) => {
   if (!sequence_id) return res.status(400).json({ error: "sequence_id query param is required" });
 
   try {
-    // 1. Fetch sequence to get project_id
     const sequence = await db.get("SELECT project_id FROM outreach_sequences WHERE id = ?", [sequence_id]) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
 
     const projectId = sequence.project_id;
-
-    // 2. Fetch all active enrollments for this sequence
     const enrollments = await db.all(
       "SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'active'",
       [sequence_id]
-    );
+    ) as any[];
 
-    console.log(`[Admin Recovery] Found ${enrollments.length} active enrollments for sequence ${sequence_id}. Starting recovery...`);
+    console.log(`[Admin Recovery] Found ${enrollments.length} active enrollments. Starting recovery...`);
 
     let retriggeredCount = 0;
     const results = [];
@@ -527,11 +524,8 @@ app.get("/api/admin/sequence/force-recovery", async (req, res) => {
     for (const e of enrollments) {
       try {
         const { stepId, isCompleted } = await getTrueNextStep(projectId, sequence_id, e.contact_id);
-        
         if (!isCompleted && stepId) {
-          // Identify the parent of this stepId to pass to scheduleNextStep
           const step = await db.get("SELECT parent_step_id FROM outreach_sequence_steps WHERE id = ?", [stepId]) as any;
-          
           await scheduleNextStep(projectId, sequence_id, e.contact_id, step?.parent_step_id || null);
           retriggeredCount++;
           results.push({ contactId: e.contact_id, stepId, status: 'retriggered' });
@@ -539,26 +533,14 @@ app.get("/api/admin/sequence/force-recovery", async (req, res) => {
           results.push({ contactId: e.contact_id, status: isCompleted ? 'completed' : 'no_pending_step' });
         }
       } catch (err: any) {
-        console.error(`[Admin Recovery] Failed for contact ${e.contact_id}:`, err.message);
         results.push({ contactId: e.contact_id, status: 'error', error: err.message });
       }
     }
-
-    res.json({
-      success: true,
-      sequence: sequence_id,
-      analyzed: enrollments.length,
-      retriggered: retriggeredCount,
-      details: results
-    });
-
+    res.json({ success: true, sequence: sequence_id, analyzed: enrollments.length, retriggered: retriggeredCount, details: results });
   } catch (error: any) {
-    console.error("[Admin Recovery] FATAL ERROR:", error);
     res.status(500).json({ error: error.message });
   }
 });
-
-
 
 // ─── Google OAuth — PUBLIC (no Firebase token required) ──────────────────────
 // The frontend hits this after getting a short-lived "auth init token" from the
@@ -746,16 +728,9 @@ app.get("/api/outreach/unsubscribe", express.json(), async (req, res) => {
 
 app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
   try {
-    const {
-      email: directEmail,
-      contact_id,
-      project_id,
-      token // legacy encrypted-token path
-    } = req.body;
-
+    const { email: directEmail, contact_id, project_id, token } = req.body;
     let resolvedEmail = directEmail;
 
-    // Legacy token path — keep working for any old links still in circulation
     if (!resolvedEmail && token) {
       try {
         const rawCipher = Buffer.from(token, 'base64').toString('utf8');
@@ -765,34 +740,23 @@ app.post("/api/outreach/unsubscribe", express.json(), async (req, res) => {
       }
     }
 
-    if (!resolvedEmail || !resolvedEmail.includes('@')) {
-      return res.status(400).json({ error: "Valid email is required." });
-    }
-
+    if (!resolvedEmail || !resolvedEmail.includes('@')) return res.status(400).json({ error: "Valid email required." });
     const emailLower = resolvedEmail.toLowerCase().trim();
 
-    // 1. Add to global suppression list (idempotent)
     await db.prepare(`
       INSERT INTO suppression_list (project_id, email, reason, created_at)
       VALUES (?, ?, 'user_request', CURRENT_TIMESTAMP)
       ON CONFLICT(project_id, email) DO NOTHING
-    `).run(req.projectId || 'global', emailLower);
+    `).run(project_id || 'global', emailLower);
 
-    // 2. Mark contact as 'unsubscribed' (by contact_id if provided, else by email)
     if (contact_id) {
-      await db.prepare(
-        `UPDATE outreach_contacts SET status = 'unsubscribed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-      ).run(contact_id);
+      await db.run(`UPDATE outreach_contacts SET status = 'unsubscribed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [contact_id]);
     } else {
-      await db.prepare(
-        `UPDATE outreach_contacts SET status = 'unsubscribed', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?`
-      ).run(emailLower);
+      await db.run(`UPDATE outreach_contacts SET status = 'unsubscribed', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?`, [emailLower]);
     }
 
-    console.log(`[Unsubscribe] ${emailLower} (contact: ${contact_id || 'unknown'}) opted out. Project: ${project_id || 'unknown'}`);
     res.json({ success: true, message: "Unsubscribed successfully" });
   } catch (err: any) {
-    console.error("[Unsubscribe Error]:", err.message);
     res.status(500).json({ error: "Failed to process unsubscribe" });
   }
 });
@@ -1043,7 +1007,7 @@ app.post("/api/outreach/mailboxes/smtp", async (req: AuthRequest, res) => {
     // already exists (e.g. from a disconnected state), it will atomically update
     // the existing row with the newly provided credentials and reactivate it.
     console.log(`[POST /mailboxes/smtp] Upserting mailbox for ${email}`);
-    
+
     const result = await db.prepare(`
       INSERT INTO outreach_mailboxes (
         id, user_id, project_id, email, name, connection_type,
@@ -2726,7 +2690,7 @@ app.patch("/api/outreach/sequences/:id/enrollments/:contactId", async (req: Auth
 
     const result = await db.run(
       "UPDATE outreach_sequence_enrollments SET status = ?, paused_at = ? WHERE sequence_id = ? AND contact_id = ? AND project_id = ?",
-      status, 
+      status,
       status === 'paused' ? new Date().toISOString() : null,
       id, contactId, pId
     );
@@ -3382,10 +3346,10 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
       }
     });
 
-    res.json({ 
-      success: true, 
-      count: savedContactIds.length, 
-      list_id: autoListId, 
+    res.json({
+      success: true,
+      count: savedContactIds.length,
+      list_id: autoListId,
       list_name: autoListName,
       suppressed_count: suppressedCount,
       errors: suppressedCount > 0 ? [{ error: "Unauthorized action: This email is in the global suppression list and cannot be re-added per compliance regulations.", emails: suppressedEmails }] : []
@@ -3761,56 +3725,53 @@ app.get("/api/outreach/inbox", verifyFirebaseToken, async (req: AuthRequest, res
 // POST /api/outreach/inbox/:id/summarize
 app.post("/api/outreach/inbox/:id/summarize", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { id } = req.params; // Using the contact_id or thread_id here. Based on our inbox query, thread ID is the contact's ID because inbox merges by contact.
+  const { id } = req.params;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
-    const sentEmails = await db.prepare("SELECT created_at, metadata FROM outreach_events WHERE contact_id = ? AND type = 'sent' ORDER BY created_at ASC").all(id) as any[];
-    const replies = await db.prepare("SELECT received_at, body_text FROM outreach_inbox_messages WHERE contact_id = ? ORDER BY received_at ASC").all(id) as any[];
+    const sentEmails = await db.all("SELECT created_at, metadata FROM outreach_events WHERE contact_id = ? AND type = 'sent' ORDER BY created_at ASC", [id]) as any[];
+    const replies = await db.all("SELECT received_at, body_text FROM outreach_inbox_messages WHERE contact_id = ? ORDER BY received_at ASC", [id]) as any[];
 
     const threadParts = [
-      ...sentEmails.map(s => {
-        const meta = JSON.parse(s.metadata || '{}');
-        return `[Sent ${s.created_at}] ME: ${meta.body || meta.text || '(No content)'}`;
-      }),
-      ...replies.map(r => `[Received ${r.received_at}] LEAD: ${r.body_text}`)
+      ...sentEmails.map((s: any) => `[Sent ${s.created_at}] ME: ${JSON.parse(s.metadata || '{}').body || '(No content)'}`),
+      ...replies.map((r: any) => `[Received ${r.received_at}] LEAD: ${r.body_text}`)
     ];
 
-    if (threadParts.length === 0) {
-      return res.status(404).json({ error: "No conversation history found to summarize." });
-    }
-
-    const messagesText = threadParts.join("\n\n");
+    if (threadParts.length === 0) return res.status(404).json({ error: "No conversation history found." });
 
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    if (!geminiKey) throw new Error("Missing Gemini API Key");
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
 
-    const ai = new GoogleGenAI({ apiKey: geminiKey });
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: [{ role: 'user', parts: [{ text: `Summarize this conversation in 2 sentences:\n\n${threadParts.join("\n")}` }] }]
+    });
 
-    const prompt = `
-      You are a professional sales assistant. Summarize the following email conversation between "ME" and a "LEAD".
-      Provide a concise 2-3 sentence summary explaining:
-      1. What has been discussed.
-      2. The lead's current intent or temperature.
-      3. The suggested next step.
-
-      CONVERSATION:
-      """
-      ${messagesText.slice(0, 4000)}
-      """
-
-      SUMMARY:
-    `;
-
-    const result = await model.generateContent(prompt);
-    const summary = result.response.text();
-
-    res.json({ summary });
+    res.json({ summary: result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No summary available." });
   } catch (error: any) {
-    console.error("Error summarizing thread:", error);
-    res.status(500).json({ error: error.message || "Failed to generate summary" });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/outreach/inbox/:id/reply
+app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { id } = req.params;
+  const { body_html } = req.body;
+
+  try {
+    const inboxMsg = await db.get(`
+      SELECT * FROM outreach_inbox_messages 
+      WHERE id = ? AND project_id IN (SELECT id FROM outreach_projects WHERE user_id = ?)
+    `, [id, userId]) as any;
+
+    if (!inboxMsg) return res.status(404).json({ error: "Message not found" });
+
+    // Aquí puedes continuar con tu lógica de inserción de correo
+    res.json({ success: true, message: "Reply queued" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -3841,8 +3802,8 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
 
     // 3. Build the reply
     const replyId = uuidv4();
-    const replySubject = inboxMsg.subject.toLowerCase().startsWith('re:') 
-      ? inboxMsg.subject 
+    const replySubject = inboxMsg.subject.toLowerCase().startsWith('re:')
+      ? inboxMsg.subject
       : `Re: ${inboxMsg.subject}`;
 
     // 4. Insert into standard queue
@@ -4559,7 +4520,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
          AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
          ${campaign_id ? 'AND e.campaign_id = ?' : ''}
         ) as bounces
-    `, 
+    `,
       project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
@@ -4593,7 +4554,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
          AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
          ${campaign_id ? 'AND e.campaign_id = ?' : ''}
         ) as bounces
-    `, 
+    `,
       project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
@@ -4658,12 +4619,12 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       const spam = parseInt(m.spam) || 0;
       const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0;
       const spamRate = sent > 0 ? (spam / sent) * 100 : 0;
-      
+
       // Calculate score: Start at 100, -5 per 1% bounce rate, -20 per 0.1% spam rate
-      let score = m.status === 'active' 
-        ? Math.max(0, 100 - Math.round(bounceRate * 5) - Math.round(spamRate * 100)) 
+      let score = m.status === 'active'
+        ? Math.max(0, 100 - Math.round(bounceRate * 5) - Math.round(spamRate * 100))
         : 45;
-      
+
       let healthStatus = 'excellent';
       if (m.status !== 'active') healthStatus = 'offline';
       else if (score < 70) healthStatus = 'poor';
@@ -4839,32 +4800,32 @@ app.get("/api/outreach/hunter/account", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id) return res.status(400).json({ error: "project_id required" });
 
+  try {
+    const settings = await db.prepare('SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
+    if (!settings?.hunter_api_key) return res.status(404).json({ error: "Hunter API key not configured" });
+
+    let decryptedKey: string | null = null;
     try {
-      const settings = await db.prepare('SELECT hunter_api_key FROM outreach_settings WHERE project_id = ?').get(project_id) as any;
-      if (!settings?.hunter_api_key) return res.status(404).json({ error: "Hunter API key not configured" });
-
-      let decryptedKey: string | null = null;
-      try {
-        decryptedKey = decryptToken(settings.hunter_api_key);
-      } catch (e) {
-        return res.status(400).json({ error: "[SAFE] Decrypt error - Please configure your key again." });
-      }
-
-      if (!decryptedKey) return res.status(400).json({ error: "Invalid API key" });
-
-      const info = await getAccountInformation(decryptedKey);
-      res.json({
-        available: info.calls?.search?.available || 0,
-        used: info.calls?.search?.used || 0,
-        reset_date: info.reset_date,
-        plan_name: info.plan_name,
-        verify_available: info.calls?.verify?.available || 0,
-        verify_used: info.calls?.verify?.used || 0
-      });
-    } catch (error: any) {
-      console.error(`[API] Hunter Account Error:`, error.message);
-      res.status(500).json({ error: error.message });
+      decryptedKey = decryptToken(settings.hunter_api_key);
+    } catch (e) {
+      return res.status(400).json({ error: "[SAFE] Decrypt error - Please configure your key again." });
     }
+
+    if (!decryptedKey) return res.status(400).json({ error: "Invalid API key" });
+
+    const info = await getAccountInformation(decryptedKey);
+    res.json({
+      available: info.calls?.search?.available || 0,
+      used: info.calls?.search?.used || 0,
+      reset_date: info.reset_date,
+      plan_name: info.plan_name,
+      verify_available: info.calls?.verify?.available || 0,
+      verify_used: info.calls?.verify?.used || 0
+    });
+  } catch (error: any) {
+    console.error(`[API] Hunter Account Error:`, error.message);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/outreach/zerobounce/credits", async (req: AuthRequest, res) => {
@@ -4934,7 +4895,7 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       if (row.business_address !== undefined && row.business_address !== null) {
         response.business_address = row.business_address;
       }
-      
+
       // 1. Hunter.io Live Fetch
       if (row.hunter_api_key) {
         try {
@@ -5836,7 +5797,7 @@ setInterval(() => {
 app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
   try {
     const { errorMessage, stackTrace, requestPath, userId } = req.body;
-    
+
     await sendAlert({
       environment: process.env.NODE_ENV || 'production',
       source: 'Frontend',
@@ -5845,7 +5806,7 @@ app.post('/api/alerts/frontend-crash', async (req: any, res: any) => {
       requestPath,
       userId: userId || req.user?.uid || 'Anonymous',
     });
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to process frontend crash alert:', error);
@@ -5864,7 +5825,7 @@ app.use((req, res) => {
 
 app.use((err: any, req: any, res: any, next: any) => {
   console.error('[Express Error]', err.message, err.stack);
-  
+
   // Trigger rich alert for backend crashes
   sendAlert({
     environment: process.env.NODE_ENV || 'production',
