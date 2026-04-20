@@ -106,17 +106,98 @@ export async function recordOutreachEvent(params: {
 }
 
 /**
- * Detecta correos de rebote (Bounces).
+ * Detects whether an incoming email is a bounce/NDR notification.
+ * Covers: Gmail, Outlook/Exchange, Yahoo, Postfix, Sendmail, and generic MTAs.
  */
 export function isBounce(from: string, subject: string): boolean {
   const f = from.toLowerCase();
   const s = subject.toLowerCase();
-  const patterns = [
-    'mailer-daemon', 'postmaster', 'delivery-status-notification', 
-    'undelivered', 'returned mail', 'failure notice',
-    'system administrator', 'address not found', 'could not be delivered'
+
+  // From-address patterns (most reliable signal)
+  const fromPatterns = [
+    'mailer-daemon',
+    'postmaster',
+    'delivery-status-notification',
+    'system administrator',
+    'mail delivery subsystem',
+    'mail delivery system',
+    'no-reply@bounce',
+    'noreply@bounce',
   ];
-  return patterns.some(p => f.includes(p) || s.includes(p));
+
+  // Subject-line patterns — ordered by specificity
+  const subjectPatterns = [
+    // Microsoft / Office 365
+    'undeliverable:',
+    'undeliverable ',
+    // Gmail / Google Workspace
+    'delivery status notification (failure)',
+    'delivery status notification',
+    // Postfix / Unix MTAs
+    'undelivered mail returned to sender',
+    // Generic
+    'returned mail:',
+    'returned mail',
+    'failure notice',
+    'delivery failure',
+    'mail delivery failure',
+    'mail delivery failed',
+    'message delivery failed',
+    'message not delivered',
+    'could not be delivered',
+    'address not found',
+    'user unknown',
+    'no such user',
+    'account does not exist',
+    'mailbox not found',
+    'mailbox unavailable',
+    // Legacy
+    'undelivered',
+  ];
+
+  return (
+    fromPatterns.some(p => f.includes(p)) ||
+    subjectPatterns.some(p => s.includes(p))
+  );
+}
+
+/**
+ * Attempts to extract the original bounced email address from a bounce notification body.
+ * Most MTAs include the failed address in a recognisable pattern inside the NDR body.
+ * Returns null if no address can be reliably identified.
+ */
+export function extractBouncedEmail(bodyText: string): string | null {
+  if (!bodyText) return null;
+
+  const text = bodyText.slice(0, 4000); // Only parse the first 4 KB
+
+  // Ordered from most-specific to least-specific patterns
+  const patterns = [
+    // "The following address(es) failed:" / "recipient address" style (Postfix/Exim)
+    /recipient address rejected[:\s]+([\w.+%-]+@[\w.-]+\.[a-z]{2,})/i,
+    /The following address(?:es)? failed:\s*([\w.+%-]+@[\w.-]+\.[a-z]{2,})/i,
+    // "could not be delivered to" (generic)
+    /could not be delivered to:\s*[<]?([\w.+%-]+@[\w.-]+\.[a-z]{2,})[>]?/i,
+    // "Final-Recipient: rfc822; user@domain" (RFC 3464 DSN header embedded in text)
+    /Final-Recipient:[^;]+;\s*([\w.+%-]+@[\w.-]+\.[a-z]{2,})/i,
+    // "Original-Recipient: rfc822; ..."
+    /Original-Recipient:[^;]+;\s*([\w.+%-]+@[\w.-]+\.[a-z]{2,})/i,
+    // "To: user@domain" appearing in the attached original headers section
+    /^To:\s*[<]?([\w.+%-]+@[\w.-]+\.[a-z]{2,})[>]?/im,
+    // Outlook NDR: "Your message couldn't be delivered to ..."
+    /couldn't be delivered to\s+[<]?([\w.+%-]+@[\w.-]+\.[a-z]{2,})[>]?/i,
+    /wasn't delivered to\s+[<]?([\w.+%-]+@[\w.-]+\.[a-z]{2,})[>]?/i,
+    // General fallback: any bare email in the first paragraph
+    /\b([\w.+%-]+@[\w.-]+\.[a-z]{2,})\b/,
+  ];
+
+  for (const re of patterns) {
+    const match = text.match(re);
+    if (match && match[1] && match[1].includes('@')) {
+      return match[1].toLowerCase().trim();
+    }
+  }
+  return null;
 }
 
 /**

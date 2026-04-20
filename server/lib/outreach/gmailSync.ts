@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
-import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce } from './utils.js';
+import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce, extractBouncedEmail } from './utils.js';
 import { analyzeLeadIntent } from "./intentDetection.js";
 import { google } from "googleapis";
 
@@ -100,11 +100,15 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     console.log(`[Gmail Sync] [ID: ${msgRef.id}] Processing email from ${fromHeader}: "${subject}"`);
 
     if (isBounce(fromHeader, subject)) {
+      console.warn(`[Gmail Sync] [ID: ${msgRef.id}] Bounce detected from "${fromHeader}" Subject: "${subject}"`);
+
       const original = await findOriginalEmail({
         potentialIds: [messageId].filter(Boolean),
         threadId: msg.threadId
       });
+
       if (original) {
+        // Happy path — matched the bounce to a known outreach email
         await recordOutreachEvent({
           project_id: mailbox.project_id,
           sequence_id: original.sequence_id,
@@ -115,11 +119,28 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           event_key: `bounced:${msg.id}`,
           metadata: { from: fromHeader, subject, gmail_id: msg.id }
         });
-        await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", original.contact_id);
-        await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?", original.sequence_id, original.contact_id);
-
-        // Critical Auto-Pause and Queue Purge
         await handleCriticalBounce(original.contact_id, original.sequence_id, mailbox.project_id);
+        console.log(`[Gmail Sync] Bounce handled for contact ${original.contact_id}.`);
+      } else {
+        // Fallback — parse the bounce body for the intended recipient
+        const content = extractGmailContent(msg.payload);
+        const bouncedEmail = extractBouncedEmail(content.text || content.html);
+
+        if (bouncedEmail) {
+          console.warn(`[Gmail Sync] [Bounce Fallback] Resolved bounced address from body: ${bouncedEmail}`);
+          const contact = await db.prepare(
+            'SELECT id, project_id FROM outreach_contacts WHERE LOWER(email) = ? AND project_id = ? LIMIT 1'
+          ).get(bouncedEmail, mailbox.project_id) as any;
+
+          if (contact) {
+            await handleCriticalBounce(contact.id, null, mailbox.project_id);
+            console.log(`[Gmail Sync] [Bounce Fallback] Contact ${contact.id} (${bouncedEmail}) marked bounced via body extraction.`);
+          } else {
+            console.warn(`[Gmail Sync] [Bounce Fallback] No contact found for bounced address: ${bouncedEmail}`);
+          }
+        } else {
+          console.warn(`[Gmail Sync] [ID: ${msgRef.id}] Bounce detected but could not resolve bounced address. Skipping.`);
+        }
       }
       continue;
     }

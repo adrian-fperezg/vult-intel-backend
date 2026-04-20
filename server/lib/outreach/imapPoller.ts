@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser';
 import db from '../../db.js';
 import { decryptToken } from "./encrypt.js";
 import { v4 as uuidv4 } from 'uuid';
-import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce } from './utils.js';
+import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce, extractBouncedEmail } from './utils.js';
 import { analyzeLeadIntent } from "./intentDetection.js";
 import { sendAlert } from '../notifier.js';
 
@@ -100,20 +100,44 @@ export async function pollImap(mailboxId: string) {
 
         // 1. BOUNCE DETECTION
         if (isBounce(from, subject)) {
-          const original = await findOriginalEmail({ potentialIds: [messageId || uid].filter(Boolean) });
+          console.warn(`[IMAP] [UID: ${uid}] Bounce detected from "${from}" Subject: "${subject}"`);
+
+          const original = await findOriginalEmail({ potentialIds: [messageId || String(uid)].filter(Boolean) });
+
           if (original) {
+            // Happy path — we matched the bounce to a known outreach email
             await recordOutreachEvent({
               project_id: mailbox.project_id, sequence_id: original.sequence_id,
               step_id: original.step_id, contact_id: original.contact_id,
               email_id: original.id, event_type: 'bounced',
               event_key: `bounced:imap:${uid}`, metadata: { from, subject }
             });
-            await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", [original.contact_id]);
-            await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ?", [original.sequence_id, original.contact_id]);
-            
-            // Critical Auto-Pause and Queue Purge
             await handleCriticalBounce(original.contact_id, original.sequence_id, mailbox.project_id);
+            console.log(`[IMAP] [UID: ${uid}] Bounce handled for contact ${original.contact_id}.`);
+          } else {
+            // Fallback — parse the bounce body for the intended recipient's email address
+            const { text: bounceBody } = await extractEmailContent(msg);
+            const bouncedEmail = extractBouncedEmail(bounceBody);
+
+            if (bouncedEmail) {
+              console.warn(`[IMAP] [Bounce Fallback] Could not match via message-id. Resolved bounced address from body: ${bouncedEmail}`);
+              // Mark the contact by email (across all projects we have access to for this mailbox)
+              const contact = await db.get(
+                'SELECT id, project_id FROM outreach_contacts WHERE LOWER(email) = ? AND project_id = ? LIMIT 1',
+                bouncedEmail, mailbox.project_id
+              ) as any;
+
+              if (contact) {
+                await handleCriticalBounce(contact.id, null, mailbox.project_id);
+                console.log(`[IMAP] [Bounce Fallback] Contact ${contact.id} (${bouncedEmail}) marked bounced via body extraction.`);
+              } else {
+                console.warn(`[IMAP] [Bounce Fallback] No contact found for bounced address: ${bouncedEmail}`);
+              }
+            } else {
+              console.warn(`[IMAP] [UID: ${uid}] Bounce detected but could not resolve bounced address. Skipping.`);
+            }
           }
+
           await connection.addFlags(uid, ['\\Seen']);
           continue;
         }

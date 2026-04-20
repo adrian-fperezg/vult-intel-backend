@@ -217,6 +217,20 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         return;
       }
 
+      // 1b. Contact-level status guard (bounced / unsubscribed)
+      // A contact can be bounced or unsubscribed AFTER their job was already queued.
+      // We must re-check here to avoid sending to dead or opted-out addresses.
+      const contactMeta = await db.prepare('SELECT status FROM outreach_contacts WHERE id = ?').get(contactId) as any;
+      const blockedContactStatuses = ['bounced', 'unsubscribed', 'blacklisted'];
+      if (contactMeta && blockedContactStatuses.includes(contactMeta.status)) {
+        console.warn(`[Sequence] COMPLIANCE BLOCK: Contact ${contactId} status is '${contactMeta.status}'. Halting sequence step ${stepId}.`);
+        // Ensure enrollment is stopped so no future jobs fire for this contact
+        await db.prepare(
+          "UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ? AND status = 'active'"
+        ).run(sequenceId, contactId);
+        return;
+      }
+
       // Secondary Safety Check: Is this step still the one we expect?
       if (enrollment.next_step_id !== stepId) {
         console.warn(`[Sequence] Skipping STALE step execution for contact ${contactId}. Job step: ${stepId}, DB next step: ${enrollment.next_step_id}`);
@@ -572,13 +586,16 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     throw new Error("Email is on the global suppression list. Job discarded.");
   }
 
-  // --- UNSUBSCRIBED CONTACT CHECK ---
-  // This is the CAN-SPAM hard stop. Never send to a contact who opted out.
+  // --- COMPLIANCE HARD STOP: Unsubscribed / Bounced / Blacklisted ---
+  // This check runs immediately before sending and catches contacts whose status
+  // changed AFTER the BullMQ job was already scheduled (race-condition protection).
   if (email.contact_id) {
     const contactStatus = await db.prepare("SELECT status FROM outreach_contacts WHERE id = ?").get(email.contact_id) as any;
-    if (contactStatus && (contactStatus.status === 'unsubscribed' || contactStatus.status === 'blacklisted')) {
+    const blockedStatuses = ['unsubscribed', 'bounced', 'blacklisted'];
+    if (contactStatus && blockedStatuses.includes(contactStatus.status)) {
+      const errorCode = contactStatus.status.toUpperCase();
       console.warn(`[processEmail] COMPLIANCE BLOCK: Contact ${email.contact_id} is ${contactStatus.status}. Aborting send.`);
-      await db.prepare("UPDATE outreach_individual_emails SET status = 'failed', error_code = 'UNSUBSCRIBED' WHERE id = ?").run(emailId);
+      await db.prepare(`UPDATE outreach_individual_emails SET status = 'failed', error_code = '${errorCode}' WHERE id = ?`).run(emailId);
       return;
     }
   }
