@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Clock, RefreshCw, Loader2, Database, Mail, 
   User, Layers, ListChecks, Calendar, ExternalLink 
@@ -34,6 +34,13 @@ export default function QueueMonitor() {
   const [error, setError] = useState<string | null>(null);
   const { fetchScheduledQueue, activeProjectId } = useOutreachApi();
 
+  // Filter state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [seqFilter, setSeqFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [stepFilter, setStepFilter] = useState('ALL');
+  const [senderFilter, setSenderFilter] = useState('ALL');
+
   const loadQueue = useCallback(async () => {
     if (!activeProjectId) return;
     setIsLoading(true);
@@ -56,6 +63,29 @@ export default function QueueMonitor() {
   useEffect(() => {
     loadQueue();
   }, [loadQueue]);
+
+  // Dynamic Options extraction
+  const sequences = useMemo(() => Array.from(new Set(jobs.map(j => j.sequenceName))).sort(), [jobs]);
+  const senders = useMemo(() => Array.from(new Set(jobs.map(j => j.senderEmail))).sort(), [jobs]);
+  const steps = useMemo(() => {
+    const s = Array.from(new Set(jobs.map(j => j.stepNumber))).sort((a,b) => a-b);
+    return s.map(n => `Step ${n}`);
+  }, [jobs]);
+
+  // Filtering Logic
+  const filteredJobs = useMemo(() => {
+    return jobs.filter(job => {
+      const matchSearch = job.contactName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchSeq = seqFilter === 'ALL' || job.sequenceName === seqFilter;
+      const matchSender = senderFilter === 'ALL' || job.senderEmail === senderFilter;
+      const matchStep = stepFilter === 'ALL' || `Step ${job.stepNumber}` === stepFilter;
+      
+      const jobStatus = job.attempts > 0 ? 'Retrying' : 'Scheduled';
+      const matchStatus = statusFilter === 'ALL' || jobStatus === statusFilter;
+
+      return matchSearch && matchSeq && matchSender && matchStep && matchStatus;
+    });
+  }, [jobs, searchTerm, seqFilter, statusFilter, stepFilter, senderFilter]);
 
   // Format date: "Oct 24, 2026 - 10:30 AM"
   const formatTime = (isoString: string) => {
@@ -120,36 +150,107 @@ export default function QueueMonitor() {
           />
         ) : (
           <div className="space-y-4">
+            {/* Filter Bar */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+              <div className="relative group">
+                <Search className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar contacto..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-teal-500/50 transition-all font-medium text-white"
+                />
+              </div>
+              
+              <div className="relative group">
+                 <Layers className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-400 transition-colors" />
+                 <select 
+                   value={seqFilter}
+                   onChange={e => setSeqFilter(e.target.value)}
+                   className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
+                 >
+                   <option value="ALL">Todas las Secuencias</option>
+                   {sequences.map(s => <option key={s} value={s}>{s}</option>)}
+                 </select>
+              </div>
+
+              <div className="relative group">
+                 <Database className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
+                 <select 
+                   value={statusFilter}
+                   onChange={e => setStatusFilter(e.target.value)}
+                   className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
+                 >
+                   <option value="ALL">Cualquier Estado</option>
+                   <option value="Scheduled">Scheduled</option>
+                   <option value="Retrying">Retrying</option>
+                 </select>
+              </div>
+
+              <div className="relative group">
+                 <ListChecks className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-amber-400 transition-colors" />
+                 <select 
+                   value={stepFilter}
+                   onChange={e => setStepFilter(e.target.value)}
+                   className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
+                 >
+                   <option value="ALL">Todos los Pasos</option>
+                   {steps.map(s => <option key={s} value={s}>{s}</option>)}
+                 </select>
+              </div>
+
+              <div className="relative group">
+                 <Mail className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-sky-400 transition-colors" />
+                 <select 
+                   value={senderFilter}
+                   onChange={e => setSenderFilter(e.target.value)}
+                   className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
+                 >
+                   <option value="ALL">Todos los Remitentes</option>
+                   {senders.map(s => <option key={s} value={s}>{s}</option>)}
+                 </select>
+              </div>
+            </div>
+
             {/* Stats bar */}
             <div className="flex gap-4 mb-4">
               <div className="px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-2">
                 <Database className="size-4 text-teal-400" />
                 <span className="text-xs text-white">
-                  Total Pending Jobs: <span className="font-bold">{jobs.length}</span>
+                  Resultados Filtrados: <span className="font-bold">{filteredJobs.length}</span> / {jobs.length}
                 </span>
               </div>
-              <div className="px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-2">
-                <Clock className="size-4 text-amber-400" />
-                <span className="text-xs text-white font-medium">Next Send in: {new Date(jobs[0].scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
+              {filteredJobs.length > 0 && (
+                <div className="px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-2">
+                  <Clock className="size-4 text-amber-400" />
+                  <span className="text-xs text-white font-medium">Siguiente envío: {new Date(filteredJobs[0].scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              )}
             </div>
 
-            {/* Table */}
-            <div className="bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-white/[0.02] border-b border-white/5">
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Scheduled Time</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Recipient</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Remitente (Sender)</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Acción</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jobs.map((job, idx) => (
+            {filteredJobs.length === 0 ? (
+              <OutreachEmptyState
+                icon={<Search />}
+                title="Sin resultados"
+                description="No se encontraron envíos que coincidan con estos filtros. Intenta ajustar tu búsqueda o limpiar los filtros."
+              />
+            ) : (
+              <div className="bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-white/[0.02] border-b border-white/5">
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Scheduled Time</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Recipient</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Remitente (Sender)</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Acción</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredJobs.map((job, idx) => (
                       <motion.tr 
                         key={job.jobId}
                         initial={{ opacity: 0, y: 4 }}
