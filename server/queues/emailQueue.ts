@@ -327,23 +327,99 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             path: file.url || file.path
           }));
 
-          // ── Sticky Routing: use the mailbox assigned to this contact at enrollment ──
-          // enrollment.assigned_mailbox_id is set once via round-robin when the contact
-          // is enrolled. If NULL (legacy enrollment), fall back to sequence.mailbox_id.
-          const stickyMailboxId: string = enrollment.assigned_mailbox_id || sequence.mailbox_id;
+          // ── Sticky Routing + Auto-Reassignment Fallback ───────────────────────
+          // 1. Determine which mailbox is currently assigned to this contact.
+          //    If the enrollment pre-dates the multi-sender feature, fall back to
+          //    the sequence's primary mailbox_id.
+          let resolvedMailboxId: string = enrollment.assigned_mailbox_id || sequence.mailbox_id;
 
-          // Resolve sender identity from the sticky mailbox so from_email/from_name
-          // reflect the actual sending account rather than the sequence-level defaults.
+          // 2. Parse the sequence's current sender pool (may be a JSON string from PG).
+          let mailboxPool: string[] = [];
+          try {
+            const raw = sequence.mailbox_ids;
+            if (Array.isArray(raw)) {
+              mailboxPool = raw.filter(Boolean);
+            } else if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+              mailboxPool = JSON.parse(raw).filter(Boolean);
+            }
+          } catch {
+            mailboxPool = [];
+          }
+          // For legacy single-sender sequences the pool may be empty — treat
+          // sequence.mailbox_id as the entire pool so the fallback still works.
+          if (mailboxPool.length === 0 && sequence.mailbox_id) {
+            mailboxPool = [sequence.mailbox_id];
+          }
+
+          // 3. Validate the currently assigned mailbox:
+          //    a) Is it still present in the sequence's current pool?
+          //    b) Is it still status = 'active' in the DB?
+          const assignedMailbox = await db.prepare(
+            "SELECT id, email, name, status FROM outreach_mailboxes WHERE id = ?"
+          ).get(resolvedMailboxId) as any;
+
+          const isInPool   = mailboxPool.includes(resolvedMailboxId);
+          const isActive   = assignedMailbox?.status === 'active';
+          const isHealthy  = isInPool && isActive;
+
+          if (!isHealthy) {
+            // ── FALLBACK TRIGGERED ────────────────────────────────────────────
+            const reason = !isInPool
+              ? `mailbox ${resolvedMailboxId} was removed from the sequence pool`
+              : `mailbox ${resolvedMailboxId} is no longer active (status: ${assignedMailbox?.status ?? 'not found'})`;
+
+            console.warn(`[Fallback Routing] Contact ${contactId} in sequence ${sequenceId}: ${reason}. Attempting reassignment...`);
+
+            // Fetch only the mailboxes in the current pool that are genuinely active.
+            const poolPlaceholders = mailboxPool.map(() => '?').join(', ');
+            const healthyMailboxes = mailboxPool.length > 0
+              ? await db.all(
+                  `SELECT id, email, name FROM outreach_mailboxes WHERE id IN (${poolPlaceholders}) AND status = 'active'`,
+                  mailboxPool
+                ) as any[]
+              : [];
+
+            if (healthyMailboxes.length === 0) {
+              // No healthy fallback exists — stop this enrollment gracefully rather
+              // than failing silently on every retry.
+              console.error(`[Fallback Routing] FATAL: No active mailboxes available for sequence ${sequenceId}. Stopping enrollment for contact ${contactId}.`);
+              await db.run(
+                `UPDATE outreach_sequence_enrollments 
+                 SET status = 'stopped', last_error = 'No active mailbox available for sending' 
+                 WHERE sequence_id = ? AND contact_id = ?`,
+                sequenceId, contactId
+              );
+              return; // Exit the job — BullMQ will NOT retry a graceful return
+            }
+
+            // Pick a random healthy mailbox from the survivors.
+            const picked = healthyMailboxes[Math.floor(Math.random() * healthyMailboxes.length)];
+            resolvedMailboxId = picked.id;
+
+            // Persist the new assignment so all future steps send from the same mailbox.
+            await db.run(
+              `UPDATE outreach_sequence_enrollments 
+               SET assigned_mailbox_id = ?, updated_at = CURRENT_TIMESTAMP 
+               WHERE sequence_id = ? AND contact_id = ?`,
+              resolvedMailboxId, sequenceId, contactId
+            );
+
+            console.log(`[Fallback Routing] ✓ Contact ${contactId} reassigned → mailbox ${resolvedMailboxId} (${picked.email}). Enrollment updated.`);
+          }
+          // ─────────────────────────────────────────────────────────────────────
+
+          // 4. Resolve from_email / from_name for the final (possibly reassigned) mailbox.
           let fromEmail = sequence.from_email;
           let fromName  = sequence.from_name;
-          if (stickyMailboxId && stickyMailboxId !== sequence.mailbox_id) {
-            const senderMailbox = await db.prepare(
-              'SELECT email, name FROM outreach_mailboxes WHERE id = ?'
-            ).get(stickyMailboxId) as any;
-            if (senderMailbox) {
-              fromEmail = senderMailbox.email;
-              fromName  = senderMailbox.name;
-              console.log(`[Sequence] [StickyRouting] Contact ${contactId} → mailbox ${stickyMailboxId} (${fromEmail})`);
+          const finalMailbox = isHealthy
+            ? assignedMailbox  // Already fetched above — no extra query needed
+            : await db.prepare('SELECT email, name FROM outreach_mailboxes WHERE id = ?').get(resolvedMailboxId) as any;
+
+          if (finalMailbox) {
+            fromEmail = finalMailbox.email;
+            fromName  = finalMailbox.name;
+            if (isHealthy) {
+              console.log(`[Sequence] [StickyRouting] Contact ${contactId} → mailbox ${resolvedMailboxId} (${fromEmail})`);
             }
           }
           // ────────────────────────────────────────────────────────────────────────────
@@ -357,7 +433,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             emailId,
             sequence.user_id,
             projectId,
-            stickyMailboxId,
+            resolvedMailboxId,   // ← validated sticky or newly reassigned mailbox
             contactId,
             sequenceId,
             stepId,
