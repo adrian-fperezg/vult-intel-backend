@@ -469,7 +469,7 @@ export async function ensureValidMailboxAssignment(
   // Persist
   await d.run(
     `UPDATE outreach_sequence_enrollments 
-     SET assigned_mailbox_id = ?, updated_at = CURRENT_TIMESTAMP 
+     SET assigned_mailbox_id = ? 
      WHERE sequence_id = ? AND contact_id = ?`,
     [newMailboxId, sequenceId, contactId]
   );

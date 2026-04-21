@@ -399,7 +399,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             // Persist the new assignment so all future steps send from the same mailbox.
             await db.run(
               `UPDATE outreach_sequence_enrollments 
-               SET assigned_mailbox_id = ?, updated_at = CURRENT_TIMESTAMP 
+               SET assigned_mailbox_id = ? 
                WHERE sequence_id = ? AND contact_id = ?`,
               resolvedMailboxId, sequenceId, contactId
             );
