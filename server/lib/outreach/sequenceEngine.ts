@@ -412,11 +412,18 @@ export async function ensureValidMailboxAssignment(
   // 2. Validate current assignment
   let isHealthy = false;
   if (currentMailboxId) {
+    // Extract base UUID for format-agnostic comparison
+    const baseId = currentMailboxId.includes(':') ? currentMailboxId.split(':')[0] : currentMailboxId;
+    
     const assignedMailbox = await d.get<any>(
-      "SELECT status FROM outreach_mailboxes WHERE id = ? AND status = 'active'",
-      [currentMailboxId]
+      "SELECT id, status FROM outreach_mailboxes WHERE (id = $1 OR split_part(id, ':', 1) = $2) AND status = 'active'",
+      [currentMailboxId, baseId]
     );
-    const isInPool = mailboxPool.includes(currentMailboxId);
+
+    // Normalize pool to base IDs for membership check
+    const poolBaseIds = mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id);
+    const isInPool = poolBaseIds.includes(baseId);
+
     if (assignedMailbox && isInPool) {
       isHealthy = true;
     }
@@ -429,11 +436,15 @@ export async function ensureValidMailboxAssignment(
   // 3. FALLBACK: Reassignment Logic
   console.log(`[SequenceEngine] [Rebalance] Contact ${contactId} in Sequence ${sequenceId} has invalid/missing mailbox. Reassigning...`);
   
-  const poolPlaceholders = mailboxPool.map(() => '?').join(', ');
-  const healthyMailboxes = mailboxPool.length > 0
+  // Extract base UUIDs from pool for format-agnostic database lookup
+  const poolBaseIds = [...new Set(mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id))];
+  
+  const healthyMailboxes = poolBaseIds.length > 0
     ? await d.all(
-        `SELECT id, email FROM outreach_mailboxes WHERE id IN (${poolPlaceholders}) AND status = 'active'`,
-        mailboxPool
+        `SELECT id, email FROM outreach_mailboxes 
+         WHERE (id = ANY($1::text[]) OR split_part(id, ':', 1) = ANY($1::text[])) 
+         AND status = 'active'`,
+        [poolBaseIds]
       ) as any[]
     : [];
 
