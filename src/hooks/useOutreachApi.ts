@@ -546,6 +546,14 @@ export function useOutreachApi() {
   );
 
   const fetchIdentities = useCallback(() => get<any[]>('/mailboxes/identities'), [get]);
+  
+  const fetchScheduledQueue = useCallback(async () => {
+    if (!activeProjectId) return null;
+    const headers = await authHeaders();
+    const res = await fetch(`${ROOT_URL}/admin/queue/scheduled?project_id=${activeProjectId}`, { headers });
+    if (!res.ok) throw new Error('Failed to fetch scheduled queue');
+    return res.json() as Promise<{ success: boolean; count: number; jobs: any[] }>;
+  }, [activeProjectId, authHeaders]);
 
   // ── Compose ──────────────────────────────────────────────────────────────
 
@@ -758,6 +766,7 @@ export function useOutreachApi() {
     fetchMailboxes,
     disconnectMailbox,
     connectGmail,
+    fetchScheduledQueue,
     // Snippets
     fetchSnippets,
     createSnippet,
