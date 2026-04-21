@@ -380,7 +380,7 @@ export async function ensureValidMailboxAssignment(
   currentMailboxId: string | null,
   projectId?: string,
   tx?: DbWrapper
-): Promise<string> {
+): Promise<string | null> {
   const d = tx || db;
 
   // 1. Fetch sequence pool
@@ -388,7 +388,10 @@ export async function ensureValidMailboxAssignment(
     'SELECT mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?',
     [sequenceId]
   );
-  if (!sequence) throw new Error('Sequence not found');
+  if (!sequence) {
+    console.warn(`[SequenceEngine] [Rebalance Warning] Sequence ${sequenceId} not found for contact ${contactId}.`);
+    return null;
+  }
 
   let mailboxPool: string[] = [];
   try {
@@ -435,11 +438,16 @@ export async function ensureValidMailboxAssignment(
     : [];
 
   if (healthyMailboxes.length === 0) {
-    throw new Error('NO_HEALTHY_MAILBOXES_AVAILABLE');
+    console.warn(`[SequenceEngine] [Rebalance Warning] NO_HEALTHY_MAILBOXES_AVAILABLE for contact ${contactId} in sequence ${sequenceId}.`);
+    return null;
   }
 
   // Pick a random healthy mailbox
   const picked = healthyMailboxes[Math.floor(Math.random() * healthyMailboxes.length)];
+  if (!picked?.id) {
+    console.warn(`[SequenceEngine] [Rebalance Warning] Failed to pick a valid mailbox for contact ${contactId}.`);
+    return null;
+  }
   const newMailboxId = picked.id;
 
   // Persist

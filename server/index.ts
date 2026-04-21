@@ -467,15 +467,25 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
       );
 
       // 2. Ensure assignment is valid (Triggers fallback reassignment if needed)
-      const mailboxId = await ensureValidMailboxAssignment(
-        sequenceId, 
-        contactId, 
-        enrollment?.assigned_mailbox_id || null,
-        projectId
-      );
+      try {
+        const mailboxId = await ensureValidMailboxAssignment(
+          sequenceId, 
+          contactId, 
+          enrollment?.assigned_mailbox_id || null,
+          projectId
+        );
 
-      if (!mailboxGroups[mailboxId]) mailboxGroups[mailboxId] = [];
-      mailboxGroups[mailboxId].push(job);
+        if (!mailboxId) {
+          console.warn(`[Queue Rebalance] Skipping job for contact ${contactId} due to mailbox assignment failure.`);
+          continue;
+        }
+
+        if (!mailboxGroups[mailboxId]) mailboxGroups[mailboxId] = [];
+        mailboxGroups[mailboxId].push(job);
+      } catch (innerErr: any) {
+        console.error(`[Queue Rebalance] [Critical Error] Failed to process contact ${contactId}:`, innerErr.message);
+        continue;
+      }
     }
 
     let rebalancedCount = 0;
