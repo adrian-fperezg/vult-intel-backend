@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Clock, RefreshCw, Loader2, Database, Mail, 
-  User, Layers, ListChecks, Calendar, ExternalLink 
+  User, Layers, ListChecks, Calendar, ExternalLink,
+  Search
 } from 'lucide-react';
 import { 
   OutreachSectionHeader, 
