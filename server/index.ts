@@ -527,11 +527,12 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
         // B. Apply Staggering relative to the previous job in this mailbox
         // targetTime MUST be >= baseTime AND >= nextAvailableSlot
         const targetTimeMs = Math.max(baseTime.toMillis(), nextAvailableSlotMs);
-        const staggeredDelay = Math.max(0, targetTimeMs - now);
+        const newDelay = Math.max(0, targetTimeMs - Date.now());
         const scheduledAt = new Date(targetTimeMs);
 
         // C. Update BullMQ Job
-        await job.changeDelay(staggeredDelay);
+        await job.changeDelay(newDelay);
+        console.log(`[Queue Rebalance] Job ${job.id} time moved to ${scheduledAt.toISOString()}`);
 
         // D. Update Database Enrollment to match
         await db.run(
