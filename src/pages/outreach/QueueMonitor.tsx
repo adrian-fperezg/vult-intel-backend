@@ -19,6 +19,8 @@ interface QueueJob {
   contactName: string;
   sequenceId: string;
   sequenceName: string;
+  senderEmail: string;
+  action: string;
   stepId: string;
   stepNumber: number;
   scheduledTime: string;
@@ -140,9 +142,10 @@ export default function QueueMonitor() {
                     <tr className="bg-white/[0.02] border-b border-white/5">
                       <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Scheduled Time</th>
                       <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Recipient</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence / Step</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Status</th>
-                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Job Details</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Remitente (Sender)</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Acción</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -175,30 +178,37 @@ export default function QueueMonitor() {
                           </div>
                         </td>
                         <td className="px-6 py-5">
-                          <div className="space-y-1" title={`Sequence ID: ${job.sequenceId}`}>
-                            <div className="flex items-center gap-2">
-                              <Layers className="size-3.5 text-indigo-400" />
-                              <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                                {job.sequenceName}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="px-1.5 py-0.5 rounded bg-white/10 text-[9px] font-black text-slate-300">STEP {job.stepNumber}</span>
-                              <span className="text-[10px] text-slate-500 truncate max-w-[120px]">{job.stepId}</span>
-                            </div>
+                          <div className="flex items-center gap-2" title={`Sequence ID: ${job.sequenceId}`}>
+                            <Layers className="size-3.5 text-indigo-400" />
+                            <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                              {job.sequenceName}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-5">
+                          <div className="flex items-center gap-2">
+                            <Mail className={cn("size-3.5", job.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
+                            <span className={cn(
+                              "text-xs font-medium truncate max-w-[180px]",
+                              job.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
+                            )}>
+                              {job.senderEmail}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-2">
+                            <div className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-black text-slate-300">
+                              {job.action.toUpperCase()}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5 text-right">
                           {job.attempts > 0 ? (
                             <OutreachBadge variant="orange" dot>Retrying ({job.attempts})</OutreachBadge>
                           ) : (
                             <OutreachBadge variant="teal" dot>Scheduled</OutreachBadge>
                           )}
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          <span className="text-[10px] font-mono text-slate-600 bg-black/20 px-2 py-1 rounded border border-white/5">
-                            {job.jobId}
-                          </span>
                         </td>
                       </motion.tr>
                     ))}

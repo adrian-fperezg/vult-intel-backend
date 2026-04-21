@@ -445,19 +445,28 @@ app.get("/api/admin/queue/scheduled", async (_req, res) => {
     const contactIds = [...new Set(delayedJobs.map(j => j.data?.contactId))].filter(Boolean);
     const sequenceIds = [...new Set(delayedJobs.map(j => j.data?.sequenceId))].filter(Boolean);
 
-    // Hydrate contacts and sequences
-    const [contacts, sequences] = await Promise.all([
+    // Hydrate contacts, sequences, and assigned mailboxes (triangulation)
+    const [contacts, sequences, enrollments] = await Promise.all([
       contactIds.length > 0 
         ? db.all("SELECT id, first_name, last_name FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
         : Promise.resolve([]),
       sequenceIds.length > 0
         ? db.all("SELECT id, name FROM outreach_sequences WHERE id = ANY($1::text[])", [sequenceIds])
+        : Promise.resolve([]),
+      contactIds.length > 0 && sequenceIds.length > 0
+        ? db.all(`
+            SELECT e.contact_id, e.sequence_id, m.email as sender_email
+            FROM outreach_sequence_enrollments e
+            LEFT JOIN outreach_mailboxes m ON e.assigned_mailbox_id = m.id
+            WHERE e.contact_id = ANY($1::text[]) AND e.sequence_id = ANY($2::text[])
+          `, [contactIds, sequenceIds])
         : Promise.resolve([])
     ]);
 
     // Create lookup maps
     const contactMap = new Map(contacts.map((c: any) => [c.id, `${c.first_name} ${c.last_name}`.trim()]));
     const sequenceMap = new Map(sequences.map((s: any) => [s.id, s.name]));
+    const enrollmentMap = new Map(enrollments.map((e: any) => [`${e.contact_id}:${e.sequence_id}`, e.sender_email]));
 
     const mappedJobs = delayedJobs.filter(j => !!j).map(job => {
       // Calculate target execution time
@@ -466,6 +475,8 @@ app.get("/api/admin/queue/scheduled", async (_req, res) => {
       
       const cId = job.data?.contactId;
       const sId = job.data?.sequenceId;
+      const enrollmentKey = `${cId}:${sId}`;
+      const senderEmail = enrollmentMap.get(enrollmentKey);
 
       return {
         jobId: job.id,
@@ -473,9 +484,11 @@ app.get("/api/admin/queue/scheduled", async (_req, res) => {
         contactName: contactMap.get(cId) || "Unknown Contact",
         sequenceId: sId,
         sequenceName: sequenceMap.get(sId) || "Unknown Sequence",
+        senderEmail: senderEmail || "Waiting for email assignment",
+        action: `Send Step ${job.data?.stepNumber || 1}`,
         stepId: job.data?.stepId,
         stepNumber: job.data?.stepNumber,
-        scheduledTime: scheduledTime.toISO(), // ISO string as requested
+        scheduledTime: scheduledTime.toISO(),
         priority: job.opts.priority,
         attempts: job.attemptsMade
       };
