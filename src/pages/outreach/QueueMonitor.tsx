@@ -34,7 +34,7 @@ export default function QueueMonitor() {
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { fetchScheduledQueue, activeProjectId } = useOutreachApi();
+  const { fetchScheduledQueue, rebalanceQueue, activeProjectId } = useOutreachApi();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -70,17 +70,12 @@ export default function QueueMonitor() {
     
     setIsRebalancing(true);
     try {
-      const res = await fetch('/api/admin/queue/rebalance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          snapToBusinessHours: snapToBusiness,
-          targetStartHour: 9
-        })
+      const data = await rebalanceQueue({ 
+        snapToBusinessHours: snapToBusiness,
+        targetStartHour: 9
       });
-      const data = await res.json();
       
-      if (data.success) {
+      if (data && data.success) {
         toast.success(data.message || "Queue rebalanced successfully");
         // Fresh reload to see new timestamps
         setTimeout(loadQueue, 1500);

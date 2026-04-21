@@ -440,7 +440,7 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
  * Administrative endpoint to rebalance and stagger the current BullMQ delayed queue.
  * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
  */
-app.post("/api/admin/queue/rebalance", async (req, res) => {
+app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequest, res) => {
   try {
     const { snapToBusinessHours, targetStartHour = 9 } = req.body;
     console.log(`[Queue Rebalance] Starting retroactive queue staggering... (Snap: ${snapToBusinessHours}, Target: ${targetStartHour}:00)`);
@@ -550,7 +550,7 @@ app.post("/api/admin/queue/rebalance", async (req, res) => {
 });
 
 // Diagnostic endpoint to monitor upcoming scheduled sequence steps
-app.get("/api/admin/queue/scheduled", async (_req, res) => {
+app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthRequest, res) => {
   try {
     const delayedJobs = await emailQueue.getDelayed();
     

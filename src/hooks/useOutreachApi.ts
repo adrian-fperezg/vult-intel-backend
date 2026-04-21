@@ -555,6 +555,25 @@ export function useOutreachApi() {
     return res.json() as Promise<{ success: boolean; count: number; jobs: any[] }>;
   }, [activeProjectId, authHeaders]);
 
+  const rebalanceQueue = useCallback(async (data: { snapToBusinessHours: boolean; targetStartHour?: number }) => {
+    if (!activeProjectId) return null;
+    const headers = await authHeaders();
+    const res = await fetch(`${ROOT_URL}/admin/queue/rebalance`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...data, project_id: activeProjectId }),
+    });
+    if (!res.ok) {
+      let errorMsg = `Rebalance failed: ${res.status}`;
+      try {
+        const errorData = await res.json();
+        if (errorData.error) errorMsg = errorData.error;
+      } catch {}
+      throw new Error(errorMsg);
+    }
+    return res.json() as Promise<{ success: boolean; message: string; rebalancedCount: number }>;
+  }, [activeProjectId, authHeaders]);
+
   // ── Compose ──────────────────────────────────────────────────────────────
 
   const fetchIndividualEmails = useCallback(
@@ -767,6 +786,7 @@ export function useOutreachApi() {
     disconnectMailbox,
     connectGmail,
     fetchScheduledQueue,
+    rebalanceQueue,
     // Snippets
     fetchSnippets,
     createSnippet,
