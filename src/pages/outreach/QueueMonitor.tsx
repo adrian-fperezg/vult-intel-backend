@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Clock, RefreshCw, Loader2, Database, Mail, 
   User, Layers, ListChecks, Calendar, ExternalLink,
-  Search
+  Search, Zap
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { 
   OutreachSectionHeader, 
   TealButton, 
@@ -41,6 +42,7 @@ export default function QueueMonitor() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [stepFilter, setStepFilter] = useState('ALL');
   const [senderFilter, setSenderFilter] = useState('ALL');
+  const [isRebalancing, setIsRebalancing] = useState(false);
 
   const loadQueue = useCallback(async () => {
     if (!activeProjectId) return;
@@ -60,6 +62,33 @@ export default function QueueMonitor() {
       setIsLoading(false);
     }
   }, [fetchScheduledQueue, activeProjectId]);
+
+  const handleRebalance = async () => {
+    if (!activeProjectId) return;
+    if (!window.confirm("Warning: This will strictly reschedule all upcoming sends relative to NOW and space them out by your project's sending interval. This is useful for fixing 'clumped' legacy jobs or unassigned contacts. Proceed?")) return;
+    
+    setIsRebalancing(true);
+    try {
+      const res = await fetch('/api/admin/queue/rebalance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        toast.success(data.message || "Queue rebalanced successfully");
+        // Fresh reload to see new timestamps
+        setTimeout(loadQueue, 1500);
+      } else {
+        toast.error(data.error || "Failed to rebalance queue");
+      }
+    } catch (err: any) {
+      console.error("[Rebalance] Error:", err);
+      toast.error(err.message || "Queue rebalance request failed");
+    } finally {
+      setIsRebalancing(false);
+    }
+  };
 
   useEffect(() => {
     loadQueue();
@@ -125,16 +154,29 @@ export default function QueueMonitor() {
           title="Sequence Queue Monitor"
           subtitle="Real-time visibility into upcoming sequence steps scheduled in BullMQ."
           actions={
-            <TealButton 
-              variant="outline" 
-              size="sm" 
-              onClick={loadQueue} 
-              loading={isLoading}
-              className="px-4"
-            >
-              <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
-              Refresh Queue
-            </TealButton>
+            <div className="flex items-center gap-3">
+              <TealButton 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRebalance} 
+                loading={isRebalancing}
+                className="px-4 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+              >
+                <Zap className={cn("size-3.5 mr-2", isRebalancing && "animate-pulse")} />
+                Rebalance & Stagger
+              </TealButton>
+
+              <TealButton 
+                variant="outline" 
+                size="sm" 
+                onClick={loadQueue} 
+                loading={isLoading}
+                className="px-4"
+              >
+                <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
+                Refresh Queue
+              </TealButton>
+            </div>
           }
         />
 

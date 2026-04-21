@@ -369,3 +369,87 @@ export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime
   
   return current;
 }
+
+/**
+ * Ensures a contact has a valid, active mailbox assigned from the sequence pool.
+ * If the current assignment is NULL or unhealthy, it performs an auto-reassignment.
+ */
+export async function ensureValidMailboxAssignment(
+  sequenceId: string,
+  contactId: string,
+  currentMailboxId: string | null,
+  projectId?: string,
+  tx?: DbWrapper
+): Promise<string> {
+  const d = tx || db;
+
+  // 1. Fetch sequence pool
+  const sequence = await d.get<any>(
+    'SELECT mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?',
+    [sequenceId]
+  );
+  if (!sequence) throw new Error('Sequence not found');
+
+  let mailboxPool: string[] = [];
+  try {
+    const raw = sequence.mailbox_ids;
+    if (Array.isArray(raw)) {
+      mailboxPool = raw.filter(Boolean);
+    } else if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+      mailboxPool = JSON.parse(raw).filter(Boolean);
+    }
+  } catch {
+    mailboxPool = [];
+  }
+  
+  if (mailboxPool.length === 0 && sequence.mailbox_id) {
+    mailboxPool = [sequence.mailbox_id];
+  }
+
+  // 2. Validate current assignment
+  let isHealthy = false;
+  if (currentMailboxId) {
+    const assignedMailbox = await d.get<any>(
+      "SELECT status FROM outreach_mailboxes WHERE id = ? AND status = 'active'",
+      [currentMailboxId]
+    );
+    const isInPool = mailboxPool.includes(currentMailboxId);
+    if (assignedMailbox && isInPool) {
+      isHealthy = true;
+    }
+  }
+
+  if (isHealthy && currentMailboxId) {
+    return currentMailboxId;
+  }
+
+  // 3. FALLBACK: Reassignment Logic
+  console.log(`[SequenceEngine] [Rebalance] Contact ${contactId} in Sequence ${sequenceId} has invalid/missing mailbox. Reassigning...`);
+  
+  const poolPlaceholders = mailboxPool.map(() => '?').join(', ');
+  const healthyMailboxes = mailboxPool.length > 0
+    ? await d.all(
+        `SELECT id, email FROM outreach_mailboxes WHERE id IN (${poolPlaceholders}) AND status = 'active'`,
+        mailboxPool
+      ) as any[]
+    : [];
+
+  if (healthyMailboxes.length === 0) {
+    throw new Error('NO_HEALTHY_MAILBOXES_AVAILABLE');
+  }
+
+  // Pick a random healthy mailbox
+  const picked = healthyMailboxes[Math.floor(Math.random() * healthyMailboxes.length)];
+  const newMailboxId = picked.id;
+
+  // Persist
+  await d.run(
+    `UPDATE outreach_sequence_enrollments 
+     SET assigned_mailbox_id = ?, updated_at = CURRENT_TIMESTAMP 
+     WHERE sequence_id = ? AND contact_id = ?`,
+    [newMailboxId, sequenceId, contactId]
+  );
+
+  console.log(`[SequenceEngine] [Rebalance] ✓ Contact ${contactId} reassigned to ${picked.email}`);
+  return newMailboxId;
+}

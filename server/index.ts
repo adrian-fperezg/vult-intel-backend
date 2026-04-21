@@ -99,7 +99,7 @@ import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest } from "./middleware";
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
-import { getTrueNextStep, scheduleNextStep } from "./lib/outreach/sequenceEngine.js";
+import { getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment } from "./lib/outreach/sequenceEngine.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -433,6 +433,102 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
       error: "Internal server error during queue flush",
       details: err.message
     });
+  }
+});
+
+/**
+ * Administrative endpoint to rebalance and stagger the current BullMQ delayed queue.
+ * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
+ */
+app.post("/api/admin/queue/rebalance", async (_req, res) => {
+  try {
+    console.log("[Queue Rebalance] Starting retroactive queue staggering...");
+    const delayedJobs = await emailQueue.getDelayed();
+    const sequenceJobs = delayedJobs.filter(j => j.name === 'execute-sequence-step');
+
+    if (sequenceJobs.length === 0) {
+      return res.json({ success: true, message: "No sequence jobs found in delayed queue to rebalance." });
+    }
+
+    // Grouping by mailbox index
+    const mailboxGroups: Record<string, typeof sequenceJobs> = {};
+    const now = Date.now();
+
+    for (const job of sequenceJobs) {
+      const { projectId, sequenceId, contactId } = job.data;
+      if (!projectId || !sequenceId || !contactId) continue;
+
+      // 1. Fetch current enrollment assignment
+      const enrollment = await db.get<any>(
+        "SELECT assigned_mailbox_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?",
+        [sequenceId, contactId]
+      );
+
+      // 2. Ensure assignment is valid (Triggers fallback reassignment if needed)
+      // Pass the existing mailboxId if it exists, otherwise pass null
+      const mailboxId = await ensureValidMailboxAssignment(
+        sequenceId, 
+        contactId, 
+        enrollment?.assigned_mailbox_id || null,
+        projectId
+      );
+
+      if (!mailboxGroups[mailboxId]) mailboxGroups[mailboxId] = [];
+      mailboxGroups[mailboxId].push(job);
+    }
+
+    let rebalancedCount = 0;
+    const projectIntervals: Record<string, number> = {};
+
+    // 3. For each mailbox group, re-stagger strictly
+    for (const [mailboxId, jobs] of Object.entries(mailboxGroups)) {
+      // Sort jobs by their current intended execution time to preserve relative order
+      const sortedJobs = jobs.sort((a, b) => {
+        const timeA = a.timestamp + (a.opts.delay || 0);
+        const timeB = b.timestamp + (b.opts.delay || 0);
+        return timeA - timeB;
+      });
+
+      for (let i = 0; i < sortedJobs.length; i++) {
+        const job = sortedJobs[i];
+        const { projectId, sequenceId, contactId } = job.data;
+
+        // Fetch interval setting for this project (cached per request)
+        if (projectIntervals[projectId] === undefined) {
+          const settings = await db.get<any>("SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?", [projectId]);
+          projectIntervals[projectId] = settings?.sending_interval_minutes ?? 20;
+        }
+
+        const intervalMs = projectIntervals[projectId] * 60 * 1000;
+        // Start 1 minute from now to prevent immediate burst, then space out.
+        const staggeredDelay = (60 * 1000) + (i * intervalMs);
+        const scheduledAt = new Date(now + staggeredDelay);
+
+        // A. Update BullMQ Job
+        await job.changeDelay(staggeredDelay);
+
+        // B. Update Database Enrollment to match
+        await db.run(
+          "UPDATE outreach_sequence_enrollments SET scheduled_at = ? WHERE sequence_id = ? AND contact_id = ?",
+          [scheduledAt.toISOString(), sequenceId, contactId]
+        );
+
+        rebalancedCount++;
+      }
+    }
+
+    console.log(`[Queue Rebalance] Successfully rebalanced ${rebalancedCount} jobs across ${Object.keys(mailboxGroups).length} mailboxes.`);
+
+    res.json({
+      success: true,
+      message: `Rebalanced ${rebalancedCount} jobs across ${Object.keys(mailboxGroups).length} sender accounts.`,
+      rebalancedCount,
+      mailboxesAffected: Object.keys(mailboxGroups).length
+    });
+
+  } catch (err: any) {
+    console.error("[Queue Rebalance] FATAL ERROR:", err);
+    res.status(500).json({ error: "Failed to rebalance queue", details: err.message });
   }
 });
 
