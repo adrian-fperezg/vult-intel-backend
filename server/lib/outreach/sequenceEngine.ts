@@ -232,7 +232,8 @@ export async function scheduleNextStep(
     jobId: jobId
   });
 
-  console.log(`[SequenceEngine] Paso ${step.id} en cola (${totalDelay}ms) para contacto ${contactId}`);
+  const readableDate = DateTime.fromJSDate(scheduledAt).toFormat('yyyy-MM-dd HH:mm:ss');
+  console.log(`[Queue] Contact ${contactId} scheduled for Step ${step.step_number} in Sequence ${sequenceId} on ${readableDate} (Total Delay: ${Math.floor(totalDelay/1000)}s)`);
 }
 
 /**

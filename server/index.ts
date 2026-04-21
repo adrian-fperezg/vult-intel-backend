@@ -436,6 +436,43 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
   }
 });
 
+// Diagnostic endpoint to monitor upcoming scheduled sequence steps
+app.get("/api/admin/queue/scheduled", async (_req, res) => {
+  try {
+    const delayedJobs = await emailQueue.getDelayed();
+    
+    const mappedJobs = delayedJobs.filter(j => !!j).map(job => {
+      // Calculate target execution time
+      const scheduledTimestamp = (job.timestamp || Date.now()) + (job.opts.delay || 0);
+      const scheduledTime = DateTime.fromMillis(scheduledTimestamp);
+      
+      return {
+        jobId: job.id,
+        contactId: job.data?.contactId,
+        sequenceId: job.data?.sequenceId,
+        stepId: job.data?.stepId,
+        stepNumber: job.data?.stepNumber,
+        scheduledTime: scheduledTime.toISO(),
+        readableTime: scheduledTime.toFormat('yyyy-MM-dd HH:mm:ss'),
+        priority: job.opts.priority,
+        attempts: job.attemptsMade
+      };
+    }).sort((a, b) => {
+      // Sort so closest emails appear first
+      return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+    });
+
+    res.json({
+      success: true,
+      count: mappedJobs.length,
+      jobs: mappedJobs
+    });
+  } catch (err: any) {
+    console.error("[Admin Queue Monitor] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get("/api/admin/force-reset-queue", async (_req, res) => {
   const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
   const today = DateTime.now().setZone("UTC").toISODate();
