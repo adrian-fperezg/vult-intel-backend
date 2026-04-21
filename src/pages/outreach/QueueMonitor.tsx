@@ -317,9 +317,10 @@ export default function QueueMonitor() {
                 </table>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 }
