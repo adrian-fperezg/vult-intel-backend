@@ -563,7 +563,8 @@ export const initDb = async () => {
       { name: 'zerobounce_api_key', type: 'TEXT' },
       { name: 'pdl_api_key', type: 'TEXT' },
       { name: 'global_daily_limit', type: 'INTEGER DEFAULT 50' },
-      { name: 'business_address', type: 'TEXT' }
+      { name: 'business_address', type: 'TEXT' },
+      { name: 'sending_interval_minutes', type: 'INTEGER DEFAULT 20' }
     ];
 
     for (const col of newSettingsCols) {
@@ -573,6 +574,9 @@ export const initDb = async () => {
         console.warn(`[DB] PG Migration for settings column ${col.name} failed:`, (err as Error).message);
       }
     }
+
+    // Index for stalling/staggering queries
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_mailbox_schedule ON outreach_sequence_enrollments(assigned_mailbox_id, scheduled_at)`);
 
     // 9. ICP Profiles
     await db.run(`

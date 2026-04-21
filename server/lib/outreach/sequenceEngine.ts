@@ -113,7 +113,7 @@ export async function scheduleNextStep(
 
   // 0. Only 'active' enrollments continue — if status is anything else (stopped, completed, replied), abort.
   const enrollment = await d.get<any>(
-    'SELECT status FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
+    'SELECT status, assigned_mailbox_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
     [sequenceId, contactId]
   );
 
@@ -125,8 +125,14 @@ export async function scheduleNextStep(
   // 1. Limpiamos cualquier trabajo pendiente para evitar duplicados
   await cancelPendingSequenceJobs(sequenceId, contactId);
 
-  const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]);
+  const [sequence, settings] = await Promise.all([
+    d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]),
+    d.get<any>('SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?', [projectId])
+  ]);
+  
   if (!sequence) throw new Error('Sequence not found');
+  const intervalMinutes = settings?.sending_interval_minutes ?? 20;
+  const mailboxId = enrollment.assigned_mailbox_id;
 
   // 2. Buscamos el siguiente paso (Ignoramos branch_path para forzar flujo lineal)
   let step: SequenceStep | undefined;
@@ -199,12 +205,31 @@ export async function scheduleNextStep(
   // 4. ENFORCE BUSINESS HOURS & WEEKDAYS
   // NOTE: getNextBusinessSlot will automatically push staggered times that land
   // outside the allowed window (weekend, after-hours) to the next valid slot.
-  const finalizedTime = getNextBusinessSlot(targetTime, sequence);
-  delayMs = finalizedTime.diffNow().as('milliseconds');
-  
-  if (finalizedTime > targetTime) {
-    console.log(`[SequenceEngine] Rescheduling to next available slot: ${finalizedTime.toISO()} (Due to window/weekday constraints in ${targetTz})`);
+  let executeAt = getNextBusinessSlot(targetTime, sequence);
+
+  // ── Per-Mailbox Staggering ──────────────────────────────────────────────
+  // Ensure we don't burst the specific mailbox by checking its future queue.
+  if (mailboxId && intervalMinutes > 0) {
+    const lastJob = await d.get<any>(
+      'SELECT MAX(scheduled_at) as last_time FROM outreach_sequence_enrollments WHERE assigned_mailbox_id = ? AND scheduled_at > CURRENT_TIMESTAMP',
+      [mailboxId]
+    );
+    
+    if (lastJob?.last_time) {
+      const lastTime = DateTime.fromISO(lastJob.last_time).setZone(targetTz);
+      const staggeredTime = lastTime.plus({ minutes: intervalMinutes });
+      
+      if (staggeredTime > executeAt) {
+        console.log(`[SequenceEngine] [Staggering] Mailbox ${mailboxId} busy until ${lastTime.toFormat('HH:mm:ss')}. Staggering to ${staggeredTime.toFormat('HH:mm:ss')}.`);
+        executeAt = staggeredTime;
+        // Re-enforce window in case staggering pushed it past the end hour
+        executeAt = getNextBusinessSlot(executeAt, sequence);
+      }
+    }
   }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  delayMs = executeAt.diffNow().as('milliseconds');
   
   delayMs = Math.max(0, delayMs);
 
@@ -233,7 +258,7 @@ export async function scheduleNextStep(
   });
 
   const readableDate = DateTime.fromJSDate(scheduledAt).toFormat('yyyy-MM-dd HH:mm:ss');
-  console.log(`[Queue] Contact ${contactId} scheduled for Step ${step.step_number} in Sequence ${sequenceId} on ${readableDate} (Total Delay: ${Math.floor(totalDelay/1000)}s)`);
+  console.log(`[Queue] [Staggered] Contact ${contactId} scheduled for Step ${step.step_number} in Sequence ${sequenceId} on ${readableDate}`);
 }
 
 /**

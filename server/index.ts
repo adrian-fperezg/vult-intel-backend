@@ -4966,7 +4966,7 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
     if (!userId) return res.status(401).json({ error: "Auth required" });
     if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit, business_address FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit, business_address, sending_interval_minutes FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
 
     // Default response structure
     const response: any = {
@@ -4974,7 +4974,8 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       zerobounce: { connected: false },
       pdl: { connected: false },
       global_daily_limit: 50, // Default fallback
-      business_address: ''
+      business_address: '',
+      sending_interval_minutes: 20
     };
 
     if (row) {
@@ -4983,6 +4984,9 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       }
       if (row.business_address !== undefined && row.business_address !== null) {
         response.business_address = row.business_address;
+      }
+      if (row.sending_interval_minutes !== undefined && row.sending_interval_minutes !== null) {
+        response.sending_interval_minutes = row.sending_interval_minutes;
       }
 
       // 1. Hunter.io Live Fetch
@@ -5122,6 +5126,16 @@ app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
           business_address = excluded.business_address,
           updated_at = CURRENT_TIMESTAMP
       `).run(project_id, business_address || null);
+    }
+
+    if (req.body.sending_interval_minutes !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, sending_interval_minutes, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          sending_interval_minutes = excluded.sending_interval_minutes,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, req.body.sending_interval_minutes);
     }
 
     res.json({ success: true });
