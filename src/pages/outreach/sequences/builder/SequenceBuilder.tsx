@@ -614,7 +614,32 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         api.fetchSnippets()
       ]);
       if (seqData) {
-        setSequence(seqData);
+        // ── Bug 1 Fix: Normalize mailbox_ids on load ──────────────────────────
+        // The DB may return mailbox_ids as:
+        //   - null / undefined (very old row)
+        //   - '[]' (empty JSON string, new rows with no pool yet)
+        //   - '["uuid-a","uuid-b"]' (normal multi-sender string from PG)
+        // Parse it, and if the result is empty but mailbox_id has a value,
+        // bootstrap the pool with the legacy single ID so the UI shows it selected.
+        let normalizedMailboxIds: string[] = [];
+        try {
+          const raw = seqData.mailbox_ids;
+          if (Array.isArray(raw)) {
+            normalizedMailboxIds = raw.filter(Boolean);
+          } else if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+            normalizedMailboxIds = JSON.parse(raw).filter(Boolean);
+          }
+        } catch {
+          normalizedMailboxIds = [];
+        }
+        // Fall back to legacy single mailbox_id for sequences that pre-date the feature
+        if (normalizedMailboxIds.length === 0 && seqData.mailbox_id) {
+          normalizedMailboxIds = [seqData.mailbox_id];
+        }
+
+        setSequence({ ...seqData, mailbox_ids: normalizedMailboxIds });
+        // ─────────────────────────────────────────────────────────────────────
+
         const mappedSteps = (seqData.steps || []).map((s: any) => ({
           ...s,
           delay_amount: s.delay_amount ?? s.config?.delay_days ?? 2,
@@ -1062,27 +1087,43 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
                 <div className="grid grid-cols-1 gap-3">
                   {identities.map((ident, idx) => {
-                    const currentPool: string[] = sequence.mailbox_ids ?? (sequence.mailbox_id ? [sequence.mailbox_id] : []);
-                    const isSelected = currentPool.includes(ident.mailbox_id);
+                    // ── Bug 2 Fix: Use compound key (mailbox_id:email) as the pool entry ──
+                    // Aliases share the same mailbox_id as their parent primary.
+                    // Using only mailbox_id as the key would cause all aliases to appear
+                    // selected whenever the primary is selected. The compound key
+                    // mailboxId:email makes every row uniquely addressable.
+                    const identKey = `${ident.mailbox_id}:${ident.email}`;
+
+                    // Reconstruct the pool using compound keys for display comparison.
+                    // mailbox_ids in state still stores raw mailbox_id UUIDs for primaries
+                    // and compound keys for aliases — we normalise on save.
+                    const currentPool: string[] = sequence.mailbox_ids ?? [];
+                    const isSelected = currentPool.includes(identKey);
 
                     const toggleMailbox = () => {
                       setSequence(prev => {
                         if (!prev) return null;
-                        const pool = prev.mailbox_ids ?? (prev.mailbox_id ? [prev.mailbox_id] : []);
-                        const newPool = isSelected
-                          ? pool.filter(id => id !== ident.mailbox_id)
-                          : [...pool, ident.mailbox_id];
+                        const pool: string[] = prev.mailbox_ids ?? [];
 
-                        // Keep mailbox_id / from_email / from_name synced to the
-                        // first entry in the pool for backward compatibility.
-                        const primary = newPool[0];
-                        const primaryIdent = identities.find(i => i.mailbox_id === primary);
+                        // Strict manual toggle — never auto-select anything
+                        const newPool = isSelected
+                          ? pool.filter(entry => entry !== identKey)
+                          : [...pool, identKey];
+
+                        // Sync the legacy mailbox_id / from_email / from_name to
+                        // the first entry in the pool (for backward compat).
+                        // The first entry may be a compound key or a plain UUID.
+                        const firstKey = newPool[0] ?? '';
+                        const firstIdent = identities.find(
+                          i => `${i.mailbox_id}:${i.email}` === firstKey
+                        );
                         return {
                           ...prev,
                           mailbox_ids: newPool,
-                          mailbox_id: primary ?? prev.mailbox_id,
-                          from_email: primaryIdent?.email ?? prev.from_email,
-                          from_name:  primaryIdent?.name  ?? prev.from_name,
+                          // Keep the raw mailbox_id pointing to the primary mailbox UUID
+                          mailbox_id: firstIdent?.mailbox_id ?? prev.mailbox_id,
+                          from_email: firstIdent?.email  ?? prev.from_email,
+                          from_name:  firstIdent?.name   ?? prev.from_name,
                         };
                       });
                       setHasUnsavedChanges(true);
@@ -1118,7 +1159,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                           ) : (
                             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Primary</span>
                           )}
-                          {/* Multi-select checkbox */}
+                          {/* Independent checkbox per row — each primary and alias is its own item */}
                           <div className={cn(
                             "size-5 rounded border-2 flex items-center justify-center transition-all",
                             isSelected ? "border-teal-500 bg-teal-500" : "border-white/20 bg-transparent"
