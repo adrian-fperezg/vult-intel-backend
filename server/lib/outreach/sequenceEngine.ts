@@ -406,6 +406,7 @@ export async function ensureValidMailboxAssignment(
   }
   
   if (mailboxPool.length === 0 && sequence.mailbox_id) {
+    console.log(`[SequenceEngine] [Debug Rebalance] Fallback to legacy mailbox_id for Sequence ${sequenceId}: ${sequence.mailbox_id}`);
     mailboxPool = [sequence.mailbox_id];
   }
 
@@ -437,7 +438,8 @@ export async function ensureValidMailboxAssignment(
   console.log(`[SequenceEngine] [Rebalance] Contact ${contactId} in Sequence ${sequenceId} has invalid/missing mailbox. Reassigning...`);
   
   // Extract base UUIDs from pool for format-agnostic database lookup
-  const poolBaseIds = [...new Set(mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id))];
+  const poolBaseIds = [...new Set(mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id))].filter(Boolean);
+  console.log(`[SequenceEngine] [Debug Rebalance] Searching healthy mailboxes for Sequence ${sequenceId}. Pool Base IDs:`, poolBaseIds);
   
   const healthyMailboxes = poolBaseIds.length > 0
     ? await d.all(
@@ -448,8 +450,11 @@ export async function ensureValidMailboxAssignment(
       ) as any[]
     : [];
 
+  console.log(`[SequenceEngine] [Debug Rebalance] Found ${healthyMailboxes.length} healthy mailboxes matching pool.`);
+
   if (healthyMailboxes.length === 0) {
     console.warn(`[SequenceEngine] [Rebalance Warning] NO_HEALTHY_MAILBOXES_AVAILABLE for contact ${contactId} in sequence ${sequenceId}.`);
+    console.log(`[SequenceEngine] [Debug Rebalance] Exhausted Pool was:`, mailboxPool);
     return null;
   }
 
