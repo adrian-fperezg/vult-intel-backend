@@ -16,11 +16,12 @@ import { motion } from 'framer-motion';
 interface QueueJob {
   jobId: string;
   contactId: string;
+  contactName: string;
   sequenceId: string;
+  sequenceName: string;
   stepId: string;
   stepNumber: number;
   scheduledTime: string;
-  readableTime: string;
   priority: number;
   attempts: number;
 }
@@ -164,20 +165,22 @@ export default function QueueMonitor() {
                           </div>
                         </td>
                         <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2" title={`Contact ID: ${job.contactId}`}>
                             <div className="size-7 rounded-full bg-slate-500/10 flex items-center justify-center">
                               <User className="size-3.5 text-slate-400" />
                             </div>
-                            <span className="text-xs font-mono text-slate-400 truncate max-w-[120px]">
-                              {job.contactId}
+                            <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                              {job.contactName}
                             </span>
                           </div>
                         </td>
                         <td className="px-6 py-5">
-                          <div className="space-y-1">
+                          <div className="space-y-1" title={`Sequence ID: ${job.sequenceId}`}>
                             <div className="flex items-center gap-2">
                               <Layers className="size-3.5 text-indigo-400" />
-                              <span className="text-xs font-bold text-white truncate max-w-[150px]">Seq: {job.sequenceId}</span>
+                              <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                                {job.sequenceName}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="px-1.5 py-0.5 rounded bg-white/10 text-[9px] font-black text-slate-300">STEP {job.stepNumber}</span>

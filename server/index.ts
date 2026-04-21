@@ -441,19 +441,41 @@ app.get("/api/admin/queue/scheduled", async (_req, res) => {
   try {
     const delayedJobs = await emailQueue.getDelayed();
     
+    // Extract unique IDs for batch lookup
+    const contactIds = [...new Set(delayedJobs.map(j => j.data?.contactId))].filter(Boolean);
+    const sequenceIds = [...new Set(delayedJobs.map(j => j.data?.sequenceId))].filter(Boolean);
+
+    // Hydrate contacts and sequences
+    const [contacts, sequences] = await Promise.all([
+      contactIds.length > 0 
+        ? db.all("SELECT id, first_name, last_name FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
+        : Promise.resolve([]),
+      sequenceIds.length > 0
+        ? db.all("SELECT id, name FROM outreach_sequences WHERE id = ANY($1::text[])", [sequenceIds])
+        : Promise.resolve([])
+    ]);
+
+    // Create lookup maps
+    const contactMap = new Map(contacts.map((c: any) => [c.id, `${c.first_name} ${c.last_name}`.trim()]));
+    const sequenceMap = new Map(sequences.map((s: any) => [s.id, s.name]));
+
     const mappedJobs = delayedJobs.filter(j => !!j).map(job => {
       // Calculate target execution time
       const scheduledTimestamp = (job.timestamp || Date.now()) + (job.opts.delay || 0);
       const scheduledTime = DateTime.fromMillis(scheduledTimestamp);
       
+      const cId = job.data?.contactId;
+      const sId = job.data?.sequenceId;
+
       return {
         jobId: job.id,
-        contactId: job.data?.contactId,
-        sequenceId: job.data?.sequenceId,
+        contactId: cId,
+        contactName: contactMap.get(cId) || "Unknown Contact",
+        sequenceId: sId,
+        sequenceName: sequenceMap.get(sId) || "Unknown Sequence",
         stepId: job.data?.stepId,
         stepNumber: job.data?.stepNumber,
-        scheduledTime: scheduledTime.toISO(),
-        readableTime: scheduledTime.toFormat('yyyy-MM-dd HH:mm:ss'),
+        scheduledTime: scheduledTime.toISO(), // ISO string as requested
         priority: job.opts.priority,
         attempts: job.attemptsMade
       };
