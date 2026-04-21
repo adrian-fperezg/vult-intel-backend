@@ -579,7 +579,7 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
         : Promise.resolve([]),
       contactIds.length > 0 && sequenceIds.length > 0
         ? db.all(`
-            SELECT e.contact_id, e.sequence_id, m.email as sender_email
+            SELECT e.contact_id, e.sequence_id, e.scheduled_at, m.email as sender_email
             FROM outreach_sequence_enrollments e
             LEFT JOIN outreach_mailboxes m ON e.assigned_mailbox_id = m.id
             WHERE e.contact_id = ANY($1::text[]) AND e.sequence_id = ANY($2::text[])
@@ -590,7 +590,7 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
     // Create lookup maps
     const contactMap = new Map(contacts.map((c: any) => [c.id, `${c.first_name} ${c.last_name}`.trim()]));
     const sequenceMap = new Map(sequences.map((s: any) => [s.id, s.name]));
-    const enrollmentMap = new Map(enrollments.map((e: any) => [`${e.contact_id}:${e.sequence_id}`, e.sender_email]));
+    const enrollmentMap = new Map(enrollments.map((e: any) => [`${e.contact_id}:${e.sequence_id}`, e]));
 
     const mappedJobs = delayedJobs.filter(j => !!j).map(job => {
       // Calculate target execution time
@@ -600,7 +600,12 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
       const cId = job.data?.contactId;
       const sId = job.data?.sequenceId;
       const enrollmentKey = `${cId}:${sId}`;
-      const senderEmail = enrollmentMap.get(enrollmentKey);
+      const enrollment = enrollmentMap.get(enrollmentKey);
+      
+      // Use enrollment scheduled_at as primary source of truth for the "intended" time
+      const finalScheduledTime = (enrollment?.scheduled_at) 
+        ? enrollment.scheduled_at 
+        : scheduledTime.toISO();
 
       return {
         jobId: job.id,
@@ -608,11 +613,11 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
         contactName: contactMap.get(cId) || "Unknown Contact",
         sequenceId: sId,
         sequenceName: sequenceMap.get(sId) || "Unknown Sequence",
-        senderEmail: senderEmail || "Waiting for email assignment",
+        senderEmail: enrollment?.sender_email || "Waiting for email assignment",
         action: `Send Step ${job.data?.stepNumber || 1}`,
         stepId: job.data?.stepId,
         stepNumber: job.data?.stepNumber,
-        scheduledTime: scheduledTime.toISO(),
+        scheduledTime: finalScheduledTime,
         priority: job.opts.priority,
         attempts: job.attemptsMade
       };

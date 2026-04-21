@@ -76,9 +76,9 @@ export default function QueueMonitor() {
       });
       
       if (data && data.success) {
-        toast.success(data.message || "Queue rebalanced successfully");
-        // Fresh reload to see new timestamps
-        setTimeout(loadQueue, 1500);
+        toast.success(data.message || "Queue rebalanced and staggered successfully");
+        // Fresh reload to see new timestamps immediately
+        loadQueue();
       } else {
         toast.error(data.error || "Failed to rebalance queue");
       }

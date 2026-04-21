@@ -439,32 +439,35 @@ export async function ensureValidMailboxAssignment(
   
   // Extract base UUIDs from pool for format-agnostic database lookup
   const poolBaseIds = [...new Set(mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id))].filter(Boolean);
-  console.log(`[SequenceEngine] [Debug Rebalance] Searching healthy mailboxes for Sequence ${sequenceId}. Pool Base IDs:`, poolBaseIds);
   
-  const healthyMailboxes = poolBaseIds.length > 0
-    ? await d.all(
-        `SELECT id, email FROM outreach_mailboxes 
+  // Find which of these base IDs are actually active in the database
+  const activeBaseIds = poolBaseIds.length > 0
+    ? (await d.all(
+        `SELECT id FROM outreach_mailboxes 
          WHERE (id = ANY($1::text[]) OR split_part(id, ':', 1) = ANY($1::text[])) 
          AND status = 'active'`,
         [poolBaseIds]
-      ) as any[]
+      ) as any[]).map(m => m.id.includes(':') ? m.id.split(':')[0] : m.id)
     : [];
 
-  console.log(`[SequenceEngine] [Debug Rebalance] Found ${healthyMailboxes.length} healthy mailboxes matching pool.`);
+  // Filter the ORIGINAL mailboxPool to only include those whose base ID is active
+  // This preserves the full uuid:email string for alias-aware staggering
+  const healthyPool = mailboxPool.filter(id => {
+    const baseId = id.includes(':') ? id.split(':')[0] : id;
+    return activeBaseIds.includes(baseId);
+  });
 
-  if (healthyMailboxes.length === 0) {
+  console.log(`[SequenceEngine] [Debug Rebalance] Found ${healthyPool.length} healthy alias/mailbox options matching pool.`);
+
+  if (healthyPool.length === 0) {
     console.warn(`[SequenceEngine] [Rebalance Warning] NO_HEALTHY_MAILBOXES_AVAILABLE for contact ${contactId} in sequence ${sequenceId}.`);
     console.log(`[SequenceEngine] [Debug Rebalance] Exhausted Pool was:`, mailboxPool);
     return null;
   }
 
-  // Pick a random healthy mailbox
-  const picked = healthyMailboxes[Math.floor(Math.random() * healthyMailboxes.length)];
-  if (!picked?.id) {
-    console.warn(`[SequenceEngine] [Rebalance Warning] Failed to pick a valid mailbox for contact ${contactId}.`);
-    return null;
-  }
-  const newMailboxId = picked.id;
+  // Pick a random healthy mailbox from the filtered original pool
+  const newMailboxId = healthyPool[Math.floor(Math.random() * healthyPool.length)];
+  const pickedEmail = newMailboxId.includes(':') ? newMailboxId.split(':')[1] : 'Unknown';
 
   // Persist
   await d.run(
@@ -474,6 +477,6 @@ export async function ensureValidMailboxAssignment(
     [newMailboxId, sequenceId, contactId]
   );
 
-  console.log(`[SequenceEngine] [Rebalance] ✓ Contact ${contactId} reassigned to ${picked.email}`);
+  console.log(`[SequenceEngine] [Rebalance] ✓ Contact ${contactId} reassigned to ${pickedEmail} (${newMailboxId})`);
   return newMailboxId;
 }
