@@ -440,9 +440,11 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
  * Administrative endpoint to rebalance and stagger the current BullMQ delayed queue.
  * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
  */
-app.post("/api/admin/queue/rebalance", async (_req, res) => {
+app.post("/api/admin/queue/rebalance", async (req, res) => {
   try {
-    console.log("[Queue Rebalance] Starting retroactive queue staggering...");
+    const { snapToBusinessHours, targetStartHour = 9 } = req.body;
+    console.log(`[Queue Rebalance] Starting retroactive queue staggering... (Snap: ${snapToBusinessHours}, Target: ${targetStartHour}:00)`);
+    
     const delayedJobs = await emailQueue.getDelayed();
     const sequenceJobs = delayedJobs.filter(j => j.name === 'execute-sequence-step');
 
@@ -465,7 +467,6 @@ app.post("/api/admin/queue/rebalance", async (_req, res) => {
       );
 
       // 2. Ensure assignment is valid (Triggers fallback reassignment if needed)
-      // Pass the existing mailboxId if it exists, otherwise pass null
       const mailboxId = await ensureValidMailboxAssignment(
         sequenceId, 
         contactId, 
@@ -489,8 +490,11 @@ app.post("/api/admin/queue/rebalance", async (_req, res) => {
         return timeA - timeB;
       });
 
-      for (let i = 0; i < sortedJobs.length; i++) {
-        const job = sortedJobs[i];
+      // Keep track of the next available slot for this mailbox
+      // Initial buffer of 1 minute from now
+      let nextAvailableSlotMs = now + (60 * 1000);
+
+      for (const job of sortedJobs) {
         const { projectId, sequenceId, contactId } = job.data;
 
         // Fetch interval setting for this project (cached per request)
@@ -500,19 +504,32 @@ app.post("/api/admin/queue/rebalance", async (_req, res) => {
         }
 
         const intervalMs = projectIntervals[projectId] * 60 * 1000;
-        // Start 1 minute from now to prevent immediate burst, then space out.
-        const staggeredDelay = (60 * 1000) + (i * intervalMs);
-        const scheduledAt = new Date(now + staggeredDelay);
+        
+        // A. Determine Base Time (applying snapping if requested)
+        const originalTimeMs = job.timestamp + (job.opts.delay || 0);
+        let baseTime = DateTime.fromMillis(originalTimeMs);
 
-        // A. Update BullMQ Job
+        if (snapToBusinessHours && baseTime.hour < targetStartHour) {
+          // Snap early emails to the target start hour of the SAME day
+          baseTime = baseTime.set({ hour: targetStartHour, minute: 0, second: 0, millisecond: 0 });
+        }
+
+        // B. Apply Staggering relative to the previous job in this mailbox
+        // targetTime MUST be >= baseTime AND >= nextAvailableSlot
+        const targetTimeMs = Math.max(baseTime.toMillis(), nextAvailableSlotMs);
+        const staggeredDelay = Math.max(0, targetTimeMs - now);
+        const scheduledAt = new Date(targetTimeMs);
+
+        // C. Update BullMQ Job
         await job.changeDelay(staggeredDelay);
 
-        // B. Update Database Enrollment to match
+        // D. Update Database Enrollment to match
         await db.run(
           "UPDATE outreach_sequence_enrollments SET scheduled_at = ? WHERE sequence_id = ? AND contact_id = ?",
           [scheduledAt.toISOString(), sequenceId, contactId]
         );
 
+        nextAvailableSlotMs = targetTimeMs + intervalMs;
         rebalancedCount++;
       }
     }

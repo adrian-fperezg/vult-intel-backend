@@ -43,6 +43,7 @@ export default function QueueMonitor() {
   const [stepFilter, setStepFilter] = useState('ALL');
   const [senderFilter, setSenderFilter] = useState('ALL');
   const [isRebalancing, setIsRebalancing] = useState(false);
+  const [snapToBusiness, setSnapToBusiness] = useState(true);
 
   const loadQueue = useCallback(async () => {
     if (!activeProjectId) return;
@@ -71,7 +72,11 @@ export default function QueueMonitor() {
     try {
       const res = await fetch('/api/admin/queue/rebalance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          snapToBusinessHours: snapToBusiness,
+          targetStartHour: 9
+        })
       });
       const data = await res.json();
       
@@ -154,28 +159,47 @@ export default function QueueMonitor() {
           title="Sequence Queue Monitor"
           subtitle="Real-time visibility into upcoming sequence steps scheduled in BullMQ."
           actions={
-            <div className="flex items-center gap-3">
-              <TealButton 
-                variant="outline" 
-                size="sm" 
-                onClick={handleRebalance} 
-                loading={isRebalancing}
-                className="px-4 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-              >
-                <Zap className={cn("size-3.5 mr-2", isRebalancing && "animate-pulse")} />
-                Rebalance & Stagger
-              </TealButton>
+            <div className="flex items-center gap-6">
+              {/* Business Hour Snap Toggle */}
+              <label className="flex items-center gap-3 cursor-pointer group bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-teal-500/30 transition-all">
+                <div className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={snapToBusiness}
+                    onChange={e => setSnapToBusiness(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-white group-hover:text-teal-400 transition-colors uppercase tracking-wider">Horario Comercial</span>
+                  <span className="text-[9px] text-slate-500">Fix 2 AM clump to 9 AM</span>
+                </div>
+              </label>
 
-              <TealButton 
-                variant="outline" 
-                size="sm" 
-                onClick={loadQueue} 
-                loading={isLoading}
-                className="px-4"
-              >
-                <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
-                Refresh Queue
-              </TealButton>
+              <div className="flex items-center gap-3">
+                <TealButton 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRebalance} 
+                  loading={isRebalancing}
+                  className="px-4 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                >
+                  <Zap className={cn("size-3.5 mr-2", isRebalancing && "animate-pulse")} />
+                  Rebalance & Stagger
+                </TealButton>
+
+                <TealButton 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={loadQueue} 
+                  loading={isLoading}
+                  className="px-4"
+                >
+                  <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
+                  Refresh Queue
+                </TealButton>
+              </div>
             </div>
           }
         />
