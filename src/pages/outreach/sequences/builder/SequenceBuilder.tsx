@@ -43,6 +43,7 @@ interface Sequence {
   status: 'draft' | 'active' | 'paused' | 'archived';
   project_id: string;
   mailbox_id?: string;
+  mailbox_ids?: string[];  // Multi-sender pool (load balancing)
   daily_send_limit: number;
   smart_send_min_delay: number;
   smart_send_max_delay: number;
@@ -657,6 +658,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       await api.updateSequence(sequenceId, {
         name: sequence.name,
         mailbox_id: sequence.mailbox_id,
+        mailbox_ids: sequence.mailbox_ids ?? [],
         daily_send_limit: sequence.daily_send_limit,
         stop_on_reply: sequence.stop_on_reply,
         smart_send_min_delay: sequence.smart_send_min_delay,
@@ -785,7 +787,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
 
   const handleActivate = async () => {
-    if (!sequence?.mailbox_id) {
+    const hasMailbox = sequence?.mailbox_id || (sequence?.mailbox_ids && sequence.mailbox_ids.length > 0);
+    if (!hasMailbox) {
       toast.error("Please select a mailbox in Settings first");
       setActiveView('settings');
       return;
@@ -1038,57 +1041,94 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             <div className="max-w-2xl mx-auto space-y-12">
               <section className="space-y-6">
                 <div>
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Mailbox className="size-5 text-teal-400" /> Sending Mailbox
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-1">Choose which mailbox will send the emails for this sequence.</p>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                      <Mailbox className="size-5 text-teal-400" /> Sending Mailbox
+                    </h3>
+                    {/* Load balancing badge — visible when 2+ mailboxes are selected */}
+                    {(sequence.mailbox_ids?.length ?? 0) > 1 && (
+                      <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-teal-500/20 text-teal-400 border border-teal-500/30">
+                        <span className="size-1.5 rounded-full bg-teal-400 animate-pulse" />
+                        Load Balancing: ON · {sequence.mailbox_ids!.length} senders
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Select one or more mailboxes. When multiple are chosen, contacts are distributed
+                    evenly across accounts (round-robin) and each contact is permanently locked to
+                    one mailbox for thread continuity.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3">
-                  {identities.map((ident, idx) => (
-                    <button
-                      key={`${ident.mailbox_id}-${ident.email}-${idx}`}
-                      onClick={() => setSequence(prev => prev ? {
-                        ...prev,
-                        mailbox_id: ident.mailbox_id,
-                        from_email: ident.email,
-                        from_name: ident.name
-                      } : null)}
-                      className={cn(
-                        "flex items-center justify-between p-4 rounded-2xl border transition-all text-left",
-                        sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id
-                          ? "bg-teal-500/10 border-teal-500/30"
-                          : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/10"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="size-10 rounded-xl bg-black/20 flex items-center justify-center border border-white/5">
-                          {mailboxes.find(m => m.id === ident.mailbox_id)?.connection_type === 'smtp' ? (
-                            <Mail className="size-4 text-slate-500" />
-                          ) : (
-                            <Globe className="size-4 text-slate-500" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-white">{ident.name || 'Primary'}</p>
-                          <p className="text-[10px] text-slate-500 truncate">{ident.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {ident.is_alias ? (
-                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400">Alias</span>
-                        ) : (
-                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Primary</span>
+                  {identities.map((ident, idx) => {
+                    const currentPool: string[] = sequence.mailbox_ids ?? (sequence.mailbox_id ? [sequence.mailbox_id] : []);
+                    const isSelected = currentPool.includes(ident.mailbox_id);
+
+                    const toggleMailbox = () => {
+                      setSequence(prev => {
+                        if (!prev) return null;
+                        const pool = prev.mailbox_ids ?? (prev.mailbox_id ? [prev.mailbox_id] : []);
+                        const newPool = isSelected
+                          ? pool.filter(id => id !== ident.mailbox_id)
+                          : [...pool, ident.mailbox_id];
+
+                        // Keep mailbox_id / from_email / from_name synced to the
+                        // first entry in the pool for backward compatibility.
+                        const primary = newPool[0];
+                        const primaryIdent = identities.find(i => i.mailbox_id === primary);
+                        return {
+                          ...prev,
+                          mailbox_ids: newPool,
+                          mailbox_id: primary ?? prev.mailbox_id,
+                          from_email: primaryIdent?.email ?? prev.from_email,
+                          from_name:  primaryIdent?.name  ?? prev.from_name,
+                        };
+                      });
+                      setHasUnsavedChanges(true);
+                    };
+
+                    return (
+                      <button
+                        key={`${ident.mailbox_id}-${ident.email}-${idx}`}
+                        onClick={toggleMailbox}
+                        className={cn(
+                          "flex items-center justify-between p-4 rounded-2xl border transition-all text-left",
+                          isSelected
+                            ? "bg-teal-500/10 border-teal-500/30"
+                            : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/10"
                         )}
-                        <div className={cn(
-                          "size-5 rounded-full border-2 flex items-center justify-center transition-all",
-                          sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id ? "border-teal-500 bg-teal-500/20" : "border-white/10"
-                        )}>
-                          {sequence?.from_email === ident.email && sequence?.mailbox_id === ident.mailbox_id && <div className="size-2 rounded-full bg-teal-400" />}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="size-10 rounded-xl bg-black/20 flex items-center justify-center border border-white/5">
+                            {mailboxes.find(m => m.id === ident.mailbox_id)?.connection_type === 'smtp' ? (
+                              <Mail className="size-4 text-slate-500" />
+                            ) : (
+                              <Globe className="size-4 text-slate-500" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-white">{ident.name || 'Primary'}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{ident.email}</p>
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  ))}
+                        <div className="flex items-center gap-3">
+                          {ident.is_alias ? (
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400">Alias</span>
+                          ) : (
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Primary</span>
+                          )}
+                          {/* Multi-select checkbox */}
+                          <div className={cn(
+                            "size-5 rounded border-2 flex items-center justify-center transition-all",
+                            isSelected ? "border-teal-500 bg-teal-500" : "border-white/20 bg-transparent"
+                          )}>
+                            {isSelected && <Check className="size-3 text-white" />}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                   {identities.length === 0 && (
                     <div className="p-8 rounded-2xl border-2 border-dashed border-white/5 text-center bg-white/[0.02]">
                       <p className="text-sm text-slate-500 mb-4">No mailboxes connected to this project.</p>

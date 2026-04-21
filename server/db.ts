@@ -275,6 +275,8 @@ export const initDb = async () => {
         bounced_count INTEGER DEFAULT 0,
         funnel_stage TEXT DEFAULT 'TOFU',
         use_recipient_timezone BOOLEAN DEFAULT FALSE,
+        -- Multi-sender load balancing: JSON array of mailbox UUIDs e.g. '["uuid-a","uuid-b"]'
+        mailbox_ids TEXT DEFAULT '[]',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -307,7 +309,9 @@ export const initDb = async () => {
       { name: 'opened_count', type: 'INTEGER DEFAULT 0' },
       { name: 'replied_count', type: 'INTEGER DEFAULT 0' },
       { name: 'bounced_count', type: 'INTEGER DEFAULT 0' },
-      { name: 'use_recipient_timezone', type: 'BOOLEAN DEFAULT FALSE' }
+      { name: 'use_recipient_timezone', type: 'BOOLEAN DEFAULT FALSE' },
+      // Multi-sender load balancing pool (JSON array of mailbox UUIDs)
+      { name: 'mailbox_ids', type: "TEXT DEFAULT '[]'" }
     ];
 
     for (const col of newSeqCols) {
@@ -817,7 +821,9 @@ export const initDb = async () => {
       { name: 'last_error', type: 'TEXT' },
       { name: 'last_executed_at', type: 'TIMESTAMP' },
       { name: 'opened', type: 'BOOLEAN DEFAULT FALSE' },
-      { name: 'completed_at', type: 'TIMESTAMP' }
+      { name: 'completed_at', type: 'TIMESTAMP' },
+      // Multi-sender sticky routing: which mailbox is permanently assigned to this contact
+      { name: 'assigned_mailbox_id', type: 'TEXT' }
     ];
 
     for (const col of missingEnrollCols) {

@@ -2311,7 +2311,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   const allowedFields = [
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end',
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
-    'stop_on_reply', 'mailbox_id', 'from_email', 'from_name',
+    'stop_on_reply', 'mailbox_id', 'mailbox_ids', 'from_email', 'from_name',
     'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage', 'smart_send'
   ];
 
@@ -2322,7 +2322,20 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
 
       // Safety Check: Database columns like mailbox_id expect strings (UUIDs), not objects.
       // If the frontend accidentally sends the whole object, we extract the ID or skip it.
-      if (typeof val === 'object' && val !== null) {
+      if (field === 'mailbox_ids') {
+        // Validate and serialize the multi-sender pool
+        let pool: string[] = [];
+        if (Array.isArray(val)) {
+          pool = val.filter((v: any) => typeof v === 'string' && v.length > 0);
+        } else if (typeof val === 'string') {
+          try { pool = JSON.parse(val).filter((v: any) => typeof v === 'string'); } catch { pool = []; }
+        }
+        filteredUpdates[field] = JSON.stringify(pool);
+        // Keep the primary mailbox_id in sync with the first entry for backward compat
+        if (pool.length > 0 && updates['mailbox_id'] === undefined) {
+          filteredUpdates['mailbox_id'] = pool[0];
+        }
+      } else if (typeof val === 'object' && val !== null) {
         if (field === 'mailbox_id' && val.id) {
           filteredUpdates[field] = val.id;
         } else {
@@ -2480,7 +2493,11 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
   try {
     const sequence = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId) as any;
     if (!sequence) return res.status(404).json({ error: "Sequence not found" });
-    if (!sequence.mailbox_id) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
+
+    // Accept either a single mailbox_id OR a multi-sender pool (mailbox_ids)
+    const mailboxPool: string[] = (() => { try { return JSON.parse(sequence.mailbox_ids || '[]'); } catch { return []; } })();
+    const hasMailbox = sequence.mailbox_id || mailboxPool.length > 0;
+    if (!hasMailbox) return res.status(400).json({ error: "Sequence must have a mailbox assigned before activation" });
 
     let finalStatus = 'active';
 

@@ -38,14 +38,35 @@ export async function enrollContactInSequence(
   const staggerDelayMs = staggerIndex * STAGGER_INTERVAL_MS;
 
   try {
-    const sequence = await d.get<any>('SELECT status FROM outreach_sequences WHERE id = ?', [sequenceId]);
+    const sequence = await d.get<any>('SELECT status, mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?', [sequenceId]);
     const isScheduled = sequence?.status === 'scheduled';
+
+    // ── Multi-sender round-robin assignment ─────────────────────────────────
+    // Parse the mailbox pool. Fall back to the single mailbox_id for legacy sequences.
+    let assignedMailboxId: string | null = sequence?.mailbox_id || null;
+    try {
+      const pool: string[] = JSON.parse(sequence?.mailbox_ids || '[]');
+      if (pool.length > 1) {
+        // Count existing enrollments (excluding hard-failed ones) to get this
+        // contact's position in the rotation before we insert the new row.
+        const countRow = await d.get<any>(
+          "SELECT COUNT(*) as cnt FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status != 'failed'",
+          [sequenceId]
+        );
+        const position = Number(countRow?.cnt ?? 0) % pool.length;
+        assignedMailboxId = pool[position];
+        console.log(`[SequenceEngine] [LoadBalancer] Contact ${contactId} → mailbox index ${position} (${assignedMailboxId}) out of ${pool.length} in pool.`);
+      }
+    } catch (poolErr) {
+      console.warn('[SequenceEngine] Could not parse mailbox_ids pool. Falling back to mailbox_id.', poolErr);
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     await d.run(
       `INSERT INTO outreach_sequence_enrollments 
-      (id, sequence_id, contact_id, project_id, status) 
-      VALUES (?, ?, ?, ?, 'active')`,
-      [enrollmentId, sequenceId, contactId, projectId]
+      (id, sequence_id, contact_id, project_id, status, assigned_mailbox_id) 
+      VALUES (?, ?, ?, ?, 'active', ?)`,
+      [enrollmentId, sequenceId, contactId, projectId, assignedMailboxId]
     );
 
     if (!isScheduled) {

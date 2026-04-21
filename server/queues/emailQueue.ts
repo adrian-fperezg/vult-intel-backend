@@ -327,6 +327,27 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             path: file.url || file.path
           }));
 
+          // ── Sticky Routing: use the mailbox assigned to this contact at enrollment ──
+          // enrollment.assigned_mailbox_id is set once via round-robin when the contact
+          // is enrolled. If NULL (legacy enrollment), fall back to sequence.mailbox_id.
+          const stickyMailboxId: string = enrollment.assigned_mailbox_id || sequence.mailbox_id;
+
+          // Resolve sender identity from the sticky mailbox so from_email/from_name
+          // reflect the actual sending account rather than the sequence-level defaults.
+          let fromEmail = sequence.from_email;
+          let fromName  = sequence.from_name;
+          if (stickyMailboxId && stickyMailboxId !== sequence.mailbox_id) {
+            const senderMailbox = await db.prepare(
+              'SELECT email, name FROM outreach_mailboxes WHERE id = ?'
+            ).get(stickyMailboxId) as any;
+            if (senderMailbox) {
+              fromEmail = senderMailbox.email;
+              fromName  = senderMailbox.name;
+              console.log(`[Sequence] [StickyRouting] Contact ${contactId} → mailbox ${stickyMailboxId} (${fromEmail})`);
+            }
+          }
+          // ────────────────────────────────────────────────────────────────────────────
+
           // Create individual email record
           emailId = uuidv4();
           await db.prepare(`
@@ -336,12 +357,12 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             emailId,
             sequence.user_id,
             projectId,
-            sequence.mailbox_id,
+            stickyMailboxId,
             contactId,
             sequenceId,
             stepId,
-            sequence.from_email,
-            sequence.from_name,
+            fromEmail,
+            fromName,
             contact.email,
             subject,
             bodyHtml,
