@@ -614,13 +614,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         api.fetchSnippets()
       ]);
       if (seqData) {
-        // ── Bug 1 Fix: Normalize mailbox_ids on load ──────────────────────────
-        // The DB may return mailbox_ids as:
-        //   - null / undefined (very old row)
-        //   - '[]' (empty JSON string, new rows with no pool yet)
-        //   - '["uuid-a","uuid-b"]' (normal multi-sender string from PG)
-        // Parse it, and if the result is empty but mailbox_id has a value,
-        // bootstrap the pool with the legacy single ID so the UI shows it selected.
+        // ── Bug Fix: Normalize and Resolve mailbox_ids on load ────────────────
         let normalizedMailboxIds: string[] = [];
         try {
           const raw = seqData.mailbox_ids;
@@ -632,9 +626,23 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         } catch {
           normalizedMailboxIds = [];
         }
-        // Fall back to legacy single mailbox_id for sequences that pre-date the feature
+
+        // Fix: Convert any raw UUIDs from legacy rows into compound 'id:email' keys.
+        // This prevents the "ghost selection" bug where raw UUIDs would inflate
+        // the badge count without matching any checkboxes.
+        normalizedMailboxIds = normalizedMailboxIds.map(id => {
+          if (id.includes(':')) return id; // Already a compound key
+          // Find the primary identity for this mailbox UUID
+          const primary = identityData.find((i: any) => i.mailbox_id === id && !i.is_alias);
+          return primary ? `${id}:${primary.email}` : id;
+        }).filter(id => id.includes(':'));
+
+        // Fall back to legacy single mailbox_id if the pool is empty
         if (normalizedMailboxIds.length === 0 && seqData.mailbox_id) {
-          normalizedMailboxIds = [seqData.mailbox_id];
+          const primary = identityData.find((i: any) => i.mailbox_id === seqData.mailbox_id && !i.is_alias);
+          if (primary) {
+            normalizedMailboxIds = [`${seqData.mailbox_id}:${primary.email}`];
+          }
         }
 
         setSequence({ ...seqData, mailbox_ids: normalizedMailboxIds });
