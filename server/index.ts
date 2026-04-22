@@ -4059,9 +4059,15 @@ app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
         if (exclusiveContacts.length > 0) {
           const ids = exclusiveContacts.map(c => c.contact_id);
           const placeholders = ids.map(() => "?").join(",");
+          
+          // Clear sequence dependencies first to avoid foreign key violations
+          await tx.prepare(`DELETE FROM outreach_sequence_recipients WHERE contact_id IN (${placeholders})`).run(...ids);
+          await tx.prepare(`DELETE FROM outreach_sequence_enrollments WHERE contact_id IN (${placeholders})`).run(...ids);
+          await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`).run(...ids);
+          
+          // Now delete the contacts
           // Note: we still use user_id check if available, but project_id is the primary scoping here
           await tx.prepare(`DELETE FROM outreach_contacts WHERE id IN (${placeholders}) AND project_id = ?`).run(...ids, req.projectId);
-          await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`).run(...ids);
         }
       }
 

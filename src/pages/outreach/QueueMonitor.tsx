@@ -406,7 +406,7 @@ export default function QueueMonitor() {
                               <User className="size-3.5 text-slate-400" />
                             </div>
                             <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                              {job.contactName && job.contactName.trim() !== '' ? job.contactName : job.contactEmail}
+                              {job.contactName?.replace(/\bnull\b/gi, '').trim() || job.contactEmail}
                             </span>
                           </div>
                         </td>
