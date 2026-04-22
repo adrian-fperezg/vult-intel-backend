@@ -361,8 +361,8 @@ export default function QueueMonitor() {
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence</th>
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Remitente (Sender)</th>
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Step Action</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Acciones</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Status</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Status</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -421,21 +421,21 @@ export default function QueueMonitor() {
                           </div>
                         </td>
                         <td className="px-6 py-5">
-                          <button 
-                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName)}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group"
-                            title="Eliminar todos los envíos de esta secuencia"
-                          >
-                            <Trash2 className="size-3.5" />
-                            <span className="text-[10px] font-black uppercase tracking-tight">Eliminar Envíos</span>
-                          </button>
-                        </td>
-                        <td className="px-6 py-5 text-right">
                           {job.attempts > 0 ? (
                             <OutreachBadge variant="orange" dot>Retrying ({job.attempts})</OutreachBadge>
                           ) : (
                             <OutreachBadge variant="teal" dot>Scheduled</OutreachBadge>
                           )}
+                        </td>
+                        <td className="px-6 py-5 text-right">
+                          <button 
+                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group ml-auto"
+                            title="Eliminar todos los envíos de esta secuencia"
+                          >
+                            <Trash2 className="size-3.5" />
+                            <span className="text-[10px] font-black uppercase tracking-tight">Eliminar Envíos</span>
+                          </button>
                         </td>
                       </motion.tr>
                     ))}
