@@ -8,7 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge } from '../OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-import { useSettings } from '@/hooks/useSettings';
+import { useSettings } from '@/contexts/SettingsContext';
 import { useMemo } from 'react';
 
 interface ContactProfilePanelProps {

@@ -10,7 +10,7 @@ import {
   Database
 } from 'lucide-react';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-import { useSettings } from '@/hooks/useSettings';
+import { useSettings } from '@/contexts/SettingsContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
 

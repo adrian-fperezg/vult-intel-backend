@@ -4,7 +4,7 @@ import { X, Search, Plus, FolderPlus } from 'lucide-react';
 import { TealButton } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import { useSettings } from '@/hooks/useSettings';
+import { useSettings } from '@/contexts/SettingsContext';
 import { useMemo } from 'react';
 
 interface BulkAddToListModalProps {

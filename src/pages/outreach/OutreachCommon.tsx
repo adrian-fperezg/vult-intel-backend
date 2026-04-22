@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { useSettings } from '@/hooks/useSettings';
+import { useSettings } from '@/contexts/SettingsContext';
 
 // ─── TEAL COLOR TOKENS ───────────────────────────────────────────────────────
 export const TEAL = {
