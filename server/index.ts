@@ -1614,8 +1614,8 @@ app.delete("/api/outreach/mailboxes/:id", async (req: AuthRequest, res) => {
     await db.prepare(`
       UPDATE outreach_mailboxes 
       SET status = 'disconnected', access_token = NULL, refresh_token = NULL, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = ?
-    `).run(id);
+      WHERE id = ? AND project_id = ?
+    `).run(id, project_id);
 
     // 3. Cancel any pending jobs associated with this mailbox
     const cancelledJobs = await cancelMailboxJobs(id);
@@ -1713,7 +1713,7 @@ app.post("/api/outreach/verified-domains/:id/verify", async (req: AuthRequest, r
       res.json({ success: true, status: 'verified' });
     } else {
       await db.prepare(
-        "UPDATE outreach_verified_domains SET dns_check_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        "UPDATE outreach_verified_domains SET dns_check_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?"
       ).run(dnsError || "TXT record not found or incorrect", id, req.projectId);
 
       res.status(400).json({
@@ -3834,31 +3834,34 @@ app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
 // DELETE /api/outreach/contacts
 app.delete("/api/outreach/contacts", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, contact_ids } = req.body;
+  const { contact_ids } = req.body;
+  const project_id = req.projectId;
 
   if (!userId || !project_id || !Array.isArray(contact_ids)) {
-    return res.status(400).json({ error: "Missing project_id or contact_ids array" });
+    return res.status(400).json({ error: "Missing project_id (header/query) or contact_ids array" });
+  }
+
+  if (contact_ids.length === 0) {
+    return res.json({ success: true, count: 0 });
   }
 
   try {
     await db.transaction(async (tx) => {
       const placeholders = contact_ids.map(() => "?").join(",");
 
-      // 1. Delete sequence enrollments (though CASCADE should handle it, let's be explicit if needed)
-      // Actually, outreach_sequence_enrollments has ON DELETE CASCADE on contact_id.
-      
-      // 2. Delete from outreach_contacts
+      // 1. Delete from outreach_contacts (strictly scoped to project)
       await tx.prepare(`DELETE FROM outreach_contacts WHERE project_id = ? AND id IN (${placeholders})`)
         .run(project_id, ...contact_ids);
 
-      // 3. Delete from list members
+      // 2. Delete from list members (associated with these contacts)
       await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`)
         .run(...contact_ids);
     });
 
     res.json({ success: true, count: contact_ids.length });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[Bulk Delete Contacts Error]", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -3996,19 +3999,24 @@ app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
         if (exclusiveContacts.length > 0) {
           const ids = exclusiveContacts.map(c => c.contact_id);
           const placeholders = ids.map(() => "?").join(",");
-          await tx.prepare(`DELETE FROM outreach_contacts WHERE id IN (${placeholders})`).run(...ids);
+          // Note: we still use user_id check if available, but project_id is the primary scoping here
+          await tx.prepare(`DELETE FROM outreach_contacts WHERE id IN (${placeholders}) AND project_id = ?`).run(...ids, req.projectId);
           await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`).run(...ids);
         }
       }
 
-      // 1. Delete the list itself
-      await tx.prepare("DELETE FROM outreach_lists WHERE id = ?").run(listId);
-      // 2. Clean up any remaining membership records for this list (for non-exclusive contacts)
-      await tx.prepare("DELETE FROM outreach_list_members WHERE list_id = ?").run(listId);
+      // 1. Delete the list itself (strictly scoped to project)
+      const result = await tx.prepare("DELETE FROM outreach_lists WHERE id = ? AND project_id = ?").run(listId, req.projectId);
+      
+      if (result.changes > 0) {
+        // 2. Clean up any remaining membership records for this list (for non-exclusive contacts)
+        await tx.prepare("DELETE FROM outreach_list_members WHERE list_id = ?").run(listId);
+      }
     });
 
     res.json({ success: true });
   } catch (error: any) {
+    console.error("[Delete List Error]", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -4017,13 +4025,26 @@ app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
 app.patch("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   if (!userId) return res.status(401).json({ error: "Auth required" });
+  
   try {
     const { name, description } = req.body;
-    await db.prepare("UPDATE outreach_lists SET name = ?, description = ? WHERE id = ?")
-      .run(name, description || '', req.params.id);
+    const { id } = req.params;
+    
+    // Scoped update to ensure user only modifies their own project's lists
+    const result = await db.prepare(`
+      UPDATE outreach_lists 
+      SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ? AND project_id = ?
+    `).run(name, description || '', id, req.projectId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "List not found or permission denied" });
+    }
+
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[Edit List Error]", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

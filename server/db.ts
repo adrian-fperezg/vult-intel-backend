@@ -174,6 +174,31 @@ export const runMigrations = async () => {
 };
 
 export const initDb = async () => {
+  // 0. Ensure updated_at trigger function exists
+  await db.run(`
+    CREATE OR REPLACE FUNCTION update_updated_at_column()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+    END;
+    $$ language 'plpgsql';
+  `);
+
+  const applyTrigger = async (tableName: string) => {
+    await db.run(`
+      DO $$
+      BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_${tableName}') THEN
+              CREATE TRIGGER set_timestamp_${tableName}
+              BEFORE UPDATE ON ${tableName}
+              FOR EACH ROW
+              EXECUTE PROCEDURE update_updated_at_column();
+          END IF;
+      END $$;
+    `);
+  };
+
   console.log("[DB] Verifying/Initializing tables...");
   try {
     // Run automated migrations first
@@ -614,6 +639,28 @@ export const initDb = async () => {
       )
     `);
 
+    // Migrations for outreach_lists
+    const newListCols = [
+      { name: 'description', type: 'TEXT' },
+      { name: 'updated_at', type: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
+    ];
+
+    for (const col of newListCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_lists ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for list column ${col.name} failed:`, (err as Error).message);
+      }
+    }
+
+    // Apply triggers for tables with updated_at
+    await applyTrigger('outreach_lists');
+    await applyTrigger('outreach_campaigns');
+    await applyTrigger('outreach_sequences');
+    await applyTrigger('outreach_mailboxes');
+    await applyTrigger('outreach_mailbox_aliases');
+    await applyTrigger('outreach_snippets');
+
     // Migration for Table Renaming (Legacy to Outreach consistency)
     try {
       const legacyLists = await db.get("SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_lists'");
@@ -659,6 +706,7 @@ export const initDb = async () => {
         console.warn("[DB] Migration for suppression_list.created_at failed:", err.message);
       }
     }
+
 
     // 13. Tracking Events
     await db.run(`
