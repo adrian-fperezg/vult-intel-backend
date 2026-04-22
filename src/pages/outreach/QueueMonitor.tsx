@@ -45,8 +45,6 @@ export default function QueueMonitor() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [stepFilter, setStepFilter] = useState('ALL');
   const [senderFilter, setSenderFilter] = useState('ALL');
-  const [isRebalancing, setIsRebalancing] = useState(false);
-  const [snapToBusiness, setSnapToBusiness] = useState(true);
 
   const loadQueue = useCallback(async () => {
     if (!activeProjectId) return;
