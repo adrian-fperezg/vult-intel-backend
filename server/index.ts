@@ -578,12 +578,7 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
     // We fetch delayed, waiting, and paused jobs to ensure full coverage
     let allJobs: any[] = [];
     try {
-      const [delayed, waiting, paused] = await Promise.all([
-        emailQueue.getDelayed(),
-        emailQueue.getWaiting(),
-        emailQueue.getPaused()
-      ]);
-      allJobs = [...delayed, ...waiting, ...paused];
+      allJobs = await emailQueue.getJobs(['delayed', 'waiting', 'paused']);
     } catch (queueErr: any) {
       console.error("[Queue Purge] Failed to fetch jobs from BullMQ:", queueErr.message);
       throw new Error(`Queue connection error: ${queueErr.message}`);
