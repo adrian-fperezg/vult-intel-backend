@@ -116,6 +116,11 @@ export default function QueueMonitor() {
     if (!activeProjectId) return;
     if (!window.confirm(`¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia "${sequenceName}"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.`)) return;
     
+    if (!sequenceId) {
+      toast.error("No se pudo identificar el ID de la secuencia");
+      return;
+    }
+
     console.log("DEBUG FRONTEND: Sending sequenceId:", sequenceId);
     console.log("Clearing sequence:", sequenceId);
     try {

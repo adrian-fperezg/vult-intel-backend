@@ -680,12 +680,14 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
   console.log("DEBUG BACKEND: Received body:", req.body);
   try {
     const projectId = req.headers['x-project-id'] as string;
-    const { sequenceId } = req.body;
+    // Check multiple possible keys for robustness
+    const sequenceId = req.body.sequenceId || req.body.sequence_id || req.body.id;
 
     if (!projectId) {
       return res.status(400).json({ success: false, error: "Missing x-project-id header" });
     }
     if (!sequenceId) {
+      console.error("[Queue Clear] Missing sequenceId. Body:", JSON.stringify(req.body));
       return res.status(400).json({ success: false, error: "Missing sequenceId in request body" });
     }
 

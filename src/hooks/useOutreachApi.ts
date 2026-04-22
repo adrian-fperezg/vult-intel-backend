@@ -604,7 +604,12 @@ export function useOutreachApi() {
     const res = await fetch(`${ROOT_URL}/admin/queue/clear-sequence`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ project_id: activeProjectId, sequenceId }),
+      body: JSON.stringify({ 
+        project_id: activeProjectId, 
+        projectId: activeProjectId,
+        sequenceId: sequenceId,
+        id: sequenceId 
+      }),
     });
     if (!res.ok) {
       let errorMsg = `Clear sequence failed: ${res.status}`;
