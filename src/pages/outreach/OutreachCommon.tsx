@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@/hooks/useSettings';
 
 // ─── TEAL COLOR TOKENS ───────────────────────────────────────────────────────
 export const TEAL = {
@@ -230,10 +231,25 @@ interface ConfirmDialogProps {
   title: string;
   description: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   danger?: boolean;
 }
 
-export function OutreachConfirmDialog({ isOpen, onClose, onConfirm, title, description, confirmLabel = 'Confirm', danger }: ConfirmDialogProps) {
+export function OutreachConfirmDialog({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  title, 
+  description, 
+  confirmLabel, 
+  cancelLabel,
+  danger 
+}: ConfirmDialogProps) {
+  const { language } = useSettings();
+  const isEs = language === 'es';
+  const finalConfirm = confirmLabel || (isEs ? 'Confirmar' : 'Confirm');
+  const finalCancel = cancelLabel || (isEs ? 'Cancelar' : 'Cancel');
+
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -246,7 +262,7 @@ export function OutreachConfirmDialog({ isOpen, onClose, onConfirm, title, descr
             onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
           >
-            Cancel
+            {finalCancel}
           </button>
           <button
             onClick={() => { onConfirm(); onClose(); }}
@@ -257,7 +273,7 @@ export function OutreachConfirmDialog({ isOpen, onClose, onConfirm, title, descr
                 : 'bg-teal-600 hover:bg-teal-500 text-white'
             )}
           >
-            {confirmLabel}
+            {finalConfirm}
           </button>
         </div>
       </div>

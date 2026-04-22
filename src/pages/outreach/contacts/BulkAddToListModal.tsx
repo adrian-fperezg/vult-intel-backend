@@ -4,6 +4,8 @@ import { X, Search, Plus, FolderPlus } from 'lucide-react';
 import { TealButton } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { useSettings } from '@/hooks/useSettings';
+import { useMemo } from 'react';
 
 interface BulkAddToListModalProps {
   isOpen: boolean;
@@ -24,6 +26,23 @@ export default function BulkAddToListModal({
   api,
   selectedCount 
 }: BulkAddToListModalProps) {
+  const { language } = useSettings();
+  const t = useMemo(() => {
+    const isEs = language === 'es';
+    return {
+      addToList: isEs ? 'Agregar a Lista' : 'Add to List',
+      assignToDesc: (count: number) => isEs ? `Asignar ${count} contactos a una lista` : `Assign ${count} contacts to a list`,
+      searchLists: isEs ? 'Buscar listas...' : 'Search lists...',
+      noListsFound: (q: string) => isEs ? `No se encontraron listas que coincidan con "${q}"` : `No lists found matching "${q}"`,
+      createNewList: isEs ? 'Crear Nueva Lista' : 'Create New List',
+      newListName: isEs ? 'Nombre de la Nueva Lista' : 'New List Name',
+      listNamePlaceholder: isEs ? 'ej. Leads de Q1' : 'e.g. Q1 Enterprise Leads',
+      back: isEs ? 'Atrás' : 'Back',
+      createAndAdd: isEs ? 'Crear y Agregar' : 'Create & Add',
+      failedCreateList: isEs ? 'Error al crear la lista' : 'Failed to create list'
+    };
+  }, [language]);
+
   const [query, setQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newListName, setNewListName] = useState('');
@@ -43,7 +62,7 @@ export default function BulkAddToListModal({
       setNewListName('');
       setIsCreating(false);
     } catch (err) {
-      toast.error('Failed to create list');
+      toast.error(t.failedCreateList);
     } finally {
       setIsLoading(false);
     }
@@ -61,8 +80,8 @@ export default function BulkAddToListModal({
       >
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-white">Add to List</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Assign {selectedCount} contacts to a list</p>
+            <h3 className="text-lg font-semibold text-white">{t.addToList}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{t.assignToDesc(selectedCount)}</p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
@@ -78,7 +97,7 @@ export default function BulkAddToListModal({
                   autoFocus
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Search lists..."
+                  placeholder={t.searchLists}
                   className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-teal-500/50"
                 />
               </div>
@@ -97,7 +116,7 @@ export default function BulkAddToListModal({
                 
                 {filteredLists.length === 0 && query && (
                   <div className="py-8 text-center">
-                    <p className="text-sm text-slate-500">No lists found matching "{query}"</p>
+                    <p className="text-sm text-slate-500">{t.noListsFound(query)}</p>
                   </div>
                 )}
               </div>
@@ -108,19 +127,19 @@ export default function BulkAddToListModal({
                   className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 transition-all text-sm font-bold"
                 >
                   <FolderPlus className="size-4" />
-                  Create New List
+                  {t.createNewList}
                 </button>
               </div>
             </>
           ) : (
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">New List Name</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.newListName}</label>
                 <input
                   autoFocus
                   value={newListName}
                   onChange={e => setNewListName(e.target.value)}
-                  placeholder="e.g. Q1 Enterprise Leads"
+                  placeholder={t.listNamePlaceholder}
                   className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-teal-500/50"
                 />
               </div>
@@ -129,14 +148,14 @@ export default function BulkAddToListModal({
                   onClick={() => setIsCreating(false)}
                   className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-sm font-bold border border-white/5 transition-all"
                 >
-                  Back
+                  {t.back}
                 </button>
                 <TealButton
                   onClick={handleCreateList}
                   loading={isLoading}
                   className="flex-1 py-3"
                 >
-                  Create & Add
+                  {t.createAndAdd}
                 </TealButton>
               </div>
             </div>

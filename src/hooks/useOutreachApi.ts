@@ -454,6 +454,12 @@ export function useOutreachApi() {
     [patch]
   );
 
+  const updateContactList = useCallback(
+    (id: string, updates: { name?: string; description?: string }) => 
+      patch<any>(`/contact-lists/${id}`, updates),
+    [patch]
+  );
+
   const fetchContactListMembers = useCallback(
     (id: string) => get<string[]>(`/contact-lists/${id}/members`),
     [get]

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   X,
   Upload,
@@ -10,6 +10,7 @@ import {
   Database
 } from 'lucide-react';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { useSettings } from '@/hooks/useSettings';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
 
@@ -28,12 +29,65 @@ export default function CSVImportModal({
   defaultListId,
   lists
 }: CSVImportModalProps) {
+  const { language } = useSettings();
   const { importContactsCSV } = useOutreachApi();
   const [file, setFile] = useState<File | null>(null);
   const [listId, setListId] = useState<string>(defaultListId || '');
   const [isImporting, setIsImporting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const t = useMemo(() => {
+    const translations = {
+      en: {
+        title: "Import Contacts",
+        subtitle: "Upload a CSV file to add contacts",
+        toastErrorCSV: "Please upload a CSV file",
+        toastSuccess: (count: number) => `Successfully imported ${count} contacts`,
+        toastErrorFail: "Failed to import contacts",
+        dragDrop: "Drag and drop your CSV file here",
+        onlyCSV: "Only .csv files are supported",
+        browse: "Browse Files",
+        readyToImport: "Ready to import",
+        changeFile: "Change File",
+        addToList: "Add to List (Optional)",
+        dontAdd: "Don't add to list",
+        guidelinesTitle: "Import Guidelines",
+        guideline1: "Use \"Email\" header for the primary email address",
+        guideline2: "\"First Name\", \"Last Name\", \"Company\", \"Title\", \"Phone\", \"LinkedIn\" will be auto-mapped",
+        guideline3: "Any other headers will be saved as Custom Fields",
+        guideline4: "Duplicate emails (per project) will be updated with new data",
+        cancel: "Cancel",
+        importing: "Importing...",
+        finalize: "Finalize Import",
+        kb: "KB"
+      },
+      es: {
+        title: "Importar Contactos",
+        subtitle: "Sube un archivo CSV para añadir contactos",
+        toastErrorCSV: "Por favor sube un archivo CSV",
+        toastSuccess: (count: number) => `Se importaron con éxito ${count} contactos`,
+        toastErrorFail: "Error al importar contactos",
+        dragDrop: "Arrastra y suelta tu archivo CSV aquí",
+        onlyCSV: "Solo se admiten archivos .csv",
+        browse: "Buscar Archivos",
+        readyToImport: "Listo para importar",
+        changeFile: "Cambiar Archivo",
+        addToList: "Añadir a Lista (Opcional)",
+        dontAdd: "No añadir a lista",
+        guidelinesTitle: "Guías de Importación",
+        guideline1: "Usa el encabezado \"Email\" para la dirección de correo principal",
+        guideline2: "\"First Name\", \"Last Name\", \"Company\", \"Title\", \"Phone\", \"LinkedIn\" se mapearán automáticamente",
+        guideline3: "Cualquier otro encabezado se guardará como Campos Personalizados",
+        guideline4: "Los correos duplicados (por proyecto) se actualizarán con los nuevos datos",
+        cancel: "Cancelar",
+        importing: "Importando...",
+        finalize: "Finalizar Importación",
+        kb: "KB"
+      }
+    };
+    return translations[language as keyof typeof translations] || translations.en;
+  }, [language]);
 
   if (!isOpen) return null;
 
@@ -56,7 +110,7 @@ export default function CSVImportModal({
       if (droppedFile.name.endsWith('.csv')) {
         setFile(droppedFile);
       } else {
-        toast.error("Please upload a CSV file");
+        toast.error(t.toastErrorCSV);
       }
     }
   };
@@ -73,12 +127,12 @@ export default function CSVImportModal({
     setIsImporting(true);
     try {
       const result = await importContactsCSV(file, listId || undefined);
-      toast.success(`Successfully imported ${result.count} contacts`);
+      toast.success(t.toastSuccess(result.count));
       onSuccess();
       onClose();
     } catch (error: any) {
       console.error('Import error:', error);
-      toast.error(error.message || "Failed to import contacts");
+      toast.error(error.message || t.toastErrorFail);
     } finally {
       setIsImporting(false);
     }
@@ -97,8 +151,8 @@ export default function CSVImportModal({
               <Upload className="size-5 text-teal-400" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Import Contacts</h3>
-              <p className="text-xs text-slate-400">Upload a CSV file to add contacts</p>
+              <h3 className="text-lg font-semibold text-white">{t.title}</h3>
+              <p className="text-xs text-slate-400">{t.subtitle}</p>
             </div>
           </div>
           <button
@@ -139,16 +193,16 @@ export default function CSVImportModal({
                   <FileText className="size-10 text-slate-400 group-hover:text-teal-400 transition-colors" />
                 </div>
                 <h4 className="text-sm font-medium text-white mb-1">
-                  Drag and drop your CSV file here
+                  {t.dragDrop}
                 </h4>
                 <p className="text-xs text-slate-500 mb-6">
-                  Only .csv files are supported
+                  {t.onlyCSV}
                 </p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-[#30363d] rounded-lg text-sm font-semibold text-white transition-all active:scale-95"
                 >
-                  Browse Files
+                  {t.browse}
                 </button>
               </>
             ) : (
@@ -160,13 +214,13 @@ export default function CSVImportModal({
                   {file.name}
                 </h4>
                 <p className="text-xs text-teal-500/70 mb-6">
-                  {(file.size / 1024).toFixed(1)} KB • Ready to import
+                  {(file.size / 1024).toFixed(1)} {t.kb} • {t.readyToImport}
                 </p>
                 <button
                   onClick={() => setFile(null)}
                   className="text-xs text-slate-500 hover:text-red-400 transition-colors font-medium underline underline-offset-4"
                 >
-                  Change File
+                  {t.changeFile}
                 </button>
               </>
             )}
@@ -175,7 +229,7 @@ export default function CSVImportModal({
           {/* List Selection */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider ml-1">
-              Add to List (Optional)
+              {t.addToList}
             </label>
             <div className="relative group">
               <Database className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
@@ -184,7 +238,7 @@ export default function CSVImportModal({
                 onChange={(e) => setListId(e.target.value)}
                 className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/50 appearance-none transition-all group-hover:border-slate-600"
               >
-                <option value="">Don't add to list</option>
+                <option value="">{t.dontAdd}</option>
                 {lists.map(list => (
                   <option key={list.id} value={list.id}>{list.name}</option>
                 ))}
@@ -200,12 +254,12 @@ export default function CSVImportModal({
             <div className="flex items-start gap-3">
               <AlertCircle className="size-4 text-teal-400 shrink-0 mt-0.5" />
               <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-teal-400">Import Guidelines</p>
+                <p className="text-xs font-semibold text-teal-400">{t.guidelinesTitle}</p>
                 <ul className="text-[11px] text-slate-400 space-y-1 list-disc pl-3">
-                  <li>Use "Email" header for the primary email address</li>
-                  <li>"First Name", "Last Name", "Company", "Title", "Phone", "LinkedIn" will be auto-mapped</li>
-                  <li>Any other headers will be saved as <span className="text-teal-300">Custom Fields</span></li>
-                  <li>Duplicate emails (per project) will be updated with new data</li>
+                  <li>{t.guideline1}</li>
+                  <li>{t.guideline2}</li>
+                  <li>{t.guideline3}</li>
+                  <li>{t.guideline4}</li>
                 </ul>
               </div>
             </div>
@@ -218,7 +272,7 @@ export default function CSVImportModal({
             onClick={onClose}
             className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-[#30363d] rounded-xl text-sm font-semibold text-slate-300 transition-all active:scale-95"
           >
-            Cancel
+            {t.cancel}
           </button>
           <button
             onClick={handleImport}
@@ -229,12 +283,12 @@ export default function CSVImportModal({
               {isImporting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>Importing...</span>
+                  <span>{t.importing}</span>
                 </>
               ) : (
                 <>
                   <Upload className="size-4" />
-                  <span>Finalize Import</span>
+                  <span>{t.finalize}</span>
                 </>
               )}
             </div>
