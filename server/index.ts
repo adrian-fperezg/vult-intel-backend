@@ -677,6 +677,7 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
  * This is used to resolve issues with "ghost" sequences.
  */
 app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  console.log("DEBUG BACKEND: Received body:", req.body);
   try {
     const projectId = req.headers['x-project-id'] as string;
     const { sequenceId } = req.body;
