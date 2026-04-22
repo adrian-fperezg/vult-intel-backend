@@ -3960,7 +3960,7 @@ app.get("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/contact-lists
-app.post("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
+app.post("/api/outreach/contact-lists", verifyToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, name, contacts } = req.body;
 

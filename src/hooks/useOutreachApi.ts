@@ -906,6 +906,7 @@ export function useOutreachApi() {
     verifyDomain,
     deleteVerifiedDomain,
     importContactsCSV,
+    createPopulatedList,
     generateAiReport,
     exportAiReport,
     getFunnelStats,
