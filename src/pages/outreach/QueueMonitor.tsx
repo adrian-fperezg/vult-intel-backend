@@ -121,7 +121,7 @@ export default function QueueMonitor() {
       toast.loading("Limpiando secuencia...", { id: 'clear-seq' });
       
       const headers = await authHeaders();
-      const response = await fetch(`${ROOT_URL}/admin/queue/clear-sequence`, {
+      const response = await fetch('/api/admin/queue/clear-sequence', {
         method: 'POST',
         headers: {
           ...headers,
