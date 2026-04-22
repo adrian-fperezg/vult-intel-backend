@@ -10,10 +10,11 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 // @ts-ignore
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
-import { getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
+import { getTrueNextStep, getNextBusinessSlot } from '../lib/outreach/sequenceEngine.js';
 import { recordOutreachEvent } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
 import { encryptToken } from '../lib/outreach/encrypt.js';
+import { DateTime } from 'luxon';
 
 
 dotenv.config();
@@ -242,6 +243,40 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       if (!sequence || sequence.status !== 'active') {
         console.log(`[Sequence] Skipping execution for sequence ${sequenceId}: Sequence status is ${sequence?.status || 'missing'}. (Step ${stepId} for contact ${contactId})`);
         return;
+      }
+
+      // 1c. Sending Window Restriction Check
+      if (sequence.restrict_sending_hours) {
+        const contact = await db.prepare('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?').get(contactId) as any;
+        const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
+        const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'UTC');
+
+        const now = DateTime.now().setZone(targetTz);
+        const nextSlot = getNextBusinessSlot(now, sequence);
+
+        // If the next valid slot is more than 1 minute away, we are outside the window.
+        if (nextSlot.diff(now, 'minutes').minutes > 1) {
+           const deferMs = nextSlot.diffNow().as('milliseconds');
+           console.log(`[Sending Window] Deferring email for contact ${contactId} until ${nextSlot.toFormat('yyyy-MM-dd HH:mm:ss')} due to window restrictions.`);
+           
+           const newScheduledAt = new Date(Date.now() + Math.max(0, deferMs));
+           await db.run(
+            `UPDATE outreach_sequence_enrollments 
+             SET scheduled_at = ?
+             WHERE sequence_id = ? AND contact_id = ?`,
+            [newScheduledAt.toISOString(), sequenceId, contactId]
+           );
+
+           await emailQueue.add('execute-sequence-step', {
+             projectId, sequenceId, contactId, stepId, stepNumber
+           }, {
+             delay: deferMs,
+             attempts: 3,
+             backoff: { type: 'exponential', delay: 5000 },
+             jobId: `seq-${sequenceId}-contact-${contactId}-step-${stepId}-deferred-${Date.now()}`
+           });
+           return;
+        }
       }
 
       // Heartbeat: Log start of processing

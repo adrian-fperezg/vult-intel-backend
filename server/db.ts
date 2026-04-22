@@ -278,6 +278,7 @@ export const initDb = async () => {
         smart_send_min_delay INTEGER DEFAULT 45,
         smart_send_max_delay INTEGER DEFAULT 120,
         send_weekends BOOLEAN DEFAULT FALSE,
+        restrict_sending_hours BOOLEAN DEFAULT FALSE,
         send_window_start TEXT DEFAULT '08:00',
         send_window_end TEXT DEFAULT '18:00',
         send_timezone TEXT DEFAULT 'UTC',
@@ -310,6 +311,7 @@ export const initDb = async () => {
     // Migration for outreach_sequences
     const newSeqCols = [
       { name: 'daily_send_limit', type: 'INTEGER DEFAULT 20' },
+      { name: 'restrict_sending_hours', type: 'BOOLEAN DEFAULT FALSE' },
       { name: 'send_window_start', type: 'TEXT DEFAULT \'08:00\'' },
       { name: 'send_window_end', type: 'TEXT DEFAULT \'18:00\'' },
       { name: 'send_timezone', type: 'TEXT DEFAULT \'UTC\'' },

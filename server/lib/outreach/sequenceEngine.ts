@@ -318,8 +318,13 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
  */
 export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime {
 
-  const windowStart = sequence.send_window_start || '09:00';
-  const windowEnd = sequence.send_window_end || '17:00';
+  let windowStart = sequence.send_window_start || '09:00';
+  let windowEnd = sequence.send_window_end || '17:00';
+  
+  if (!sequence.restrict_sending_hours) {
+    windowStart = '00:00';
+    windowEnd = '23:59';
+  }
   
   // Parse weekdays safely
   let allowedDays: boolean[] = [true, true, true, true, true, false, false];
