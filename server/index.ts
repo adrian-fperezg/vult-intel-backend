@@ -568,40 +568,71 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
 app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: AuthRequest, res) => {
   try {
     const projectId = req.headers['x-project-id'] as string;
+    if (!projectId) {
+      return res.status(400).json({ error: "Missing x-project-id header" });
+    }
+
     console.log(`[Queue Purge] Starting orphan cleanup for project: ${projectId}...`);
     
     // 1. Fetch all sequence-related jobs from BullMQ
-    const [delayed, waiting, paused] = await Promise.all([
-      emailQueue.getDelayed(),
-      emailQueue.getWaiting(),
-      emailQueue.getPaused()
-    ]);
+    // We fetch delayed, waiting, and paused jobs to ensure full coverage
+    let allJobs: any[] = [];
+    try {
+      const [delayed, waiting, paused] = await Promise.all([
+        emailQueue.getDelayed(),
+        emailQueue.getWaiting(),
+        emailQueue.getPaused()
+      ]);
+      allJobs = [...delayed, ...waiting, ...paused];
+    } catch (queueErr: any) {
+      console.error("[Queue Purge] Failed to fetch jobs from BullMQ:", queueErr.message);
+      throw new Error(`Queue connection error: ${queueErr.message}`);
+    }
 
-    const allJobs = [...delayed, ...waiting, ...paused];
     const sequenceJobs = allJobs.filter(j => j.name === 'execute-sequence-step');
+    console.log(`[Queue Purge] Scanning ${sequenceJobs.length} sequence jobs for project ${projectId}`);
 
-    // 2. Fetch all existing sequence IDs from DB
-    const existingSequences = await db.all("SELECT id FROM outreach_sequences");
+    // 2. Fetch all existing sequence IDs for THIS project from DB (Batch Check)
+    const existingSequences = await db.all("SELECT id FROM outreach_sequences WHERE project_id = ?", projectId);
     const existingSequenceIds = new Set(existingSequences.map((s: any) => s.id));
 
-    // 3. Remove orphaned jobs from BullMQ
+    // 3. Remove orphaned or corrupt jobs from BullMQ
     let removedJobsCount = 0;
     for (const job of sequenceJobs) {
-      const sId = job.data?.sequenceId;
-      if (sId && !existingSequenceIds.has(sId)) {
-        await job.remove();
-        removedJobsCount++;
+      try {
+        // Verify job.data and sequenceId
+        const sId = job.data?.sequenceId;
+        
+        // If the job data is missing or malformed, it's considered "corrupt" 
+        // especially if it's an execute-sequence-step job without a sequence reference.
+        if (!sId) {
+          console.warn(`[Queue Purge] Found corrupt job ${job.id} (no sequenceId). Removing...`);
+          await job.remove().catch(e => console.error(`[Queue Purge] Failed to remove job ${job.id}:`, e.message));
+          removedJobsCount++;
+          continue;
+        }
+
+        // Project check: BullMQ jobs don't always have projectId in data, 
+        // but they have sequenceId which we just validated against the project's sequences.
+        if (!existingSequenceIds.has(sId)) {
+          console.log(`[Queue Purge] Removing orphaned job ${job.id} for sequence ${sId} (Sequence no longer exists)`);
+          await job.remove().catch(e => console.error(`[Queue Purge] Failed to remove job ${job.id}:`, e.message));
+          removedJobsCount++;
+        }
+      } catch (jobErr: any) {
+        console.error(`[Queue Purge] Error processing job ${job.id}:`, jobErr.message);
+        // Continue to the next job rather than crashing the whole process
       }
     }
 
     // 4. Cleanup orphaned enrollments in DB
-    // We delete any enrollment that doesn't have a matching sequence in outreach_sequences
+    // We delete any enrollment belonging to this project that doesn't have a matching sequence
     const enrollmentCleanupResult = await db.run(`
       DELETE FROM outreach_sequence_enrollments 
-      WHERE sequence_id NOT IN (SELECT id FROM outreach_sequences)
-    `);
+      WHERE project_id = ? AND sequence_id NOT IN (SELECT id FROM outreach_sequences WHERE project_id = ?)
+    `, projectId, projectId);
 
-    console.log(`[Queue Purge] Completed. Removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} orphaned enrollments.`);
+    console.log(`[Queue Purge] Completed. Project: ${projectId}. Removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} orphaned enrollments.`);
 
     res.json({
       success: true,
@@ -612,7 +643,11 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
 
   } catch (err: any) {
     console.error("[Queue Purge] FATAL ERROR:", err);
-    res.status(500).json({ error: "Failed to purge orphans", details: err.message });
+    res.status(500).json({ 
+      error: "Failed to purge orphans", 
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+    });
   }
 });
 
