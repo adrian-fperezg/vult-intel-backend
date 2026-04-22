@@ -2744,7 +2744,8 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     'name', 'status', 'daily_send_limit', 'send_window_start', 'send_window_end',
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
     'stop_on_reply', 'mailbox_id', 'mailbox_ids', 'from_email', 'from_name',
-    'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage', 'smart_send'
+    'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage', 'smart_send',
+    'restrict_sending_hours'
   ];
 
   const filteredUpdates: Record<string, any> = {};

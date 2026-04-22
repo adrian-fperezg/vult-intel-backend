@@ -58,6 +58,7 @@ interface Sequence {
   use_recipient_timezone?: boolean;
   funnel_stage: 'TOFU' | 'MOFU' | 'BOFU';
   smart_send: boolean;
+  restrict_sending_hours?: boolean;
 }
 
 interface SequenceBuilderProps {
@@ -703,7 +704,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         from_name: sequence.from_name,
         use_recipient_timezone: sequence.use_recipient_timezone,
         funnel_stage: sequence.funnel_stage || 'TOFU',
-        smart_send: sequence.smart_send ?? true
+        smart_send: sequence.smart_send ?? true,
+        restrict_sending_hours: sequence.restrict_sending_hours,
+        send_window_start: sequence.send_window_start,
+        send_window_end: sequence.send_window_end
       });
 
       const stepsToSave = steps.map(s => {
@@ -1256,35 +1260,79 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                   </div>
 
                   <div className="space-y-4">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Advanced Scheduling</label>
-                    <button
-                      onClick={() => setSequence(prev => prev ? { ...prev, use_recipient_timezone: !prev.use_recipient_timezone } : null)}
-                      className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
-                    >
-                      <div className="flex flex-col items-start gap-0.5 text-left">
-                        <span className="text-sm text-slate-300">Recipient Timezone</span>
-                        <span className="text-[10px] text-slate-500">Deliver during contact's local business hours</span>
-                      </div>
-                      <div className={cn(
-                        "w-10 h-5 rounded-full relative transition-colors p-1",
-                        sequence?.use_recipient_timezone ? "bg-teal-600" : "bg-white/10"
-                      )}>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">{t('outreach.sequences.settings.advancedScheduling')}</label>
+                    <div className="space-y-4">
+                      <button
+                        onClick={() => setSequence(prev => prev ? { ...prev, use_recipient_timezone: !prev.use_recipient_timezone } : null)}
+                        className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
+                      >
+                        <div className="flex flex-col items-start gap-0.5 text-left">
+                          <span className="text-sm text-slate-300">{t('outreach.sequences.settings.recipientTimezone')}</span>
+                          <span className="text-[10px] text-slate-500">{t('outreach.sequences.settings.timezoneDesc')}</span>
+                        </div>
                         <div className={cn(
-                          "size-3 rounded-full bg-white transition-all shadow-sm",
-                          sequence?.use_recipient_timezone ? "translate-x-5" : "translate-x-0"
-                        )} />
-                      </div>
-                    </button>
+                          "w-10 h-5 rounded-full relative transition-colors p-1",
+                          sequence?.use_recipient_timezone ? "bg-teal-600" : "bg-white/10"
+                        )}>
+                          <div className={cn(
+                            "size-3 rounded-full bg-white transition-all shadow-sm",
+                            sequence?.use_recipient_timezone ? "translate-x-5" : "translate-x-0"
+                          )} />
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => setSequence(prev => prev ? { ...prev, restrict_sending_hours: !prev.restrict_sending_hours } : null)}
+                        className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
+                      >
+                        <div className="flex flex-col items-start gap-0.5 text-left">
+                          <span className="text-sm text-slate-300">{t('outreach.sequences.settings.restrictSendingHours')}</span>
+                          <span className="text-[10px] text-slate-500">{t('outreach.sequences.settings.restrictSendingHoursDesc')}</span>
+                        </div>
+                        <div className={cn(
+                          "w-10 h-5 rounded-full relative transition-colors p-1",
+                          sequence?.restrict_sending_hours ? "bg-teal-600" : "bg-white/10"
+                        )}>
+                          <div className={cn(
+                            "size-3 rounded-full bg-white transition-all shadow-sm",
+                            sequence?.restrict_sending_hours ? "translate-x-5" : "translate-x-0"
+                          )} />
+                        </div>
+                      </button>
+
+                      {sequence?.restrict_sending_hours && (
+                        <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-teal-500/5 border border-teal-500/20 animate-in fade-in slide-in-from-top-2">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-teal-400/70 uppercase tracking-wider block">{t('outreach.sequences.settings.startTime')}</label>
+                            <input
+                              type="time"
+                              value={sequence.send_window_start || '09:00'}
+                              onChange={(e) => setSequence(prev => prev ? { ...prev, send_window_start: e.target.value } : null)}
+                              className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-teal-500/40"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-teal-400/70 uppercase tracking-wider block">{t('outreach.sequences.settings.endTime')}</label>
+                            <input
+                              type="time"
+                              value={sequence.send_window_end || '17:00'}
+                              onChange={(e) => setSequence(prev => prev ? { ...prev, send_window_end: e.target.value } : null)}
+                              className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-teal-500/40"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-4">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Reputation Protection</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">{t('outreach.sequences.settings.reputationProtection')}</label>
                     <button
                       onClick={() => setSequence(prev => prev ? { ...prev, smart_send: !prev.smart_send } : null)}
                       className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
                     >
                       <div className="flex flex-col items-start gap-0.5 text-left">
-                        <span className="text-sm text-slate-300">Smart Send</span>
-                        <span className="text-[10px] text-slate-500">Gradual delivery to protect domain rep</span>
+                        <span className="text-sm text-slate-300">{t('outreach.sequences.settings.smartSend')}</span>
+                        <span className="text-[10px] text-slate-500">{t('outreach.sequences.settings.smartSendDesc')}</span>
                       </div>
                       <div className={cn(
                         "w-10 h-5 rounded-full relative transition-colors p-1",
