@@ -3962,15 +3962,78 @@ app.get("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
 // POST /api/outreach/contact-lists
 app.post("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { project_id, name } = req.body;
+  const { project_id, name, contacts } = req.body;
 
+  if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!project_id || !name) return res.status(400).json({ error: "project_id and name required" });
 
-  const id = uuidv4();
-  await db.prepare("INSERT INTO outreach_lists (id, project_id, name) VALUES (?, ?, ?)")
-    .run(id, project_id, name);
+  try {
+    const listId = uuidv4();
+    
+    await db.transaction(async (tx) => {
+      // 1. Create the list
+      await tx.prepare("INSERT INTO outreach_lists (id, project_id, name) VALUES (?, ?, ?)")
+        .run(listId, project_id, name);
 
-  res.json({ id, project_id, name });
+      // 2. If contacts are provided, upsert them and link to the list
+      if (Array.isArray(contacts) && contacts.length > 0) {
+        for (const contact of contacts) {
+          const { 
+            email, firstName, lastName, company, title, 
+            phone, linkedin, website, location, 
+            industry, companySize, tags 
+          } = contact;
+
+          if (!email) continue;
+
+          // Upsert contact
+          // Note: outreach_contacts has UNIQUE(project_id, email)
+          const upsertResult = await tx.prepare(`
+            INSERT INTO outreach_contacts (
+              id, user_id, project_id, email, 
+              first_name, last_name, company, title,
+              phone, linkedin, website, location,
+              industry, company_size, tags
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (project_id, email) 
+            DO UPDATE SET 
+              first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
+              last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
+              company = COALESCE(EXCLUDED.company, outreach_contacts.company),
+              title = COALESCE(EXCLUDED.title, outreach_contacts.title),
+              phone = COALESCE(EXCLUDED.phone, outreach_contacts.phone),
+              linkedin = COALESCE(EXCLUDED.linkedin, outreach_contacts.linkedin),
+              website = COALESCE(EXCLUDED.website, outreach_contacts.website),
+              location = COALESCE(EXCLUDED.location, outreach_contacts.location),
+              industry = COALESCE(EXCLUDED.industry, outreach_contacts.industry),
+              company_size = COALESCE(EXCLUDED.company_size, outreach_contacts.company_size),
+              tags = COALESCE(EXCLUDED.tags, outreach_contacts.tags),
+              updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+          `).get(
+            uuidv4(), userId, project_id, email.toLowerCase().trim(),
+            firstName || null, lastName || null, company || null, title || null,
+            phone || null, linkedin || null, website || null, location || null,
+            industry || null, companySize || null, tags || null
+          ) as { id: string };
+
+          const contactId = upsertResult.id;
+
+          // Link to list (IGNORE if already linked)
+          await tx.prepare(`
+            INSERT INTO outreach_list_members (list_id, contact_id)
+            VALUES (?, ?)
+            ON CONFLICT DO NOTHING
+          `).run(listId, contactId);
+        }
+      }
+    });
+
+    res.json({ id: listId, project_id, name, contactCount: contacts?.length || 0 });
+  } catch (err: any) {
+    console.error("[Create List Error]", err);
+    res.status(500).json({ error: "Failed to create list", message: err.message });
+  }
 });
 // DELETE /api/outreach/contact-lists/:id
 app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {

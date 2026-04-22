@@ -382,6 +382,12 @@ export function useOutreachApi() {
     [post],
   );
 
+  const createPopulatedList = useCallback(
+    (name: string, contacts: any[]) => 
+      post<{ id: string, name: string, contactCount: number }>('/contact-lists', { name, contacts }),
+    [post]
+  );
+
   const importContactsCSV = useCallback(
     (file: File, listId?: string) => {
       const formData = new FormData();

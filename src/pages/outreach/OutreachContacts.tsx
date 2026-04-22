@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
 import BulkAddToListModal from './contacts/BulkAddToListModal';
 import CSVImportModal from './contacts/CSVImportModal';
+import UploadListModal from './contacts/UploadListModal';
 
 type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
 
@@ -179,6 +180,7 @@ export default function OutreachContacts() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   // List Management UI States
   const [isManageListsOpen, setIsManageListsOpen] = useState(false);
@@ -504,7 +506,7 @@ export default function OutreachContacts() {
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">{t.lists}</h2>
               <button
-                onClick={() => setIsCreatingList(true)}
+                onClick={() => setIsUploadModalOpen(true)}
                 className="flex items-center gap-1.5 px-2 py-1 rounded bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_10px_rgba(20,184,166,0.1)]"
               >
                 <Plus className="size-3" /> {t.new}
@@ -1214,6 +1216,18 @@ export default function OutreachContacts() {
           defaultListId={listFilter !== 'all' ? listFilter : undefined}
           lists={contactLists}
         />
+
+        {isUploadModalOpen && (
+          <UploadListModal
+            isOpen={isUploadModalOpen}
+            onClose={() => setIsUploadModalOpen(false)}
+            onSuccess={() => {
+              loadLists();
+              loadContacts();
+            }}
+            language={language as 'en' | 'es'}
+          />
+        )}
       </div>
     </>
   );
