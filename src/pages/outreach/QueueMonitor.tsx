@@ -461,6 +461,7 @@ export default function QueueMonitor() {
                   </tbody>
                 </table>
               </div>
+            </div>
           </div>
         )}
       </div>
