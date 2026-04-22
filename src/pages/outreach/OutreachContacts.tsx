@@ -90,6 +90,11 @@ export default function OutreachContacts() {
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editListName, setEditListName] = useState('');
 
+  // Deletion States
+  const [contactToDelete, setContactToDelete] = useState<string | null>(null);
+  const [listToDelete, setListToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [deleteListOption, setDeleteListOption] = useState<'only_list' | 'list_and_contacts'>('only_list');
+
   const handleCreateList = async () => {
     if (!newListName.trim()) return;
     try {
@@ -103,15 +108,21 @@ export default function OutreachContacts() {
     }
   };
 
-  const handleDeleteList = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this list? Contacts will not be deleted.')) return;
+  const handleDeleteList = async () => {
+    if (!listToDelete) return;
+    setIsDeleting(true);
     try {
-      await api.deleteContactList(id);
-      setContactLists(prev => prev.filter(l => l.id !== id));
-      if (listFilter === id) setListFilter('all');
-      toast.success('List deleted');
+      const deleteContacts = deleteListOption === 'list_and_contacts';
+      await api.deleteContactList(listToDelete.id, deleteContacts);
+      setContactLists(prev => prev.filter(l => l.id !== listToDelete.id));
+      if (listFilter === listToDelete.id) setListFilter('all');
+      toast.success(deleteContacts ? 'List and associated contacts deleted' : 'List deleted');
+      setListToDelete(null);
+      if (deleteContacts) loadContacts();
     } catch (err) {
       toast.error('Failed to delete list');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -274,6 +285,21 @@ export default function OutreachContacts() {
     }
   };
 
+  const handleSingleDelete = async () => {
+    if (!contactToDelete) return;
+    setIsDeleting(true);
+    try {
+      await api.deleteContact(contactToDelete);
+      toast.success('Contact deleted');
+      setContactToDelete(null);
+      loadContacts();
+    } catch (error) {
+      toast.error('Failed to delete contact');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -345,7 +371,8 @@ export default function OutreachContacts() {
   );
 
   return (
-    <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
+    <>
+      <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
       {/* Sidebar Navigator */}
       <div className="w-64 border-r border-white/5 flex flex-col shrink-0 bg-[#0D0D0E]">
         <div className="p-6">
@@ -389,22 +416,30 @@ export default function OutreachContacts() {
           </div>
           <nav className="space-y-1">
             {contactLists.map(list => (
-              <button
-                key={list.id}
-                onClick={() => setListFilter(list.id)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
-                  listFilter === list.id
-                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
-                    : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
-                )}
-              >
-                <FolderOpen className={cn(
-                  "size-4 transition-colors",
-                  listFilter === list.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
-                )} />
-                <span className="truncate">{list.name}</span>
-              </button>
+              <div key={list.id} className="group relative">
+                <button
+                  onClick={() => setListFilter(list.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group-hover:bg-white/5",
+                    listFilter === list.id
+                      ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                      : "text-slate-400 hover:text-white border border-transparent"
+                  )}
+                >
+                  <FolderOpen className={cn(
+                    "size-4 transition-colors",
+                    listFilter === list.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                  )} />
+                  <span className="truncate pr-6">{list.name}</span>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setListToDelete({ id: list.id, name: list.name }); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
+                  title="Delete List"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </div>
             ))}
             {contactLists.length === 0 && (
               <p className="px-3 py-2 text-[10px] text-slate-600 italic">No custom lists created</p>
@@ -675,6 +710,25 @@ export default function OutreachContacts() {
                               >
                                 <User className="size-3.5" />
                               </button>
+                              <button
+                                onClick={e => { 
+                                  e.stopPropagation(); 
+                                  if (contact.status === 'unsubscribed') {
+                                    toast.error('Unsubscribed contacts cannot be deleted.');
+                                    return;
+                                  }
+                                  setContactToDelete(contact.id); 
+                                }}
+                                className={cn(
+                                  "p-1.5 bg-white/5 rounded-lg border border-white/10 transition-all",
+                                  contact.status === 'unsubscribed'
+                                    ? "opacity-50 cursor-not-allowed text-slate-600"
+                                    : "hover:bg-red-500/20 text-slate-400 hover:text-red-400"
+                                )}
+                                title={contact.status === 'unsubscribed' ? "Cannot delete unsubscribed" : "Delete Contact"}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
                             </div>
                           </td>
                         </motion.tr>
@@ -854,7 +908,7 @@ export default function OutreachContacts() {
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteList(list.id)}
+                              onClick={() => setListToDelete({ id: list.id, name: list.name })}
                               className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -871,42 +925,155 @@ export default function OutreachContacts() {
         )}
       </AnimatePresence>
 
-      <OutreachConfirmDialog
-        isOpen={deleteDialog}
-        onClose={() => setDeleteDialog(false)}
-        onConfirm={handleBulkDelete}
-        title={`Delete ${selectedIds.size} contact${selectedIds.size > 1 ? 's' : ''}?`}
-        description="This will permanently delete these contacts and remove them from all campaigns. This action cannot be undone."
-        confirmLabel="Delete Contacts"
-        danger
-      />
+        {/* Deletion Confirmations */}
+        <OutreachConfirmDialog
+          isOpen={deleteDialog}
+          onClose={() => setDeleteDialog(false)}
+          onConfirm={handleBulkDelete}
+          title="Delete Contacts"
+          description={`Are you sure you want to delete ${selectedIds.size} selected contacts? This action cannot be undone.`}
+          confirmLabel={isDeleting ? "Deleting..." : "Delete All"}
+          danger
+        />
 
-      <ContactProfilePanel
-        contact={contacts.find(c => c.id === profileContactId) || null}
-        isOpen={!!profileContactId}
-        onClose={() => setProfileContactId(null)}
-      />
+        <OutreachConfirmDialog
+          isOpen={!!contactToDelete}
+          onClose={() => setContactToDelete(null)}
+          onConfirm={handleSingleDelete}
+          title="Delete Contact"
+          description="Are you sure you want to delete this contact? All their sequence data and message history will be permanently removed."
+          confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+          danger
+        />
 
-      <BulkAddToListModal
-        isOpen={isBulkAddOpen}
-        onClose={() => setIsBulkAddOpen(false)}
-        onConfirm={handleBulkAddToList}
-        contactLists={contactLists}
-        onReloadLists={loadLists}
-        api={api}
-        selectedCount={selectedIds.size}
-      />
+        {/* Custom List Delete Dialog */}
+        <AnimatePresence>
+          {listToDelete && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setListToDelete(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative bg-[#161b22] border border-[#30363d] rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
+              >
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Trash2 className="size-5 text-red-400" />
+                    Delete List: <span className="text-teal-400">{listToDelete.name}</span>
+                  </h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    How would you like to handle the contacts in this list?
+                  </p>
+                </div>
 
-      <CSVImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onSuccess={() => {
-          loadContacts();
-          loadLists(); // <-- NUEVO: Recargar listas después de importar
-        }}
-        defaultListId={listFilter !== 'all' ? listFilter : undefined}
-        lists={contactLists}
-      />
-    </div>
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setDeleteListOption('only_list')}
+                    className={cn(
+                      "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
+                      deleteListOption === 'only_list'
+                        ? "bg-teal-500/10 border-teal-500/40 text-white"
+                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
+                    )}
+                  >
+                    <div className={cn(
+                      "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      deleteListOption === 'only_list' ? "border-teal-400" : "border-slate-600"
+                    )}>
+                      {deleteListOption === 'only_list' && <div className="size-2 rounded-full bg-teal-400" />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">Delete list only</p>
+                      <p className="text-xs opacity-70 mt-0.5">Contacts will remain in your database as unassigned.</p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setDeleteListOption('list_and_contacts')}
+                    className={cn(
+                      "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
+                      deleteListOption === 'list_and_contacts'
+                        ? "bg-red-500/10 border-red-500/40 text-white"
+                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
+                    )}
+                  >
+                    <div className={cn(
+                      "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      deleteListOption === 'list_and_contacts' ? "border-red-400" : "border-slate-600"
+                    )}>
+                      {deleteListOption === 'list_and_contacts' && <div className="size-2 rounded-full bg-red-400" />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">Delete list and exclusive contacts</p>
+                      <p className="text-xs opacity-70 mt-0.5">Permanently removes contacts that belong ONLY to this list.</p>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setListToDelete(null)}
+                    className="flex-1 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteList}
+                    disabled={isDeleting}
+                    className={cn(
+                      'flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2',
+                      deleteListOption === 'list_and_contacts'
+                        ? 'bg-red-600 hover:bg-red-500 text-white'
+                        : 'bg-teal-600 hover:bg-teal-500 text-white'
+                    )}
+                  >
+                    {isDeleting ? (
+                      <div className="size-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4" />
+                    )}
+                    Confirm Delete
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <ContactProfilePanel
+          contact={contacts.find(c => c.id === profileContactId) || null}
+          isOpen={!!profileContactId}
+          onClose={() => setProfileContactId(null)}
+        />
+
+        <BulkAddToListModal
+          isOpen={isBulkAddOpen}
+          onClose={() => setIsBulkAddOpen(false)}
+          onConfirm={handleBulkAddToList}
+          contactLists={contactLists}
+          onReloadLists={loadLists}
+          api={api}
+          selectedCount={selectedIds.size}
+        />
+
+        <CSVImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onSuccess={() => {
+            loadContacts();
+            loadLists();
+          }}
+          defaultListId={listFilter !== 'all' ? listFilter : undefined}
+          lists={contactLists}
+        />
+      </div>
+    </>
   );
 }

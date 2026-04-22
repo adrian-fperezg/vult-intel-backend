@@ -181,14 +181,25 @@ export function useOutreachApi() {
 
   /** Helper: DELETE */
   const del = useCallback(
-    async (path: string): Promise<void> => {
+    async (path: string, body?: Record<string, unknown>): Promise<void> => {
       if (!activeProjectId) throw new Error('No project selected');
       const headers = await authHeaders();
       const separator = path.includes('?') ? '&' : '?';
-      const res = await fetch(`${BASE_URL}${path}${separator}project_id=${activeProjectId}`, {
+      
+      const config: RequestInit = {
         method: 'DELETE',
         headers,
-      });
+      };
+
+      if (body) {
+        config.body = JSON.stringify({ ...body, project_id: activeProjectId });
+      }
+
+      const url = body 
+        ? `${BASE_URL}${path}` 
+        : `${BASE_URL}${path}${separator}project_id=${activeProjectId}`;
+
+      const res = await fetch(url, config);
       if (!res.ok) {
         let errorMsg = `DELETE ${path} failed: ${res.status}`;
         try {
@@ -362,8 +373,8 @@ export function useOutreachApi() {
   );
 
   const deleteContactsBulk = useCallback(
-    (contact_ids: string[]) => post<any>('/contacts/bulk-delete', { contact_ids }),
-    [post],
+    (contact_ids: string[]) => del('/contacts', { contact_ids }),
+    [del],
   );
 
   const verifyEmailsBulk = useCallback(
@@ -433,7 +444,7 @@ export function useOutreachApi() {
   );
 
   const deleteContactList = useCallback(
-    (id: string) => del(`/contact-lists/${id}`),
+    (id: string, deleteContacts = false) => del(`/contact-lists/${id}`, { deleteContacts }),
     [del]
   );
 

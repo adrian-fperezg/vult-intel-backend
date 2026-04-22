@@ -3831,6 +3831,38 @@ app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
 });
 
 // POST /api/outreach/contacts/bulk-delete
+// DELETE /api/outreach/contacts
+app.delete("/api/outreach/contacts", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id, contact_ids } = req.body;
+
+  if (!userId || !project_id || !Array.isArray(contact_ids)) {
+    return res.status(400).json({ error: "Missing project_id or contact_ids array" });
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      const placeholders = contact_ids.map(() => "?").join(",");
+
+      // 1. Delete sequence enrollments (though CASCADE should handle it, let's be explicit if needed)
+      // Actually, outreach_sequence_enrollments has ON DELETE CASCADE on contact_id.
+      
+      // 2. Delete from outreach_contacts
+      await tx.prepare(`DELETE FROM outreach_contacts WHERE project_id = ? AND id IN (${placeholders})`)
+        .run(project_id, ...contact_ids);
+
+      // 3. Delete from list members
+      await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`)
+        .run(...contact_ids);
+    });
+
+    res.json({ success: true, count: contact_ids.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Legacy POST bulk-delete (keeping for compatibility if needed, but updating to call common logic)
 app.post("/api/outreach/contacts/bulk-delete", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, contact_ids } = req.body;
@@ -3841,18 +3873,12 @@ app.post("/api/outreach/contacts/bulk-delete", async (req: AuthRequest, res) => 
 
   try {
     await db.transaction(async (tx) => {
-      // Create placeholders for the IN clause
       const placeholders = contact_ids.map(() => "?").join(",");
-
-      // 1. Delete from outreach_contacts
       await tx.prepare(`DELETE FROM outreach_contacts WHERE project_id = ? AND id IN (${placeholders})`)
         .run(project_id, ...contact_ids);
-
-      // 2. Delete from list members
       await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`)
         .run(...contact_ids);
     });
-
     res.json({ success: true, count: contact_ids.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -3946,10 +3972,41 @@ app.post("/api/outreach/contact-lists", async (req: AuthRequest, res) => {
 // DELETE /api/outreach/contact-lists/:id
 app.delete("/api/outreach/contact-lists/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
+  const listId = req.params.id;
+  const deleteContacts = req.query.deleteContacts === 'true' || req.body.deleteContacts === true;
+
   if (!userId) return res.status(401).json({ error: "Auth required" });
+
   try {
-    await db.prepare("DELETE FROM outreach_lists WHERE id = ?").run(req.params.id);
-    await db.prepare("DELETE FROM outreach_list_members WHERE list_id = ?").run(req.params.id);
+    await db.transaction(async (tx) => {
+      if (deleteContacts) {
+        // Find contacts exclusively associated with this list
+        // A contact is exclusive if they are in this list and in no other list.
+        const exclusiveContacts = (await tx.prepare(`
+          SELECT contact_id 
+          FROM outreach_list_members 
+          WHERE list_id = ? 
+          AND contact_id NOT IN (
+            SELECT contact_id 
+            FROM outreach_list_members 
+            WHERE list_id <> ?
+          )
+        `).all(listId, listId)) as { contact_id: string }[];
+
+        if (exclusiveContacts.length > 0) {
+          const ids = exclusiveContacts.map(c => c.contact_id);
+          const placeholders = ids.map(() => "?").join(",");
+          await tx.prepare(`DELETE FROM outreach_contacts WHERE id IN (${placeholders})`).run(...ids);
+          await tx.prepare(`DELETE FROM outreach_list_members WHERE contact_id IN (${placeholders})`).run(...ids);
+        }
+      }
+
+      // 1. Delete the list itself
+      await tx.prepare("DELETE FROM outreach_lists WHERE id = ?").run(listId);
+      // 2. Clean up any remaining membership records for this list (for non-exclusive contacts)
+      await tx.prepare("DELETE FROM outreach_list_members WHERE list_id = ?").run(listId);
+    });
+
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
