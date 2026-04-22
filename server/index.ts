@@ -672,6 +672,63 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
   }
 });
 
+/**
+ * Administrative endpoint to manually clear all jobs for a specific sequence.
+ * This is used to resolve issues with "ghost" sequences.
+ */
+app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  try {
+    const projectId = req.headers['x-project-id'] as string;
+    const { sequenceId } = req.body;
+
+    if (!projectId) {
+      return res.status(400).json({ error: "Missing x-project-id header" });
+    }
+    if (!sequenceId) {
+      return res.status(400).json({ error: "Missing sequenceId in request body" });
+    }
+
+    console.log(`[Queue Clear] Manually clearing jobs for sequence ${sequenceId} in project ${projectId}...`);
+
+    let allJobs: any[] = [];
+    try {
+      allJobs = await emailQueue.getJobs(['delayed', 'waiting', 'paused']);
+    } catch (queueErr: any) {
+      console.error("[Queue Clear] Failed to fetch jobs from BullMQ:", queueErr.message);
+      throw new Error(`Queue connection error: ${queueErr.message}`);
+    }
+
+    const matchingJobs = allJobs.filter(j => 
+      j.name === 'execute-sequence-step' && 
+      j.data?.sequenceId === sequenceId
+    );
+
+    console.log(`[Queue Clear] Found ${matchingJobs.length} matching jobs to remove.`);
+
+    let removedJobsCount = 0;
+    for (const job of matchingJobs) {
+      try {
+        await job.remove();
+        removedJobsCount++;
+      } catch (removeErr: any) {
+        console.error(`[Queue Clear] Failed to remove job ${job.id}:`, removeErr.message);
+      }
+    }
+
+    console.log(`[Queue Clear] Successfully removed ${removedJobsCount} jobs for sequence ${sequenceId}.`);
+
+    res.json({
+      success: true,
+      message: `Successfully removed ${removedJobsCount} jobs for sequence.`,
+      removedJobsCount
+    });
+  } catch (err: any) {
+    console.error("[Queue Clear] Fatal Error:", err);
+    res.status(500).json({ error: err.message || "Failed to clear sequence queue" });
+  }
+});
+
+
 
 // Diagnostic endpoint to monitor upcoming scheduled sequence steps
 app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthRequest, res) => {

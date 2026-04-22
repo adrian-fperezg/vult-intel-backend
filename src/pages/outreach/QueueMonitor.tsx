@@ -37,7 +37,7 @@ export default function QueueMonitor() {
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
   const [snapToBusiness, setSnapToBusiness] = useState(true);
-  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, activeProjectId } = useOutreachApi();
+  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, clearSequenceJobs, activeProjectId } = useOutreachApi();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -109,6 +109,25 @@ export default function QueueMonitor() {
       toast.error(err.message || "La solicitud de limpieza falló");
     } finally {
       setIsPurging(false);
+    }
+  };
+
+  const handleClearSequence = async (sequenceId: string, sequenceName: string) => {
+    if (!activeProjectId) return;
+    if (!window.confirm(`¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia "${sequenceName}"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.`)) return;
+    
+    try {
+      toast.loading("Limpiando secuencia...", { id: 'clear-seq' });
+      const data = await clearSequenceJobs(sequenceId);
+      if (data && data.success) {
+        toast.success(`Cola limpiada: ${data.removedJobsCount} envíos eliminados`, { id: 'clear-seq' });
+        loadQueue();
+      } else {
+        toast.error("Error al limpiar la secuencia", { id: 'clear-seq' });
+      }
+    } catch (err: any) {
+      console.error("[ClearSequence] Error:", err);
+      toast.error(err.message || "La solicitud de limpieza falló", { id: 'clear-seq' });
     }
   };
 
@@ -341,7 +360,8 @@ export default function QueueMonitor() {
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Recipient</th>
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence</th>
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Remitente (Sender)</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Acción</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Step Action</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Acciones</th>
                         <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Status</th>
                       </tr>
                     </thead>
@@ -399,6 +419,15 @@ export default function QueueMonitor() {
                               {job.action.toUpperCase()}
                             </div>
                           </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          <button 
+                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName)}
+                            className="p-2 hover:bg-red-500/10 rounded-lg group transition-colors"
+                            title="Eliminar todos los envíos de esta secuencia"
+                          >
+                            <Trash2 className="size-4 text-slate-500 group-hover:text-red-400 transition-colors" />
+                          </button>
                         </td>
                         <td className="px-6 py-5 text-right">
                           {job.attempts > 0 ? (
