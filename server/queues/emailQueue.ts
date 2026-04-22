@@ -254,6 +254,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         const now = DateTime.now().setZone(targetTz);
         const nextSlot = getNextBusinessSlot(now, sequence);
 
+        console.log(`[Sending Window Check] Sequence: ${sequenceId}, Contact: ${contactId}, Time: ${now.toFormat('HH:mm:ss')}, Next Slot: ${nextSlot.toFormat('HH:mm:ss')}, Restriction: ${sequence.restrict_sending_hours}`);
+
         // If the next valid slot is more than 1 minute away, we are outside the window.
         if (nextSlot.diff(now, 'minutes').minutes > 1) {
            const deferMs = nextSlot.diffNow().as('milliseconds');

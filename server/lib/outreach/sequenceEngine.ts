@@ -169,13 +169,6 @@ export async function scheduleNextStep(
   let targetTime = DateTime.now().setZone(targetTz);
 
   if (parentStepId === null) {
-    // ── Staggered Drip: apply the per-contact batch offset BEFORE business-hour
-    // enforcement so the window check can push it to the next valid slot if needed.
-    if (initialExtraDelayMs > 0) {
-      targetTime = targetTime.plus({ milliseconds: initialExtraDelayMs });
-      console.log(`[SequenceEngine] [Drip] Applied stagger offset of ${initialExtraDelayMs}ms. Pre-window target: ${targetTime.toISO()}`);
-    }
-
     if (step.scheduled_start_at) {
       if (useRecipientTz) {
         const sequenceTz = sequence.send_timezone || 'UTC';
@@ -196,6 +189,14 @@ export async function scheduleNextStep(
         console.log(`[SequenceEngine] No realignment. Target: ${targetTime.toISO()}`);
       }
     }
+
+    // ── Staggered Drip: apply the per-contact batch offset AFTER base time calculation
+    // This ensures that even if there is a scheduled_start_at, contacts are spaced out.
+    if (initialExtraDelayMs > 0) {
+      const beforeStagger = targetTime;
+      targetTime = targetTime.plus({ milliseconds: initialExtraDelayMs });
+      console.log(`[SequenceEngine] [Drip] Applied stagger offset of ${initialExtraDelayMs}ms. Shifted ${beforeStagger.toFormat('HH:mm:ss')} -> ${targetTime.toFormat('HH:mm:ss')}`);
+    }
   } else {
     const amount = step.delay_amount || 2;
     const unit = step.delay_unit || 'days';
@@ -206,6 +207,10 @@ export async function scheduleNextStep(
   // NOTE: getNextBusinessSlot will automatically push staggered times that land
   // outside the allowed window (weekend, after-hours) to the next valid slot.
   let executeAt = getNextBusinessSlot(targetTime, sequence);
+
+  if (executeAt.toMillis() !== targetTime.toMillis()) {
+    console.log(`[SequenceEngine] [Window] Realigning execution for contact ${contactId} from ${targetTime.toFormat('HH:mm:ss')} to ${executeAt.toFormat('yyyy-MM-dd HH:mm:ss')} due to window/weekday constraints.`);
+  }
 
   // ── Per-Mailbox Staggering ──────────────────────────────────────────────
   // Ensure we don't burst the specific mailbox by checking its future queue.
