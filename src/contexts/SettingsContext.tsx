@@ -41,13 +41,6 @@ const defaultNotificationPrefs: NotificationPrefs = {
     docsExportReady: true,
 };
 
-
-
-
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
-
-
-
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -128,6 +121,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
         return () => unsubscribe();
     }, [currentUser]);
+
+    const updateNotificationPref = (key: keyof NotificationPrefs, value: boolean) => {
+        setNotificationPrefs(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    };
 
     const saveSettings = async () => {
         if (!currentUser) return;
