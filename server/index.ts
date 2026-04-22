@@ -682,10 +682,10 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
     const { sequenceId } = req.body;
 
     if (!projectId) {
-      return res.status(400).json({ error: "Missing x-project-id header" });
+      return res.status(400).json({ success: false, error: "Missing x-project-id header" });
     }
     if (!sequenceId) {
-      return res.status(400).json({ error: "Missing sequenceId in request body" });
+      return res.status(400).json({ success: false, error: "Missing sequenceId in request body" });
     }
 
     console.log(`[Queue Clear] Manually clearing jobs for sequence ${sequenceId} in project ${projectId}...`);
@@ -695,11 +695,10 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
       allJobs = await emailQueue.getJobs(['delayed', 'waiting', 'paused']);
     } catch (queueErr: any) {
       console.error("[Queue Clear] Failed to fetch jobs from BullMQ:", queueErr.message);
-      throw new Error(`Queue connection error: ${queueErr.message}`);
+      return res.status(503).json({ success: false, error: `Queue connection error: ${queueErr.message}` });
     }
 
     const matchingJobs = allJobs.filter(j => 
-      j.name === 'execute-sequence-step' && 
       j.data?.sequenceId === sequenceId
     );
 
@@ -714,8 +713,6 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
         console.error(`[Queue Clear] Failed to remove job ${job.id}:`, removeErr.message);
       }
     }
-
-    console.log(`[Queue Clear] Successfully removed ${removedJobsCount} jobs for sequence ${sequenceId}.`);
 
     // 2. Enrollment Cleanup in DB
     console.log(`[Queue Clear] Cleaning up enrollments for sequence ${sequenceId} in project ${projectId}...`);
@@ -735,7 +732,10 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
     });
   } catch (err: any) {
     console.error("[Queue Clear] Fatal Error:", err);
-    res.status(500).json({ error: err.message || "Failed to clear sequence queue" });
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Failed to clear sequence queue" 
+    });
   }
 });
 

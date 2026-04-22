@@ -37,7 +37,7 @@ export default function QueueMonitor() {
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
   const [snapToBusiness, setSnapToBusiness] = useState(true);
-  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, authHeaders, activeProjectId } = useOutreachApi();
+  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, clearSequenceJobs, authHeaders, activeProjectId } = useOutreachApi();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -120,17 +120,7 @@ export default function QueueMonitor() {
     try {
       toast.loading("Limpiando secuencia...", { id: 'clear-seq' });
       
-      const headers = await authHeaders();
-      const response = await fetch('/api/admin/queue/clear-sequence', {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ sequenceId })
-      });
-
-      const data = await response.json();
+      const data = await clearSequenceJobs(sequenceId);
       if (data && data.success) {
         toast.success(`Cola limpiada: ${data.removedJobsCount} envíos y ${data.removedEnrollmentsCount || 0} inscripciones eliminadas`, { id: 'clear-seq' });
         loadQueue();
