@@ -97,7 +97,7 @@ import { RedisStore } from "connect-redis";
 import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
-import { verifyFirebaseToken, AuthRequest } from "./middleware";
+import { verifyFirebaseToken, AuthRequest, verifyToken } from "./middleware";
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
 import { getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment } from "./lib/outreach/sequenceEngine.js";
 import {

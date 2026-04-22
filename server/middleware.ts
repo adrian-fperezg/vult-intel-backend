@@ -42,3 +42,5 @@ export const verifyFirebaseToken = async (req: AuthRequest, res: Response, next:
     });
   }
 };
+
+export const verifyToken = verifyFirebaseToken;
