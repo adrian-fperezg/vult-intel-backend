@@ -892,8 +892,5 @@ export function useOutreachApi() {
     generateAiReport,
     exportAiReport,
     getFunnelStats,
-    // Unified Inbox
-    fetchUnifiedInbox,
-    markInboxMessageAsRead,
   };
 }

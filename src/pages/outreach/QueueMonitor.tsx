@@ -83,7 +83,7 @@ export default function QueueMonitor() {
         // Fresh reload to see new timestamps immediately
         loadQueue();
       } else {
-        toast.error(data.error || t('outreach.queue.actionError'));
+        toast.error(data?.message || t('outreach.queue.actionError'));
       }
     } catch (err: any) {
       console.error("[Rebalance] Error:", err);
@@ -137,7 +137,7 @@ export default function QueueMonitor() {
         toast.success(data.message || t('outreach.queue.actionSuccess'), { id: 'clear-seq' });
         loadQueue();
       } else {
-        toast.error(data.error || t('outreach.queue.actionError'), { id: 'clear-seq' });
+        toast.error(data?.message || t('outreach.queue.actionError'), { id: 'clear-seq' });
       }
     } catch (err: any) {
       console.error("[ClearSequence] Error:", err);
@@ -155,7 +155,7 @@ export default function QueueMonitor() {
   const senders = useMemo(() => Array.from(new Set(jobs.map(j => j.senderEmail))).sort(), [jobs]);
   const steps = useMemo(() => {
     const s = Array.from(new Set(jobs.map(j => j.stepNumber))).sort((a,b) => a-b);
-    return s.map(n => t('outreach.queue.stepLabel', { number: n }));
+    return s.map(n => t('outreach.queue.stepLabel', { number: String(n) }));
   }, [jobs, t]);
 
   // Filtering Logic
@@ -164,7 +164,7 @@ export default function QueueMonitor() {
       const matchSearch = job.contactName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchSeq = seqFilter === 'ALL' || job.sequenceName === seqFilter;
       const matchSender = senderFilter === 'ALL' || job.senderEmail === senderFilter;
-      const matchStep = stepFilter === 'ALL' || t('outreach.queue.stepLabel', { number: job.stepNumber }) === stepFilter;
+      const matchStep = stepFilter === 'ALL' || t('outreach.queue.stepLabel', { number: String(job.stepNumber) }) === stepFilter;
       
       const jobStatus = job.attempts > 0 ? 'Retrying' : 'Scheduled';
       const matchStatus = statusFilter === 'ALL' || jobStatus === statusFilter;
@@ -448,7 +448,7 @@ export default function QueueMonitor() {
                         </td>
                         <td className="px-6 py-5 text-right">
                           <button 
-                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.id)}
+                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group ml-auto"
                             title={t('outreach.queue.deleteSends')}
                           >
@@ -460,8 +460,9 @@ export default function QueueMonitor() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
