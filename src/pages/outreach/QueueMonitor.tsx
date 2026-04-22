@@ -423,10 +423,11 @@ export default function QueueMonitor() {
                         <td className="px-6 py-5">
                           <button 
                             onClick={() => handleClearSequence(job.sequenceId, job.sequenceName)}
-                            className="p-2 hover:bg-red-500/10 rounded-lg group transition-colors"
+                            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group"
                             title="Eliminar todos los envíos de esta secuencia"
                           >
-                            <Trash2 className="size-4 text-slate-500 group-hover:text-red-400 transition-colors" />
+                            <Trash2 className="size-3.5" />
+                            <span className="text-[10px] font-black uppercase tracking-tight">Eliminar Envíos</span>
                           </button>
                         </td>
                         <td className="px-6 py-5 text-right">
