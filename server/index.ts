@@ -560,6 +560,63 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
   }
 });
 
+/**
+ * Administrative endpoint to purge orphaned jobs and enrollments.
+ * Removes jobs from BullMQ and records from outreach_sequence_enrollments
+ * if their associated sequence no longer exists in outreach_sequences.
+ */
+app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  try {
+    const projectId = req.headers['x-project-id'] as string;
+    console.log(`[Queue Purge] Starting orphan cleanup for project: ${projectId}...`);
+    
+    // 1. Fetch all sequence-related jobs from BullMQ
+    const [delayed, waiting, paused] = await Promise.all([
+      emailQueue.getDelayed(),
+      emailQueue.getWaiting(),
+      emailQueue.getPaused()
+    ]);
+
+    const allJobs = [...delayed, ...waiting, ...paused];
+    const sequenceJobs = allJobs.filter(j => j.name === 'execute-sequence-step');
+
+    // 2. Fetch all existing sequence IDs from DB
+    const existingSequences = await db.all("SELECT id FROM outreach_sequences");
+    const existingSequenceIds = new Set(existingSequences.map((s: any) => s.id));
+
+    // 3. Remove orphaned jobs from BullMQ
+    let removedJobsCount = 0;
+    for (const job of sequenceJobs) {
+      const sId = job.data?.sequenceId;
+      if (sId && !existingSequenceIds.has(sId)) {
+        await job.remove();
+        removedJobsCount++;
+      }
+    }
+
+    // 4. Cleanup orphaned enrollments in DB
+    // We delete any enrollment that doesn't have a matching sequence in outreach_sequences
+    const enrollmentCleanupResult = await db.run(`
+      DELETE FROM outreach_sequence_enrollments 
+      WHERE sequence_id NOT IN (SELECT id FROM outreach_sequences)
+    `);
+
+    console.log(`[Queue Purge] Completed. Removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} orphaned enrollments.`);
+
+    res.json({
+      success: true,
+      removedJobsCount,
+      removedEnrollmentsCount: enrollmentCleanupResult.changes,
+      message: `Successfully purged ${removedJobsCount} orphaned jobs and ${enrollmentCleanupResult.changes} enrollment records.`
+    });
+
+  } catch (err: any) {
+    console.error("[Queue Purge] FATAL ERROR:", err);
+    res.status(500).json({ error: "Failed to purge orphans", details: err.message });
+  }
+});
+
+
 // Diagnostic endpoint to monitor upcoming scheduled sequence steps
 app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthRequest, res) => {
   try {

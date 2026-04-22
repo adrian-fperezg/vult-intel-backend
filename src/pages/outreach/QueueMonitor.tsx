@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Clock, RefreshCw, Loader2, Database, Mail, 
   User, Layers, ListChecks, Calendar, ExternalLink,
-  Search, Zap
+  Search, Zap, Trash2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { 
@@ -34,7 +34,10 @@ export default function QueueMonitor() {
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { fetchScheduledQueue, rebalanceQueue, activeProjectId } = useOutreachApi();
+  const [isRebalancing, setIsRebalancing] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [snapToBusiness, setSnapToBusiness] = useState(true);
+  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, activeProjectId } = useOutreachApi();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -89,6 +92,28 @@ export default function QueueMonitor() {
       setIsRebalancing(false);
     }
   };
+
+  const handlePurgeOrphans = async () => {
+    if (!activeProjectId) return;
+    if (!window.confirm("Esta acción eliminará permanentemente todos los jobs de BullMQ y registros de inscripción vinculados a secuencias que ya no existen en la base de datos. ¿Deseas continuar?")) return;
+    
+    setIsPurging(true);
+    try {
+      const data = await purgeOrphansQueue();
+      if (data && data.success) {
+        toast.success(data.message || "Huérfanos eliminados correctamente");
+        loadQueue();
+      } else {
+        toast.error("Error al limpiar huérfanos");
+      }
+    } catch (err: any) {
+      console.error("[PurgeOrphans] Error:", err);
+      toast.error(err.message || "La solicitud de limpieza falló");
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
 
   useEffect(() => {
     loadQueue();
@@ -173,6 +198,17 @@ export default function QueueMonitor() {
               </label>
 
               <div className="flex items-center gap-3">
+                <TealButton 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handlePurgeOrphans} 
+                  loading={isPurging}
+                  className="px-4 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                >
+                  <Trash2 className={cn("size-3.5 mr-2", isPurging && "animate-pulse")} />
+                  Limpiar Huérfanos
+                </TealButton>
+
                 <TealButton 
                   variant="outline" 
                   size="sm" 

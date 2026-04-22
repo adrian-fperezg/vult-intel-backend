@@ -574,6 +574,30 @@ export function useOutreachApi() {
     return res.json() as Promise<{ success: boolean; message: string; rebalancedCount: number }>;
   }, [activeProjectId, authHeaders]);
 
+  const purgeOrphansQueue = useCallback(async () => {
+    if (!activeProjectId) return null;
+    const headers = await authHeaders();
+    const res = await fetch(`${ROOT_URL}/admin/queue/purge-orphans`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ project_id: activeProjectId }),
+    });
+    if (!res.ok) {
+      let errorMsg = `Purge orphans failed: ${res.status}`;
+      try {
+        const errorData = await res.json();
+        if (errorData.error) errorMsg = errorData.error;
+      } catch {}
+      throw new Error(errorMsg);
+    }
+    return res.json() as Promise<{ 
+      success: boolean; 
+      message: string; 
+      removedJobsCount: number; 
+      removedEnrollmentsCount: number;
+    }>;
+  }, [activeProjectId, authHeaders]);
+
   // ── Compose ──────────────────────────────────────────────────────────────
 
   const fetchIndividualEmails = useCallback(
@@ -787,6 +811,7 @@ export function useOutreachApi() {
     connectGmail,
     fetchScheduledQueue,
     rebalanceQueue,
+    purgeOrphansQueue,
     // Snippets
     fetchSnippets,
     createSnippet,
