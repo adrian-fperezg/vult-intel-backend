@@ -37,7 +37,7 @@ export default function QueueMonitor() {
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
   const [snapToBusiness, setSnapToBusiness] = useState(true);
-  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, clearSequenceJobs, activeProjectId } = useOutreachApi();
+  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, authHeaders, activeProjectId } = useOutreachApi();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -116,14 +116,26 @@ export default function QueueMonitor() {
     if (!activeProjectId) return;
     if (!window.confirm(`¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia "${sequenceName}"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.`)) return;
     
+    console.log("Clearing sequence:", sequenceId);
     try {
       toast.loading("Limpiando secuencia...", { id: 'clear-seq' });
-      const data = await clearSequenceJobs(sequenceId);
+      
+      const headers = await authHeaders();
+      const response = await fetch(`${ROOT_URL}/admin/queue/clear-sequence`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sequenceId })
+      });
+
+      const data = await response.json();
       if (data && data.success) {
         toast.success(`Cola limpiada: ${data.removedJobsCount} envíos y ${data.removedEnrollmentsCount || 0} inscripciones eliminadas`, { id: 'clear-seq' });
         loadQueue();
       } else {
-        toast.error("Error al limpiar la secuencia", { id: 'clear-seq' });
+        toast.error(data.error || "Error al limpiar la secuencia", { id: 'clear-seq' });
       }
     } catch (err: any) {
       console.error("[ClearSequence] Error:", err);

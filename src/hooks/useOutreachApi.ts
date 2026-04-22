@@ -833,6 +833,7 @@ export function useOutreachApi() {
     rebalanceQueue,
     purgeOrphansQueue,
     clearSequenceJobs,
+    authHeaders,
     // Snippets
     fetchSnippets,
     createSnippet,
