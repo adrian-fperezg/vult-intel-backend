@@ -50,11 +50,27 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, isFounder, logout } = useAuth();
-  const { theme } = useSettings();
+  const { theme, language } = useSettings();
   const { t } = useTranslation();
   const { totalLimits, metrics } = useUserMetrics();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const NAV_LABELS: Record<string, Record<string, string>> = {
+    navProjectsHub: { en: 'Projects Hub', es: 'Centro de Proyectos' },
+    navFullScanReport: { en: 'Deep Scan', es: 'Escaneo Profundo' },
+    navContentGenerator: { en: 'Content Generator', es: 'Generador de Contenido' },
+    navWebGrowthPlan: { en: 'Web Growth Plan', es: 'Plan de Crecimiento Web' },
+    navGlobalBrandStrategy: { en: 'Brand Strategy', es: 'Estrategia de Marca' },
+    navPersonaStudio: { en: 'Persona Studio', es: 'Estudio de Personas' },
+    'Growth Mastermind': { en: 'Growth Mastermind', es: 'Growth Mastermind' },
+    navCampaignArchitect: { en: 'Campaign Architect', es: 'Arquitecto de Campañas' },
+    navVisualWorkflows: { en: 'Visual Workflows', es: 'Flujos Visuales' }
+  };
+
+  const getNavLabel = (key: string) => {
+    return NAV_LABELS[key]?.[language] || key;
+  };
 
   const isUnlimited = isFounder;
   const TOKEN_MAX = totalLimits.tokens || 500000;
@@ -152,7 +168,7 @@ export default function Sidebar() {
                   isActive && "font-semibold",
                   isActive && isAmber && "text-amber-100"
                 )}>
-                  {isTeal ? 'Outreach' : isAmber ? 'Veo Studio' : t(item.key)}
+                  {isTeal ? 'Outreach' : isAmber ? 'Veo Studio' : getNavLabel(item.key)}
                 </span>
                 {isActive && (
                   <ChevronRight className={cn(

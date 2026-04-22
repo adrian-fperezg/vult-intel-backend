@@ -982,7 +982,7 @@ app.get(["/api/outreach/auth/google/callback", "/api/outreach/gmail/callback"], 
     error?: string;
   };
 
-  const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? allowedOrigins[0] : "http://localhost:3000");
+  const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? "https://vultintel.com" : "http://localhost:3000");
 
   if (error || !code || !state) {
     return res.redirect(

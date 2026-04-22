@@ -142,20 +142,20 @@ export default function OutreachContacts() {
       newFirstName: isEs ? 'Nuevo' : 'New',
       newLastName: isEs ? 'Contacto' : 'Contact',
       statusCfg: {
-        active: { label: isEs ? 'Activo' : 'Active', variant: 'teal' },
-        paused: { label: isEs ? 'Pausado' : 'Paused', variant: 'orange' },
-        finished: { label: isEs ? 'Finalizado' : 'Finished', variant: 'gray' },
-        bounced: { label: isEs ? 'Rebotado' : 'Bounced', variant: 'red' },
-        unsubscribed: { label: isEs ? 'Desuscrito' : 'Unsubscribed', variant: 'orange' },
-        replied: { label: isEs ? 'Respondido' : 'Replied', variant: 'green' },
-        not_enrolled: { label: isEs ? 'Sin inscribir' : 'Not Enrolled', variant: 'gray' }
+        active: { label: isEs ? 'Activo' : 'Active', variant: 'teal' as const },
+        paused: { label: isEs ? 'Pausado' : 'Paused', variant: 'orange' as const },
+        finished: { label: isEs ? 'Finalizado' : 'Finished', variant: 'gray' as const },
+        bounced: { label: isEs ? 'Rebotado' : 'Bounced', variant: 'red' as const },
+        unsubscribed: { label: isEs ? 'Desuscrito' : 'Unsubscribed', variant: 'orange' as const },
+        replied: { label: isEs ? 'Respondido' : 'Replied', variant: 'green' as const },
+        not_enrolled: { label: isEs ? 'Sin inscribir' : 'Not Enrolled', variant: 'gray' as const }
       },
       verificationCfg: {
-        valid: { label: isEs ? 'Válido' : 'Valid', variant: 'green' },
-        invalid: { label: isEs ? 'Inválido' : 'Invalid', variant: 'red' },
-        catch_all: { label: isEs ? 'Catch-all' : 'Catch-all', variant: 'yellow' },
-        unknown: { label: isEs ? 'Desconocido' : 'Unknown', variant: 'gray' },
-        unverified: { label: isEs ? 'Sin verificar' : 'Unverified', variant: 'gray' },
+        valid: { label: isEs ? 'Válido' : 'Valid', variant: 'green' as const },
+        invalid: { label: isEs ? 'Inválido' : 'Invalid', variant: 'red' as const },
+        catch_all: { label: isEs ? 'Catch-all' : 'Catch-all', variant: 'yellow' as const },
+        unknown: { label: isEs ? 'Desconocido' : 'Unknown', variant: 'gray' as const },
+        unverified: { label: isEs ? 'Sin verificar' : 'Unverified', variant: 'gray' as const },
       }
     };
   }, [language]);
