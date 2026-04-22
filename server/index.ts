@@ -4370,6 +4370,30 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
       ? inboxMsg.subject
       : `Re: ${inboxMsg.subject}`;
 
+    // 4.5. Snippet Parsing (Variable Interpolation)
+    let parsedBodyHtml = body_html;
+    if (inboxMsg.contact_id) {
+      const contact = await db.get("SELECT * FROM outreach_contacts WHERE id = ?", [inboxMsg.contact_id]) as any;
+      if (contact) {
+        parsedBodyHtml = parsedBodyHtml.replace(/{{(.*?)}}/g, (match: string, p1: string) => {
+          const key = p1.trim().toLowerCase();
+          if (key === 'first_name') return contact.first_name || ' ';
+          if (key === 'last_name') return contact.last_name || ' ';
+          if (key === 'company') return contact.company || ' ';
+          if (key === 'email') return contact.email || ' ';
+          
+          if (contact.custom_fields) {
+            try {
+              const customFields = typeof contact.custom_fields === 'string' ? JSON.parse(contact.custom_fields) : contact.custom_fields;
+              if (customFields[key]) return customFields[key];
+            } catch (e) {}
+          }
+          
+          return contact[key] || ' ';
+        });
+      }
+    }
+
     // 5. Insert into standard queue
     await db.run(`
       INSERT INTO outreach_individual_emails (
@@ -4380,7 +4404,7 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [
       replyId, userId, inboxMsg.project_id, mailbox.id, inboxMsg.contact_id, inboxMsg.sequence_id,
-      fromEmail, fromName, inboxMsg.from_email, replySubject, body_html,
+      fromEmail, fromName, inboxMsg.from_email, replySubject, parsedBodyHtml,
       'scheduled', inboxMsg.thread_id, inboxMsg.message_id, true
     ]);
 
