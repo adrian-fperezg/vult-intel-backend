@@ -23,6 +23,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { useUserMetrics } from '@/hooks/useUserMetrics';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -49,7 +50,8 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, isFounder, logout } = useAuth();
-  const { t, theme } = useSettings();
+  const { theme } = useSettings();
+  const { t } = useTranslation();
   const { totalLimits, metrics } = useUserMetrics();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);

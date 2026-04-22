@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachSectionHeader } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { DateTime } from 'luxon';
 import TipTapEditor from './components/TipTapEditor';
 import toast from 'react-hot-toast';
@@ -32,11 +33,14 @@ interface InboxMessage {
   contact_email?: string;
   intent?: string;
   intent_score?: number;
+  sender_email?: string;
+  email?: string;
 }
 
 export default function OutreachInbox() {
   const { activeProjectId } = useProject();
-  const { fetchUnifiedInbox, markInboxMessageAsRead, summarizeInboxThread } = useOutreachApi();
+  const { fetchUnifiedInbox, markInboxMessageAsRead, summarizeInboxThread, sendInboxReply } = useOutreachApi();
+  const { t } = useTranslation();
 
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -113,10 +117,10 @@ export default function OutreachInbox() {
     if (!selectedId || !replyBody.trim() || isSending) return;
     
     setIsSending(true);
-    const loadId = toast.loading('Sending reply...');
+    const loadId = toast.loading(t('outreach.inbox.sending'));
     try {
       await sendInboxReply(selectedId, replyBody);
-      toast.success('Reply queued successfully!', { id: loadId });
+      toast.success(t('outreach.inbox.sendSuccess'), { id: loadId });
       setIsReplyMode(false);
       setReplyBody('');
       window.dispatchEvent(new CustomEvent('refresh-outreach-counts'));
@@ -155,7 +159,7 @@ export default function OutreachInbox() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4 text-slate-500">
           <Loader2 className="size-8 animate-spin text-teal-400" />
-          <p className="text-sm font-medium animate-pulse">Synchronizing unified inbox...</p>
+          <p className="text-sm font-medium animate-pulse">{t('outreach.inbox.syncing')}</p>
         </div>
       </div>
     );
@@ -165,12 +169,12 @@ export default function OutreachInbox() {
     <div className="flex flex-col h-full">
       <OutreachSectionHeader
         icon={<Inbox />}
-        title="Unified Inbox"
-        subtitle="Consolidated replies from all your outreach sequences"
+        title={t('outreach.inbox.title')}
+        subtitle={t('outreach.inbox.subtitle')}
         actions={
           <TealButton variant="outline" size="sm" onClick={fetchInbox} loading={isLoading}>
             <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
-            Refresh
+            {t('outreach.inbox.refresh')}
           </TealButton>
         }
       />
@@ -179,8 +183,8 @@ export default function OutreachInbox() {
         <div className="mt-20">
           <OutreachEmptyState
             icon={<CheckCircle2 />}
-            title="No replies yet. Keep sending!"
-            description="When leads reply to your outreach emails, they will appear here in your unified CRM inbox."
+            title={t('outreach.inbox.emptyTitle')}
+            description={t('outreach.inbox.emptyDesc')}
           />
         </div>
       ) : (
@@ -192,7 +196,7 @@ export default function OutreachInbox() {
           )}>
             <div className="mb-4">
               <p className="text-xs text-slate-500 font-medium">
-                {filteredMessages.length} {filteredMessages.length === 1 ? 'result' : 'results'}
+                {filteredMessages.length} {filteredMessages.length === 1 ? t('outreach.inbox.result') : t('outreach.inbox.results')}
               </p>
             </div>
 
@@ -202,7 +206,7 @@ export default function OutreachInbox() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
                 <input
                   type="text"
-                  placeholder="Search lead or subject..."
+                  placeholder={t('outreach.inbox.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-slate-900/50 border border-white/5 rounded-lg py-1.5 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500/50 transition-all"
@@ -213,13 +217,13 @@ export default function OutreachInbox() {
                 onChange={(e) => setSelectedIntent(e.target.value)}
                 className="bg-slate-900/80 border border-white/5 rounded-lg py-1.5 px-3 text-xs font-semibold text-slate-300 focus:outline-none focus:border-teal-500/50 transition-all cursor-pointer"
               >
-                <option value="All">All Intents</option>
-                <option value="Interested">Interested</option>
-                <option value="Meeting Requested">Meeting Requested</option>
-                <option value="Not Interested">Not Interested</option>
-                <option value="Wait / Later">Wait / Later</option>
-                <option value="Wrong Person">Wrong Person</option>
-                <option value="General Inquiry">General Inquiry</option>
+                <option value="All">{t('outreach.inbox.intents.all')}</option>
+                <option value="Interested">{t('outreach.inbox.intents.interested')}</option>
+                <option value="Meeting Requested">{t('outreach.inbox.intents.meeting')}</option>
+                <option value="Not Interested">{t('outreach.inbox.intents.notInterested')}</option>
+                <option value="Wait / Later">{t('outreach.inbox.intents.later')}</option>
+                <option value="Wrong Person">{t('outreach.inbox.intents.wrongPerson')}</option>
+                <option value="General Inquiry">{t('outreach.inbox.intents.general')}</option>
               </select>
             </div>
             
@@ -343,16 +347,16 @@ export default function OutreachInbox() {
                       className="gap-2"
                     >
                       <Sparkles className="size-3.5 text-teal-400" />
-                      Summarize
+                      {t('outreach.inbox.summarize')}
                     </TealButton>
                     <TealButton 
-                      variant={isReplyMode ? "outline" : "primary"}
+                      variant={isReplyMode ? "outline" : "solid"}
                       size="sm"
                       onClick={() => setIsReplyMode(!isReplyMode)}
                       className="gap-2"
                     >
                       <Reply className="size-3.5" />
-                      {isReplyMode ? 'Cancel' : 'Reply'}
+                      {isReplyMode ? t('outreach.inbox.cancel') : t('outreach.inbox.reply')}
                     </TealButton>
                   </div>
                 </div>
@@ -366,7 +370,7 @@ export default function OutreachInbox() {
                         <div className="absolute top-0 left-0 w-1 h-full bg-teal-500/30" />
                         <div className="flex items-center gap-2 mb-2">
                           <Sparkles className="size-3.5 text-teal-400" />
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-teal-400/80">AI Conversation Summary</span>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-teal-400/80">{t('outreach.inbox.aiSummary')}</span>
                         </div>
                         <p className="text-sm text-slate-300 leading-relaxed italic">
                           "{summary}"
@@ -395,13 +399,13 @@ export default function OutreachInbox() {
                     >
                       <div className="flex items-center gap-2 mb-4 text-teal-400">
                         <PenLine className="size-4" />
-                        <span className="text-xs font-bold uppercase tracking-wider">Drafting Reply</span>
+                        <span className="text-xs font-bold uppercase tracking-wider">{t('outreach.inbox.drafting')}</span>
                       </div>
                       
                       <TipTapEditor 
                         value={replyBody}
                         onChange={setReplyBody}
-                        placeholder="Type your response..."
+                        placeholder={t('outreach.inbox.typePlaceholder')}
                         className="min-h-[250px] bg-[#0d1117] border-white/5"
                       />
 
@@ -415,12 +419,12 @@ export default function OutreachInbox() {
                           {isSending ? (
                             <>
                               <Loader2 className="size-4 mr-2 animate-spin" />
-                              Sending...
+                              {t('outreach.inbox.sending')}
                             </>
                           ) : (
                             <>
                               <Reply className="size-4 mr-2" />
-                              Send Reply
+                              {t('outreach.inbox.sendReply')}
                             </>
                           )}
                         </TealButton>
@@ -432,8 +436,8 @@ export default function OutreachInbox() {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center p-20 text-center text-slate-600 grayscale opacity-40">
                 <Mail className="size-24 mb-6 stroke-[1.5]" />
-                <h3 className="text-xl font-bold mb-2">Select a message</h3>
-                <p className="text-sm max-w-[240px]">Choose a lead's reply from the sidebar to view the full thread</p>
+                <h3 className="text-xl font-bold mb-2">{t('outreach.inbox.selectTitle')}</h3>
+                <p className="text-sm max-w-[240px]">{t('outreach.inbox.selectDesc')}</p>
               </div>
             )}
           </div>

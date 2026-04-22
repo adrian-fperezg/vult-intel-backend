@@ -28,8 +28,8 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import toast from 'react-hot-toast';
 
-import { useSettings } from '@/contexts/SettingsContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { useProject } from '@/contexts/ProjectContext';
 
 import { exportToDocx } from '@/utils/docxExport';
@@ -406,7 +406,7 @@ function ResultsView({ campaignTitle, sections, strategy, onBack, onCopy, onExpo
 // MAIN COMPONENT
 // =============================================================
 export default function GrowthMastermind() {
-    const { t } = useSettings();
+    const { t } = useTranslation();
     const { currentUser } = useAuth();
     const { activeProjectId } = useProject();
 

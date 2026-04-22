@@ -12,7 +12,6 @@ export async function analyzeLeadIntent(body: string): Promise<{ intent: string;
 
   try {
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `
       You are an expert sales development representative. Analyze the following lead reply and categorize it into EXACTLY ONE of these categories:
@@ -35,9 +34,11 @@ export async function analyzeLeadIntent(body: string): Promise<{ intent: string;
       """
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: prompt
+    });
+    const text = response.text || "";
     
     // Extract JSON from markdown code block if present
     const jsonMatch = text.match(/\{[\s\S]*\}/);

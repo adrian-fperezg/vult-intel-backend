@@ -11,7 +11,7 @@ import {
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { OutreachMetricCard, OutreachSectionHeader, OutreachBadge } from '../../OutreachCommon';
 import { cn } from '@/lib/utils';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 interface SequenceStats {
   id: string;
@@ -61,7 +61,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label, t }: any) => {
 };
 
 export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
-  const { t, i18n } = useTranslation();
+  const { t, language } = useTranslation();
   const [stats, setStats] = useState<SequenceStats | null>(null);
   const [timeframe, setTimeframe] = useState<string>('30d');
   const [isLoading, setIsLoading] = useState(true);
@@ -220,9 +220,9 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                   tickFormatter={(val) => {
                     if (!val) return '';
                     const date = new Date(val);
-                    if (stats.grouping === 'month') return date.toLocaleDateString(i18n.language, { month: 'short', year: '2-digit' });
+                    if (stats.grouping === 'month') return date.toLocaleDateString(language, { month: 'short', year: '2-digit' });
                     if (stats.grouping === 'week') return `${t('outreach.sequences.analyticsDashboard.weekPrefix')} ${date.getDate()}/${date.getMonth() + 1}`;
-                    return date.toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
+                    return date.toLocaleDateString(language, { month: 'short', day: 'numeric' });
                   }}
                 />
                 <YAxis
@@ -296,7 +296,7 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
                   />
                 </div>
                 <p className="text-[10px] text-slate-500 mt-2 font-medium">
-                  {t('outreach.sequences.analyticsDashboard.completionRate', { percent: Math.round(((stats?.enrollmentStats?.completed ?? 0) / (stats?.enrollmentStats?.total || 1)) * 100) })}
+                  {t('outreach.sequences.analyticsDashboard.completionRate', { percent: String(Math.round(((stats?.enrollmentStats?.completed ?? 0) / (stats?.enrollmentStats?.total || 1)) * 100)) })}
                 </p>
               </div>
             </div>

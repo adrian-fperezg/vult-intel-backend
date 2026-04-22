@@ -8,7 +8,7 @@ type Translations = Record<string, any>;
 
 interface TranslationContextType {
     language: Language;
-    t: (key: string, replacements?: Record<string, string>) => string;
+    t: (key: string, options?: Record<string, any>) => any;
 }
 
 const translations: Record<Language, Translations> = {
@@ -21,7 +21,7 @@ const TranslationContext = createContext<TranslationContextType | undefined>(und
 export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { language } = useSettings();
 
-    const t = (key: string, replacements?: Record<string, string>): string => {
+    const t = (key: string, options?: Record<string, any>): any => {
         const keys = key.split('.');
         let value: any = translations[language];
 
@@ -41,7 +41,7 @@ export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ c
                             break;
                         }
                     }
-                    if (foundFallback && typeof fallbackValue === 'string') {
+                    if (foundFallback) {
                         value = fallbackValue;
                         break;
                     }
@@ -50,17 +50,14 @@ export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ c
             }
         }
 
-        if (typeof value === 'string') {
-            if (replacements) {
-                return Object.entries(replacements).reduce(
-                    (str, [k, v]) => str.replace(new RegExp(`{{${k}}}`, 'g'), v),
-                    value
-                );
-            }
-            return value;
+        if (typeof value === 'string' && options) {
+            return Object.entries(options).reduce(
+                (str, [k, v]) => str.replace(new RegExp(`{{${k}}}`, 'g'), String(v)),
+                value
+            );
         }
 
-        return key; // The path didn't resolve to a string
+        return value;
     };
 
     return (

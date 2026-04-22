@@ -29,6 +29,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { extractAndSavePersonas } from '@/services/ai';
 import { useProject } from '@/contexts/ProjectContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 const scanSteps = [
   { id: 'brand', label: 'Brand Identity', description: 'Logo, Colors, Typography extracted', icon: Zap },
@@ -92,7 +93,7 @@ export default function ProjectsHub() {
   const [loadingTimer, setLoadingTimer] = useState(0);
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const { t } = useSettings();
+  const { t } = useTranslation();
   const { selectProject, refreshProjectsList } = useProject();
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import { MessageSquare, X, Send, Trash2, Bot, User, Loader2, Minimize2, Maximize
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { generateChatResponse, ChatMessage } from '@/services/ai';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -12,7 +13,8 @@ import rehypeSanitize from 'rehype-sanitize';
 export default function AIChatAssistant() {
     const { activeProject, activeProjectId } = useProject();
     const { currentUser } = useAuth();
-    const { language, t } = useSettings();
+    const { language } = useSettings();
+    const { t } = useTranslation();
 
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);

@@ -15,7 +15,7 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
 import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/contexts/TranslationContext';
 import toast from 'react-hot-toast';
 
 
@@ -100,7 +100,7 @@ function StepNode({
   sequenceStatus,
   snippets
 }: StepNodeProps) {
-  const { t, i18n } = useTranslation();
+  const { t, language } = useTranslation();
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
 
@@ -184,7 +184,7 @@ function StepNode({
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  {t('outreach.sequences.builder.step', { number: step.step_number })}
+                  {t('outreach.sequences.builder.step', { number: String(step.step_number) })}
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-teal-500/70">{t('outreach.sequences.builder.email')}</span>
               </div>
@@ -280,12 +280,12 @@ function StepNode({
                       {sequenceStatus === 'active' && analytics?.[step.id]?.next_send_at ? (
                         <p className="text-[10px] text-teal-400/80 mt-2 flex items-center gap-1.5 font-medium">
                           <Clock className="size-2.5" />
-                          {t('outreach.sequences.builder.nextSendAt', { date: new Date(analytics[step.id].next_send_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) })}
+                          {t('outreach.sequences.builder.nextSendAt', { date: String(new Date(analytics[step.id].next_send_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })) })}
                         </p>
                       ) : (
                         <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1.5">
                           <Clock className="size-2.5" />
-                          {t('outreach.sequences.builder.calculatedDelay', { amount: step.delay_amount || 0, unit: t(`outreach.sequences.builder.${step.delay_unit || 'days'}`) })}
+                          {t('outreach.sequences.builder.calculatedDelay', { amount: String(step.delay_amount || 0), unit: t(`outreach.sequences.builder.${step.delay_unit || 'days'}`) })}
                         </p>
                       )}
                     </div>
@@ -504,7 +504,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const { t, i18n } = useTranslation();
+  const { t, language } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = (searchParams.get('view') as 'builder' | 'settings' | 'recipients' | 'analytics') || 'analytics';
 
@@ -848,7 +848,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       toast.success(newStatus === 'active' ? t('outreach.sequences.toasts.resumed') : t('outreach.sequences.toasts.paused'));
     } catch (err) {
       console.error(err);
-      toast.error(t('outreach.sequences.toasts.toggleError', { action: newStatus === 'active' ? (i18n.language === 'es' ? 'reanudar' : 'resume') : (i18n.language === 'es' ? 'pausar' : 'pause') }));
+      toast.error(t('outreach.sequences.toasts.toggleError', { action: newStatus === 'active' ? (language === 'es' ? 'reanudar' : 'resume') : (language === 'es' ? 'pausar' : 'pause') }));
     } finally {
       setIsSaving(false);
     }
@@ -875,9 +875,9 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             recipients: [...currentRecipients, ...newRecipients]
           };
         });
-        toast.success(t('outreach.sequences.toasts.recipientsAssigned', { count: result.addedContacts.length }));
+        toast.success(t('outreach.sequences.toasts.recipientsAssigned', { count: String(result.addedContacts.length) }));
       } else {
-        toast.success(t('outreach.sequences.toasts.recipientsAssigned', { count: recipients.length }));
+        toast.success(t('outreach.sequences.toasts.recipientsAssigned', { count: String(recipients.length) }));
         loadData();
       }
     } catch (err) {
@@ -902,7 +902,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     const toastId = toast.loading(newStatus === 'active' ? t('outreach.sequences.toasts.resumingContact') : t('outreach.sequences.toasts.pausingContact'));
     try {
       await api.toggleRecipientStatus(sequenceId, contactId, newStatus);
-      toast.success(t('outreach.sequences.toasts.contactToggleSuccess', { status: newStatus === 'active' ? (i18n.language === 'es' ? 'reanudado' : 'resumed') : (i18n.language === 'es' ? 'pausado' : 'paused') }), { id: toastId });
+      toast.success(t('outreach.sequences.toasts.contactToggleSuccess', { status: newStatus === 'active' ? (language === 'es' ? 'reanudado' : 'resumed') : (language === 'es' ? 'pausado' : 'paused') }), { id: toastId });
       loadData();
     } catch (err) {
       console.error("Failed to toggle recipient status:", err);

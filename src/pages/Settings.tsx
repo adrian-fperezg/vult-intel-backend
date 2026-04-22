@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { getProjects } from '@/services/scanService';
 import { useUserMetrics } from '@/hooks/useUserMetrics';
 import { useCheckout } from '@/hooks/useCheckout';
@@ -37,7 +38,8 @@ export default function Settings() {
     const { currentUser, isFounder } = useAuth();
     const { totalLimits, metrics, currentPlanId, activeAddons, loading: metricsLoading } = useUserMetrics();
     const { startCheckout } = useCheckout();
-    const { theme, setTheme, language, setLanguage, appNotifications, setAppNotifications, marketingEmails, setMarketingEmails, notificationPrefs, updateNotificationPref, saveSettings, isSyncing, t } = useSettings();
+    const { theme, setTheme, language, setLanguage, appNotifications, setAppNotifications, marketingEmails, setMarketingEmails, notificationPrefs, updateNotificationPref, saveSettings, isSyncing } = useSettings();
+    const { t } = useTranslation();
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [activeProjectsCount, setActiveProjectsCount] = useState(0);
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);

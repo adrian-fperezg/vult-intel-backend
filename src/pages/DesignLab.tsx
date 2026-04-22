@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Image as ImageIcon, Download, Loader, BarChart3, Type, ArrowRight, Video, X } from 'lucide-react';
 import { generateImage, generateVideo } from '@/services/ai';
 import { cn } from '@/lib/utils';
-import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 // Add type definition for window.aistudio
 declare global {
@@ -15,7 +15,7 @@ declare global {
 }
 
 export default function DesignLab() {
-  const { t } = useSettings();
+  const { t } = useTranslation();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<{ url: string, prompt: string, type: 'image' | 'video' }[]>([]);
   const [prompt, setPrompt] = useState('');
