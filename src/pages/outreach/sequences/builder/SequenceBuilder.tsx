@@ -15,6 +15,7 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useProject } from '@/contexts/ProjectContext';
 import TipTapEditor from '../../components/TipTapEditor';
 import RecipientManagerModal from '../../components/RecipientManagerModal';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 
 
@@ -99,6 +100,7 @@ function StepNode({
   sequenceStatus,
   snippets
 }: StepNodeProps) {
+  const { t, i18n } = useTranslation();
   const { uploadFile } = useOutreachApi();
   const [isUploading, setIsUploading] = useState(false);
 
@@ -121,10 +123,10 @@ function StepNode({
         filename: response.filename
       };
       onUpdate(step.id, { attachments: [...(step.attachments || []), newAttachment] });
-      toast.success('File uploaded successfully');
+      toast.success(t('outreach.sequences.toasts.uploadSuccess'));
     } catch (error) {
       console.error('File upload failed:', error);
-      toast.error('Failed to upload file');
+      toast.error(t('outreach.sequences.toasts.uploadError'));
     } finally {
       setIsUploading(false);
       e.target.value = '';
@@ -182,12 +184,12 @@ function StepNode({
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  Step {step.step_number}
+                  {t('outreach.sequences.builder.step', { number: step.step_number })}
                 </span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-500/70">email</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-500/70">{t('outreach.sequences.builder.email')}</span>
               </div>
               <h4 className="font-semibold text-white truncate text-sm">
-                {step.config.subject || 'Untitled Step'}
+                {step.config.subject || t('outreach.sequences.builder.untitledStep')}
               </h4>
             </div>
           </div>
@@ -195,7 +197,7 @@ function StepNode({
             <button
               onClick={(e) => { e.stopPropagation(); onPreview(step.config.subject, step.config.body_html); }}
               className="p-2 hover:bg-teal-500/10 rounded-lg text-slate-500 hover:text-teal-400 transition-colors"
-              title="Preview Email"
+              title={t('outreach.sequences.builder.previewEmail')}
             >
               <Eye className="size-3.5" />
             </button>
@@ -214,7 +216,7 @@ function StepNode({
                 <SendHorizontal className="size-3.5" />
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sent</span>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.sequences.builder.sent')}</span>
                 <span className="text-xs font-bold text-white leading-none mt-0.5">{analytics?.[step.id]?.sent ?? 0}</span>
               </div>
             </div>
@@ -224,7 +226,7 @@ function StepNode({
                 <Eye className="size-3.5" />
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Open</span>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.sequences.builder.open')}</span>
                 <span className="text-xs font-bold text-white leading-none mt-0.5">{(analytics?.[step.id]?.openRate ?? 0).toFixed(1)}%</span>
               </div>
             </div>
@@ -234,7 +236,7 @@ function StepNode({
                 <MousePointer2 className="size-3.5" />
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Click</span>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.sequences.builder.click')}</span>
                 <span className="text-xs font-bold text-white leading-none mt-0.5">{(analytics?.[step.id]?.clickRate ?? 0).toFixed(1)}%</span>
               </div>
             </div>
@@ -244,7 +246,7 @@ function StepNode({
                 <MessageSquare className="size-3.5" />
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Reply</span>
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.sequences.builder.reply')}</span>
                 <span className="text-xs font-bold text-white leading-none mt-0.5">{(analytics?.[step.id]?.replyRate ?? 0).toFixed(1)}%</span>
               </div>
             </div>
@@ -255,7 +257,7 @@ function StepNode({
                 <div className="flex items-end gap-4">
                   {!isFirst ? (
                     <div className="flex-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Delay</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">{t('outreach.sequences.builder.delay')}</label>
                       <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 text-xs text-white">
                         <Clock className="size-3 text-teal-400" />
                         <input
@@ -269,21 +271,21 @@ function StepNode({
                           onChange={e => onUpdate(step.id, { delay_unit: e.target.value as any })}
                           className="bg-transparent text-white outline-none cursor-pointer"
                         >
-                          <option value="minutes" className="bg-[#161b22]">minutes</option>
-                          <option value="hours" className="bg-[#161b22]">hours</option>
-                          <option value="days" className="bg-[#161b22]">days</option>
+                          <option value="minutes" className="bg-[#161b22]">{t('outreach.sequences.builder.minutes')}</option>
+                          <option value="hours" className="bg-[#161b22]">{t('outreach.sequences.builder.hours')}</option>
+                          <option value="days" className="bg-[#161b22]">{t('outreach.sequences.builder.days')}</option>
                         </select>
                       </div>
 
                       {sequenceStatus === 'active' && analytics?.[step.id]?.next_send_at ? (
                         <p className="text-[10px] text-teal-400/80 mt-2 flex items-center gap-1.5 font-medium">
                           <Clock className="size-2.5" />
-                          Next scheduled send: {new Date(analytics[step.id].next_send_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                          {t('outreach.sequences.builder.nextSendAt', { date: new Date(analytics[step.id].next_send_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) })}
                         </p>
                       ) : (
                         <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1.5">
                           <Clock className="size-2.5" />
-                          Calculated as {step.delay_amount || 0} {step.delay_unit || 'days'} after the previous step.
+                          {t('outreach.sequences.builder.calculatedDelay', { amount: step.delay_amount || 0, unit: t(`outreach.sequences.builder.${step.delay_unit || 'days'}`) })}
                         </p>
                       )}
                     </div>
@@ -291,7 +293,7 @@ function StepNode({
                     <div className="flex-1">
                       <label className="text-[10px] font-bold text-teal-500 uppercase tracking-wider mb-2 block flex items-center gap-1.5">
                         <Play className="size-2.5" />
-                        Anchor Launch Time (Step 1)
+                        {t('outreach.sequences.builder.anchorLaunchTitle')}
                       </label>
 
                       <div className="space-y-4">
@@ -317,14 +319,14 @@ function StepNode({
                           <button
                             onClick={async () => {
                               onUpdate(step.id, { scheduled_start_at: undefined });
-                              if (window.confirm("Launch this sequence immediately?")) {
-                                const loading = toast.loading("Saving and launching...");
+                              if (window.confirm(t('outreach.sequences.toasts.launchImmediatelyConfirm') || "Launch this sequence immediately?")) {
+                                const loading = toast.loading(t('outreach.sequences.toasts.savingAndLaunching'));
                                 try {
                                   await handleSaveAll();
                                   await handleActivate();
-                                  toast.success("Sequence launched immediately!", { id: loading });
+                                  toast.success(t('outreach.sequences.toasts.launchSuccess'), { id: loading });
                                 } catch (e) {
-                                  toast.error("Failed to launch", { id: loading });
+                                  toast.error(t('outreach.sequences.toasts.activationError'), { id: loading });
                                 }
                               }
                             }}
@@ -336,23 +338,23 @@ function StepNode({
                             )}
                           >
                             {sequenceStatus === 'active' && !step.scheduled_start_at ? (
-                              <span className="flex items-center justify-center gap-1"><Check className="size-2.5" /> Active: Launched</span>
-                            ) : "Launch Immediately"}
+                              <span className="flex items-center justify-center gap-1"><Check className="size-2.5" /> {t('outreach.sequences.builder.activeLaunched')}</span>
+                            ) : t('outreach.sequences.builder.launchImmediately')}
                           </button>
 
                           <button
                             onClick={async () => {
                               if (!step.scheduled_start_at) {
-                                toast.error("Please select a date and time in the calendar first.");
+                                toast.error(t('outreach.sequences.toasts.selectDateError'));
                                 return;
                               }
-                              const loading = toast.loading("Saving and scheduling...");
+                              const loading = toast.loading(t('outreach.sequences.toasts.savingAndScheduling'));
                               try {
                                 await handleSaveAll();
                                 await handleActivate();
-                                toast.success("Sequence scheduled successfully!", { id: loading });
+                                toast.success(t('outreach.sequences.toasts.scheduleSuccess'), { id: loading });
                               } catch (e) {
-                                toast.error("Failed to schedule", { id: loading });
+                                toast.error(t('outreach.sequences.toasts.activationError'), { id: loading });
                               }
                             }}
                             className={cn(
@@ -363,13 +365,13 @@ function StepNode({
                             )}
                           >
                             {sequenceStatus === 'active' && step.scheduled_start_at ? (
-                              <span className="flex items-center justify-center gap-1"><Check className="size-2.5" /> Active: Scheduled</span>
-                            ) : "Schedule Sequence"}
+                              <span className="flex items-center justify-center gap-1"><Check className="size-2.5" /> {t('outreach.sequences.builder.activeScheduled')}</span>
+                            ) : t('outreach.sequences.builder.scheduleSequence')}
                           </button>
                         </div>
                         <p className="text-[9px] text-slate-500 mt-2 italic flex items-center gap-1">
                           <AlertCircle className="size-2.5" />
-                          Immediate ignores the calendar. Schedule respects the exact time shown above.
+                          {t('outreach.sequences.builder.scheduleWarning')}
                         </p>
                       </div>
                     </div>
@@ -377,17 +379,17 @@ function StepNode({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Subject Line</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">{t('outreach.sequences.builder.subjectLine')}</label>
                   <input
                     value={step.config.subject || ''}
                     onChange={e => onUpdateConfig(step.id, { subject: e.target.value })}
-                    placeholder="Enter subject..."
+                    placeholder={t('outreach.sequences.builder.subjectPlaceholder')}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-teal-500/40 transition-all"
                   />
                 </div>
 
                 <div className="flex-1 flex flex-col min-h-[300px]">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Email Content</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">{t('outreach.sequences.builder.emailContent')}</label>
                   <TipTapEditor
                     value={step.config.body_html || ''}
                     onChange={val => onUpdateConfig(step.id, { body_html: val })}
@@ -407,7 +409,7 @@ function StepNode({
                   {isUploading && (
                     <div className="mt-2 flex items-center gap-2 text-[10px] text-teal-400 font-bold animate-pulse">
                       <div className="size-3 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
-                      Uploading attachment...
+                      {t('outreach.sequences.builder.uploadingAttachment')}
                     </div>
                   )}
 
@@ -434,19 +436,19 @@ function StepNode({
                     <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
                       <MessageSquare className="size-3.5" />
                     </div>
-                    <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Manual Reply Playbook</label>
+                    <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">{t('outreach.sequences.builder.manualPlaybook')}</label>
                   </div>
                   <div className="w-full bg-[#161b22] border border-white/10 rounded-xl overflow-hidden focus-within:border-emerald-500/40 transition-all">
                     <TipTapEditor
                       value={step.config.manual_reply_notes || ''}
                       onChange={val => onUpdateConfig(step.id, { manual_reply_notes: val })}
-                      placeholder="If the prospect replies to this email, I should..."
+                      placeholder={t('outreach.sequences.builder.playbookPlaceholder')}
                       className="min-h-[120px] bg-transparent border-0"
                     />
                   </div>
                   <p className="text-[9px] text-slate-600 mt-2 italic flex items-center gap-1.5 ml-1">
                     <AlertCircle className="size-2.5" />
-                    Guidance for manual action if a reply is detected at this stage.
+                    {t('outreach.sequences.builder.playbookGuidance')}
                   </p>
                 </div>
               </div>
@@ -481,7 +483,7 @@ function StepNode({
               className="flex items-center justify-center gap-2 w-[280px] py-3 rounded-2xl border-2 border-dashed border-white/5 text-slate-500 hover:text-teal-400 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-xs font-bold shadow-lg hover:shadow-teal-500/5 active:scale-95"
             >
               <Plus className="size-4" />
-              Add Next Step
+              {t('outreach.sequences.builder.addNextStep')}
             </button>
           </div>
         )}
@@ -502,6 +504,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const { t, i18n } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = (searchParams.get('view') as 'builder' | 'settings' | 'recipients' | 'analytics') || 'analytics';
 
@@ -673,7 +676,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         console.warn('Failed to load step analytics', err);
       }
     } catch (err) {
-      toast.error('Failed to load sequence data');
+      toast.error(t('outreach.sequences.toasts.loadError'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -682,7 +685,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
 
   const handleSaveAll = async () => {
     if (!sequenceId || !activeProjectId || !sequence) {
-      toast.error('Missing required save data');
+      toast.error(t('outreach.sequences.toasts.missingSaveData'));
       return;
     }
 
@@ -729,10 +732,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       const analyticsData = await api.fetchStepAnalytics(sequenceId);
       if (analyticsData) {
         setStepAnalytics(analyticsData);
-        toast.success('Analytics updated');
+        toast.success(t('outreach.sequences.toasts.analyticsUpdated'));
       }
     } catch (err) {
-      toast.error('Failed to refresh analytics');
+      toast.error(t('outreach.sequences.toasts.analyticsRefreshError'));
     }
   };
 
@@ -788,7 +791,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const handleOptimizeStep = async (stepId: string) => {
     const step = steps.find(s => s.id === stepId);
     if (!step || !step.config.body_html || step.config.body_html.length < 20) {
-      toast.error('Please write some content first.');
+      toast.error(t('outreach.sequences.toasts.writeContentFirst'));
       return;
     }
 
@@ -810,10 +813,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         : s
       ));
       setHasUnsavedChanges(true);
-      toast.success('Optimized with Gemini!');
+      toast.success(t('outreach.sequences.toasts.optimizeSuccess'));
     } catch (err) {
       console.error(err);
-      toast.error('AI Optimization failed');
+      toast.error(t('outreach.sequences.toasts.optimizeError'));
     } finally {
       setIsOptimizing(false);
     }
@@ -822,7 +825,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   const handleActivate = async () => {
     const hasMailbox = sequence?.mailbox_id || (sequence?.mailbox_ids && sequence.mailbox_ids.length > 0);
     if (!hasMailbox) {
-      toast.error("Please select a mailbox in Settings first");
+      toast.error(t('outreach.sequences.toasts.selectMailboxFirst'));
       setActiveView('settings');
       return;
     }
@@ -831,7 +834,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
       await api.activateSequence(sequenceId, activeProjectId!);
       loadData();
     } catch (error) {
-      toast.error("Activation failed");
+      toast.error(t('outreach.sequences.toasts.activationError'));
     } finally {
       setIsSaving(false);
     }
@@ -842,10 +845,10 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     try {
       await api.updateSequence(sequenceId, { status: newStatus });
       setSequence(prev => prev ? { ...prev, status: newStatus } : null);
-      toast.success(`Sequence ${newStatus === 'active' ? 'resumed' : 'paused'}`);
+      toast.success(newStatus === 'active' ? t('outreach.sequences.toasts.resumed') : t('outreach.sequences.toasts.paused'));
     } catch (err) {
       console.error(err);
-      toast.error(`Failed to ${newStatus === 'active' ? 'resume' : 'pause'} sequence`);
+      toast.error(t('outreach.sequences.toasts.toggleError', { action: newStatus === 'active' ? (i18n.language === 'es' ? 'reanudar' : 'resume') : (i18n.language === 'es' ? 'pausar' : 'pause') }));
     } finally {
       setIsSaving(false);
     }
@@ -872,13 +875,13 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
             recipients: [...currentRecipients, ...newRecipients]
           };
         });
-        toast.success(`${result.addedContacts.length} recipients assigned`);
+        toast.success(t('outreach.sequences.toasts.recipientsAssigned', { count: result.addedContacts.length }));
       } else {
-        toast.success(`${recipients.length} recipients assigned`);
+        toast.success(t('outreach.sequences.toasts.recipientsAssigned', { count: recipients.length }));
         loadData();
       }
     } catch (err) {
-      toast.error('Failed to assign recipients');
+      toast.error(t('outreach.sequences.toasts.assignError'));
     }
   };
 
@@ -886,24 +889,24 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     if (!window.confirm("Are you sure you want to remove this contact from the sequence?")) return;
     try {
       await api.removeSequenceRecipient(sequenceId, contactId);
-      toast.success("Recipient removed");
+      toast.success(t('outreach.sequences.toasts.removeSuccess'));
       loadData();
     } catch (err) {
       console.error("Failed to remove recipient:", err);
-      toast.error("Failed to remove recipient");
+      toast.error(t('outreach.sequences.toasts.removeError'));
     }
   };
 
   const handleToggleRecipientStatus = async (contactId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
-    const toastId = toast.loading(`${newStatus === 'active' ? 'Resuming' : 'Pausing'} contact...`);
+    const toastId = toast.loading(newStatus === 'active' ? t('outreach.sequences.toasts.resumingContact') : t('outreach.sequences.toasts.pausingContact'));
     try {
       await api.toggleRecipientStatus(sequenceId, contactId, newStatus);
-      toast.success(`Contact ${newStatus === 'active' ? 'resumed' : 'paused'} successfully`, { id: toastId });
+      toast.success(t('outreach.sequences.toasts.contactToggleSuccess', { status: newStatus === 'active' ? (i18n.language === 'es' ? 'reanudado' : 'resumed') : (i18n.language === 'es' ? 'pausado' : 'paused') }), { id: toastId });
       loadData();
     } catch (err) {
       console.error("Failed to toggle recipient status:", err);
-      toast.error("Failed to update contact status", { id: toastId });
+      toast.error(t('outreach.sequences.toasts.contactToggleError'), { id: toastId });
     }
   };
 
@@ -934,7 +937,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
               value={sequence?.name || ''}
               onChange={e => { setSequence(prev => prev ? { ...prev, name: e.target.value } : null); setHasUnsavedChanges(true); }}
               className="bg-transparent border-none outline-none font-bold text-white text-sm focus:ring-0 p-0"
-              placeholder="Sequence Name"
+              placeholder={t('outreach.sequences.builder.sequenceName')}
             />
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Email Sequence</span>
           </div>
@@ -979,7 +982,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
           <button
             onClick={refreshAnalytics}
             className="p-2 hover:bg-white/5 rounded-xl text-slate-500 hover:text-teal-400 transition-all mr-2"
-            title="Refresh Analytics"
+            title={t('outreach.sequences.builder.refreshAnalytics')}
           >
             <Clock className="size-4" />
           </button>
@@ -1382,7 +1385,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                                       ? "hover:bg-amber-500/10 text-amber-500/60 hover:text-amber-400" 
                                       : "hover:bg-emerald-500/10 text-emerald-500/60 hover:text-emerald-400"
                                   )}
-                                  title={r.enrollment_status === 'active' ? "Pause contact" : "Resume contact"}
+                                  title={r.enrollment_status === 'active' ? t('outreach.sequences.recipients.tooltipPause') : t('outreach.sequences.recipients.tooltipResume')}
                                 >
                                   {r.enrollment_status === 'active' ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
                                 </button>
@@ -1390,7 +1393,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                               <button
                                 onClick={() => handleRemoveRecipient(r.contact_id)}
                                 className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                                title="Remove recipient"
+                                title={t('outreach.sequences.recipients.tooltipRemove')}
                               >
                                 <Trash2 className="size-3.5" />
                               </button>

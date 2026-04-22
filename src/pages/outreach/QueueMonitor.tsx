@@ -14,6 +14,7 @@ import {
 import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 interface QueueJob {
   jobId: string;
@@ -37,6 +38,7 @@ export default function QueueMonitor() {
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
   const [snapToBusiness, setSnapToBusiness] = useState(true);
+  const { t, language } = useTranslation();
   const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, clearSequenceJobs, authHeaders, activeProjectId } = useOutreachApi();
 
   // Filter state
@@ -55,11 +57,11 @@ export default function QueueMonitor() {
       if (data && data.success) {
         setJobs(data.jobs || []);
       } else {
-        setError('Failed to retrieve queue data.');
+        setError(t('outreach.queue.requestFailed'));
       }
     } catch (err: any) {
       console.error('[QueueMonitor] Load Error:', err);
-      setError(err.message || 'Failed to connect to the queue service.');
+      setError(err.message || t('outreach.queue.requestFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -67,7 +69,7 @@ export default function QueueMonitor() {
 
   const handleRebalance = async () => {
     if (!activeProjectId) return;
-    if (!window.confirm("Warning: This will strictly reschedule all upcoming sends relative to NOW and space them out by your project's sending interval. This is useful for fixing 'clumped' legacy jobs or unassigned contacts. Proceed?")) return;
+    if (!window.confirm(t('outreach.queue.rebalanceConfirm'))) return;
     
     setIsRebalancing(true);
     try {
@@ -77,15 +79,15 @@ export default function QueueMonitor() {
       });
       
       if (data && data.success) {
-        toast.success(data.message || "Queue rebalanced and staggered successfully");
+        toast.success(data.message || t('outreach.queue.actionSuccess'));
         // Fresh reload to see new timestamps immediately
         loadQueue();
       } else {
-        toast.error(data.error || "Failed to rebalance queue");
+        toast.error(data.error || t('outreach.queue.actionError'));
       }
     } catch (err: any) {
       console.error("[Rebalance] Error:", err);
-      toast.error(err.message || "Queue rebalance request failed");
+      toast.error(err.message || t('outreach.queue.requestFailed'));
     } finally {
       setIsRebalancing(false);
     }
@@ -93,20 +95,20 @@ export default function QueueMonitor() {
 
   const handlePurgeOrphans = async () => {
     if (!activeProjectId) return;
-    if (!window.confirm("Esta acción eliminará permanentemente todos los jobs de BullMQ y registros de inscripción vinculados a secuencias que ya no existen en la base de datos. ¿Deseas continuar?")) return;
+    if (!window.confirm(t('outreach.queue.purgeOrphansConfirm'))) return;
     
     setIsPurging(true);
     try {
       const data = await purgeOrphansQueue();
       if (data && data.success) {
-        toast.success(data.message || "Huérfanos eliminados correctamente");
+        toast.success(data.message || t('outreach.queue.actionSuccess'));
         loadQueue();
       } else {
-        toast.error("Error al limpiar huérfanos");
+        toast.error(t('outreach.queue.actionError'));
       }
     } catch (err: any) {
       console.error("[PurgeOrphans] Error:", err);
-      toast.error(err.message || "La solicitud de limpieza falló");
+      toast.error(err.message || t('outreach.queue.requestFailed'));
     } finally {
       setIsPurging(false);
     }
@@ -117,29 +119,29 @@ export default function QueueMonitor() {
     
     const isUnknown = !sequenceId || sequenceId === 'undefined' || sequenceName === 'Unknown Sequence';
     const confirmMsg = isUnknown 
-      ? `¿Estás SEGURO de que deseas eliminar este envío "Ghost" (ID: ${jobId})?`
-      : `¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia "${sequenceName}"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.`;
+      ? t('outreach.queue.ghostConfirm', { jobId })
+      : t('outreach.queue.sequenceConfirm', { sequenceName });
 
     if (!window.confirm(confirmMsg)) return;
     
     if (!sequenceId && !jobId) {
-      toast.error("No se pudo identificar el ID de la secuencia ni del trabajo");
+      toast.error(t('outreach.queue.idNotFound'));
       return;
     }
 
     try {
-      toast.loading(isUnknown ? "Eliminando registro ghost..." : "Limpiando secuencia...", { id: 'clear-seq' });
+      toast.loading(isUnknown ? t('outreach.queue.clearGhostLoading') : t('outreach.queue.clearSequenceLoading'), { id: 'clear-seq' });
       
       const data = await clearSequenceJobs(sequenceId || undefined, jobId);
       if (data && data.success) {
-        toast.success(data.message || "Acción completada con éxito", { id: 'clear-seq' });
+        toast.success(data.message || t('outreach.queue.actionSuccess'), { id: 'clear-seq' });
         loadQueue();
       } else {
-        toast.error(data.error || "Error al procesar la solicitud", { id: 'clear-seq' });
+        toast.error(data.error || t('outreach.queue.actionError'), { id: 'clear-seq' });
       }
     } catch (err: any) {
       console.error("[ClearSequence] Error:", err);
-      toast.error(err.message || "La solicitud falló", { id: 'clear-seq' });
+      toast.error(err.message || t('outreach.queue.requestFailed'), { id: 'clear-seq' });
     }
   };
 
@@ -153,8 +155,8 @@ export default function QueueMonitor() {
   const senders = useMemo(() => Array.from(new Set(jobs.map(j => j.senderEmail))).sort(), [jobs]);
   const steps = useMemo(() => {
     const s = Array.from(new Set(jobs.map(j => j.stepNumber))).sort((a,b) => a-b);
-    return s.map(n => `Step ${n}`);
-  }, [jobs]);
+    return s.map(n => t('outreach.queue.stepLabel', { number: n }));
+  }, [jobs, t]);
 
   // Filtering Logic
   const filteredJobs = useMemo(() => {
@@ -162,19 +164,20 @@ export default function QueueMonitor() {
       const matchSearch = job.contactName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchSeq = seqFilter === 'ALL' || job.sequenceName === seqFilter;
       const matchSender = senderFilter === 'ALL' || job.senderEmail === senderFilter;
-      const matchStep = stepFilter === 'ALL' || `Step ${job.stepNumber}` === stepFilter;
+      const matchStep = stepFilter === 'ALL' || t('outreach.queue.stepLabel', { number: job.stepNumber }) === stepFilter;
       
       const jobStatus = job.attempts > 0 ? 'Retrying' : 'Scheduled';
       const matchStatus = statusFilter === 'ALL' || jobStatus === statusFilter;
 
       return matchSearch && matchSeq && matchSender && matchStep && matchStatus;
     });
-  }, [jobs, searchTerm, seqFilter, statusFilter, stepFilter, senderFilter]);
+  }, [jobs, searchTerm, seqFilter, statusFilter, stepFilter, senderFilter, t]);
 
   // Format date: "Oct 24, 2026 - 10:30 AM"
   const formatTime = (isoString: string) => {
     try {
-      return new Intl.DateTimeFormat('en-US', {
+      const locale = language === 'es' ? 'es-ES' : 'en-US';
+      return new Intl.DateTimeFormat(locale, {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -194,7 +197,7 @@ export default function QueueMonitor() {
           <Database className="size-12 mb-4 text-teal-500/20" />
           <Loader2 className="size-6 animate-spin absolute top-3 left-3 text-teal-400" />
         </div>
-        <p className="text-sm font-medium tracking-wide">Syncing BullMQ status...</p>
+        <p className="text-sm font-medium tracking-wide">{t('outreach.queue.syncing')}</p>
       </div>
     );
   }
@@ -205,8 +208,8 @@ export default function QueueMonitor() {
         {/* Header */}
         <OutreachSectionHeader
           icon={<ListChecks className="size-5 text-teal-400" />}
-          title="Sequence Queue Monitor"
-          subtitle="Real-time visibility into upcoming sequence steps scheduled in BullMQ."
+          title={t('outreach.queue.title')}
+          subtitle={t('outreach.queue.subtitle')}
           actions={
             <div className="flex items-center gap-6">
               {/* Business Hour Snap Toggle */}
@@ -221,8 +224,8 @@ export default function QueueMonitor() {
                   <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-white group-hover:text-teal-400 transition-colors uppercase tracking-wider">Horario Comercial</span>
-                  <span className="text-[9px] text-slate-500">Fix 2 AM clump to 9 AM</span>
+                  <span className="text-[10px] font-bold text-white group-hover:text-teal-400 transition-colors uppercase tracking-wider">{t('outreach.queue.horarioComercial')}</span>
+                  <span className="text-[9px] text-slate-500">{t('outreach.queue.fixClump')}</span>
                 </div>
               </label>
 
@@ -235,7 +238,7 @@ export default function QueueMonitor() {
                   className="px-4 border-red-500/30 text-red-400 hover:bg-red-500/10"
                 >
                   <Trash2 className={cn("size-3.5 mr-2", isPurging && "animate-pulse")} />
-                  Limpiar Huérfanos
+                  {t('outreach.queue.purgeOrphans')}
                 </TealButton>
 
                 <TealButton 
@@ -246,7 +249,7 @@ export default function QueueMonitor() {
                   className="px-4 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
                 >
                   <Zap className={cn("size-3.5 mr-2", isRebalancing && "animate-pulse")} />
-                  Rebalance & Stagger
+                  {t('outreach.queue.rebalance')}
                 </TealButton>
 
                 <TealButton 
@@ -257,7 +260,7 @@ export default function QueueMonitor() {
                   className="px-4"
                 >
                   <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
-                  Refresh Queue
+                  {t('outreach.queue.refresh')}
                 </TealButton>
               </div>
             </div>
@@ -267,13 +270,13 @@ export default function QueueMonitor() {
         {error ? (
           <div className="p-12 text-center border border-red-500/10 bg-red-500/5 rounded-[40px]">
             <p className="text-red-400 font-medium mb-4">{error}</p>
-            <TealButton onClick={loadQueue}>Try Again</TealButton>
+            <TealButton onClick={loadQueue}>{t('common.error')}</TealButton>
           </div>
         ) : jobs.length === 0 ? (
           <OutreachEmptyState
             icon={<Clock />}
-            title="Queue is Empty"
-            description="No emails are currently scheduled to be sent. New jobs will appear here as soon as contacts are enrolled in active sequences."
+            title={t('outreach.queue.emptyTitle')}
+            description={t('outreach.queue.emptyDesc')}
           />
         ) : (
           <div className="space-y-4">
@@ -283,7 +286,7 @@ export default function QueueMonitor() {
                 <Search className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
                 <input 
                   type="text" 
-                  placeholder="Buscar contacto..."
+                  placeholder={t('outreach.queue.searchPlaceholder')}
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-teal-500/50 transition-all font-medium text-white"
@@ -297,7 +300,7 @@ export default function QueueMonitor() {
                    onChange={e => setSeqFilter(e.target.value)}
                    className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
                  >
-                   <option value="ALL">Todas las Secuencias</option>
+                   <option value="ALL">{t('outreach.queue.allSequences')}</option>
                    {sequences.map(s => <option key={s} value={s}>{s}</option>)}
                  </select>
               </div>
@@ -309,9 +312,9 @@ export default function QueueMonitor() {
                    onChange={e => setStatusFilter(e.target.value)}
                    className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
                  >
-                   <option value="ALL">Cualquier Estado</option>
-                   <option value="Scheduled">Scheduled</option>
-                   <option value="Retrying">Retrying</option>
+                   <option value="ALL">{t('outreach.queue.anyStatus')}</option>
+                   <option value="Scheduled">{t('outreach.queue.scheduled')}</option>
+                   <option value="Retrying">{t('outreach.queue.retrying')}</option>
                  </select>
               </div>
 
@@ -322,7 +325,7 @@ export default function QueueMonitor() {
                    onChange={e => setStepFilter(e.target.value)}
                    className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
                  >
-                   <option value="ALL">Todos los Pasos</option>
+                   <option value="ALL">{t('outreach.queue.allSteps')}</option>
                    {steps.map(s => <option key={s} value={s}>{s}</option>)}
                  </select>
               </div>
@@ -334,7 +337,7 @@ export default function QueueMonitor() {
                    onChange={e => setSenderFilter(e.target.value)}
                    className="w-full h-11 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-sm outline-none appearance-none cursor-pointer focus:border-teal-500/50 transition-all text-slate-300 font-bold"
                  >
-                   <option value="ALL">Todos los Remitentes</option>
+                   <option value="ALL">{t('outreach.queue.allSenders')}</option>
                    {senders.map(s => <option key={s} value={s}>{s}</option>)}
                  </select>
               </div>
@@ -345,13 +348,13 @@ export default function QueueMonitor() {
               <div className="px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-2">
                 <Database className="size-4 text-teal-400" />
                 <span className="text-xs text-white">
-                  Resultados Filtrados: <span className="font-bold">{filteredJobs.length}</span> / {jobs.length}
+                  {t('outreach.queue.filteredResults')}: <span className="font-bold">{filteredJobs.length}</span> / {jobs.length}
                 </span>
               </div>
               {filteredJobs.length > 0 && (
                 <div className="px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-2">
                   <Clock className="size-4 text-amber-400" />
-                  <span className="text-xs text-white font-medium">Siguiente envío: {new Date(filteredJobs[0].scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-xs text-white font-medium">{t('outreach.queue.nextSend')}: {new Date(filteredJobs[0].scheduledTime).toLocaleTimeString(language === 'es' ? 'es-ES' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               )}
             </div>
@@ -359,8 +362,8 @@ export default function QueueMonitor() {
             {filteredJobs.length === 0 ? (
               <OutreachEmptyState
                 icon={<Search />}
-                title="Sin resultados"
-                description="No se encontraron envíos que coincidan con estos filtros. Intenta ajustar tu búsqueda o limpiar los filtros."
+                title={t('outreach.queue.noResultsTitle')}
+                description={t('outreach.queue.noResultsDesc')}
               />
             ) : (
               <div className="bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
@@ -368,13 +371,13 @@ export default function QueueMonitor() {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-white/[0.02] border-b border-white/5">
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Scheduled Time</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Recipient</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Sequence</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Remitente (Sender)</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Step Action</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">Status</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">Acciones</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.time')}</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.recipient')}</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.sequence')}</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.sender')}</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.action')}</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.status')}</th>
+                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">{t('outreach.queue.headers.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -410,7 +413,9 @@ export default function QueueMonitor() {
                           <div className="flex items-center gap-2" title={`Sequence ID: ${job.sequenceId}`}>
                             <Layers className="size-3.5 text-indigo-400" />
                             <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                              {job.sequenceName}
+                              {job.sequenceName === "Unknown Sequence" 
+                                ? t('outreach.queue.unknownSequence') 
+                                : job.sequenceName}
                             </span>
                           </div>
                         </td>
@@ -421,7 +426,9 @@ export default function QueueMonitor() {
                               "text-xs font-medium truncate max-w-[180px]",
                               job.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
                             )}>
-                              {job.senderEmail}
+                              {job.senderEmail === "Waiting for email assignment" 
+                                ? t('outreach.queue.waitingForEmail') 
+                                : job.senderEmail}
                             </span>
                           </div>
                         </td>
@@ -434,19 +441,19 @@ export default function QueueMonitor() {
                         </td>
                         <td className="px-6 py-5">
                           {job.attempts > 0 ? (
-                            <OutreachBadge variant="orange" dot>Retrying ({job.attempts})</OutreachBadge>
+                            <OutreachBadge variant="orange" dot>{t('outreach.queue.retrying')} ({job.attempts})</OutreachBadge>
                           ) : (
-                            <OutreachBadge variant="teal" dot>Scheduled</OutreachBadge>
+                            <OutreachBadge variant="teal" dot>{t('outreach.queue.scheduled')}</OutreachBadge>
                           )}
                         </td>
                         <td className="px-6 py-5 text-right">
                           <button 
                             onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.id)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group ml-auto"
-                            title="Eliminar todos los envíos de esta secuencia"
+                            title={t('outreach.queue.deleteSends')}
                           >
                             <Trash2 className="size-3.5" />
-                            <span className="text-[10px] font-black uppercase tracking-tight">Eliminar Envíos</span>
+                            <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.deleteSends')}</span>
                           </button>
                         </td>
                       </motion.tr>
@@ -454,11 +461,9 @@ export default function QueueMonitor() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
 }

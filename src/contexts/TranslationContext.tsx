@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext } from 'react';
+import { useSettings } from '@/contexts/SettingsContext';
 import enTranslations from '../locales/en.json';
 import esTranslations from '../locales/es.json';
 
@@ -7,7 +8,6 @@ type Translations = Record<string, any>;
 
 interface TranslationContextType {
     language: Language;
-    setLanguage: (lang: Language) => void;
     t: (key: string, replacements?: Record<string, string>) => string;
 }
 
@@ -19,26 +19,7 @@ const translations: Record<Language, Translations> = {
 const TranslationContext = createContext<TranslationContextType | undefined>(undefined);
 
 export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [language, setLanguage] = useState<Language>('es');
-
-    // Try to load language from localStorage
-    useEffect(() => {
-        const savedLang = localStorage.getItem('vult_language') as Language;
-        if (savedLang && (savedLang === 'en' || savedLang === 'es')) {
-            setLanguage(savedLang);
-        } else {
-            // Auto-detect browser language
-            const browserLang = navigator.language.split('-')[0];
-            if (browserLang === 'en' || browserLang === 'es') {
-                setLanguage(browserLang as Language);
-            }
-        }
-    }, []);
-
-    const handleSetLanguage = (lang: Language) => {
-        setLanguage(lang);
-        localStorage.setItem('vult_language', lang);
-    };
+    const { language } = useSettings();
 
     const t = (key: string, replacements?: Record<string, string>): string => {
         const keys = key.split('.');
@@ -83,7 +64,7 @@ export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     return (
-        <TranslationContext.Provider value={{ language, setLanguage: handleSetLanguage, t }}>
+        <TranslationContext.Provider value={{ language, t }}>
             {children}
         </TranslationContext.Provider>
     );

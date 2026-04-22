@@ -11,39 +11,15 @@ import {
 import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader } from './OutreachCommon';
 import { cn } from '@/lib/utils';
 import { useOutreachApi, AnalyticsData, FunnelStat } from '@/hooks/useOutreachApi';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 // Industry benchmark constants — legitimate B2B email averages, not fake data.
 // Source: Mailchimp 2024 industry averages for B2B / Technology sector.
 const BENCHMARKS = {
-  openRate:   { label: 'Industry avg', value: 21.5 },
-  replyRate:  { label: 'Industry avg', value: 10.0 },
-  bounceRate: { label: 'Safety limit', value: 2.5, lowerIsBetter: true },
+  openRate:   { key: 'industryAvg', value: 21.5 },
+  replyRate:  { key: 'industryAvg', value: 10.0 },
+  bounceRate: { key: 'safetyLimit', value: 2.5, lowerIsBetter: true },
 };
-
-/** Returns a sub-label like "Industry avg: 21.5% (you: +3.2pp)" */
-function getBenchmarkSub(
-  metric: keyof typeof BENCHMARKS,
-  actualValue: number
-): string {
-  const b = BENCHMARKS[metric];
-  const diff = parseFloat((actualValue - b.value).toFixed(1));
-  const sign = diff > 0 ? '+' : '';
-  return `${b.label}: ${b.value}% (you: ${sign}${diff}pp)`;
-}
-
-/** Converts a numeric percentage-point change to a display string like "+2.1" or "-0.4" */
-function formatTrendValue(change: number | null | undefined): string {
-  if (change == null) return '';
-  const sign = change > 0 ? '+' : '';
-  return `${sign}${change}pp`;
-}
-
-/** Maps a numeric change to a trend direction for the MetricCard arrow. */
-function trendDir(change: number | null | undefined, lowerIsBetter = false): 'up' | 'down' | 'neutral' {
-  if (change == null || change === 0) return 'neutral';
-  if (lowerIsBetter) return change < 0 ? 'up' : 'down';
-  return change > 0 ? 'up' : 'down';
-}
 
 const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -61,6 +37,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 };
 
 export default function OutreachAnalytics() {
+  const { t } = useTranslation();
   const [timeRange, setTimeRange] = useState<string>('30d');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [funnelStats, setFunnelStats] = useState<FunnelStat[]>([]);
@@ -70,6 +47,37 @@ export default function OutreachAnalytics() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { fetchAnalytics, getFunnelStats, generateAiReport, exportAiReport, activeProjectId } = useOutreachApi();
+
+  /** Returns a localized sub-label like "Industry avg: 21.5% (you: +3.2pp)" */
+  function getBenchmarkSub(
+    metric: keyof typeof BENCHMARKS,
+    actualValue: number
+  ): string {
+    const b = BENCHMARKS[metric];
+    const diff = parseFloat((actualValue - b.value).toFixed(1));
+    const sign = diff > 0 ? '+' : '';
+    
+    return t('outreach.analytics.benchmarks.comparison', {
+      label: t(`outreach.analytics.benchmarks.${b.key}`),
+      value: b.value.toString(),
+      sign,
+      diff: Math.abs(diff).toString()
+    });
+  }
+
+  /** Converts a numeric percentage-point change to a display string like "+2.1" or "-0.4" */
+  function formatTrendValue(change: number | null | undefined): string {
+    if (change == null) return '';
+    const sign = change > 0 ? '+' : '';
+    return `${sign}${change}pp`;
+  }
+
+  /** Maps a numeric change to a trend direction for the MetricCard arrow. */
+  function trendDir(change: number | null | undefined, lowerIsBetter = false): 'up' | 'down' | 'neutral' {
+    if (change == null || change === 0) return 'neutral';
+    if (lowerIsBetter) return change < 0 ? 'up' : 'down';
+    return change > 0 ? 'up' : 'down';
+  }
 
   useEffect(() => {
     async function load() {
@@ -86,16 +94,16 @@ export default function OutreachAnalytics() {
         if (res) setData(res);
         if (funnel) setFunnelStats(funnel);
         
-        if (!res) setError('No core analytics data returned.');
+        if (!res) setError(t('outreach.analytics.errorDesc'));
       } catch (err: any) {
         console.error('Failed to load analytics:', err);
-        setError(err.message || 'Failed to connect to the analytics service.');
+        setError(err.message || t('outreach.analytics.errorDesc'));
       } finally {
         setIsLoading(false);
       }
     }
     load();
-  }, [timeRange, activeProjectId, fetchAnalytics]);
+  }, [timeRange, activeProjectId, fetchAnalytics, t]);
 
   const handleGenerateReport = async () => {
     if (!data) return;
@@ -136,7 +144,7 @@ export default function OutreachAnalytics() {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-500">
         <Loader2 className="size-8 animate-spin mb-4 text-teal-500" />
-        <p>Loading analytics...</p>
+        <p>{t('outreach.analytics.syncing')}</p>
       </div>
     );
   }
@@ -147,15 +155,15 @@ export default function OutreachAnalytics() {
         <div className="size-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
           <AlertTriangle className="size-8 text-red-500" />
         </div>
-        <h3 className="text-xl font-bold text-white mb-2">Analytics Unavailable</h3>
+        <h3 className="text-xl font-bold text-white mb-2">{t('outreach.analytics.errorTitle')}</h3>
         <p className="text-slate-400 max-w-xs mb-6">
-          {error || "We couldn't retrieve your analytics data. Please check your connection and try again."}
+          {error || t('outreach.analytics.errorDesc')}
         </p>
         <button 
           onClick={() => window.location.reload()}
           className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold text-white transition-all"
         >
-          Try Again
+          {t('outreach.analytics.tryAgain')}
         </button>
       </div>
     );
@@ -169,10 +177,10 @@ export default function OutreachAnalytics() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white leading-none">Performance Overview</h1>
+            <h1 className="text-2xl font-bold text-white leading-none">{t('outreach.analytics.title')}</h1>
             <p className="text-sm text-slate-500 mt-2 flex items-center gap-2">
               <Globe className="size-3.5 text-teal-400" />
-              Unified analytics across All Outreach Engines
+              {t('outreach.analytics.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -183,17 +191,9 @@ export default function OutreachAnalytics() {
                 onChange={(e) => setTimeRange(e.target.value)}
                 className="bg-transparent border-none text-slate-300 text-xs font-bold outline-none cursor-pointer"
               >
-                <option value="1d">Last 24h</option>
-                <option value="3d">Last 3 days</option>
-                <option value="7d">Last 7 days</option>
-                <option value="14d">Last 14 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="1m">Last month</option>
-                <option value="Q1">Q1 (Jan-Mar)</option>
-                <option value="Q2">Q2 (Apr-Jun)</option>
-                <option value="Q3">Q3 (Jul-Sep)</option>
-                <option value="Q4">Q4 (Oct-Dec)</option>
-                <option value="1y">Last year</option>
+                {Object.keys(t('outreach.analytics.timeRange', { returnObjects: true }) as object).map((key) => (
+                  <option key={key} value={key}>{t(`outreach.analytics.timeRange.${key}`)}</option>
+                ))}
               </select>
             </div>
             
@@ -207,7 +207,7 @@ export default function OutreachAnalytics() {
               ) : (
                 <Sparkles className="size-3.5" />
               )}
-              AI REPORT
+              {t('outreach.analytics.aiReport')}
             </button>
           </div>
         </div>
@@ -215,7 +215,7 @@ export default function OutreachAnalytics() {
         {/* Core KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <OutreachMetricCard 
-            label="Total Outreach Volume" 
+            label={t('outreach.analytics.kpis.volume')} 
             value={(data.total_sent ?? 0).toLocaleString()} 
             teal 
             icon={<Mail className="size-4" />} 
@@ -223,7 +223,7 @@ export default function OutreachAnalytics() {
             trendValue={`${data.sent_change ?? '0'}%`} 
           />
           <OutreachMetricCard 
-            label="Unified Open Rate" 
+            label={t('outreach.analytics.kpis.openRate')} 
             value={`${data.open_rate ?? '0.0'}%`} 
             icon={<TrendingUp className="size-4" />} 
             trend={trendDir(data.open_rate_change)}
@@ -231,7 +231,7 @@ export default function OutreachAnalytics() {
             sub={getBenchmarkSub('openRate', parseFloat(data.open_rate ?? '0'))}
           />
           <OutreachMetricCard 
-            label="Engagement / Reply Rate" 
+            label={t('outreach.analytics.kpis.replyRate')} 
             value={`${data.reply_rate ?? '0.0'}%`} 
             icon={<MessageSquare className="size-4" />} 
             trend={trendDir(data.reply_rate_change)}
@@ -239,7 +239,7 @@ export default function OutreachAnalytics() {
             sub={getBenchmarkSub('replyRate', parseFloat(data.reply_rate ?? '0'))}
           />
           <OutreachMetricCard 
-            label="Unified Bounce Rate" 
+            label={t('outreach.analytics.kpis.bounceRate')} 
             value={`${data.bounce_rate ?? '0.0'}%`} 
             icon={<Shield className="size-4" />} 
             trend={trendDir(data.bounce_rate_change, true)}
@@ -254,8 +254,8 @@ export default function OutreachAnalytics() {
           <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8 backdrop-blur-sm">
             <OutreachSectionHeader
               icon={<BarChart2 className="size-5 text-teal-400" />}
-              title="Engagement Over Time"
-              subtitle="Consolidated daily performance across campaigns and sequences."
+              title={t('outreach.analytics.charts.engagementTitle')}
+              subtitle={t('outreach.analytics.charts.engagementSubtitle')}
             />
             <div className="h-[320px] mt-8">
               <ResponsiveContainer width="100%" height="100%">
@@ -272,10 +272,10 @@ export default function OutreachAnalytics() {
                   <YAxis stroke="#334155" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
                   <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
-                  <Line name="Sent" type="monotone" dataKey="sent" stroke="#14b8a6" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-                  <Line name="Opens" type="monotone" dataKey="opens" stroke="#0ea5e9" strokeWidth={2} dot={false} />
-                  <Line name="Replies" type="monotone" dataKey="replies" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                  <Line name="Bounces" type="monotone" dataKey="bounced" stroke="#94a3b8" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+                  <Line name={t('outreach.analytics.charts.labels.sent')} type="monotone" dataKey="sent" stroke="#14b8a6" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
+                  <Line name={t('outreach.analytics.charts.labels.opens')} type="monotone" dataKey="opens" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                  <Line name={t('outreach.analytics.charts.labels.replies')} type="monotone" dataKey="replies" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                  <Line name={t('outreach.analytics.charts.labels.bounces')} type="monotone" dataKey="bounced" stroke="#94a3b8" strokeWidth={2} dot={false} strokeDasharray="4 4" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -285,8 +285,8 @@ export default function OutreachAnalytics() {
           <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8 backdrop-blur-sm">
             <OutreachSectionHeader
               icon={<Filter className="size-5 text-indigo-400" />}
-              title="Unified Funnel Performance"
-              subtitle="Comparing engagement efficiency by strategic funnel stage."
+              title={t('outreach.analytics.charts.funnelTitle')}
+              subtitle={t('outreach.analytics.charts.funnelSubtitle')}
             />
             <div className="h-[320px] mt-8">
               <ResponsiveContainer width="100%" height="100%">
@@ -296,8 +296,8 @@ export default function OutreachAnalytics() {
                   <YAxis stroke="#334155" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
                   <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
-                  <Bar name="Volume (Sent)" dataKey="total_sent" fill="#14b8a6" radius={[6, 6, 0, 0]} barSize={40} />
-                  <Bar name="Impact (Replies)" dataKey="total_replies" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={40} />
+                  <Bar name={t('outreach.analytics.charts.labels.volumeSent')} dataKey="total_sent" fill="#14b8a6" radius={[6, 6, 0, 0]} barSize={40} />
+                  <Bar name={t('outreach.analytics.charts.labels.impactReplies')} dataKey="total_replies" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={40} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -310,8 +310,8 @@ export default function OutreachAnalytics() {
           <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8">
             <OutreachSectionHeader
               icon={<Sparkles className="size-5 text-amber-400" />}
-              title="Global Intent Analysis"
-              subtitle="AI Breakdown of reply sentiment across all outreach."
+              title={t('outreach.analytics.charts.intentTitle')}
+              subtitle={t('outreach.analytics.charts.intentSubtitle')}
             />
             <div className="flex items-center gap-12 mt-8">
               <div className="size-48">
@@ -352,8 +352,8 @@ export default function OutreachAnalytics() {
           <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8">
             <OutreachSectionHeader
               icon={<TrendingUp className="size-5 text-emerald-400" />}
-              title="Top Performing Entities"
-              subtitle="Highest response rates relative to total volume."
+              title={t('outreach.analytics.charts.entitiesTitle')}
+              subtitle={t('outreach.analytics.charts.entitiesSubtitle')}
             />
             <div className="h-[240px] mt-8">
               <ResponsiveContainer width="100%" height="100%">
@@ -362,8 +362,8 @@ export default function OutreachAnalytics() {
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={11} width={120} tickLine={false} axisLine={false} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
-                  <Bar dataKey="reply" name="Reply Rate" fill="url(#emeraldGradient)" radius={[0, 4, 4, 0]} barSize={12} />
-                  <Bar dataKey="bounce" name="Bounce Rate" fill="#EF4444" radius={[0, 4, 4, 0]} barSize={4} />
+                  <Bar dataKey="reply" name={t('outreach.analytics.charts.labels.replyRate')} fill="url(#emeraldGradient)" radius={[0, 4, 4, 0]} barSize={12} />
+                  <Bar dataKey="bounce" name={t('outreach.analytics.charts.labels.bounceRate')} fill="#EF4444" radius={[0, 4, 4, 0]} barSize={4} />
                   <defs>
                     <linearGradient id="emeraldGradient" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#10b981" stopOpacity={0.2} />
@@ -387,8 +387,8 @@ export default function OutreachAnalytics() {
                   <Sparkles className="size-5 text-teal-400" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Vult Intel: Strategic Analysis</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Gemini-driven performance optimization</p>
+                  <h3 className="text-lg font-bold text-white">{t('outreach.analytics.reportModal.title')}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{t('outreach.analytics.reportModal.subtitle')}</p>
                 </div>
               </div>
               <button 
@@ -406,20 +406,20 @@ export default function OutreachAnalytics() {
             </div>
 
             <div className="px-10 py-6 bg-white/[0.02] border-t border-white/5 flex items-center justify-between">
-              <p className="text-[10px] text-slate-500 font-mono">CONFIDENTIAL: Strategic Sales Intelligence Report</p>
+              <p className="text-[10px] text-slate-500 font-mono">{t('outreach.analytics.reportModal.footer')}</p>
               <div className="flex items-center gap-4">
                 <button
                   onClick={() => setShowReportModal(false)}
                   className="px-6 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
                 >
-                  Close Window
+                  {t('outreach.analytics.reportModal.close')}
                 </button>
                 <button
                   onClick={handleDownloadReport}
                   className="flex items-center gap-3 px-6 py-2.5 bg-white text-black font-bold rounded-2xl text-xs transition-all hover:bg-teal-50 shadow-lg shadow-white/5"
                 >
                   <Download className="size-3.5" />
-                  Descargar Reporte (.md)
+                  {t('outreach.analytics.reportModal.download')}
                 </button>
               </div>
             </div>

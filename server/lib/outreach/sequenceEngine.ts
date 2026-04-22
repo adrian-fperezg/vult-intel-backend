@@ -217,11 +217,11 @@ export async function scheduleNextStep(
     
     if (lastJob?.last_time) {
       const lastTime = DateTime.fromISO(lastJob.last_time).setZone(targetTz);
-      const staggeredTime = lastTime.plus({ minutes: intervalMinutes });
+      const minStaggeredTime = lastTime.plus({ minutes: intervalMinutes });
       
-      if (staggeredTime > executeAt) {
-        console.log(`[SequenceEngine] [Staggering] Mailbox ${mailboxId} busy until ${lastTime.toFormat('HH:mm:ss')}. Staggering to ${staggeredTime.toFormat('HH:mm:ss')}.`);
-        executeAt = staggeredTime;
+      if (minStaggeredTime > executeAt) {
+        console.log(`[SequenceEngine] [Staggering] Mailbox ${mailboxId} busy until ${lastTime.toFormat('HH:mm:ss')}. Staggering to ${minStaggeredTime.toFormat('HH:mm:ss')}.`);
+        executeAt = minStaggeredTime;
         // Re-enforce window in case staggering pushed it past the end hour
         executeAt = getNextBusinessSlot(executeAt, sequence);
       }
@@ -356,15 +356,24 @@ export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime
 
     if (isAllowedDay) {
       if (current < startOfWindow) {
-        return startOfWindow;
+        // PRESERVE minutes/seconds if we just need to shift to today's start
+        // but ensure we don't land BEFORE the absolute window start
+        const shifted = current.set({ hour: startHour, minute: Math.max(startMin, current.minute) });
+        return shifted < startOfWindow ? startOfWindow : shifted;
       }
       if (current <= endOfWindow) {
         return current;
       }
     }
     
-    // Jump to next day at start of window
-    current = current.plus({ days: 1 }).set({ hour: startHour, minute: startMin, second: 0, millisecond: 0 });
+    // Jump to next day - PRESERVE minutes and seconds from the original baseTime 
+    // to maintain staggering relative offsets across day boundaries.
+    current = current.plus({ days: 1 }).set({ 
+      hour: startHour, 
+      minute: Math.max(startMin, baseTime.minute), 
+      second: baseTime.second, 
+      millisecond: baseTime.millisecond 
+    });
   }
   
   return current;

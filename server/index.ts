@@ -501,8 +501,8 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
       });
 
       // Keep track of the next available slot for this mailbox
-      // Initial buffer of 1 minute from now
-      let nextAvailableSlotMs = now + (60 * 1000);
+      // Initial buffer of 5 minutes from now to allow for immediate processing if desired
+      let nextAvailableSlotMs = now + (5 * 60 * 1000);
 
       for (const job of sortedJobs) {
         const { projectId, sequenceId, contactId } = job.data;
@@ -521,7 +521,8 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
 
         if (snapToBusinessHours && baseTime.hour < targetStartHour) {
           // Snap early emails to the target start hour of the SAME day
-          baseTime = baseTime.set({ hour: targetStartHour, minute: 0, second: 0, millisecond: 0 });
+          // We preserve the minutes from the original time to maintain staggering offsets
+          baseTime = baseTime.set({ hour: targetStartHour });
         }
 
         // B. Apply Staggering relative to the previous job in this mailbox
@@ -532,7 +533,7 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
 
         // C. Update BullMQ Job
         await job.changeDelay(newDelay);
-        console.log(`[Queue Rebalance] Job ${job.id} time moved to ${scheduledAt.toISOString()}`);
+        console.log(`[Queue Rebalance] Job ${job.id} (Mailbox: ${mailboxId}) moved to ${scheduledAt.toISOString()} (Delay: ${Math.round(newDelay/60000)}m)`);
 
         // D. Update Database Enrollment to match
         await db.run(

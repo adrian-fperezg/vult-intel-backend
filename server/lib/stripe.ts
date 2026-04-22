@@ -10,9 +10,11 @@ if (!stripeSecretKey) {
   console.warn('[Stripe] STRIPE_SECRET_KEY is missing from environment.');
 }
 
-export const stripe = new Stripe(stripeSecretKey || '', {
-  apiVersion: '2025-02-24-preview' as any, // Use latest stable API version header
-});
+export const stripe = stripeSecretKey 
+  ? new Stripe(stripeSecretKey, {
+      apiVersion: '2025-02-24-preview' as any,
+    })
+  : null as any;
 
 /**
  * Verify a Stripe webhook signature using raw body and header.

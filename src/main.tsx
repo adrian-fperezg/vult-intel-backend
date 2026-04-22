@@ -14,17 +14,17 @@ import ErrorBoundary from './components/ErrorBoundary';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <TranslationProvider>
-        <AuthProvider>
-          <ProjectProvider>
-            <DataProvider>
-              <SettingsProvider>
+      <AuthProvider>
+        <SettingsProvider>
+          <TranslationProvider>
+            <ProjectProvider>
+              <DataProvider>
                 <App />
-              </SettingsProvider>
-            </DataProvider>
-          </ProjectProvider>
-        </AuthProvider>
-      </TranslationProvider>
+              </DataProvider>
+            </ProjectProvider>
+          </TranslationProvider>
+        </SettingsProvider>
+      </AuthProvider>
     </ErrorBoundary>
   </StrictMode>,
 );
