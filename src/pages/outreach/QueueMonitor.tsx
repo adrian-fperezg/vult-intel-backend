@@ -112,30 +112,34 @@ export default function QueueMonitor() {
     }
   };
 
-  const handleClearSequence = async (sequenceId: string, sequenceName: string) => {
+  const handleClearSequence = async (sequenceId: string | null | undefined, sequenceName: string, jobId: string) => {
     if (!activeProjectId) return;
-    if (!window.confirm(`¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia "${sequenceName}"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.`)) return;
     
-    if (!sequenceId) {
-      toast.error("No se pudo identificar el ID de la secuencia");
+    const isUnknown = !sequenceId || sequenceId === 'undefined' || sequenceName === 'Unknown Sequence';
+    const confirmMsg = isUnknown 
+      ? `¿Estás SEGURO de que deseas eliminar este envío "Ghost" (ID: ${jobId})?`
+      : `¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia "${sequenceName}"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.`;
+
+    if (!window.confirm(confirmMsg)) return;
+    
+    if (!sequenceId && !jobId) {
+      toast.error("No se pudo identificar el ID de la secuencia ni del trabajo");
       return;
     }
 
-    console.log("DEBUG FRONTEND: Sending sequenceId:", sequenceId);
-    console.log("Clearing sequence:", sequenceId);
     try {
-      toast.loading("Limpiando secuencia...", { id: 'clear-seq' });
+      toast.loading(isUnknown ? "Eliminando registro ghost..." : "Limpiando secuencia...", { id: 'clear-seq' });
       
-      const data = await clearSequenceJobs(sequenceId);
+      const data = await clearSequenceJobs(sequenceId || undefined, jobId);
       if (data && data.success) {
-        toast.success(`Cola limpiada: ${data.removedJobsCount} envíos y ${data.removedEnrollmentsCount || 0} inscripciones eliminadas`, { id: 'clear-seq' });
+        toast.success(data.message || "Acción completada con éxito", { id: 'clear-seq' });
         loadQueue();
       } else {
-        toast.error(data.error || "Error al limpiar la secuencia", { id: 'clear-seq' });
+        toast.error(data.error || "Error al procesar la solicitud", { id: 'clear-seq' });
       }
     } catch (err: any) {
       console.error("[ClearSequence] Error:", err);
-      toast.error(err.message || "La solicitud de limpieza falló", { id: 'clear-seq' });
+      toast.error(err.message || "La solicitud falló", { id: 'clear-seq' });
     }
   };
 
@@ -437,7 +441,7 @@ export default function QueueMonitor() {
                         </td>
                         <td className="px-6 py-5 text-right">
                           <button 
-                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName)}
+                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.id)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group ml-auto"
                             title="Eliminar todos los envíos de esta secuencia"
                           >

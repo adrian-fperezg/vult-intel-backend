@@ -598,7 +598,7 @@ export function useOutreachApi() {
     }>;
   }, [activeProjectId, authHeaders]);
 
-  const clearSequenceJobs = useCallback(async (sequenceId: string) => {
+  const clearSequenceJobs = useCallback(async (sequenceId?: string, jobId?: string) => {
     if (!activeProjectId) return null;
     const headers = await authHeaders();
     const res = await fetch(`${ROOT_URL}/admin/queue/clear-sequence`, {
@@ -608,7 +608,8 @@ export function useOutreachApi() {
         project_id: activeProjectId, 
         projectId: activeProjectId,
         sequenceId: sequenceId,
-        id: sequenceId 
+        id: sequenceId,
+        jobId: jobId
       }),
     });
     if (!res.ok) {

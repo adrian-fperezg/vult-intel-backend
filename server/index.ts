@@ -614,7 +614,7 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
         if (scanCount < 5 && sId) {
           const exists = sequenceStatusMap.has(sId);
           const status = exists ? sequenceStatusMap.get(sId) : 'N/A';
-          console.log(`[Purge Debug] Job ID: ${job.id}, SequenceID: ${sId}, ExistsInDB: ${exists}, StatusInDB: ${status}`);
+
           scanCount++;
         }
         
@@ -677,18 +677,41 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
  * This is used to resolve issues with "ghost" sequences.
  */
 app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: AuthRequest, res) => {
-  console.log("DEBUG BACKEND: Received body:", req.body);
   try {
     const projectId = req.headers['x-project-id'] as string;
     // Check multiple possible keys for robustness
     const sequenceId = req.body.sequenceId || req.body.sequence_id || req.body.id;
+    const jobId = req.body.jobId;
 
     if (!projectId) {
       return res.status(400).json({ success: false, error: "Missing x-project-id header" });
     }
+
+    // New logic: If sequenceId is missing but jobId is provided, remove that specific job
+    if (!sequenceId && jobId) {
+      console.log(`[Queue Clear] Removing single ghost job ${jobId} in project ${projectId}...`);
+      try {
+        const job = await emailQueue.getJob(jobId);
+        if (job) {
+          await job.remove();
+          return res.json({
+            success: true,
+            message: "Ghost record removed successfully",
+            removedJobsCount: 1,
+            removedEnrollmentsCount: 0
+          });
+        } else {
+          return res.status(404).json({ success: false, error: "Job not found in queue" });
+        }
+      } catch (jobErr: any) {
+        console.error(`[Queue Clear] Failed to fetch/remove job ${jobId}:`, jobErr.message);
+        return res.status(500).json({ success: false, error: `Failed to remove job: ${jobErr.message}` });
+      }
+    }
+
     if (!sequenceId) {
-      console.error("[Queue Clear] Missing sequenceId. Body:", JSON.stringify(req.body));
-      return res.status(400).json({ success: false, error: "Missing sequenceId in request body" });
+      console.error("[Queue Clear] Missing sequenceId and jobId. Body:", JSON.stringify(req.body));
+      return res.status(400).json({ success: false, error: "Missing sequenceId or jobId in request body" });
     }
 
     console.log(`[Queue Clear] Manually clearing jobs for sequence ${sequenceId} in project ${projectId}...`);
