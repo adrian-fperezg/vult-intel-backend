@@ -205,6 +205,38 @@
         "marketingPlatform": "Marketing Platform"
     },
     "outreach": {
+        "inbox": {
+            "title": "Unified Inbox",
+            "subtitle": "Manage all your incoming leads and replies in one place.",
+            "syncing": "Syncing messages...",
+            "emptyTitle": "Inbox Zero",
+            "emptyDesc": "No new messages found. Your inbox is clean!",
+            "refresh": "Refresh",
+            "results": "Results",
+            "result": "Result",
+            "searchPlaceholder": "Search leads...",
+            "intents": {
+                "all": "All Intents",
+                "interested": "Interested",
+                "meeting": "Meeting Requested",
+                "notInterested": "Not Interested",
+                "later": "Wait / Later",
+                "wrongPerson": "Wrong Person",
+                "general": "General Inquiry"
+            },
+            "summarize": "Summarize",
+            "reply": "Reply",
+            "cancel": "Cancel",
+            "aiSummary": "AI Summary",
+            "drafting": "Drafting Reply",
+            "typePlaceholder": "Write your reply...",
+            "sending": "Sending...",
+            "sendSuccess": "Reply sent successfully",
+            "sendReply": "Send Reply",
+            "selectTitle": "Select a message",
+            "selectDesc": "Select a conversation from the left to read and reply.",
+            "respondingAs": "Responding as: {{email}}"
+        },
         "queue": {
             "title": "Sequence Queue Monitor",
             "subtitle": "Real-time visibility into upcoming sequence steps scheduled in BullMQ.",

@@ -776,10 +776,18 @@ export function useOutreachApi() {
   );
 
   const sendInboxReply = useCallback(
-    async (id: string, bodyHtml: string) => {
-      return post<{ success: boolean; id: string }>(`/inbox/${id}/reply`, { body_html: bodyHtml });
+    async (id: string, bodyHtml: string, fromAliasId?: string) => {
+      return post<{ success: boolean; id: string }>(`/inbox/${id}/reply`, { 
+        body_html: bodyHtml,
+        from_alias_id: fromAliasId
+      });
     },
     [post]
+  );
+
+  const fetchMailboxAliases = useCallback(
+    (mailboxId: string) => get<any[]>(`/mailboxes/${mailboxId}/aliases`),
+    [get]
   );
 
   const syncGmailAliases = useCallback(

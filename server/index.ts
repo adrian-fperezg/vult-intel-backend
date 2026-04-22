@@ -4270,10 +4270,12 @@ app.get("/api/outreach/inbox", verifyFirebaseToken, async (req: AuthRequest, res
     .prepare(
       `
     SELECT c.*, 
-           m.subject, m.body_text, m.body_html, m.received_at, m.from_email as sender_email
+           m.id as latest_message_id,
+           m.subject, m.body_text, m.body_html, m.received_at, m.from_email as sender_email,
+           m.to_email, m.mailbox_id
     FROM outreach_contacts c
     INNER JOIN (
-      SELECT contact_id, subject, body_text, body_html, received_at, from_email,
+      SELECT id, contact_id, subject, body_text, body_html, received_at, from_email, to_email, mailbox_id,
              ROW_NUMBER() OVER (PARTITION BY contact_id ORDER BY received_at DESC) as rn
       FROM outreach_inbox_messages
       WHERE from_email NOT IN (SELECT email FROM outreach_mailboxes)
@@ -4324,29 +4326,8 @@ app.post("/api/outreach/inbox/:id/summarize", verifyFirebaseToken, async (req: A
 // POST /api/outreach/inbox/:id/reply
 app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
-  const { id } = req.params;
-  const { body_html } = req.body;
-
-  try {
-    const inboxMsg = await db.get(`
-      SELECT * FROM outreach_inbox_messages 
-      WHERE id = ? AND project_id IN (SELECT id FROM outreach_projects WHERE user_id = ?)
-    `, [id, userId]) as any;
-
-    if (!inboxMsg) return res.status(404).json({ error: "Message not found" });
-
-    // Aquí puedes continuar con tu lógica de inserción de correo
-    res.json({ success: true, message: "Reply queued" });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/outreach/inbox/:id/reply
-app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthRequest, res) => {
-  const userId = req.user?.uid;
   const { id } = req.params; // inbox_messages.id (not message_id)
-  const { body_html } = req.body;
+  const { body_html, from_alias_id } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!body_html) return res.status(400).json({ error: "Reply body is required" });
@@ -4367,13 +4348,35 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
 
     if (!mailbox) return res.status(404).json({ error: "Mailbox not found" });
 
-    // 3. Build the reply
+    // 3. Determine the from address (Alias vs Primary)
+    let fromEmail = mailbox.email;
+    let fromName = mailbox.name;
+
+    if (from_alias_id) {
+      const alias = await db.get("SELECT * FROM outreach_mailbox_aliases WHERE id = ? AND mailbox_id = ?", [from_alias_id, mailbox.id]) as any;
+      if (alias) {
+        fromEmail = alias.email;
+        fromName = alias.name || mailbox.name;
+      }
+    } else {
+      // Auto-detect alias from "to_email" of the lead's message
+      const alias = await db.get(
+        "SELECT * FROM outreach_mailbox_aliases WHERE mailbox_id = ? AND email = ?",
+        [mailbox.id, inboxMsg.to_email]
+      ) as any;
+      if (alias) {
+        fromEmail = alias.email;
+        fromName = alias.name || mailbox.name;
+      }
+    }
+
+    // 4. Build the reply
     const replyId = uuidv4();
     const replySubject = inboxMsg.subject.toLowerCase().startsWith('re:')
       ? inboxMsg.subject
       : `Re: ${inboxMsg.subject}`;
 
-    // 4. Insert into standard queue
+    // 5. Insert into standard queue
     await db.run(`
       INSERT INTO outreach_individual_emails (
         id, user_id, project_id, mailbox_id, contact_id, sequence_id,
@@ -4383,7 +4386,7 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [
       replyId, userId, inboxMsg.project_id, mailbox.id, inboxMsg.contact_id, inboxMsg.sequence_id,
-      mailbox.email, mailbox.name, inboxMsg.from_email, replySubject, body_html,
+      fromEmail, fromName, inboxMsg.from_email, replySubject, body_html,
       'scheduled', inboxMsg.thread_id, inboxMsg.message_id, true
     ]);
 

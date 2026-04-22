@@ -21,6 +21,7 @@ interface InboxMessage {
   sequence_id?: string;
   thread_id: string;
   message_id: string;
+  latest_message_id: string;
   from_email: string;
   to_email: string;
   subject: string;
@@ -35,6 +36,7 @@ interface InboxMessage {
   intent_score?: number;
   sender_email?: string;
   email?: string;
+  mailbox_id?: string;
 }
 
 export default function OutreachInbox() {
@@ -114,12 +116,12 @@ export default function OutreachInbox() {
   };
 
   const handleSendReply = async () => {
-    if (!selectedId || !replyBody.trim() || isSending) return;
+    if (!selectedMessage || !replyBody.trim() || isSending) return;
     
     setIsSending(true);
     const loadId = toast.loading(t('outreach.inbox.sending'));
     try {
-      await sendInboxReply(selectedId, replyBody);
+      await sendInboxReply(selectedMessage.latest_message_id, replyBody);
       toast.success(t('outreach.inbox.sendSuccess'), { id: loadId });
       setIsReplyMode(false);
       setReplyBody('');
@@ -397,9 +399,18 @@ export default function OutreachInbox() {
                       animate={{ opacity: 1, y: 0 }}
                       className="bg-white/[0.03] border border-teal-500/20 rounded-2xl p-6 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
                     >
-                      <div className="flex items-center gap-2 mb-4 text-teal-400">
-                        <PenLine className="size-4" />
-                        <span className="text-xs font-bold uppercase tracking-wider">{t('outreach.inbox.drafting')}</span>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                        <div className="flex items-center gap-2 text-teal-400">
+                          <PenLine className="size-4" />
+                          <span className="text-xs font-bold uppercase tracking-wider">{t('outreach.inbox.drafting')}</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                          <User className="size-3 text-teal-400" />
+                          <span className="text-[11px] font-medium text-teal-100/90">
+                            {t('outreach.inbox.respondingAs').replace('{{email}}', selectedMessage.to_email)}
+                          </span>
+                        </div>
                       </div>
                       
                       <TipTapEditor 
