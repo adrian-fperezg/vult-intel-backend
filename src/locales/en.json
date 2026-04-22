@@ -246,6 +246,8 @@
             "refresh": "Refresh Queue",
             "rebalance": "Rebalance & Stagger",
             "purgeOrphans": "Clear Orphans",
+            "purgeOrphansConfirm": "Are you sure you want to clear orphan jobs? This will remove all jobs for sequences or contacts that no longer exist.",
+            "purgeOrphansSuccess": "Successfully purged {{count}} orphan jobs.",
             "horarioComercial": "Business Hours",
             "fixClump": "Fix 2 AM clump to 9 AM",
             "searchPlaceholder": "Search contact...",

@@ -102,7 +102,7 @@ export default function QueueMonitor() {
     try {
       const data = await purgeOrphansQueue();
       if (data && data.success) {
-        toast.success(data.message || t('outreach.queue.actionSuccess'));
+        toast.success(t('outreach.queue.purgeOrphansSuccess', { count: String(data.removedJobsCount || 0) }));
         loadQueue();
       } else {
         toast.error(t('outreach.queue.actionError'));

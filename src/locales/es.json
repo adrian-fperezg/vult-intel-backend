@@ -214,6 +214,8 @@
             "refresh": "Refrescar Cola",
             "rebalance": "Rebalancear y Escalonar",
             "purgeOrphans": "Limpiar Huérfanos",
+            "purgeOrphansConfirm": "¿Estás seguro de que quieres limpiar los trabajos huérfanos? Esto eliminará todos los trabajos de secuencias o contactos que ya no existan.",
+            "purgeOrphansSuccess": "Se purgaron {{count}} trabajos huérfanos con éxito.",
             "horarioComercial": "Horario Comercial",
             "fixClump": "Ajustar envíos de madrugada a las 9 AM",
             "searchPlaceholder": "Buscar contacto...",
