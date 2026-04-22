@@ -120,7 +120,7 @@ export default function QueueMonitor() {
       toast.loading("Limpiando secuencia...", { id: 'clear-seq' });
       const data = await clearSequenceJobs(sequenceId);
       if (data && data.success) {
-        toast.success(`Cola limpiada: ${data.removedJobsCount} envíos eliminados`, { id: 'clear-seq' });
+        toast.success(`Cola limpiada: ${data.removedJobsCount} envíos y ${data.removedEnrollmentsCount || 0} inscripciones eliminadas`, { id: 'clear-seq' });
         loadQueue();
       } else {
         toast.error("Error al limpiar la secuencia", { id: 'clear-seq' });

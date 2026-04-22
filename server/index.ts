@@ -717,10 +717,21 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
 
     console.log(`[Queue Clear] Successfully removed ${removedJobsCount} jobs for sequence ${sequenceId}.`);
 
+    // 2. Enrollment Cleanup in DB
+    console.log(`[Queue Clear] Cleaning up enrollments for sequence ${sequenceId} in project ${projectId}...`);
+    const enrollmentCleanupResult = await db.run(`
+      DELETE FROM outreach_sequence_enrollments 
+      WHERE project_id = ? 
+      AND sequence_id = ?
+    `, projectId, sequenceId);
+
+    console.log(`[Queue Clear] Successfully removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} enrollment records.`);
+
     res.json({
       success: true,
-      message: `Successfully removed ${removedJobsCount} jobs for sequence.`,
-      removedJobsCount
+      message: `Successfully removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} enrollment records.`,
+      removedJobsCount,
+      removedEnrollmentsCount: enrollmentCleanupResult.changes
     });
   } catch (err: any) {
     console.error("[Queue Clear] Fatal Error:", err);
