@@ -774,7 +774,7 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
     // Hydrate contacts, sequences, and assigned mailboxes (triangulation)
     const [contacts, sequences, enrollments] = await Promise.all([
       contactIds.length > 0 
-        ? db.all("SELECT id, first_name, last_name FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
+        ? db.all("SELECT id, first_name, last_name, email FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
         : Promise.resolve([]),
       sequenceIds.length > 0
         ? db.all("SELECT id, name FROM outreach_sequences WHERE id = ANY($1::text[])", [sequenceIds])
@@ -790,7 +790,7 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
     ]);
 
     // Create lookup maps
-    const contactMap = new Map(contacts.map((c: any) => [c.id, `${c.first_name} ${c.last_name}`.trim()]));
+    const contactMap = new Map(contacts.map((c: any) => [c.id, { name: `${c.first_name || ''} ${c.last_name || ''}`.trim(), email: c.email }]));
     const sequenceMap = new Map(sequences.map((s: any) => [s.id, s.name]));
     const enrollmentMap = new Map(enrollments.map((e: any) => [`${e.contact_id}:${e.sequence_id}`, e]));
 
@@ -809,10 +809,13 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
         ? enrollment.scheduled_at 
         : scheduledTime.toISO();
 
+      const contactData = contactMap.get(cId) || { name: "Unknown Contact", email: "" };
+
       return {
         jobId: job.id,
         contactId: cId,
-        contactName: contactMap.get(cId) || "Unknown Contact",
+        contactName: contactData.name,
+        contactEmail: contactData.email,
         sequenceId: sId,
         sequenceName: sequenceMap.get(sId) || "Unknown Sequence",
         senderEmail: enrollment?.sender_email || "Waiting for email assignment",
