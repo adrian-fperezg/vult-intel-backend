@@ -355,7 +355,7 @@ export default function QueueMonitor() {
         {error ? (
           <div className="p-12 text-center border border-red-500/10 bg-red-500/5 rounded-[40px]">
             <p className="text-red-400 font-medium mb-4">{error}</p>
-            <TealButton onClick={loadQueue}>{t('common.error')}</TealButton>
+            <TealButton onClick={() => loadQueue()}>{t('common.error')}</TealButton>
           </div>
         ) : jobs.length === 0 ? (
           <OutreachEmptyState

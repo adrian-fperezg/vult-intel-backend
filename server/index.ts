@@ -439,7 +439,7 @@ const REBALANCE_LOCK_KEY = 'queue:rebalance:lock';
  */
 app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequest, res) => {
   // Use Redis-based lock to prevent concurrent rebalance operations across multiple instances
-  const lock = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'NX', 'EX', 300); // 5 minute TTL
+  const lock = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'EX', 300, 'NX'); // 5 minute TTL
   if (!lock) {
     return res.status(429).json({ 
       error: "A queue rebalance operation is already in progress. Please wait for it to complete." 
@@ -1482,6 +1482,51 @@ app.post("/api/outreach/queue/retry-all", async (req: AuthRequest, res) => {
     });
   } catch (err: any) {
     console.error("[Outreach Queue Retry All] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Promote all delayed jobs for a specific sequence (Force Send Now)
+app.post("/api/outreach/queue/promote-sequence/:sequenceId", async (req: AuthRequest, res) => {
+  const { sequenceId } = req.params;
+  const projectId = req.projectId;
+
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: "Project ID is required" });
+  }
+
+  try {
+    // 1. Fetch all delayed jobs
+    const delayedJobs = await emailQueue.getDelayed();
+    let promotedCount = 0;
+
+    console.log(`[Promote Sequence] Searching for delayed jobs for sequence ${sequenceId} (Project: ${projectId})...`);
+
+    for (const job of delayedJobs) {
+      const jobSequenceId = job.data?.sequenceId;
+      const jobProjectId = job.data?.projectId || job.data?.activeProjectId;
+
+      if (jobSequenceId === sequenceId && jobProjectId === projectId) {
+        await job.promote();
+        promotedCount++;
+      }
+    }
+
+    // 2. Ensure the sequence itself is set to 'active' so the worker doesn't skip the promoted jobs
+    const sequence = await db.prepare('SELECT id, status FROM outreach_sequences WHERE id = ? AND project_id = ?').get(sequenceId, projectId) as any;
+    
+    if (sequence && sequence.status !== 'active') {
+      await db.run("UPDATE outreach_sequences SET status = 'active' WHERE id = ? AND project_id = ?", sequenceId, projectId);
+      console.log(`[Promote Sequence] Forced sequence ${sequenceId} to 'active' status.`);
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully promoted ${promotedCount} jobs. Sequence is now active.`,
+      promotedCount 
+    });
+  } catch (err: any) {
+    console.error("[Outreach Queue Promote Sequence] Error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -3845,6 +3890,7 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
     }
 
     const headers = Object.keys(rows[0]);
+    const fileName = req.file?.originalname || 'Imported CSV';
     console.log(`[CSV Import] Started for file: ${fileName}, project: ${project_id}, rows: ${rows.length}`);
     const standardMapping: Record<string, string[]> = {
       email: ['email', 'e-mail', 'mail', 'correo', 'dirección de correo'],
@@ -3872,7 +3918,6 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
     const savedContactIds: string[] = [];
     let suppressedCount = 0;
     const suppressedEmails: string[] = [];
-    const fileName = req.file?.originalname || 'Imported CSV';
     const autoListId = uuidv4();
     const autoListName = `Import - ${fileName}`;
 

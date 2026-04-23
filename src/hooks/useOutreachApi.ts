@@ -338,6 +338,11 @@ export function useOutreachApi() {
     [del],
   );
 
+  const promoteSequenceJobs = useCallback(
+    (id: string) => post<any>(`/queue/promote-sequence/${id}`, {}),
+    [post]
+  );
+
   // ── Contacts ─────────────────────────────────────────────────────────────
 
   const fetchContacts = useCallback((listId?: string) => 
@@ -930,5 +935,6 @@ export function useOutreachApi() {
     generateAiReport,
     exportAiReport,
     getFunnelStats,
+    promoteSequenceJobs,
   };
 }

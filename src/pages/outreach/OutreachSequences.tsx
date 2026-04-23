@@ -9,6 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge, OutreachEmptyState, TealButton, OutreachConfirmDialog, OutreachMetricCard } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { toast } from 'react-hot-toast';
 import SequenceBuilder from './sequences/builder/SequenceBuilder';
 
 interface Sequence {
@@ -59,6 +60,7 @@ export default function OutreachSequences() {
 
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
+  const [isPromoting, setIsPromoting] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     if (!activeProjectId) return;
@@ -113,6 +115,38 @@ export default function OutreachSequences() {
       console.error('Error duplicating sequence:', error);
     } finally {
       setIsDuplicating(null);
+    }
+  };
+
+  const handlePromote = async (id: string, name: string) => {
+    if (isPromoting.has(id)) return;
+    
+    // UI Confirmation
+    if (!window.confirm(`Force Send Now: This will bypass all scheduled delays and attempt to send the next sequence steps for all enrolled contacts in "${name}" right now. Proceed?`)) {
+      return;
+    }
+
+    setIsPromoting(prev => new Set(prev).add(id));
+    const toastId = toast.loading(`Promoting jobs for ${name}...`);
+
+    try {
+      const res = await api.promoteSequenceJobs(id);
+      if (res?.success) {
+        toast.success(`Successfully promoted ${res.promotedCount} jobs!`, { id: toastId });
+        // Reload to update stats/status if needed
+        loadData();
+      } else {
+        toast.error(res?.error || "Failed to promote jobs", { id: toastId });
+      }
+    } catch (error: any) {
+      console.error('Error promoting sequence jobs:', error);
+      toast.error(error.message || "An unexpected error occurred", { id: toastId });
+    } finally {
+      setIsPromoting(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -295,6 +329,17 @@ export default function OutreachSequences() {
                       {seq.status}
                     </OutreachBadge>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePromote(seq.id, seq.name); }}
+                        disabled={isPromoting.has(seq.id)}
+                        className={cn(
+                          "p-1.5 rounded-lg text-slate-600 transition-colors",
+                          isPromoting.has(seq.id) ? "bg-teal-500/10 text-teal-400" : "hover:bg-teal-500/10 hover:text-teal-400"
+                        )}
+                        title="Force Send Now (Promote)"
+                      >
+                        {isPromoting.has(seq.id) ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDuplicate(seq.id); }}
                         disabled={!!isDuplicating}

@@ -10,11 +10,11 @@ async function testLock() {
     await redis.del(REBALANCE_LOCK_KEY);
     
     // 2. First actor acquires the lock
-    const lock1 = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'NX', 'EX', 30);
+    const lock1 = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'EX', 30, 'NX');
     console.log(`- Actor 1 (First request): ${lock1 === 'OK' ? '✅ Lock ACQUIRED' : '❌ Lock FAILED'}`);
     
     // 3. Second actor tries to acquire the same lock
-    const lock2 = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'NX', 'EX', 30);
+    const lock2 = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'EX', 30, 'NX');
     console.log(`- Actor 2 (Concurrent request): ${lock2 === null ? '✅ Lock BLOCKED (Correct)' : '❌ Lock ACQUIRED (Error!)'}`);
     
     if (lock1 === 'OK' && lock2 === null) {
