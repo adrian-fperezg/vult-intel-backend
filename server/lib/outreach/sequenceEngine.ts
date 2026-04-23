@@ -34,51 +34,32 @@ export async function enrollContactInSequence(
   const enrollmentId = uuidv4();
   const d = tx || db;
 
-  const STAGGER_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes per contact
-  const staggerDelayMs = staggerIndex * STAGGER_INTERVAL_MS;
-
   try {
-    const sequence = await d.get<any>('SELECT status, mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?', [sequenceId]);
-    const isScheduled = sequence?.status === 'scheduled';
+    const [sequence, settings] = await Promise.all([
+      d.get<any>('SELECT status, mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?', [sequenceId]),
+      d.get<any>('SELECT stagger_delay FROM outreach_settings WHERE project_id = ?', [projectId])
+    ]);
 
-    // ── Multi-sender round-robin assignment ─────────────────────────────────
-    // Parse the mailbox pool. Fall back to the single mailbox_id for legacy sequences.
-    let assignedMailboxId: string | null = sequence?.mailbox_id || null;
-    try {
-      const pool: string[] = JSON.parse(sequence?.mailbox_ids || '[]');
-      if (pool.length > 1) {
-        // Count existing enrollments (excluding hard-failed ones) to get this
-        // contact's position in the rotation before we insert the new row.
-        const countRow = await d.get<any>(
-          "SELECT COUNT(*) as cnt FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status != 'failed'",
-          [sequenceId]
-        );
-        const position = Number(countRow?.cnt ?? 0) % pool.length;
-        assignedMailboxId = pool[position];
-        console.log(`[SequenceEngine] [LoadBalancer] Contact ${contactId} → mailbox index ${position} (${assignedMailboxId}) out of ${pool.length} in pool.`);
-      }
-    } catch (poolErr) {
-      console.warn('[SequenceEngine] Could not parse mailbox_ids pool. Falling back to mailbox_id.', poolErr);
+    if (!sequence) throw new Error('Sequence not found');
+
+    const staggerMinutes = settings?.stagger_delay ?? 15;
+    const staggerDelayMs = staggerIndex * staggerMinutes * 60 * 1000;
+
+    // 1. Assign a mailbox from the pool if not already assigned
+    const mailboxId = await ensureValidMailboxAssignment(sequenceId, contactId, null, projectId, d);
+    if (!mailboxId) {
+       throw new Error('No healthy mailboxes available for enrollment');
     }
-    // ────────────────────────────────────────────────────────────────────────
 
+    // 2. Create the enrollment
     await d.run(
-      `INSERT INTO outreach_sequence_enrollments 
-      (id, sequence_id, contact_id, project_id, status, assigned_mailbox_id) 
-      VALUES (?, ?, ?, ?, 'active', ?)`,
-      [enrollmentId, sequenceId, contactId, projectId, assignedMailboxId]
+      `INSERT INTO outreach_sequence_enrollments (id, sequence_id, contact_id, project_id, status, assigned_mailbox_id)
+       VALUES (?, ?, ?, ?, 'active', ?)`,
+      [enrollmentId, sequenceId, contactId, projectId, mailboxId]
     );
 
-    if (!isScheduled) {
-      if (staggerDelayMs > 0) {
-        console.log(`[SequenceEngine] Staggered drip: Contact ${contactId} will start in ${staggerDelayMs / 60000} minutes (index ${staggerIndex}).`);
-      } else {
-        console.log(`[SequenceEngine] Sequence is ${sequence?.status}. Starting step 1 immediately for contact ${contactId}.`);
-      }
-      await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', tx, staggerDelayMs);
-    } else {
-      console.log(`[SequenceEngine] Sequence is SCHEDULED. Enrolling contact ${contactId} but waiting for master trigger.`);
-    }
+    // 3. Schedule the first step
+    await scheduleNextStep(projectId, sequenceId, contactId, null, 'default', d, staggerDelayMs);
 
     return { success: true, enrollmentId };
   } catch (error: any) {
@@ -123,7 +104,7 @@ export async function scheduleNextStep(
   }
 
   // 1. Limpiamos cualquier trabajo pendiente para evitar duplicados
-  await cancelPendingSequenceJobs(sequenceId, contactId);
+  await cancelPendingSequenceJobs(sequenceId, contactId, d);
 
   const [sequence, settings] = await Promise.all([
     d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]),
@@ -160,12 +141,7 @@ export async function scheduleNextStep(
   }
 
   // 3. CÁLCULO DE TIEMPO
-  let delayMs = 0;
-  
-  const contact = await d.get<any>('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?', [contactId]);
-  const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
-  const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'UTC');
-
+  let stepDelayMs = 0;
   let targetTime = DateTime.now().setZone(targetTz);
 
   if (parentStepId === null) {
@@ -179,41 +155,39 @@ export async function scheduleNextStep(
 
         targetTime = intendedTime.setZone(targetTz, { keepLocalTime: true });
         console.log(`[SequenceEngine] Timezone Alignment: ${sequenceTz} -> ${targetTz} (Keep Local Time)`);
-        console.log(`[SequenceEngine] Parsed Target: ${targetTime.toISO()}`);
       } else {
         const rawDate = step.scheduled_start_at as any;
         targetTime = (rawDate instanceof Date)
           ? DateTime.fromJSDate(rawDate, { zone: targetTz })
           : DateTime.fromISO(rawDate as string, { zone: targetTz });
-        
-        console.log(`[SequenceEngine] No realignment. Target: ${targetTime.toISO()}`);
       }
+      stepDelayMs = Math.max(0, targetTime.diffNow().as('milliseconds'));
+      console.log(`[SequenceEngine] Base Target: ${targetTime.toISO()} (Delay: ${Math.round(stepDelayMs/1000)}s)`);
     }
-
-    // ── Staggered Drip: apply the per-contact batch offset AFTER base time calculation
-    // This ensures that even if there is a scheduled_start_at, contacts are spaced out.
+    
+    // Initial Drip Stagger (for batch enrollments)
     if (initialExtraDelayMs > 0) {
-      const beforeStagger = targetTime;
+      const beforeDrip = targetTime;
       targetTime = targetTime.plus({ milliseconds: initialExtraDelayMs });
-      console.log(`[SequenceEngine] [Drip] Applied stagger offset of ${initialExtraDelayMs}ms. Shifted ${beforeStagger.toFormat('HH:mm:ss')} -> ${targetTime.toFormat('HH:mm:ss')}`);
+      console.log(`[SequenceEngine] [Drip] Applied stagger offset of ${initialExtraDelayMs}ms. Shifted ${beforeDrip.toFormat('HH:mm:ss')} -> ${targetTime.toFormat('HH:mm:ss')}`);
     }
   } else {
     const amount = step.delay_amount || 2;
     const unit = step.delay_unit || 'days';
-    targetTime = targetTime.plus({ [unit]: amount });
+    const futureTime = targetTime.plus({ [unit]: amount });
+    stepDelayMs = futureTime.diff(targetTime).as('milliseconds');
+    targetTime = futureTime;
+    console.log(`[SequenceEngine] Follow-up Delay: ${amount} ${unit} (Target: ${targetTime.toISO()})`);
   }
 
   // 4. ENFORCE BUSINESS HOURS & WEEKDAYS
-  // NOTE: getNextBusinessSlot will automatically push staggered times that land
-  // outside the allowed window (weekend, after-hours) to the next valid slot.
   let executeAt = getNextBusinessSlot(targetTime, sequence);
-
-  if (executeAt.toMillis() !== targetTime.toMillis()) {
-    console.log(`[SequenceEngine] [Window] Realigning execution for contact ${contactId} from ${targetTime.toFormat('HH:mm:ss')} to ${executeAt.toFormat('yyyy-MM-dd HH:mm:ss')} due to window/weekday constraints.`);
-  }
+  const primaryWindowShiftMs = Math.max(0, executeAt.diff(targetTime).as('milliseconds'));
 
   // ── Per-Mailbox Staggering ──────────────────────────────────────────────
-  // Ensure we don't burst the specific mailbox by checking its future queue.
+  let mailboxStaggerShiftMs = 0;
+  let postStaggerWindowShiftMs = 0;
+
   if (mailboxId && intervalMinutes > 0) {
     const lastJob = await d.get<any>(
       'SELECT MAX(scheduled_at) as last_time FROM outreach_sequence_enrollments WHERE assigned_mailbox_id = ? AND scheduled_at > CURRENT_TIMESTAMP',
@@ -225,25 +199,39 @@ export async function scheduleNextStep(
       const minStaggeredTime = lastTime.plus({ minutes: intervalMinutes });
       
       if (minStaggeredTime > executeAt) {
-        console.log(`[SequenceEngine] [Staggering] Mailbox ${mailboxId} busy until ${lastTime.toFormat('HH:mm:ss')}. Staggering to ${minStaggeredTime.toFormat('HH:mm:ss')}.`);
+        mailboxStaggerShiftMs = minStaggeredTime.diff(executeAt).as('milliseconds');
         executeAt = minStaggeredTime;
+        
         // Re-enforce window in case staggering pushed it past the end hour
-        executeAt = getNextBusinessSlot(executeAt, sequence);
+        const finalWindowTime = getNextBusinessSlot(executeAt, sequence);
+        if (finalWindowTime.toMillis() !== executeAt.toMillis()) {
+          postStaggerWindowShiftMs = finalWindowTime.diff(executeAt).as('milliseconds');
+          executeAt = finalWindowTime;
+        }
       }
     }
   }
-  // ──────────────────────────────────────────────────────────────────────────
 
-  delayMs = executeAt.diffNow().as('milliseconds');
+  // 5. DIAGNOSTIC LOGGING (Step-by-step breakdown)
+  const totalWaitMs = executeAt.diffNow().as('milliseconds');
   
-  delayMs = Math.max(0, delayMs);
+  // human-like variation
+  const smartJitterDelayMs = (Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000);
+  const finalDelay = Math.max(0, totalWaitMs + smartJitterDelayMs);
+  const scheduledAt = new Date(Date.now() + finalDelay);
 
-  // Smart Send (Variación humana)
-  const smartDelayMs = Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000;
-  const totalDelay = delayMs + smartDelayMs;
-  const scheduledAt = new Date(Date.now() + totalDelay);
+  console.log(`[SequenceEngine] [Diagnostic] Contact ${contactId} Scheduling Breakdown:
+    - Base Step Delay:    +${Math.round(stepDelayMs/1000)}s
+    - Initial Drip Stagger: +${Math.round(initialExtraDelayMs/1000)}s
+    - Primary Window Shift: +${Math.round(primaryWindowShiftMs/1000)}s
+    - Mailbox Stagger:    +${Math.round(mailboxStaggerShiftMs/1000)}s
+    - Post-Stagger Window:  +${Math.round(postStaggerWindowShiftMs/1000)}s
+    - Smart Jitter:       +${Math.round(smartJitterDelayMs/1000)}s
+    -------------------------------------------
+    - Total Wait Time:     ${Math.round(finalDelay/1000)}s
+    - Final Execution:     ${DateTime.fromJSDate(scheduledAt).setZone(targetTz).toFormat('yyyy-MM-dd HH:mm:ss')} (${targetTz})`);
 
-  // 5. ACTUALIZACIÓN Y COLA
+  // 6. ACTUALIZACIÓN Y COLA
   await d.run(
     `UPDATE outreach_sequence_enrollments 
      SET next_step_id = ?, scheduled_at = ?, last_error = NULL 
@@ -256,21 +244,21 @@ export async function scheduleNextStep(
   await emailQueue.add('execute-sequence-step', {
     projectId, sequenceId, contactId, stepId: step.id, stepNumber: step.step_number
   }, {
-    delay: totalDelay,
+    delay: finalDelay,
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
     jobId: jobId
   });
 
-  const readableDate = DateTime.fromJSDate(scheduledAt).toFormat('yyyy-MM-dd HH:mm:ss');
-  console.log(`[Queue] [Staggered] Contact ${contactId} scheduled for Step ${step.step_number} in Sequence ${sequenceId} on ${readableDate}`);
+  console.log(`[Queue] [Scheduled] Contact ${contactId} → Step ${step.step_number} in Sequence ${sequenceId} @ ${DateTime.fromJSDate(scheduledAt).setZone(targetTz).toFormat('yyyy-MM-dd HH:mm:ss')} (${targetTz})`);
 }
 
 /**
  * Cancela trabajos pendientes.
  */
-export async function cancelPendingSequenceJobs(sequenceId: string, contactId: string) {
-  const enrollment = await db.get<any>(
+export async function cancelPendingSequenceJobs(sequenceId: string, contactId: string, tx?: DbWrapper) {
+  const d = tx || db;
+  const enrollment = await d.get<any>(
     'SELECT next_step_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?',
     [sequenceId, contactId]
   );
@@ -285,7 +273,7 @@ export async function cancelPendingSequenceJobs(sequenceId: string, contactId: s
     }
   }
 
-  await db.run(
+  await d.run(
     "UPDATE outreach_individual_emails SET status = 'cancelled' WHERE sequence_id = ? AND contact_id = ? AND status = 'scheduled'",
     [sequenceId, contactId]
   );
@@ -322,14 +310,14 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
  * Calculates the next available sending slot based on sequence windows and weekdays.
  */
 export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime {
-
-  let windowStart = sequence.send_window_start || '09:00';
-  let windowEnd = sequence.send_window_end || '17:00';
-  
   if (!sequence.restrict_sending_hours) {
-    windowStart = '00:00';
-    windowEnd = '23:59';
+    return baseTime;
   }
+
+  const windowStart = sequence.send_window_start || '09:00';
+  const windowEnd = sequence.send_window_end || '17:00';
+  const [startHour, startMin] = windowStart.split(':').map(Number);
+  const [endHour, endMin] = windowEnd.split(':').map(Number);
   
   // Parse weekdays safely
   let allowedDays: boolean[] = [true, true, true, true, true, false, false];
@@ -351,9 +339,6 @@ export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime
     console.warn("[SequenceEngine] Error parsing send_on_weekdays:", e);
   }
 
-  const [startHour, startMin] = windowStart.split(':').map(Number);
-  const [endHour, endMin] = windowEnd.split(':').map(Number);
-
   let current = baseTime;
   
   // Max check: 14 days to prevent infinite loops
@@ -366,9 +351,14 @@ export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime
 
     if (isAllowedDay) {
       if (current < startOfWindow) {
-        // PRESERVE minutes/seconds if we just need to shift to today's start
-        // but ensure we don't land BEFORE the absolute window start
-        const shifted = current.set({ hour: startHour, minute: Math.max(startMin, current.minute) });
+        // Shift to window start while preserving relative minute offsets if possible.
+        // We also preserve seconds and milliseconds for high-precision staggering.
+        const shifted = current.set({ 
+          hour: startHour, 
+          minute: Math.max(startMin, current.minute),
+          second: current.second,
+          millisecond: current.millisecond
+        });
         return shifted < startOfWindow ? startOfWindow : shifted;
       }
       if (current <= endOfWindow) {

@@ -99,7 +99,7 @@ import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest, verifyToken } from "./middleware";
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
-import { getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment } from "./lib/outreach/sequenceEngine.js";
+import { getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment, getNextBusinessSlot } from "./lib/outreach/sequenceEngine.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -430,11 +430,21 @@ app.get("/api/admin/flush-email-queue", async (_req, res) => {
   }
 });
 
+const REBALANCE_LOCK_KEY = 'queue:rebalance:lock';
+
 /**
  * Administrative endpoint to rebalance and stagger the current BullMQ delayed queue.
  * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
  */
 app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  // Use Redis-based lock to prevent concurrent rebalance operations across multiple instances
+  const lock = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'NX', 'EX', 300); // 5 minute TTL
+  if (!lock) {
+    return res.status(429).json({ 
+      error: "A queue rebalance operation is already in progress. Please wait for it to complete." 
+    });
+  }
+
   try {
     const { snapToBusinessHours, targetStartHour = 9 } = req.body;
     console.log(`[Queue Rebalance] Starting retroactive queue staggering... (Snap: ${snapToBusinessHours}, Target: ${targetStartHour}:00)`);
@@ -448,6 +458,8 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
 
     // Grouping by mailbox index
     const mailboxGroups: Record<string, typeof sequenceJobs> = {};
+    const sequenceCache: Record<string, any> = {};
+    const contactTzCache: Record<string, string> = {};
     const now = Date.now();
 
     for (const job of sequenceJobs) {
@@ -509,21 +521,48 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
 
         const intervalMs = projectIntervals[projectId] * 60 * 1000;
         
-        // A. Determine Base Time (applying snapping if requested)
-        const originalTimeMs = job.timestamp + (job.opts.delay || 0);
-        let baseTime = DateTime.fromMillis(originalTimeMs);
+        // Fetch sequence settings (cached)
+        if (!sequenceCache[sequenceId]) {
+          sequenceCache[sequenceId] = await db.get<any>("SELECT * FROM outreach_sequences WHERE id = ?", [sequenceId]);
+        }
+        const sequence = { ...sequenceCache[sequenceId] };
+        if (!sequence.id) continue; // Sequence might have been deleted
 
-        if (snapToBusinessHours && baseTime.hour < targetStartHour) {
-          // Snap early emails to the target start hour of the SAME day
-          // We preserve the minutes from the original time to maintain staggering offsets
-          baseTime = baseTime.set({ hour: targetStartHour });
+        // Determine target timezone
+        let targetTz = sequence.send_timezone || 'UTC';
+        if (sequence.use_recipient_timezone) {
+          if (!contactTzCache[contactId]) {
+            const contact = await db.get<any>("SELECT inferred_timezone FROM outreach_contacts WHERE id = ?", [contactId]);
+            contactTzCache[contactId] = contact?.inferred_timezone || targetTz;
+          }
+          targetTz = contactTzCache[contactId];
         }
 
+        const originalTimeMs = job.timestamp + (job.opts.delay || 0);
+        let targetTime = DateTime.fromMillis(originalTimeMs).setZone(targetTz);
+
+        // A. Apply sequence business hours / weekdays / global rebalance override
+        if (snapToBusinessHours) {
+          sequence.restrict_sending_hours = true;
+          if (!sequence.send_window_start) sequence.send_window_start = `${String(targetStartHour).padStart(2, '0')}:00`;
+          if (!sequence.send_window_end) sequence.send_window_end = '17:00';
+        }
+
+        let executeAt = getNextBusinessSlot(targetTime, sequence);
+
         // B. Apply Staggering relative to the previous job in this mailbox
-        // targetTime MUST be >= baseTime AND >= nextAvailableSlot
-        const targetTimeMs = Math.max(baseTime.toMillis(), nextAvailableSlotMs);
-        const newDelay = Math.max(0, targetTimeMs - Date.now());
-        const scheduledAt = new Date(targetTimeMs);
+        // Convert nextAvailableSlotMs to the target timezone for comparison
+        let nextSlot = DateTime.fromMillis(nextAvailableSlotMs).setZone(targetTz);
+        
+        if (nextSlot > executeAt) {
+          executeAt = nextSlot;
+          // Re-enforce business hours after staggering shift
+          executeAt = getNextBusinessSlot(executeAt, sequence);
+        }
+
+        const finalTimeMs = executeAt.toMillis();
+        const newDelay = Math.max(0, finalTimeMs - Date.now());
+        const scheduledAt = new Date(finalTimeMs);
 
         // C. Update BullMQ Job
         await job.changeDelay(newDelay);
@@ -535,8 +574,11 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
           [scheduledAt.toISOString(), sequenceId, contactId]
         );
 
-        nextAvailableSlotMs = targetTimeMs + intervalMs;
+        nextAvailableSlotMs = finalTimeMs + intervalMs;
         rebalancedCount++;
+        if (rebalancedCount % 50 === 0) {
+          console.log(`[Queue Rebalance] Progress: ${rebalancedCount} jobs processed...`);
+        }
       }
     }
 
@@ -552,6 +594,8 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
   } catch (err: any) {
     console.error("[Queue Rebalance] FATAL ERROR:", err);
     res.status(500).json({ error: "Failed to rebalance queue", details: err.message });
+  } finally {
+    await redis.del(REBALANCE_LOCK_KEY);
   }
 });
 
@@ -5501,7 +5545,7 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
     if (!userId) return res.status(401).json({ error: "Auth required" });
     if (!project_id) return res.status(400).json({ error: "project_id required" });
 
-    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit, business_address, sending_interval_minutes FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
+    const row = await db.prepare("SELECT hunter_api_key, zerobounce_api_key, pdl_api_key, global_daily_limit, business_address, sending_interval_minutes, stagger_delay, restrict_sending_hours, sending_start_time, sending_end_time FROM outreach_settings WHERE project_id = ?").get(project_id) as any;
 
     // Default response structure
     const response: any = {
@@ -5510,7 +5554,11 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       pdl: { connected: false },
       global_daily_limit: 50, // Default fallback
       business_address: '',
-      sending_interval_minutes: 20
+      sending_interval_minutes: 20,
+      stagger_delay: 2,
+      restrict_sending_hours: false,
+      sending_start_time: '09:00',
+      sending_end_time: '17:00'
     };
 
     if (row) {
@@ -5522,6 +5570,18 @@ app.get("/api/outreach/settings", async (req: AuthRequest, res) => {
       }
       if (row.sending_interval_minutes !== undefined && row.sending_interval_minutes !== null) {
         response.sending_interval_minutes = row.sending_interval_minutes;
+      }
+      if (row.stagger_delay !== undefined && row.stagger_delay !== null) {
+        response.stagger_delay = row.stagger_delay;
+      }
+      if (row.restrict_sending_hours !== undefined && row.restrict_sending_hours !== null) {
+        response.restrict_sending_hours = !!row.restrict_sending_hours;
+      }
+      if (row.sending_start_time !== undefined && row.sending_start_time !== null) {
+        response.sending_start_time = row.sending_start_time;
+      }
+      if (row.sending_end_time !== undefined && row.sending_end_time !== null) {
+        response.sending_end_time = row.sending_end_time;
       }
 
       // 1. Hunter.io Live Fetch
@@ -5671,6 +5731,46 @@ app.post("/api/outreach/settings", async (req: AuthRequest, res) => {
           sending_interval_minutes = excluded.sending_interval_minutes,
           updated_at = CURRENT_TIMESTAMP
       `).run(project_id, req.body.sending_interval_minutes);
+    }
+    
+    if (req.body.stagger_delay !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, stagger_delay, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          stagger_delay = excluded.stagger_delay,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, req.body.stagger_delay);
+    }
+    
+    if (req.body.restrict_sending_hours !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, restrict_sending_hours, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          restrict_sending_hours = excluded.restrict_sending_hours,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, req.body.restrict_sending_hours ? 1 : 0);
+    }
+    
+    if (req.body.sending_start_time !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, sending_start_time, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          sending_start_time = excluded.sending_start_time,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, req.body.sending_start_time);
+    }
+    
+    if (req.body.sending_end_time !== undefined) {
+      await db.prepare(`
+        INSERT INTO outreach_settings (project_id, sending_end_time, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          sending_end_time = excluded.sending_end_time,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project_id, req.body.sending_end_time);
     }
 
     res.json({ success: true });

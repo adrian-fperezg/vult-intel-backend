@@ -13,6 +13,7 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { DomainAliasCard } from './components/DomainAliasCard';
 import DomainVerificationManager from './components/DomainVerificationManager';
 import TipTapEditor from './components/TipTapEditor';
+import SendingTab from './settings/tabs/SendingTab';
 
 type SettingsTab = 'mailboxes' | 'sending' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications';
 
@@ -115,8 +116,6 @@ export default function OutreachSettings() {
   const [savingBusinessAddress, setSavingBusinessAddress] = useState(false);
 
   // Sending Settings
-  const [sendingInterval, setSendingInterval] = useState(20);
-  const [globalDailyLimit, setGlobalDailyLimit] = useState(50);
   const [savingSending, setSavingSending] = useState(false);
 
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -259,14 +258,6 @@ export default function OutreachSettings() {
         setBusinessAddress(settings.business_address || '');
       }
 
-      // Sending & Staggering
-      if (settings?.sending_interval_minutes !== undefined) {
-        setSendingInterval(settings.sending_interval_minutes);
-      }
-      if (settings?.global_daily_limit !== undefined) {
-        setGlobalDailyLimit(settings.global_daily_limit);
-      }
-
     } catch (err) {
       console.error('Failed to load integration status:', err);
       toast.error('Failed to load integration status.');
@@ -377,21 +368,6 @@ export default function OutreachSettings() {
     }
   };
 
-  const handleSaveSendingSettings = async () => {
-    if (!api.activeProjectId) return;
-    setSavingSending(true);
-    try {
-      await api.updateSettings({
-        sending_interval_minutes: sendingInterval,
-        global_daily_limit: globalDailyLimit
-      });
-      toast.success('Sending configuration updated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save sending settings');
-    } finally {
-      setSavingSending(false);
-    }
-  };
 
   const loadMailboxes = async () => {
     setMailboxesLoading(true);
@@ -719,86 +695,7 @@ export default function OutreachSettings() {
         )}
 
         {/* ── SENDING ── */}
-        {activeTab === 'sending' && (
-          <div className="space-y-10 w-full animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-            <div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">Sending Configuration</h2>
-              <p className="text-sm text-slate-400 mt-1">Optimize your outreach delivery and protect your domains</p>
-            </div>
-
-            {!api.activeProjectId ? (
-              <OutreachEmptyState icon={<Zap />} title="No project selected" description="Select a project to manage sending settings." />
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Interval Staggering */}
-                <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/5 space-y-6">
-                  <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-xl bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
-                      <Clock className="size-5 text-teal-400" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white">Sending Interval</h3>
-                      <p className="text-xs text-slate-500">Per-mailbox staggering logic</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Wait Time (Minutes)</label>
-                      <input 
-                        type="number"
-                        value={sendingInterval}
-                        onChange={e => setSendingInterval(parseInt(e.target.value) || 0)}
-                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-teal-500/50 outline-none"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-400 leading-relaxed italic border-l-2 border-teal-500/30 pl-3">
-                      "Minimum wait time between emails sent from the exact same mailbox/alias. This spreads out your outreach to appear more human to spam filters."
-                    </p>
-                  </div>
-                </div>
-
-                {/* Daily Limits */}
-                <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/5 space-y-6">
-                   <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
-                      <Mail className="size-5 text-indigo-400" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white">Daily Sending Cap</h3>
-                      <p className="text-xs text-slate-500">Global safety limits</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Max Emails Per Day / Project</label>
-                      <input 
-                        type="number"
-                        value={globalDailyLimit}
-                        onChange={e => setGlobalDailyLimit(parseInt(e.target.value) || 0)}
-                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-indigo-500/50 outline-none"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-400 leading-relaxed italic border-l-2 border-indigo-500/30 pl-3">
-                      "Override the aggregate daily send limit for this project. Keep this low (50-100) to protect new domains."
-                    </p>
-                  </div>
-                </div>
-
-                <div className="lg:col-span-2 pt-4">
-                  <TealButton 
-                    onClick={handleSaveSendingSettings}
-                    loading={savingSending}
-                    className="h-14 px-10 rounded-2xl shadow-xl shadow-teal-500/10 text-base font-bold"
-                  >
-                    Save Sending Configuration
-                  </TealButton>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {activeTab === 'sending' && <SendingTab />}
 
         {/* ── WARMUP ── */}
         {activeTab === 'warmup' && (

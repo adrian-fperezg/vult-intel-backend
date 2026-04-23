@@ -141,6 +141,32 @@
             "rights": "© {{year}} Vult Intel. All rights reserved.",
             "privacy": "Privacy Policy",
             "terms": "Terms of Service"
+        },
+        "settings": {
+            "sending": {
+                "title": "Sending Configuration",
+                "desc": "Optimize your outreach delivery and protect your domains",
+                "intervalTitle": "Sending Interval",
+                "intervalDesc": "Per-mailbox staggering logic",
+                "waitTime": "Wait Time (Minutes)",
+                "waitTimeDesc": "Minimum wait time between emails sent from the exact same mailbox/alias.",
+                "staggerDelayTitle": "Stagger Delay",
+                "staggerDelayDesc": "Delay between emails (minutes)",
+                "staggerDelayInput": "Stagger Delay (Minutes)",
+                "staggerDelayInputDesc": "The time to wait between sending each email in a sequence.",
+                "dailyCapTitle": "Daily Sending Cap",
+                "dailyCapDesc": "Global safety limits",
+                "maxEmails": "Max Emails Per Day / Project",
+                "maxEmailsDesc": "Override the aggregate daily send limit for this project.",
+                "sendingWindowTitle": "Sending Window",
+                "sendingWindowDesc": "Business hours restriction",
+                "restrictHours": "Restrict Sending Hours",
+                "startTime": "Start Time",
+                "endTime": "End Time",
+                "windowDesc": "When enabled, emails will only be sent during the specified window.",
+                "saveBtn": "Save Sending Configuration",
+                "saveSuccess": "Sending configuration updated"
+            }
         }
     },
     "common": {

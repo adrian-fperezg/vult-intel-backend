@@ -591,7 +591,11 @@ export const initDb = async () => {
       { name: 'pdl_api_key', type: 'TEXT' },
       { name: 'global_daily_limit', type: 'INTEGER DEFAULT 50' },
       { name: 'business_address', type: 'TEXT' },
-      { name: 'sending_interval_minutes', type: 'INTEGER DEFAULT 20' }
+      { name: 'sending_interval_minutes', type: 'INTEGER DEFAULT 20' },
+      { name: 'stagger_delay', type: 'INTEGER DEFAULT 2' },
+      { name: 'restrict_sending_hours', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'sending_start_time', type: "TEXT DEFAULT '09:00'" },
+      { name: 'sending_end_time', type: "TEXT DEFAULT '17:00'" }
     ];
 
     for (const col of newSettingsCols) {
