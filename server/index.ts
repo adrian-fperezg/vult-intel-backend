@@ -2366,8 +2366,8 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
 
       // 3. Upsert Contacts and Enroll them
       const insertContactQuery = `
-        INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'enrolled')
+        INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'enrolled', ?)
         ON CONFLICT(email, project_id) DO UPDATE SET
           first_name = COALESCE(excluded.first_name, outreach_contacts.first_name),
           last_name = COALESCE(excluded.last_name, outreach_contacts.last_name),
@@ -2401,6 +2401,7 @@ app.post("/api/outreach/campaigns/:id/launch", async (req: AuthRequest, res) => 
             contactData[columnMapping.last_name] || "",
             email,
             contactData[columnMapping.company] || "",
+            JSON.stringify(contactData.tags || ["Not Enrolled"])
           );
         }
 
@@ -2958,9 +2959,9 @@ app.post("/api/outreach/sequences/:id/launch", async (req: AuthRequest, res) => 
         } else {
           contactId = uuidv4();
           await tx.run(`
-            INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'not_enrolled')
-          `, contactId, userId, project_id, rawContact[firstCol] || '', rawContact[lastCol] || '', email, rawContact[companyCol] || '');
+            INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, status, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'not_enrolled', ?)
+          `, contactId, userId, project_id, rawContact[firstCol] || '', rawContact[lastCol] || '', email, rawContact[companyCol] || '', JSON.stringify(["Not Enrolled"]));
         }
 
         // Add as sequence recipient if not already
@@ -3180,6 +3181,28 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
       `UPDATE outreach_sequences SET ${sets}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND project_id = ?`,
       ...values, id, userId, req.projectId
     );
+
+    // If sequence name changed, update tags for all enrolled contacts
+    if (filteredUpdates.name && filteredUpdates.name !== existing.name) {
+      const oldName = existing.name;
+      const newName = filteredUpdates.name;
+      const enrollments = await db.all("SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ?", id) as any[];
+      
+      for (const enrollment of enrollments) {
+        const contact = await db.get("SELECT tags FROM outreach_contacts WHERE id = ?", enrollment.contact_id) as any;
+        if (contact && contact.tags) {
+          try {
+            let tags = JSON.parse(contact.tags);
+            if (tags.includes(oldName)) {
+              tags = tags.map((t: string) => t === oldName ? newName : t);
+              await db.run("UPDATE outreach_contacts SET tags = ? WHERE id = ?", JSON.stringify(tags), enrollment.contact_id);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }
 
     const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
     res.json(updated);
@@ -3404,9 +3427,9 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
           } else {
             contact_id = item.id || uuidv4();
             await tx.run(`
-              INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '');
+              INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title, tags)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '', JSON.stringify(["Not Enrolled"]));
 
             contactObj = {
               id: contact_id,
@@ -3791,7 +3814,7 @@ app.post("/api/outreach/contacts", async (req: AuthRequest, res) => {
     phone || "",
     linkedin || linkedinUrl || "",
     status || "not_enrolled",
-    JSON.stringify(tags || []),
+    JSON.stringify((tags && tags.length > 0) ? tags : ["Not Enrolled"]),
     source_detail || sourceDetail || null,
     confidence_score || confidenceScore || null,
     verification_status || verificationStatus || null,
@@ -3876,7 +3899,7 @@ app.post("/api/outreach/contacts/bulk", async (req: AuthRequest, res) => {
           contact.phone || "",
           contact.linkedin || contact.linkedinUrl || "",
           contact.status || "not_enrolled",
-          JSON.stringify(contact.tags || []),
+          JSON.stringify((contact.tags && contact.tags.length > 0) ? contact.tags : ["Not Enrolled"]),
           contact.source_detail || contact.sourceDetail || null,
           contact.confidence_score || contact.confidenceScore || null,
           contact.verification_status || contact.verificationStatus || null,
@@ -3970,7 +3993,7 @@ app.post("/api/outreach/lists/save", async (req: AuthRequest, res) => {
           contact.phone || "",
           contact.linkedin || contact.linkedinUrl || "",
           contact.status || "not_enrolled",
-          JSON.stringify(contact.tags || []),
+          JSON.stringify((contact.tags && contact.tags.length > 0) ? contact.tags : ["Not Enrolled"]),
           contact.source_detail || contact.sourceDetail || null,
           contact.confidence_score || contact.confidenceScore || null,
           contact.verification_status || contact.verificationStatus || null,
@@ -4154,8 +4177,8 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
 
         const upsertRes = await tx.prepare(`
           INSERT INTO outreach_contacts (
-            id, user_id, project_id, email, first_name, last_name, company, job_title, phone, linkedin, location, website, location_city, location_country, custom_fields, inferred_timezone, status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_enrolled')
+            id, user_id, project_id, email, first_name, last_name, company, job_title, phone, linkedin, location, website, location_city, location_country, custom_fields, inferred_timezone, status, tags
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_enrolled', ?)
           ON CONFLICT (project_id, email) DO UPDATE SET
             first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
             last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
@@ -4246,8 +4269,9 @@ app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
     values.push(company);
   }
   if (tags !== undefined) {
+    const finalTags = (Array.isArray(tags) && tags.length > 0) ? tags : ["Not Enrolled"];
     fields.push("tags = ?");
-    values.push(JSON.stringify(tags));
+    values.push(JSON.stringify(finalTags));
   }
 
   if (fields.length === 0)
@@ -4448,7 +4472,7 @@ app.post("/api/outreach/contact-lists", verifyToken, async (req: AuthRequest, re
             uuidv4(), userId, project_id, email.toLowerCase().trim(),
             firstName || null, lastName || null, company || null, title || null,
             phone || null, linkedin || null, website || null, location || null,
-            industry || null, companySize || null, tags || null
+            industry || null, companySize || null, JSON.stringify((tags && Array.isArray(tags) && tags.length > 0) ? tags : ["Not Enrolled"])
           ) as { id: string };
 
           const contactId = upsertResult.id;

@@ -208,8 +208,17 @@ export async function handleCriticalBounce(contactId: string, sequenceId: string
   console.warn(`[CRITICAL BOUNCE] Handling bounce for contact ${contactId} in project ${projectId}`);
 
   try {
-    // 1. Update Contact Status
-    await db.run("UPDATE outreach_contacts SET status = 'bounced' WHERE id = ?", contactId);
+    // 1. Update Contact Status and Tags
+    await db.run(`
+      UPDATE outreach_contacts 
+      SET status = 'bounced',
+          tags = json_set(
+            COALESCE(tags, '[]'),
+            '$[' || json_array_length(COALESCE(tags, '[]')) || ']',
+            'Bounced'
+          )
+      WHERE id = ?
+    `, contactId);
 
     // 2. Stop ALL sequences for this contact across the project
     await db.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE contact_id = ? AND project_id = ?", contactId, projectId);

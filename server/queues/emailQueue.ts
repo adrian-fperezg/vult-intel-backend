@@ -769,11 +769,24 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   // This check runs immediately before sending and catches contacts whose status
   // changed AFTER the BullMQ job was already scheduled (race-condition protection).
   if (email.contact_id) {
-    const contactStatus = await db.prepare("SELECT status FROM outreach_contacts WHERE id = ?").get(email.contact_id) as any;
+    const contactData = await db.prepare("SELECT status, tags FROM outreach_contacts WHERE id = ?").get(email.contact_id) as any;
     const blockedStatuses = ['unsubscribed', 'bounced', 'blacklisted'];
-    if (contactStatus && blockedStatuses.includes(contactStatus.status)) {
-      const errorCode = contactStatus.status.toUpperCase();
-      console.warn(`[processEmail] COMPLIANCE BLOCK: Contact ${email.contact_id} is ${contactStatus.status}. Aborting send.`);
+    
+    let isBouncedByTag = false;
+    if (contactData && contactData.tags) {
+      try {
+        const tags = JSON.parse(contactData.tags);
+        if (tags.some((t: string) => ['Bounced', 'Bounced Email', 'Invalid'].includes(t))) {
+          isBouncedByTag = true;
+        }
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+
+    if (contactData && (blockedStatuses.includes(contactData.status) || isBouncedByTag)) {
+      const errorCode = isBouncedByTag ? 'BOUNCED_TAG' : contactData.status.toUpperCase();
+      console.warn(`[processEmail] COMPLIANCE BLOCK: Contact ${email.contact_id} is ${contactData.status}${isBouncedByTag ? ' (Bounced Tag)' : ''}. Aborting send.`);
       await db.prepare(`UPDATE outreach_individual_emails SET status = 'failed', error_code = '${errorCode}' WHERE id = ?`).run(emailId);
       return;
     }
