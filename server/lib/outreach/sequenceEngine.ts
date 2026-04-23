@@ -112,6 +112,21 @@ export async function scheduleNextStep(
   ]);
   
   if (!sequence) throw new Error('Sequence not found');
+
+  // Timezone Context
+  const useRecipientTz = sequence.use_recipient_timezone === true || sequence.use_recipient_timezone === 1;
+  let targetTz = sequence.send_timezone || 'America/Mexico_City';
+
+  if (useRecipientTz) {
+    const contact = await d.get<any>(
+      'SELECT inferred_timezone FROM outreach_contacts WHERE id = ?',
+      [contactId]
+    );
+    if (contact?.inferred_timezone) {
+      targetTz = contact.inferred_timezone;
+    }
+  }
+
   const intervalMinutes = settings?.sending_interval_minutes ?? 20;
   const mailboxId = enrollment.assigned_mailbox_id;
 

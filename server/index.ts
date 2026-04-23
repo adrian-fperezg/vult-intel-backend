@@ -529,7 +529,7 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
         if (!sequence.id) continue; // Sequence might have been deleted
 
         // Determine target timezone
-        let targetTz = sequence.send_timezone || 'UTC';
+        let targetTz = sequence.send_timezone || 'America/Mexico_City';
         if (sequence.use_recipient_timezone) {
           if (!contactTzCache[contactId]) {
             const contact = await db.get<any>("SELECT inferred_timezone FROM outreach_contacts WHERE id = ?", [contactId]);

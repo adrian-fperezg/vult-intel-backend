@@ -249,7 +249,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       if (sequence.restrict_sending_hours) {
         const contact = await db.prepare('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?').get(contactId) as any;
         const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
-        const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'UTC');
+        const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'America/Mexico_City');
 
         const now = DateTime.now().setZone(targetTz);
         const nextSlot = getNextBusinessSlot(now, sequence);
