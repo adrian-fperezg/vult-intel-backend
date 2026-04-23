@@ -239,13 +239,21 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
       // Check Parent Sequence Status (Handle Pause / Scheduled)
       const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
-      if (!sequence || sequence.status !== 'active') {
-        console.log(`[Sequence] Skipping execution for sequence ${sequenceId}: Sequence status is ${sequence?.status || 'missing'}. (Step ${stepId} for contact ${contactId})`);
+      const bypassRestrictions = job.data?.bypassRestrictions === true;
+
+      if (!sequence) {
+        console.log(`[Sequence] Skipping execution: Sequence ${sequenceId} missing. (Step ${stepId} for contact ${contactId})`);
+        return;
+      }
+
+      // If not bypassing, check if sequence is active
+      if (sequence.status !== 'active' && !bypassRestrictions) {
+        console.log(`[Sequence] Skipping execution for sequence ${sequenceId}: Sequence status is ${sequence?.status}. (Step ${stepId} for contact ${contactId})`);
         return;
       }
 
       // 1c. Sending Window Restriction Check
-      if (sequence.restrict_sending_hours) {
+      if (sequence.restrict_sending_hours && !bypassRestrictions) {
         const contact = await db.prepare('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?').get(contactId) as any;
         const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
         const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'America/Mexico_City');

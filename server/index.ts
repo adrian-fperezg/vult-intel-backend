@@ -1531,6 +1531,46 @@ app.post("/api/outreach/queue/promote-sequence/:sequenceId", async (req: AuthReq
   }
 });
 
+// Promote a single delayed job and bypass all restrictions
+app.post("/api/outreach/queue/send-now/:jobId", async (req: AuthRequest, res) => {
+  const { jobId } = req.params;
+  const projectId = req.projectId;
+
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: "Project ID is required" });
+  }
+
+  try {
+    const job = await emailQueue.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, error: "Job not found in queue" });
+    }
+
+    // Security check: Ensure job belongs to this project
+    const jobProjectId = job.data?.projectId || job.data?.activeProjectId;
+    if (jobProjectId !== projectId) {
+      return res.status(403).json({ success: false, error: "Access denied: Job does not belong to this project" });
+    }
+
+    // Update job data to include bypass flag
+    await job.updateData({
+      ...job.data,
+      bypassRestrictions: true
+    });
+
+    // Move to waiting immediately
+    await job.promote();
+
+    res.json({ 
+      success: true, 
+      message: "Job promoted and restrictions bypassed. Execution starting now." 
+    });
+  } catch (err: any) {
+    console.error("[Outreach Queue Send Now] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
 
 app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {

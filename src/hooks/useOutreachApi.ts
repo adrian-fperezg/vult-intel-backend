@@ -655,6 +655,16 @@ export function useOutreachApi() {
     [post]
   );
 
+  const promoteSequenceQueue = useCallback(
+    (sequenceId: string) => post<any>(`/queue/promote-sequence/${sequenceId}`, {}),
+    [post]
+  );
+
+  const sendNowQueueJob = useCallback(
+    (jobId: string) => post<any>(`/queue/send-now/${jobId}`, {}),
+    [post]
+  );
+
 
   // ── Compose ──────────────────────────────────────────────────────────────
 
@@ -881,6 +891,8 @@ export function useOutreachApi() {
     clearSequenceJobs,
     retryQueueJob,
     retryAllFailedJobs,
+    promoteSequenceQueue,
+    sendNowQueueJob,
     authHeaders,
     // Snippets
     fetchSnippets,

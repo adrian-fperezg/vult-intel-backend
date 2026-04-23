@@ -50,6 +50,7 @@ export default function QueueMonitor() {
     clearSequenceJobs, 
     retryQueueJob,
     retryAllFailedJobs,
+    sendNowQueueJob,
     authHeaders, 
     activeProjectId 
   } = useOutreachApi();
@@ -115,6 +116,17 @@ export default function QueueMonitor() {
         next.delete(jobId);
         return next;
       });
+    }
+  };
+
+  const handleSendNow = async (jobId: string) => {
+    try {
+      toast.loading(t('outreach.queue.sendingNow'), { id: `send-${jobId}` });
+      await sendNowQueueJob(jobId);
+      toast.success(t('outreach.queue.sendNowSuccess'), { id: `send-${jobId}` });
+      loadQueue();
+    } catch (err: any) {
+      toast.error(err.message || t('outreach.queue.actionError'), { id: `send-${jobId}` });
     }
   };
 
@@ -539,22 +551,32 @@ export default function QueueMonitor() {
                         </td>
                         <td className="px-6 py-5 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {job.status === 'Failed' && (
-                              <button 
-                                onClick={() => handleRetry(job.jobId)}
-                                disabled={retryingJobs.has(job.jobId)}
-                                className={cn(
-                                  "flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-xl transition-all border border-teal-500/10 hover:border-teal-500/30 group",
-                                  retryingJobs.has(job.jobId) && "opacity-50 cursor-not-allowed"
-                                )}
-                                title={t('outreach.queue.retry')}
-                              >
-                                <RefreshCw className={cn("size-3.5", retryingJobs.has(job.jobId) && "animate-spin")} />
-                                <span className="text-[10px] font-black uppercase tracking-tight">
-                                  {retryingJobs.has(job.jobId) ? t('common.loading') : t('outreach.queue.retry')}
-                                </span>
-                              </button>
-                            )}
+                              {job.status === 'Failed' && (
+                                <button 
+                                  onClick={() => handleRetry(job.jobId)}
+                                  disabled={retryingJobs.has(job.jobId)}
+                                  className={cn(
+                                    "flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-xl transition-all border border-teal-500/10 hover:border-teal-500/30 group",
+                                    retryingJobs.has(job.jobId) && "opacity-50 cursor-not-allowed"
+                                  )}
+                                  title={t('outreach.queue.retry')}
+                                >
+                                  <RefreshCw className={cn("size-3.5", retryingJobs.has(job.jobId) && "animate-spin")} />
+                                  <span className="text-[10px] font-black uppercase tracking-tight">
+                                    {retryingJobs.has(job.jobId) ? t('common.loading') : t('outreach.queue.retry')}
+                                  </span>
+                                </button>
+                              )}
+                              {job.status !== 'Failed' && (
+                                <button 
+                                  onClick={() => handleSendNow(job.jobId)}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-xl transition-all border border-amber-500/10 hover:border-amber-500/30 group"
+                                  title={t('outreach.queue.sendNow')}
+                                >
+                                  <Zap className="size-3.5" />
+                                  <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.sendNow')}</span>
+                                </button>
+                              )}
                             <button 
                               onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
                               className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group"
