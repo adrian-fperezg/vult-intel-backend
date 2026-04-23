@@ -274,6 +274,28 @@ export default function QueueMonitor() {
     }
   };
 
+  const getRelativeDayTag = (isoString: string) => {
+    try {
+      const targetDate = new Date(isoString);
+      const today = new Date();
+      // Normalize to midnight
+      targetDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      
+      const diffTime = targetDate.getTime() - today.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 0) return t('outreach.queue.today');
+      if (diffDays === 1) return t('outreach.queue.tomorrow');
+      if (diffDays === -1) return t('outreach.queue.yesterday');
+      if (diffDays > 1) return t('outreach.queue.inXDays', { count: diffDays });
+      if (diffDays < -1) return t('outreach.queue.xDaysAgo', { count: Math.abs(diffDays) });
+    } catch {
+      return null;
+    }
+    return null;
+  };
+
   if (isLoading && jobs.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-500 animate-in fade-in duration-500">
@@ -492,9 +514,16 @@ export default function QueueMonitor() {
                             <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
                               <Calendar className="size-4 text-teal-400" />
                             </div>
-                            <span className="text-sm font-bold text-white tabular-nums">
-                              {formatTime(job.scheduledTime)}
-                            </span>
+                            <div className="flex flex-col">
+                              {getRelativeDayTag(job.scheduledTime) && (
+                                <span className="text-[10px] font-black uppercase tracking-widest text-teal-400 mb-0.5">
+                                  {getRelativeDayTag(job.scheduledTime)}
+                                </span>
+                              )}
+                              <span className="text-sm font-bold text-white tabular-nums">
+                                {formatTime(job.scheduledTime)}
+                              </span>
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-5">
