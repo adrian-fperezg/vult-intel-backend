@@ -277,7 +277,7 @@
             "sequenceConfirm": "¿Estás SEGURO de que deseas eliminar TODOS los envíos pendientes para la secuencia \"{{sequenceName}}\"? Esta acción limpiará la cola de BullMQ para esta secuencia sin importar su estado en la base de datos.",
             "rebalanceConfirm": "Advertencia: Esto reprogramará estrictamente todos los envíos próximos en relación con AHORA y los espaciará según el intervalo de envío de tu proyecto. Útil para corregir envíos acumulados o contactos sin asignar. ¿Proceder?",
             "purgeConfirm": "Esta acción eliminará permanentemente todos los jobs de BullMQ y registros de inscripción vinculados a secuencias que ya no existen en la base de datos. ¿Deseas continuar?",
-        "headers": {
+            "headers": {
                 "time": "Hora Programada",
                 "recipient": "Destinatario",
                 "sequence": "Secuencia",
@@ -285,6 +285,33 @@
                 "action": "Acción del Paso",
                 "status": "Estado",
                 "actions": "Acciones"
+            }
+        },
+        "history": {
+            "title": "Historial de Envíos",
+            "subtitle": "Monitorea los correos enviados exitosamente en todas las secuencias activas.",
+            "syncing": "Cargando historial de envíos...",
+            "emptyTitle": "Aún No Hay Correos Enviados",
+            "emptyDesc": "Los correos que se hayan enviado exitosamente aparecerán aquí.",
+            "refresh": "Refrescar Historial",
+            "searchPlaceholder": "Buscar contactos...",
+            "allSequences": "Todas las Secuencias",
+            "allSteps": "Todos los Pasos",
+            "allSenders": "Todos los Remitentes",
+            "filteredResults": "Filtrado",
+            "totalSent": "Total Enviados",
+            "noResultsTitle": "No se encontraron resultados",
+            "noResultsDesc": "Intenta ajustar tus filtros para ver más resultados.",
+            "unknownSequence": "Secuencia Desconocida",
+            "stepLabel": "Paso {{number}}",
+            "actionSuccess": "Historial sincronizado",
+            "requestFailed": "No se pudo obtener el historial",
+            "headers": {
+                "time": "Hora de Envío",
+                "recipient": "Destinatario",
+                "sequence": "Secuencia",
+                "sender": "Remitente",
+                "status": "Estado"
             }
         },
         "analytics": {

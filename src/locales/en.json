@@ -309,7 +309,7 @@
             "sequenceConfirm": "Are you SURE you want to delete ALL pending sends for the sequence \"{{sequenceName}}\"? This will clear the BullMQ queue for this sequence regardless of its status in the database.",
             "rebalanceConfirm": "Warning: This will strictly reschedule all upcoming sends relative to NOW and space them out by your project's sending interval. This is useful for fixing 'clumped' legacy jobs or unassigned contacts. Proceed?",
             "purgeConfirm": "This action will permanently delete all BullMQ jobs and enrollment records linked to sequences that no longer exist in the database. Do you wish to continue?",
-        "headers": {
+            "headers": {
                 "time": "Scheduled Time",
                 "recipient": "Recipient",
                 "sequence": "Sequence",
@@ -317,6 +317,33 @@
                 "action": "Step Action",
                 "status": "Status",
                 "actions": "Actions"
+            }
+        },
+        "history": {
+            "title": "Sent History",
+            "subtitle": "Monitor successfully sent emails across all active sequences.",
+            "syncing": "Loading sent history...",
+            "emptyTitle": "No Sent Emails Yet",
+            "emptyDesc": "Emails that have been successfully sent will appear here.",
+            "refresh": "Refresh History",
+            "searchPlaceholder": "Search contacts...",
+            "allSequences": "All Sequences",
+            "allSteps": "All Steps",
+            "allSenders": "All Senders",
+            "filteredResults": "Filtered",
+            "totalSent": "Total Sent",
+            "noResultsTitle": "No results found",
+            "noResultsDesc": "Try adjusting your filters to see more results.",
+            "unknownSequence": "Unknown Sequence",
+            "stepLabel": "Step {{number}}",
+            "actionSuccess": "History synced",
+            "requestFailed": "Failed to fetch history",
+            "headers": {
+                "time": "Time Sent",
+                "recipient": "Recipient",
+                "sequence": "Sequence",
+                "sender": "Sender",
+                "status": "Status"
             }
         },
         "analytics": {

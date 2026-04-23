@@ -577,6 +577,14 @@ export function useOutreachApi() {
     return res.json() as Promise<{ success: boolean; count: number; jobs: any[] }>;
   }, [activeProjectId, authHeaders]);
 
+  const fetchSentHistory = useCallback(async (limit: number = 50, offset: number = 0) => {
+    if (!activeProjectId) return null;
+    const headers = await authHeaders();
+    const res = await fetch(`${ROOT_URL}/outreach/history?projectId=${activeProjectId}&limit=${limit}&offset=${offset}`, { headers });
+    if (!res.ok) throw new Error('Failed to fetch sent history');
+    return res.json() as Promise<{ success: boolean; data: any[]; pagination: { total: number, limit: number, offset: number } }>;
+  }, [activeProjectId, authHeaders]);
+
   const rebalanceQueue = useCallback(async (data: { snapToBusinessHours: boolean; targetStartHour?: number }) => {
     if (!activeProjectId) return null;
     const headers = await authHeaders();
@@ -886,6 +894,7 @@ export function useOutreachApi() {
     disconnectMailbox,
     connectGmail,
     fetchScheduledQueue,
+    fetchSentHistory,
     rebalanceQueue,
     purgeOrphansQueue,
     clearSequenceJobs,

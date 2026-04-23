@@ -1571,6 +1571,87 @@ app.post("/api/outreach/queue/send-now/:jobId", async (req: AuthRequest, res) =>
   }
 });
 
+// ─── SENT HISTORY ─────────────────────────────────────────────────────────────
+
+app.get("/api/outreach/history", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const projectId = req.query.projectId as string;
+  
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const limit = parseInt((req.query.limit as string) || "50", 10);
+    const offset = parseInt((req.query.offset as string) || "0", 10);
+
+    const query = `
+      SELECT 
+        e.id as email_id,
+        e.contact_id,
+        e.sequence_id,
+        e.mailbox_id,
+        e.step_id,
+        e.sent_at,
+        e.created_at,
+        e.subject,
+        e.to_email as contact_email,
+        e.status,
+        c.first_name as contact_first_name,
+        c.last_name as contact_last_name,
+        s.name as sequence_name,
+        m.email as sender_email,
+        m.name as sender_name,
+        st.step_number
+      FROM outreach_individual_emails e
+      LEFT JOIN outreach_contacts c ON e.contact_id = c.id
+      LEFT JOIN outreach_sequences s ON e.sequence_id = s.id
+      LEFT JOIN outreach_mailboxes m ON e.mailbox_id = m.id
+      LEFT JOIN outreach_sequence_steps st ON e.step_id = st.id
+      WHERE e.project_id = ? AND e.status = 'sent'
+      ORDER BY COALESCE(e.sent_at, e.created_at) DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM outreach_individual_emails e
+      WHERE e.project_id = ? AND e.status = 'sent'
+    `;
+
+    const historyRows = await db.prepare(query).all(projectId, limit, offset);
+    const totalRow: any = await db.prepare(countQuery).get(projectId);
+    const total = totalRow?.total || 0;
+
+    const formattedData = historyRows.map((row: any) => ({
+      id: row.email_id,
+      contactId: row.contact_id,
+      contactName: `${row.contact_first_name || ''} ${row.contact_last_name || ''}`.trim() || null,
+      contactEmail: row.contact_email,
+      sequenceId: row.sequence_id,
+      sequenceName: row.sequence_name || 'Unknown Sequence',
+      mailboxId: row.mailbox_id,
+      senderEmail: row.sender_email || 'Unknown',
+      stepId: row.step_id,
+      stepNumber: row.step_number || 0,
+      sentAt: row.sent_at || row.created_at,
+      status: row.status
+    }));
+
+    res.json({
+      success: true,
+      data: formattedData,
+      pagination: {
+        total,
+        limit,
+        offset,
+      }
+    });
+  } catch (error: any) {
+    console.error("[Outreach History Fetch] Error:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────
 
 app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {

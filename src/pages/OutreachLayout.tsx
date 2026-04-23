@@ -17,10 +17,11 @@ import OutreachLeadFinder from './outreach/OutreachLeadFinder';
 import OutreachSettings from './outreach/OutreachSettings';
 import OutreachCompose from './outreach/OutreachCompose';
 import QueueMonitor from './outreach/QueueMonitor';
+import HistoryMonitor from './outreach/HistoryMonitor';
 import { PaperPlaneIcon } from './outreach/OutreachCommon';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
-type OutreachTab = 'analytics' | 'lead-finder' | 'contacts' | 'compose' | 'campaigns' | 'sequences' | 'inbox' | 'queue-monitor' | 'settings';
+type OutreachTab = 'analytics' | 'lead-finder' | 'contacts' | 'compose' | 'campaigns' | 'sequences' | 'inbox' | 'queue-monitor' | 'history-monitor' | 'settings';
 
 const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
   { id: 'analytics',    label: 'Analytics' },
@@ -31,6 +32,7 @@ const TABS: Array<{ id: OutreachTab; label: string; badge?: boolean }> = [
   { id: 'contacts',     label: 'Contacts' },
   { id: 'lead-finder',   label: 'Lead Finder' },
   { id: 'queue-monitor', label: 'Queue Monitor' },
+  { id: 'history-monitor', label: 'Sent History' },
   { id: 'settings',     label: 'Settings' },
 ];
 
@@ -244,6 +246,7 @@ export default function OutreachLayout() {
               {activeTab === 'sequences'    && <OutreachSequences />}
               {activeTab === 'inbox'        && <OutreachInbox />}
               {activeTab === 'queue-monitor' && <QueueMonitor />}
+              {activeTab === 'history-monitor' && <HistoryMonitor />}
               {activeTab === 'settings'     && <OutreachSettings />}
             </ErrorBoundary>
           </motion.div>
