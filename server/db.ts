@@ -563,7 +563,8 @@ export const initDb = async () => {
       { name: 'body', type: 'TEXT' },
       { name: 'replied_at', type: 'TIMESTAMP' },
       { name: 'thread_id', type: 'TEXT' },
-      { name: 'parent_message_id', type: 'TEXT' }
+      { name: 'parent_message_id', type: 'TEXT' },
+      { name: 'sender_alias', type: 'TEXT' }
     ];
 
     for (const col of newEmailCols) {

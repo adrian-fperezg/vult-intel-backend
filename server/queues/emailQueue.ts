@@ -484,13 +484,13 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           // Create individual email record
           emailId = uuidv4();
           await db.prepare(`
-            INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body_html, status, attachments)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+            INSERT INTO outreach_individual_emails (id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, from_email, from_name, to_email, subject, body_html, status, attachments, sender_alias)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)
           `).run(
             emailId,
             sequence.user_id,
             projectId,
-            resolvedMailboxId,   // ← validated sticky or newly reassigned mailbox
+            finalMailboxUuid,   // sanitized UUID (extracted above)
             contactId,
             sequenceId,
             stepId,
@@ -499,7 +499,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             contact.email,
             subject,
             bodyHtml,
-            JSON.stringify(mappedAttachments)
+            JSON.stringify(mappedAttachments),
+            resolvedMailboxId   // Store full compound ID as alias
           );
 
           // Send via processEmail
@@ -1009,17 +1010,19 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         });
 
 
+        const finalMailboxUuid = campaign.mailbox_id?.includes(':') ? campaign.mailbox_id.split(':')[0] : campaign.mailbox_id;
+
         await tx.prepare(`
           INSERT INTO outreach_individual_emails (
             id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id,
-            from_email, from_name, to_email, subject, body_html, attachments, status
+            from_email, from_name, to_email, subject, body_html, attachments, status, sender_alias
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
         `).run(
           emailId,
           campaign.user_id,
           campaign.project_id,
-          campaign.mailbox_id,
+          finalMailboxUuid,
           enrollment.contact_id,
           campaign.sequence_id,
           firstStep.id,
@@ -1028,7 +1031,8 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           enrollment.contact_email,
           subject,
           bodyHtml,
-          attachmentsJson
+          attachmentsJson,
+          campaign.mailbox_id
         );
 
 
