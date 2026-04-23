@@ -49,24 +49,40 @@ export default function QueueMonitor() {
   const [stepFilter, setStepFilter] = useState('ALL');
   const [senderFilter, setSenderFilter] = useState('ALL');
 
-  const loadQueue = useCallback(async () => {
+  const loadQueue = useCallback(async (isManual = false) => {
     if (!activeProjectId) return;
     setIsLoading(true);
     setError(null);
+    
+    if (isManual) {
+      toast.loading(t('outreach.queue.syncing'), { id: 'refresh-queue' });
+    }
+
     try {
       const data = await fetchScheduledQueue();
       if (data && data.success) {
         setJobs(data.jobs || []);
+        if (isManual) {
+          toast.success(t('outreach.queue.actionSuccess'), { id: 'refresh-queue' });
+        }
       } else {
-        setError(t('outreach.queue.requestFailed'));
+        const errorMsg = t('outreach.queue.requestFailed');
+        setError(errorMsg);
+        if (isManual) {
+          toast.error(errorMsg, { id: 'refresh-queue' });
+        }
       }
     } catch (err: any) {
       console.error('[QueueMonitor] Load Error:', err);
-      setError(err.message || t('outreach.queue.requestFailed'));
+      const errorMsg = err.message || t('outreach.queue.requestFailed');
+      setError(errorMsg);
+      if (isManual) {
+        toast.error(errorMsg, { id: 'refresh-queue' });
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [fetchScheduledQueue, activeProjectId]);
+  }, [fetchScheduledQueue, activeProjectId, t]);
 
   const handleRebalance = async () => {
     if (!activeProjectId) return;
@@ -256,7 +272,7 @@ export default function QueueMonitor() {
                 <TealButton 
                   variant="outline" 
                   size="sm" 
-                  onClick={loadQueue} 
+                  onClick={() => loadQueue(true)} 
                   loading={isLoading}
                   className="px-4"
                 >
@@ -406,7 +422,10 @@ export default function QueueMonitor() {
                               <User className="size-3.5 text-slate-400" />
                             </div>
                             <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                              {job.contactName?.replace(/\bnull\b/gi, '').trim() || job.contactEmail}
+                              {(() => {
+                                const cleanName = (job.contactName || '').replace(/\bnull\b/gi, '').trim();
+                                return cleanName || job.contactEmail;
+                              })()}
                             </span>
                           </div>
                         </td>
