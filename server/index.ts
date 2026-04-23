@@ -98,8 +98,9 @@ import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest, verifyToken } from "./middleware";
+import { enrollContactInSequence, getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment, getNextBusinessSlot } from "./lib/outreach/sequenceEngine.js";
+import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
-import { getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment, getNextBusinessSlot } from "./lib/outreach/sequenceEngine.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,
@@ -994,6 +995,7 @@ app.post("/api/admin/queue/retry-all", verifyFirebaseToken, async (req: AuthRequ
     console.error("[Queue Retry All] Error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
+});
 
 app.get("/api/admin/force-reset-queue", async (_req, res) => {
   const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
@@ -2270,8 +2272,7 @@ app.get("/api/outreach/campaigns/:id/delivery-estimate", async (req: AuthRequest
   res.json({ estimate });
 });
 
-import { enrollContactInSequence } from './lib/outreach/sequenceEngine.js';
-import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
+
 
 // GET /api/outreach/stats
 // Helper to get user timezone from header or default
