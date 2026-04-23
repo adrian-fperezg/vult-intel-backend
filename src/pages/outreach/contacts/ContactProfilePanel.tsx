@@ -11,6 +11,25 @@ import { useOutreachApi } from '@/hooks/useOutreachApi';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useMemo } from 'react';
 
+
+const getTagStyle = (tag: string) => {
+  const normalized = tag.toLowerCase().trim();
+  if (normalized === 'not enrolled' || normalized === 'sin inscribir') {
+    return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+  }
+  if (['bounced', 'bounced email', 'invalid', 'rebotado', 'inválido'].includes(normalized)) {
+    return "bg-red-500/10 text-red-400 border-red-500/20";
+  }
+  if (normalized === 'unsubscribed' || normalized === 'desuscrito') {
+    return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+  }
+  if (normalized === 'lead' || normalized === 'prospecto') {
+    return "bg-green-500/10 text-green-400 border-green-500/20";
+  }
+  // Default for sequences or other tags
+  return "bg-teal-500/10 text-teal-400 border-teal-500/20";
+};
+
 interface ContactProfilePanelProps {
   contact: any | null;
   isOpen: boolean;
@@ -295,8 +314,14 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                       <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">{t.tags}</h3>
                       <div className="flex flex-wrap gap-2">
                         {contact.tags.map((tag: string) => (
-                          <span key={tag} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/5 border border-white/10 text-slate-300 flex items-center gap-1.5">
-                            <Tag className="size-3 text-slate-500" /> {tag}
+                          <span 
+                            key={tag} 
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-all hover:scale-105",
+                              getTagStyle(tag)
+                            )}
+                          >
+                            <Tag className="size-3 opacity-70" /> {tag}
                           </span>
                         ))}
                       </div>

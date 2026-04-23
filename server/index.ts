@@ -3562,10 +3562,35 @@ app.delete("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
   try {
+    const sequence = await db.get<any>("SELECT name FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId);
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    // Find contacts enrolled in this sequence to remove tags
+    const enrollments = await db.all<any>("SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ?", id);
+
+    for (const enrollment of enrollments) {
+      const contact = await db.get<any>("SELECT id, tags FROM outreach_contacts WHERE id = ?", enrollment.contact_id);
+      if (contact && contact.tags) {
+        let tags: string[] = [];
+        try {
+          tags = JSON.parse(contact.tags);
+          tags = tags.filter((t: string) => t !== sequence.name);
+          if (tags.length === 0) {
+            tags = ['Not Enrolled'];
+          }
+          await db.run("UPDATE outreach_contacts SET tags = ? WHERE id = ?", JSON.stringify(tags), contact.id);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
+
     const result = await db.run("DELETE FROM outreach_sequences WHERE id = ? AND user_id = ? AND project_id = ?", id, userId, req.projectId);
     if (result.changes === 0) return res.status(404).json({ error: "Sequence not found" });
+    
     res.json({ success: true });
   } catch (error) {
+    console.error("Failed to delete sequence:", error);
     res.status(500).json({ error: "Failed to delete sequence" });
   }
 });
@@ -4195,7 +4220,7 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
 app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
-  const { status, intent, first_name, last_name, company } = req.body;
+  const { status, intent, first_name, last_name, company, tags } = req.body;
 
   const fields: string[] = [];
   const values: any[] = [];
@@ -4219,6 +4244,10 @@ app.patch("/api/outreach/contacts/:id", async (req: AuthRequest, res) => {
   if (company !== undefined) {
     fields.push("company = ?");
     values.push(company);
+  }
+  if (tags !== undefined) {
+    fields.push("tags = ?");
+    values.push(JSON.stringify(tags));
   }
 
   if (fields.length === 0)

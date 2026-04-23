@@ -36,7 +36,7 @@ export async function enrollContactInSequence(
 
   try {
     const [sequence, settings] = await Promise.all([
-      d.get<any>('SELECT status, mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?', [sequenceId]),
+      d.get<any>('SELECT name, status, mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?', [sequenceId]),
       d.get<any>('SELECT stagger_delay FROM outreach_settings WHERE project_id = ?', [projectId])
     ]);
 
@@ -50,6 +50,26 @@ export async function enrollContactInSequence(
     if (!mailboxId) {
        throw new Error('No healthy mailboxes available for enrollment');
     }
+
+    // Update tags: remove 'Not Enrolled' and add sequence name
+    const contact = await d.get<any>('SELECT tags FROM outreach_contacts WHERE id = ?', [contactId]);
+    let tags: string[] = [];
+    try {
+      if (contact && contact.tags) {
+        tags = JSON.parse(contact.tags);
+      } else {
+        tags = ['Not Enrolled'];
+      }
+    } catch (e) {
+      tags = ['Not Enrolled'];
+    }
+    
+    tags = tags.filter((t: string) => t !== 'Not Enrolled');
+    if (sequence.name && !tags.includes(sequence.name)) {
+      tags.push(sequence.name);
+    }
+    
+    await d.run('UPDATE outreach_contacts SET tags = ? WHERE id = ?', [JSON.stringify(tags), contactId]);
 
     // 2. Create the enrollment
     await d.run(

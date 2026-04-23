@@ -220,10 +220,23 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       // 1b. Contact-level status guard (bounced / unsubscribed)
       // A contact can be bounced or unsubscribed AFTER their job was already queued.
       // We must re-check here to avoid sending to dead or opted-out addresses.
-      const contactMeta = await db.prepare('SELECT status FROM outreach_contacts WHERE id = ?').get(contactId) as any;
+      const contactMeta = await db.prepare('SELECT status, tags FROM outreach_contacts WHERE id = ?').get(contactId) as any;
       const blockedContactStatuses = ['bounced', 'unsubscribed', 'blacklisted'];
-      if (contactMeta && blockedContactStatuses.includes(contactMeta.status)) {
-        console.warn(`[Sequence] COMPLIANCE BLOCK: Contact ${contactId} status is '${contactMeta.status}'. Halting sequence step ${stepId}.`);
+      
+      let isBouncedByTag = false;
+      if (contactMeta && contactMeta.tags) {
+        try {
+          const tags = JSON.parse(contactMeta.tags);
+          if (tags.some((t: string) => ['Bounced', 'Bounced Email', 'Invalid'].includes(t))) {
+            isBouncedByTag = true;
+          }
+        } catch (e) {
+          // ignore parse error
+        }
+      }
+
+      if (contactMeta && (blockedContactStatuses.includes(contactMeta.status) || isBouncedByTag)) {
+        console.warn(`[Sequence] COMPLIANCE BLOCK: Contact ${contactId} status is '${contactMeta.status}', or has Bounced tag. Halting sequence step ${stepId}.`);
         // Ensure enrollment is stopped so no future jobs fire for this contact
         await db.prepare(
           "UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE sequence_id = ? AND contact_id = ? AND status = 'active'"

@@ -45,6 +45,25 @@ interface Contact {
   inferred_timezone?: string;
 }
 
+
+const getTagStyle = (tag: string) => {
+  const normalized = tag.toLowerCase().trim();
+  if (normalized === 'not enrolled' || normalized === 'sin inscribir') {
+    return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+  }
+  if (['bounced', 'bounced email', 'invalid', 'rebotado', 'inválido'].includes(normalized)) {
+    return "bg-red-500/10 text-red-400 border-red-500/20";
+  }
+  if (normalized === 'unsubscribed' || normalized === 'desuscrito') {
+    return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+  }
+  if (normalized === 'lead' || normalized === 'prospecto') {
+    return "bg-green-500/10 text-green-400 border-green-500/20";
+  }
+  // Default for sequences or other tags
+  return "bg-teal-500/10 text-teal-400 border-teal-500/20";
+};
+
 export default function OutreachContacts() {
   const api = useOutreachApi();
   const { language } = useSettings();
@@ -921,7 +940,15 @@ export default function OutreachContacts() {
                                     <div className="pt-4 flex items-center gap-2 flex-wrap">
                                       <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">{t.tags}:</p>
                                       {contact.tags.length > 0 ? contact.tags.map(tag => (
-                                        <span key={tag} className="px-2 py-0.5 bg-white/5 border border-white/5 rounded text-[10px] font-bold text-slate-400">#{tag}</span>
+                                        <span 
+                                          key={tag} 
+                                          className={cn(
+                                            "px-2 py-0.5 border rounded text-[10px] font-bold transition-all hover:scale-105",
+                                            getTagStyle(tag)
+                                          )}
+                                        >
+                                          #{tag}
+                                        </span>
                                       )) : <span className="text-[10px] text-slate-600 italic">{t.noTags}</span>}
                                     </div>
                                   </div>
