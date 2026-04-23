@@ -10,7 +10,7 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 // @ts-ignore
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
-import { getTrueNextStep, getNextBusinessSlot } from '../lib/outreach/sequenceEngine.js';
+import { scheduleNextStep, enrollContactInSequence, calculateNextAvailableSlot, getTrueNextStep, getNextBusinessSlot } from '../lib/outreach/sequenceEngine.js';
 import { recordOutreachEvent } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
 import { encryptToken } from '../lib/outreach/encrypt.js';
@@ -130,7 +130,6 @@ export async function resetRepeatableJobs() {
 }
 
 import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
-import { scheduleNextStep, enrollContactInSequence } from '../lib/outreach/sequenceEngine.js';
 
 /**
  * Cancels a scheduled sequence start job.
@@ -258,10 +257,24 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
         // If the next valid slot is more than 1 minute away, we are outside the window.
         if (nextSlot.diff(now, 'minutes').minutes > 1) {
-           const deferMs = nextSlot.diffNow().as('milliseconds');
-           console.log(`[Sending Window] Deferring email for contact ${contactId} until ${nextSlot.toFormat('yyyy-MM-dd HH:mm:ss')} due to window restrictions.`);
+           // --- ENHANCED DEFERRAL (STAGGERED) ---
+           const settings = await db.get<any>('SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?', [projectId]);
+           const intervalMinutes = settings?.sending_interval_minutes ?? 20;
+           const mailboxId = enrollment.assigned_mailbox_id;
+
+           const staggeredSlot = await calculateNextAvailableSlot(
+             nextSlot, // Start from the window opening time
+             sequence,
+             mailboxId,
+             intervalMinutes,
+             targetTz,
+             db
+           );
+
+           const deferMs = Math.max(0, staggeredSlot.diffNow().as('milliseconds'));
+           console.log(`[Sending Window] Deferring email for contact ${contactId} until ${staggeredSlot.toFormat('yyyy-MM-dd HH:mm:ss')} (Staggered deferral).`);
            
-           const newScheduledAt = new Date(Date.now() + Math.max(0, deferMs));
+           const newScheduledAt = new Date(Date.now() + deferMs);
            await db.run(
             `UPDATE outreach_sequence_enrollments 
              SET scheduled_at = ?
@@ -275,7 +288,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
              delay: deferMs,
              attempts: 3,
              backoff: { type: 'exponential', delay: 5000 },
-             jobId: `seq-${sequenceId}-contact-${contactId}-step-${stepId}-deferred-${Date.now()}`
+             jobId: `seq-${sequenceId}-${contactId}-step-${stepId}-deferred`
            });
            return;
         }
@@ -413,8 +426,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             const poolUuids = mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id);
             const healthyMailboxes = mailboxPool.length > 0
               ? await db.all(
-                  `SELECT id, email, name FROM outreach_mailboxes WHERE id IN (${poolPlaceholders}) AND status = 'active'`,
-                  poolUuids
+                  `SELECT id, email, name FROM outreach_mailboxes WHERE id = ANY($1::text[]) AND status = 'active'`,
+                  [poolUuids]
                 ) as any[]
               : [];
 
@@ -1172,7 +1185,7 @@ export async function sequenceWatchdog() {
     for (const enrollment of activeEnrollments) {
       try {
         // Reconstruction: Find the "True" next step based on event history
-        const { stepId, isCompleted } = await getTrueNextStep(
+        const { stepId, stepNumber, isCompleted } = await getTrueNextStep(
           enrollment.project_id, 
           enrollment.sequence_id, 
           enrollment.contact_id
@@ -1198,15 +1211,20 @@ export async function sequenceWatchdog() {
           );
         }
 
-        // Job verification
-        const jobId = `seq-${enrollment.sequence_id}-contact-${enrollment.contact_id}-step-${stepId}`;
-        const job = await emailQueue.getJob(jobId);
+        // Job verification (Standard + Deferred)
+        const jobId = `seq-${enrollment.sequence_id}-${enrollment.contact_id}-step-${stepId}`;
+        const deferredJobId = `${jobId}-deferred`;
+
+        const [job, deferredJob] = await Promise.all([
+          emailQueue.getJob(jobId),
+          emailQueue.getJob(deferredJobId)
+        ]);
         
-        // If job is missing AND it's "overdue" (scheduled_at <= now), re-queue
+        // If NO job exists AND it's "overdue" (scheduled_at <= now), re-queue
         const now = new Date();
         const scheduledAt = new Date(enrollment.scheduled_at || now);
         
-        if (!job && scheduledAt <= now) {
+        if (!job && !deferredJob && scheduledAt <= now) {
           console.warn(`[SequenceWatchdog] Enrollment ${enrollment.id} step ${stepId} is due/overdue but NO job in queue. Recovering...`);
           
           await emailQueue.add('execute-sequence-step', {
@@ -1214,6 +1232,7 @@ export async function sequenceWatchdog() {
             sequenceId: enrollment.sequence_id,
             contactId: enrollment.contact_id,
             stepId: stepId,
+            stepNumber: stepNumber,
             isRecovery: true
           }, {
             jobId: jobId,
@@ -1222,12 +1241,6 @@ export async function sequenceWatchdog() {
           });
 
           console.log(`[SequenceWatchdog] Recovered enrollment ${enrollment.id} (contact ${enrollment.contact_id})`);
-        } else if (job) {
-          const state = await job.getState();
-          if (state === 'failed' || state === 'completed') {
-             // If the deterministic jobId is completed/failed, BullMQ won't let us add it again under same ID.
-             // Our worker idempotency deals with "already executed" logic if a job with same ID runs.
-          }
         }
       } catch (innerErr) {
         console.error(`[SequenceWatchdog] Failed to process enrollment ${enrollment.id}:`, innerErr);

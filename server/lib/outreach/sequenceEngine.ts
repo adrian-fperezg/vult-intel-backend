@@ -195,66 +195,30 @@ export async function scheduleNextStep(
     console.log(`[SequenceEngine] Follow-up Delay: ${amount} ${unit} (Target: ${targetTime.toISO()})`);
   }
 
-  // 4. ENFORCE BUSINESS HOURS & WEEKDAYS
-  let executeAt = getNextBusinessSlot(targetTime, sequence);
-  const primaryWindowShiftMs = Math.max(0, executeAt.diff(targetTime).as('milliseconds'));
-
-  // ── Per-Mailbox Staggering ──────────────────────────────────────────────
-  let mailboxStaggerShiftMs = 0;
-  let postStaggerWindowShiftMs = 0;
-
-  if (mailboxId && intervalMinutes > 0) {
-    const lastJob = await d.get<any>(
-      'SELECT MAX(scheduled_at) as last_time FROM outreach_sequence_enrollments WHERE assigned_mailbox_id = ? AND scheduled_at > CURRENT_TIMESTAMP',
-      [mailboxId]
-    );
-    
-    if (lastJob?.last_time) {
-      const lastTime = DateTime.fromISO(lastJob.last_time).setZone(targetTz);
-      const minStaggeredTime = lastTime.plus({ minutes: intervalMinutes });
-      
-      if (minStaggeredTime > executeAt) {
-        mailboxStaggerShiftMs = minStaggeredTime.diff(executeAt).as('milliseconds');
-        executeAt = minStaggeredTime;
-        
-        // Re-enforce window in case staggering pushed it past the end hour
-        const finalWindowTime = getNextBusinessSlot(executeAt, sequence);
-        if (finalWindowTime.toMillis() !== executeAt.toMillis()) {
-          postStaggerWindowShiftMs = finalWindowTime.diff(executeAt).as('milliseconds');
-          executeAt = finalWindowTime;
-        }
-      }
-    }
-  }
-
-  // 5. DIAGNOSTIC LOGGING (Step-by-step breakdown)
-  const totalWaitMs = executeAt.diffNow().as('milliseconds');
-  
-  // human-like variation
-  const smartJitterDelayMs = (Math.floor(Math.random() * (sequence.smart_send_max_delay || 0)) * 1000);
-  const finalDelay = Math.max(0, totalWaitMs + smartJitterDelayMs);
-  const scheduledAt = new Date(Date.now() + finalDelay);
-
-  console.log(`[SequenceEngine] [Diagnostic] Contact ${contactId} Scheduling Breakdown:
-    - Base Step Delay:    +${Math.round(stepDelayMs/1000)}s
-    - Initial Drip Stagger: +${Math.round(initialExtraDelayMs/1000)}s
-    - Primary Window Shift: +${Math.round(primaryWindowShiftMs/1000)}s
-    - Mailbox Stagger:    +${Math.round(mailboxStaggerShiftMs/1000)}s
-    - Post-Stagger Window:  +${Math.round(postStaggerWindowShiftMs/1000)}s
-    - Smart Jitter:       +${Math.round(smartJitterDelayMs/1000)}s
-    -------------------------------------------
-    - Total Wait Time:     ${Math.round(finalDelay/1000)}s
-    - Final Execution:     ${DateTime.fromJSDate(scheduledAt).setZone(targetTz).toFormat('yyyy-MM-dd HH:mm:ss')} (${targetTz})`);
-
-  // 6. ACTUALIZACIÓN Y COLA
-  await d.run(
-    `UPDATE outreach_sequence_enrollments 
-     SET next_step_id = ?, scheduled_at = ?, last_error = NULL 
-     WHERE sequence_id = ? AND contact_id = ?`,
-    [step.id, scheduledAt.toISOString(), sequenceId, contactId]
+  // 4. ENFORCE BUSINESS HOURS, STAGGERING & JITTER
+  const executeAt = await calculateNextAvailableSlot(
+    targetTime,
+    sequence,
+    mailboxId,
+    intervalMinutes,
+    targetTz,
+    d
   );
 
-  const jobId = `seq-${sequenceId}-contact-${contactId}-step-${step.id}`;
+  const finalDelay = Math.max(0, executeAt.diffNow().as('milliseconds'));
+  const scheduledAt = new Date(Date.now() + finalDelay);
+
+  console.log(`[SequenceEngine] [Diagnostic] Contact ${contactId} Scheduled for: ${executeAt.toFormat('yyyy-MM-dd HH:mm:ss')} (${targetTz}) (Delay: ${Math.round(finalDelay/1000)}s)`);
+
+  // 5. ACTUALIZACIÓN Y COLA
+  await d.run(
+    `UPDATE outreach_sequence_enrollments 
+     SET next_step_id = ?, scheduled_at = ?, assigned_mailbox_id = ?, last_error = NULL 
+     WHERE sequence_id = ? AND contact_id = ?`,
+    [step.id, scheduledAt.toISOString(), mailboxId, sequenceId, contactId]
+  );
+
+  const jobId = `seq-${sequenceId}-${contactId}-step-${step.id}`;
 
   await emailQueue.add('execute-sequence-step', {
     projectId, sequenceId, contactId, stepId: step.id, stepNumber: step.step_number
@@ -269,6 +233,50 @@ export async function scheduleNextStep(
 }
 
 /**
+ * Calculates the next available execution slot, respecting:
+ * 1. Business hours & Weekdays (Sequence Settings)
+ * 2. Per-mailbox staggering (Sending Interval)
+ * 3. Smart Jitter
+ */
+export async function calculateNextAvailableSlot(
+  baseTime: DateTime,
+  sequence: any,
+  mailboxId: string | null,
+  intervalMinutes: number,
+  targetTz: string,
+  d: DbWrapper
+): Promise<DateTime> {
+  // 1. Enforce business hours & weekdays
+  let executeAt = getNextBusinessSlot(baseTime, sequence);
+
+  // 2. Per-Mailbox Staggering
+  if (mailboxId && intervalMinutes > 0) {
+    const lastJob = await d.get<any>(
+      'SELECT MAX(scheduled_at) as last_time FROM outreach_sequence_enrollments WHERE assigned_mailbox_id = ? AND scheduled_at > CURRENT_TIMESTAMP',
+      [mailboxId]
+    );
+    
+    if (lastJob?.last_time) {
+      const lastTime = DateTime.fromISO(lastJob.last_time).setZone(targetTz);
+      const minStaggeredTime = lastTime.plus({ minutes: intervalMinutes });
+      
+      if (minStaggeredTime > executeAt) {
+        executeAt = minStaggeredTime;
+        
+        // Re-enforce window in case staggering pushed it past the end hour
+        executeAt = getNextBusinessSlot(executeAt, sequence);
+      }
+    }
+  }
+
+  // 3. Smart Jitter (Human-like variation)
+  const smartJitterDelaySeconds = Math.floor(Math.random() * (sequence.smart_send_max_delay || 0));
+  executeAt = executeAt.plus({ seconds: smartJitterDelaySeconds });
+
+  return executeAt;
+}
+
+/**
  * Cancela trabajos pendientes.
  */
 export async function cancelPendingSequenceJobs(sequenceId: string, contactId: string, tx?: DbWrapper) {
@@ -279,12 +287,19 @@ export async function cancelPendingSequenceJobs(sequenceId: string, contactId: s
   );
 
   if (enrollment?.next_step_id) {
-    const jobId = `seq-${sequenceId}-contact-${contactId}-step-${enrollment.next_step_id}`;
-    try {
-      const job = await emailQueue.getJob(jobId);
-      if (job) await job.remove();
-    } catch (err: any) {
-      console.warn(`[SequenceEngine] Limpieza de Job fallida: ${jobId}`);
+    const jobId = `seq-${sequenceId}-${contactId}-step-${enrollment.next_step_id}`;
+    const deferredJobId = `${jobId}-deferred`;
+
+    for (const id of [jobId, deferredJobId]) {
+      try {
+        const job = await emailQueue.getJob(id);
+        if (job) {
+          await job.remove();
+          console.log(`[SequenceEngine] [Cleanup] Successfully removed Job: ${id}`);
+        }
+      } catch (err: any) {
+        console.warn(`[SequenceEngine] Limpieza de Job fallida: ${id}`);
+      }
     }
   }
 
@@ -309,16 +324,16 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
       "SELECT type, metadata FROM outreach_events WHERE contact_id = ? AND sequence_id = ? AND step_id = ? AND type = 'sequence_step_executed' ORDER BY created_at DESC LIMIT 1",
       [contactId, sequenceId, currentStep.id]
     );
-    if (!executionEvent) return { stepId: currentStep.id, isCompleted: false };
+    if (!executionEvent) return { stepId: currentStep.id, stepNumber: currentStep.step_number, isCompleted: false };
 
     const nextStep = await db.get<SequenceStep>(
       'SELECT * FROM outreach_sequence_steps WHERE sequence_id = ? AND parent_step_id = ? LIMIT 1',
       [sequenceId, currentStep.id]
     );
-    if (!nextStep) return { stepId: null, isCompleted: true };
+    if (!nextStep) return { stepId: null, stepNumber: null, isCompleted: true };
     currentStep = nextStep;
   }
-  return { stepId: null, isCompleted: true };
+  return { stepId: null, stepNumber: null, isCompleted: true };
 }
 
 /**
