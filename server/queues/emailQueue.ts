@@ -391,9 +391,11 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           // 3. Validate the currently assigned mailbox:
           //    a) Is it still present in the sequence's current pool?
           //    b) Is it still status = 'active' in the DB?
+          // Normalize mailboxId for database lookup (handle uuid:email compound format)
+          const mailboxUuid = resolvedMailboxId.includes(':') ? resolvedMailboxId.split(':')[0] : resolvedMailboxId;
           const assignedMailbox = await db.prepare(
             "SELECT id, email, name, status FROM outreach_mailboxes WHERE id = ?"
-          ).get(resolvedMailboxId) as any;
+          ).get(mailboxUuid) as any;
 
           const isInPool   = mailboxPool.includes(resolvedMailboxId);
           const isActive   = assignedMailbox?.status === 'active';
@@ -407,12 +409,12 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
             console.warn(`[Fallback Routing] Contact ${contactId} in sequence ${sequenceId}: ${reason}. Attempting reassignment...`);
 
-            // Fetch only the mailboxes in the current pool that are genuinely active.
-            const poolPlaceholders = mailboxPool.map(() => '?').join(', ');
+            // Normalize pool for DB lookup
+            const poolUuids = mailboxPool.map(id => id.includes(':') ? id.split(':')[0] : id);
             const healthyMailboxes = mailboxPool.length > 0
               ? await db.all(
                   `SELECT id, email, name FROM outreach_mailboxes WHERE id IN (${poolPlaceholders}) AND status = 'active'`,
-                  mailboxPool
+                  poolUuids
                 ) as any[]
               : [];
 
@@ -448,15 +450,20 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           // 4. Resolve from_email / from_name for the final (possibly reassigned) mailbox.
           let fromEmail = sequence.from_email;
           let fromName  = sequence.from_name;
+          
+          const finalMailboxUuid = resolvedMailboxId.includes(':') ? resolvedMailboxId.split(':')[0] : resolvedMailboxId;
+          const aliasEmail = resolvedMailboxId.includes(':') ? resolvedMailboxId.split(':')[1] : null;
+
           const finalMailbox = isHealthy
-            ? assignedMailbox  // Already fetched above — no extra query needed
-            : await db.prepare('SELECT email, name FROM outreach_mailboxes WHERE id = ?').get(resolvedMailboxId) as any;
+            ? assignedMailbox  // Already fetched above
+            : await db.prepare('SELECT email, name FROM outreach_mailboxes WHERE id = ?').get(finalMailboxUuid) as any;
 
           if (finalMailbox) {
-            fromEmail = finalMailbox.email;
+            // Prioritize alias from compound ID, then mailbox default email
+            fromEmail = aliasEmail || finalMailbox.email;
             fromName  = finalMailbox.name;
             if (isHealthy) {
-              console.log(`[Sequence] [StickyRouting] Contact ${contactId} → mailbox ${resolvedMailboxId} (${fromEmail})`);
+              console.log(`[Sequence] [StickyRouting] Contact ${contactId} → mailbox ${finalMailboxUuid} (Alias: ${fromEmail})`);
             }
           }
           // ────────────────────────────────────────────────────────────────────────────
@@ -581,15 +588,18 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     throw new Error("EMAIL_NOT_FOUND");
   }
 
-  const mailboxId = email.mailbox_id;
-  if (!mailboxId) {
+  const rawMailboxId = email.mailbox_id;
+  if (!rawMailboxId) {
     console.error(`[processEmail] Email ${emailId} is missing mailbox_id`);
     throw new Error("MAILBOX_MISSING");
   }
 
-  console.log(`[processEmail] Found email record. mailboxId: ${mailboxId}. Fetching mailbox details...`);
+  // Normalize mailboxId (handle uuid:email compound format)
+  const mailboxUuid = rawMailboxId.includes(':') ? rawMailboxId.split(':')[0] : rawMailboxId;
+
+  console.log(`[processEmail] Found email record. mailboxId: ${mailboxUuid}. Fetching mailbox details...`);
   
-  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxUuid) as any;
   if (!mailbox) throw new Error("MAILBOX_NOT_FOUND");
 
   // --- SMART THROTTLING & PRE-FLIGHT ---
@@ -807,7 +817,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
       throw new Error('Mailbox is missing OAuth2 tokens. Please reconnect in Settings.');
     }
 
-    const result = await sendGmailMessage(mailboxId, {
+    const result = await sendGmailMessage(mailboxUuid, {
       to: email.to_email,
       subject: email.subject || "(No Subject)",
       bodyHtml: bodyWithTracking,
@@ -846,7 +856,7 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   }
 
   // Gmail logic
-  const { gmail, mailboxEmail } = await getValidGmailClient(mailboxId);
+  const { gmail, mailboxEmail } = await getValidGmailClient(mailboxUuid);
   
   const subject = email.subject || "(No Subject)";
   const to = email.to_email;

@@ -141,6 +141,32 @@
             "rights": "© {{year}} Vult Intel. Todos los derechos reservados.",
             "privacy": "Política de Privacidad",
             "terms": "Términos de Servicio"
+        },
+        "settings": {
+            "sending": {
+                "title": "Configuración de Envío",
+                "desc": "Optimiza la entrega de tu outreach y protege tus dominios",
+                "intervalTitle": "Intervalo de Envío",
+                "intervalDesc": "Lógica de escalonamiento por buzón",
+                "waitTime": "Tiempo de Espera (Minutos)",
+                "waitTimeDesc": "Tiempo mínimo de espera entre correos enviados desde el mismo buzón/alias.",
+                "staggerDelayTitle": "Retraso de Escalonamiento",
+                "staggerDelayDesc": "Retraso entre correos (minutos)",
+                "staggerDelayInput": "Retraso (Minutos)",
+                "staggerDelayInputDesc": "El tiempo a esperar entre cada correo en una secuencia.",
+                "dailyCapTitle": "Límite Diario de Envío",
+                "dailyCapDesc": "Límites de seguridad globales",
+                "maxEmails": "Máximo de Correos por Día / Proyecto",
+                "maxEmailsDesc": "Sobrescribir el límite diario agregado para este proyecto.",
+                "sendingWindowTitle": "Ventana de Envío",
+                "sendingWindowDesc": "Restricción de horario comercial",
+                "restrictHours": "Restringir Horas de Envío",
+                "startTime": "Hora de Inicio",
+                "endTime": "Hora de Fin",
+                "windowDesc": "Cuando esté habilitado, los correos solo se enviarán durante la ventana especificada.",
+                "saveBtn": "Guardar Configuración de Envío",
+                "saveSuccess": "Configuración de envío actualizada"
+            }
         }
     },
     "common": {
@@ -229,6 +255,14 @@
             "noResultsDesc": "No se encontraron envíos que coincidan con estos filtros. Intenta ajustar tu búsqueda o limpiar los filtros.",
             "scheduled": "Programado",
             "retrying": "Reintentando",
+            "failed": "Fallido",
+            "retry": "Reintentar",
+            "retryAll": "Reintentar Todos los Fallidos",
+            "retrySuccess": "Trabajo programado para reintento",
+            "retryAllSuccess": "Se reintentaron {{count}} trabajos con éxito",
+            "retryingJob": "Reintentando trabajo...",
+            "retryingAll": "Reintentando todos los trabajos fallidos...",
+            "retryAllConfirm": "¿Estás seguro de que quieres reintentar TODOS los trabajos fallidos? Esto los moverá de nuevo a la cola activa.",
             "deleteSends": "Eliminar Envíos",
             "unknownSequence": "Secuencia Desconocida",
             "waitingForEmail": "Esperando asignación de email",

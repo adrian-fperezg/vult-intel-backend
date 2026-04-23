@@ -30,6 +30,7 @@ interface QueueJob {
   scheduledTime: string;
   priority: number;
   attempts: number;
+  status: string;
 }
 
 export default function QueueMonitor() {
@@ -38,9 +39,20 @@ export default function QueueMonitor() {
   const [error, setError] = useState<string | null>(null);
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
+  const [isRetryingAll, setIsRetryingAll] = useState(false);
+  const [retryingJobs, setRetryingJobs] = useState<Set<string>>(new Set());
   const [snapToBusiness, setSnapToBusiness] = useState(true);
   const { t, language } = useTranslation();
-  const { fetchScheduledQueue, rebalanceQueue, purgeOrphansQueue, clearSequenceJobs, authHeaders, activeProjectId } = useOutreachApi();
+  const { 
+    fetchScheduledQueue, 
+    rebalanceQueue, 
+    purgeOrphansQueue, 
+    clearSequenceJobs, 
+    retryQueueJob,
+    retryAllFailedJobs,
+    authHeaders, 
+    activeProjectId 
+  } = useOutreachApi();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,6 +95,49 @@ export default function QueueMonitor() {
       setIsLoading(false);
     }
   }, [fetchScheduledQueue, activeProjectId, t]);
+
+  const handleRetry = async (jobId: string) => {
+    setRetryingJobs(prev => new Set(prev).add(jobId));
+    try {
+      toast.loading(t('outreach.queue.retryingJob'), { id: `retry-${jobId}` });
+      const res = await retryQueueJob(jobId);
+      if (res?.success) {
+        toast.success(t('outreach.queue.retrySuccess'), { id: `retry-${jobId}` });
+        loadQueue();
+      } else {
+        toast.error(res?.error || t('outreach.queue.actionError'), { id: `retry-${jobId}` });
+      }
+    } catch (err: any) {
+      toast.error(err.message || t('outreach.queue.actionError'), { id: `retry-${jobId}` });
+    } finally {
+      setRetryingJobs(prev => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  };
+
+  const handleRetryAll = async () => {
+    if (!activeProjectId) return;
+    if (!window.confirm(t('outreach.queue.retryAllConfirm'))) return;
+
+    setIsRetryingAll(true);
+    try {
+      toast.loading(t('outreach.queue.retryingAll'), { id: 'retry-all' });
+      const res = await retryAllFailedJobs();
+      if (res?.success) {
+        toast.success(t('outreach.queue.retryAllSuccess', { count: String(res.retriedCount) }), { id: 'retry-all' });
+        loadQueue();
+      } else {
+        toast.error(res?.error || t('outreach.queue.actionError'), { id: 'retry-all' });
+      }
+    } catch (err: any) {
+      toast.error(err.message || t('outreach.queue.actionError'), { id: 'retry-all' });
+    } finally {
+      setIsRetryingAll(false);
+    }
+  };
 
   const handleRebalance = async () => {
     if (!activeProjectId) return;
@@ -175,6 +230,8 @@ export default function QueueMonitor() {
     return s.map(n => t('outreach.queue.stepLabel', { number: String(n) }));
   }, [jobs, t]);
 
+  const failedCount = useMemo(() => jobs.filter(j => j.status === 'Failed').length, [jobs]);
+
   // Filtering Logic
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
@@ -182,9 +239,7 @@ export default function QueueMonitor() {
       const matchSeq = seqFilter === 'ALL' || job.sequenceName === seqFilter;
       const matchSender = senderFilter === 'ALL' || job.senderEmail === senderFilter;
       const matchStep = stepFilter === 'ALL' || t('outreach.queue.stepLabel', { number: String(job.stepNumber) }) === stepFilter;
-      
-      const jobStatus = job.attempts > 0 ? 'Retrying' : 'Scheduled';
-      const matchStatus = statusFilter === 'ALL' || jobStatus === statusFilter;
+      const matchStatus = statusFilter === 'ALL' || job.status === statusFilter;
 
       return matchSearch && matchSeq && matchSender && matchStep && matchStatus;
     });
@@ -247,6 +302,19 @@ export default function QueueMonitor() {
               </label>
 
               <div className="flex items-center gap-3">
+                {failedCount > 0 && (
+                  <TealButton 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleRetryAll} 
+                    loading={isRetryingAll}
+                    className="px-4 border-teal-500/30 text-teal-400 hover:bg-teal-500/10"
+                  >
+                    <RefreshCw className={cn("size-3.5 mr-2", isRetryingAll && "animate-spin")} />
+                    {t('outreach.queue.retryAll')} ({failedCount})
+                  </TealButton>
+                )}
+
                 <TealButton 
                   variant="outline" 
                   size="sm" 
@@ -332,6 +400,7 @@ export default function QueueMonitor() {
                    <option value="ALL">{t('outreach.queue.anyStatus')}</option>
                    <option value="Scheduled">{t('outreach.queue.scheduled')}</option>
                    <option value="Retrying">{t('outreach.queue.retrying')}</option>
+                   <option value="Failed">{t('outreach.queue.failed')}</option>
                  </select>
               </div>
 
@@ -460,26 +529,46 @@ export default function QueueMonitor() {
                           </div>
                         </td>
                         <td className="px-6 py-5">
-                          {job.attempts > 0 ? (
+                          {job.status === 'Failed' ? (
+                            <OutreachBadge variant="red" dot>{t('outreach.queue.failed')}</OutreachBadge>
+                          ) : job.status === 'Retrying' ? (
                             <OutreachBadge variant="orange" dot>{t('outreach.queue.retrying')} ({job.attempts})</OutreachBadge>
                           ) : (
                             <OutreachBadge variant="teal" dot>{t('outreach.queue.scheduled')}</OutreachBadge>
                           )}
                         </td>
                         <td className="px-6 py-5 text-right">
-                          <button 
-                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group ml-auto"
-                            title={t('outreach.queue.deleteSends')}
-                          >
-                            <Trash2 className="size-3.5" />
-                            <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.deleteSends')}</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            {job.status === 'Failed' && (
+                              <button 
+                                onClick={() => handleRetry(job.jobId)}
+                                disabled={retryingJobs.has(job.jobId)}
+                                className={cn(
+                                  "flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-xl transition-all border border-teal-500/10 hover:border-teal-500/30 group",
+                                  retryingJobs.has(job.jobId) && "opacity-50 cursor-not-allowed"
+                                )}
+                                title={t('outreach.queue.retry')}
+                              >
+                                <RefreshCw className={cn("size-3.5", retryingJobs.has(job.jobId) && "animate-spin")} />
+                                <span className="text-[10px] font-black uppercase tracking-tight">
+                                  {retryingJobs.has(job.jobId) ? t('common.loading') : t('outreach.queue.retry')}
+                                </span>
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group"
+                              title={t('outreach.queue.deleteSends')}
+                            >
+                              <Trash2 className="size-3.5" />
+                              <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.deleteSends')}</span>
+                            </button>
+                          </div>
                         </td>
                       </motion.tr>
-                    ))}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

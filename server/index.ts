@@ -834,24 +834,31 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
 
 // Diagnostic endpoint to monitor upcoming scheduled sequence steps
 app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const projectId = (req.query.project_id || req.query.projectId) as string;
+  
   try {
-    const delayedJobs = await emailQueue.getDelayed();
+    const [delayedJobs, failedJobs] = await Promise.all([
+      emailQueue.getDelayed(),
+      emailQueue.getFailed()
+    ]);
     
+    const allJobs = [...delayedJobs, ...failedJobs];
+
     // Extract unique IDs for batch lookup
-    const contactIds = [...new Set(delayedJobs.map(j => j.data?.contactId))].filter(Boolean);
-    const sequenceIds = [...new Set(delayedJobs.map(j => j.data?.sequenceId))].filter(Boolean);
+    const contactIds = [...new Set(allJobs.map(j => j.data?.contactId))].filter(Boolean);
+    const sequenceIds = [...new Set(allJobs.map(j => j.data?.sequenceId))].filter(Boolean);
 
     // Hydrate contacts, sequences, and assigned mailboxes (triangulation)
     const [contacts, sequences, enrollments] = await Promise.all([
       contactIds.length > 0 
-        ? db.all("SELECT id, first_name, last_name, email FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
+        ? db.all("SELECT id, first_name, last_name, email, project_id FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
         : Promise.resolve([]),
       sequenceIds.length > 0
-        ? db.all("SELECT id, name FROM outreach_sequences WHERE id = ANY($1::text[])", [sequenceIds])
+        ? db.all("SELECT id, name, project_id FROM outreach_sequences WHERE id = ANY($1::text[])", [sequenceIds])
         : Promise.resolve([]),
       contactIds.length > 0 && sequenceIds.length > 0
         ? db.all(`
-            SELECT e.contact_id, e.sequence_id, e.scheduled_at, m.email as sender_email
+            SELECT e.contact_id, e.sequence_id, e.scheduled_at, m.email as sender_email, e.project_id
             FROM outreach_sequence_enrollments e
             LEFT JOIN outreach_mailboxes m ON e.assigned_mailbox_id = m.id
             WHERE e.contact_id = ANY($1::text[]) AND e.sequence_id = ANY($2::text[])
@@ -860,43 +867,66 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
     ]);
 
     // Create lookup maps
-    const contactMap = new Map(contacts.map((c: any) => [c.id, { name: `${c.first_name || ''} ${c.last_name || ''}`.trim(), email: c.email }]));
-    const sequenceMap = new Map(sequences.map((s: any) => [s.id, s.name]));
+    const contactMap = new Map(contacts.map((c: any) => [c.id, { name: `${c.first_name || ''} ${c.last_name || ''}`.trim(), email: c.email, projectId: c.project_id }]));
+    const sequenceMap = new Map(sequences.map((s: any) => [s.id, { name: s.name, projectId: s.project_id }]));
     const enrollmentMap = new Map(enrollments.map((e: any) => [`${e.contact_id}:${e.sequence_id}`, e]));
 
-    const mappedJobs = delayedJobs.filter(j => !!j).map(job => {
-      // Calculate target execution time
-      const scheduledTimestamp = (job.timestamp || Date.now()) + (job.opts.delay || 0);
-      const scheduledTime = DateTime.fromMillis(scheduledTimestamp);
-      
+    const mappedJobs = [];
+    
+    for (const job of allJobs) {
+      if (!job) continue;
+
       const cId = job.data?.contactId;
       const sId = job.data?.sequenceId;
       const enrollmentKey = `${cId}:${sId}`;
       const enrollment = enrollmentMap.get(enrollmentKey);
       
+      const contactData = contactMap.get(cId) || { name: "Unknown Contact", email: "", projectId: null };
+      const sequenceData = sequenceMap.get(sId) || { name: "Unknown Sequence", projectId: null };
+
+      const jobProjectId = contactData.projectId || sequenceData.projectId || enrollment?.project_id || job.data?.projectId || job.data?.activeProjectId;
+
+      // Filter by project if requested
+      if (projectId && jobProjectId !== projectId) continue;
+
+      // Calculate target execution time
+      const scheduledTimestamp = (job.timestamp || Date.now()) + (job.opts.delay || 0);
+      const scheduledTime = DateTime.fromMillis(scheduledTimestamp);
+      
+      // Determine status
+      let status = 'Scheduled';
+      const isFailed = await job.isFailed();
+      if (isFailed) {
+        status = 'Failed';
+      } else if (job.attemptsMade > 0) {
+        status = 'Retrying';
+      }
+
       // Use enrollment scheduled_at as primary source of truth for the "intended" time
       const finalScheduledTime = (enrollment?.scheduled_at) 
         ? enrollment.scheduled_at 
         : scheduledTime.toISO();
 
-      const contactData = contactMap.get(cId) || { name: "Unknown Contact", email: "" };
-
-      return {
+      mappedJobs.push({
         jobId: job.id,
         contactId: cId,
         contactName: contactData.name,
         contactEmail: contactData.email,
         sequenceId: sId,
-        sequenceName: sequenceMap.get(sId) || "Unknown Sequence",
+        sequenceName: sequenceData.name,
         senderEmail: enrollment?.sender_email || "Waiting for email assignment",
         action: `Send Step ${job.data?.stepNumber || 1}`,
         stepId: job.data?.stepId,
         stepNumber: job.data?.stepNumber,
         scheduledTime: finalScheduledTime,
         priority: job.opts.priority,
-        attempts: job.attemptsMade
-      };
-    }).sort((a, b) => {
+        attempts: job.attemptsMade,
+        status,
+        projectId: jobProjectId
+      });
+    }
+
+    mappedJobs.sort((a, b) => {
       // Sort so closest emails appear first
       return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
     });
@@ -911,6 +941,59 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// Endpoint to retry a single failed job
+app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { jobId } = req.params;
+  
+  try {
+    const job = await emailQueue.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, error: "Job not found" });
+    }
+
+    const isFailed = await job.isFailed();
+    if (isFailed) {
+      await job.retry();
+      res.json({ success: true, message: "Job re-queued successfully" });
+    } else {
+      res.status(400).json({ success: false, error: "Only failed jobs can be retried" });
+    }
+  } catch (err: any) {
+    console.error("[Queue Retry] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint to retry all failed jobs for a project
+app.post("/api/admin/queue/retry-all", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const projectId = req.body.project_id || req.body.projectId;
+  
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: "Project ID is required" });
+  }
+
+  try {
+    const failedJobs = await emailQueue.getFailed();
+    let retriedCount = 0;
+
+    for (const job of failedJobs) {
+      const jobProjectId = job.data?.projectId || job.data?.activeProjectId;
+      if (jobProjectId === projectId) {
+        await job.retry();
+        retriedCount++;
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully re-queued ${retriedCount} jobs.`,
+      retriedCount 
+    });
+  } catch (err: any) {
+    console.error("[Queue Retry All] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 
 app.get("/api/admin/force-reset-queue", async (_req, res) => {
   const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
@@ -1332,6 +1415,73 @@ app.use("/api/outreach", (req: any, res, next) => {
   const pId = req.headers["x-project-id"] || req.query.project_id || req.query.projectId || req.body?.project_id || req.body?.projectId;
   req.projectId = pId;
   next();
+});
+
+// ─── QUEUE MONITOR OPERATIONS ───────────────────────────────────────────────
+
+// Retry a single failed job (scoped by project)
+app.post("/api/outreach/queue/retry/:jobId", async (req: AuthRequest, res) => {
+  const { jobId } = req.params;
+  const projectId = req.projectId;
+
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: "Project ID is required" });
+  }
+
+  try {
+    const job = await emailQueue.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, error: "Job not found in queue" });
+    }
+
+    // Security check: Ensure job belongs to this project
+    const jobProjectId = job.data?.projectId || job.data?.activeProjectId;
+    if (jobProjectId !== projectId) {
+      return res.status(403).json({ success: false, error: "Access denied: Job does not belong to this project" });
+    }
+
+    const isFailed = await job.isFailed();
+    if (isFailed) {
+      await job.retry();
+      res.json({ success: true, message: "Job re-queued successfully" });
+    } else {
+      res.status(400).json({ success: false, error: "Only failed jobs can be retried" });
+    }
+  } catch (err: any) {
+    console.error("[Outreach Queue Retry] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Retry all failed jobs for a project
+app.post("/api/outreach/queue/retry-all", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: "Project ID is required" });
+  }
+
+  try {
+    const failedJobs = await emailQueue.getFailed();
+    let retriedCount = 0;
+
+    for (const job of failedJobs) {
+      const jobProjectId = job.data?.projectId || job.data?.activeProjectId;
+      if (jobProjectId === projectId) {
+        await job.retry();
+        retriedCount++;
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully re-queued ${retriedCount} jobs.`,
+      retriedCount 
+    });
+  } catch (err: any) {
+    console.error("[Outreach Queue Retry All] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ─── SUBSCRIPTION ─────────────────────────────────────────────────────────────

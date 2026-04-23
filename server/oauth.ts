@@ -66,9 +66,12 @@ export async function fetchGoogleUserInfo(accessToken: string) {
  * Handles token decryption, auto-refresh, and database persistence.
  */
 export async function getValidGmailClient(mailboxId: string) {
-  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  // Normalize mailboxId (handle uuid:email compound format)
+  const normalizedId = mailboxId.includes(':') ? mailboxId.split(':')[0] : mailboxId;
+  
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(normalizedId) as any;
   if (!mailbox) {
-    console.error(`[OAuth] Mailbox ${mailboxId} not found in database`);
+    console.error(`[OAuth] Mailbox ${normalizedId} not found in database`);
     throw new Error("MAILBOX_NOT_FOUND");
   }
 
@@ -92,7 +95,7 @@ export async function getValidGmailClient(mailboxId: string) {
       UPDATE outreach_mailboxes 
       SET access_token = NULL, refresh_token = NULL, expires_at = NULL, status = 'reconnect' 
       WHERE id = ?
-    `, mailboxId);
+    `, normalizedId);
 
     throw new Error("DECRYPTION_FAILED");
   }
@@ -146,7 +149,7 @@ export async function getValidGmailClient(mailboxId: string) {
   if (wasRefreshed) {
     const tokens = oauth2Client.credentials;
     console.log(`[OAuth] Committing refreshed tokens to DB for ${mailboxId}`);
-    await saveTokens(mailboxId, {
+    await saveTokens(normalizedId, {
       access_token: tokens.access_token!,
       refresh_token: tokens.refresh_token || refreshToken, // fallback to existing one
       expiry_date: tokens.expiry_date!,
@@ -164,9 +167,12 @@ export async function getValidGmailClient(mailboxId: string) {
  * Convenience helper that just returns a valid access token string.
  */
 export async function getValidAccessToken(mailboxId: string): Promise<string> {
-  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+  // Normalize mailboxId (handle uuid:email compound format)
+  const normalizedId = mailboxId.includes(':') ? mailboxId.split(':')[0] : mailboxId;
+
+  const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(normalizedId) as any;
   if (!mailbox) {
-    console.error(`[OAuth] getValidAccessToken: Mailbox ${mailboxId} not found`);
+    console.error(`[OAuth] getValidAccessToken: Mailbox ${normalizedId} not found`);
     throw new Error("MAILBOX_NOT_FOUND");
   }
 
@@ -187,7 +193,7 @@ export async function getValidAccessToken(mailboxId: string): Promise<string> {
       UPDATE outreach_mailboxes 
       SET access_token = NULL, refresh_token = NULL, expires_at = NULL, status = 'reconnect' 
       WHERE id = ?
-    `, mailboxId);
+    `, normalizedId);
 
     throw new Error("DECRYPTION_FAILED");
   }
@@ -213,6 +219,8 @@ export async function getValidAccessToken(mailboxId: string): Promise<string> {
 }
 
 export async function saveTokens(mailboxId: string, tokens: { access_token: string; refresh_token?: string; expiry_date: number; scope: string }) {
+  // Normalize mailboxId (handle uuid:email compound format)
+  const normalizedId = mailboxId.includes(':') ? mailboxId.split(':')[0] : mailboxId;
   const { access_token, refresh_token, expiry_date, scope } = tokens;
   const expiresAt = new Date(expiry_date).toISOString();
 
@@ -227,24 +235,24 @@ export async function saveTokens(mailboxId: string, tokens: { access_token: stri
       UPDATE outreach_mailboxes 
       SET access_token = ?, refresh_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(encryptedAccess, encryptedRefresh, expiresAt, scope, mailboxId);
+    `).run(encryptedAccess, encryptedRefresh, expiresAt, scope, normalizedId);
   } else {
     await db.prepare(`
       UPDATE outreach_mailboxes 
       SET access_token = ?, expires_at = ?, scope = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(encryptedAccess, expiresAt, scope, mailboxId);
+    `).run(encryptedAccess, expiresAt, scope, normalizedId);
   }
 
   // Save to Redis for persistence across ephemeral Railway deployments
   try {
-    const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(mailboxId) as any;
+    const mailbox = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ?").get(normalizedId) as any;
     if (mailbox) {
-      await redis.set(`mailbox:${mailboxId}`, JSON.stringify(mailbox), 'EX', 60 * 60 * 24 * 30); // 30 days
-      console.log(`[Persistence] Mailbox ${mailboxId} synced to Redis`);
+      await redis.set(`mailbox:${normalizedId}`, JSON.stringify(mailbox), 'EX', 60 * 60 * 24 * 30); // 30 days
+      console.log(`[Persistence] Mailbox ${normalizedId} synced to Redis`);
     }
   } catch (err) {
-    console.error(`[Persistence] Failed to sync mailbox ${mailboxId} to Redis:`, err.message);
+    console.error(`[Persistence] Failed to sync mailbox ${normalizedId} to Redis:`, err.message);
   }
 }
 
@@ -286,7 +294,10 @@ export async function syncMailboxesFromRedis() {
  * Fetches "Send mail as" aliases from Gmail and stores them in outreach_mailbox_aliases.
  */
 export async function fetchGmailAliases(mailboxId: string) {
-  console.log(`[OAuth] Fetching aliases for mailbox ${mailboxId}`);
+  // Normalize mailboxId (handle uuid:email compound format)
+  const normalizedId = mailboxId.includes(':') ? mailboxId.split(':')[0] : mailboxId;
+  
+  console.log(`[OAuth] Fetching aliases for mailbox ${normalizedId}`);
   
   try {
     const { gmail } = await getValidGmailClient(mailboxId);
@@ -306,7 +317,7 @@ export async function fetchGmailAliases(mailboxId: string) {
         UPDATE outreach_mailboxes 
         SET aliases = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(JSON.stringify(aliasData), mailboxId);
+      `).run(JSON.stringify(aliasData), normalizedId);
 
       // 2. Keep the separate table entries for backward compatibility/richer data if needed
       for (const alias of aliases) {
@@ -323,7 +334,7 @@ export async function fetchGmailAliases(mailboxId: string) {
             updated_at = CURRENT_TIMESTAMP
         `).run(
           uuidv4(),
-          mailboxId,
+          normalizedId,
           aliasEmail,
           alias.displayName || '',
           alias.sendAsEmail === alias.replyToAddress, 
@@ -332,6 +343,6 @@ export async function fetchGmailAliases(mailboxId: string) {
       }
     });
   } catch (err: any) {
-    console.error(`[OAuth] Failed to fetch aliases for ${mailboxId}:`, err.message);
+    console.error(`[OAuth] Failed to fetch aliases for ${normalizedId}:`, err.message);
   }
 }

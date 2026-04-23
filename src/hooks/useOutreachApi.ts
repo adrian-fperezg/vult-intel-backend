@@ -640,6 +640,16 @@ export function useOutreachApi() {
     return res.json() as Promise<{ success: boolean; message: string; removedJobsCount: number }>;
   }, [activeProjectId, authHeaders]);
 
+  const retryQueueJob = useCallback(
+    (jobId: string) => post<any>(`/queue/retry/${jobId}`, {}),
+    [post]
+  );
+
+  const retryAllFailedJobs = useCallback(
+    () => post<any>('/queue/retry-all', {}),
+    [post]
+  );
+
 
   // ── Compose ──────────────────────────────────────────────────────────────
 
@@ -864,6 +874,8 @@ export function useOutreachApi() {
     rebalanceQueue,
     purgeOrphansQueue,
     clearSequenceJobs,
+    retryQueueJob,
+    retryAllFailedJobs,
     authHeaders,
     // Snippets
     fetchSnippets,

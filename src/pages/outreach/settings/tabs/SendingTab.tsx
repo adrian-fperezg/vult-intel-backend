@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Zap, Mail } from 'lucide-react';
+import { Clock, Zap, Mail, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TealButton, OutreachEmptyState } from '../../OutreachCommon';
 import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 export const SendingTab: React.FC = () => {
   const api = useOutreachApi();
+  const { t } = useTranslation();
   
   // State
   const [sendingInterval, setSendingInterval] = useState(20);
@@ -38,7 +40,7 @@ export const SendingTab: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load sending settings:', err);
-      toast.error('Failed to load sending settings');
+      toast.error(t('landing.settings.sending.loadError') || 'Failed to load sending settings');
     } finally {
       setLoading(false);
     }
@@ -56,23 +58,29 @@ export const SendingTab: React.FC = () => {
         sending_start_time: sendingStartTime,
         sending_end_time: sendingEndTime
       });
-      toast.success('Sending configuration updated');
+      toast.success(t('landing.settings.sending.saveSuccess'));
     } catch (err: any) {
-      toast.error(err.message || 'Failed to save sending settings');
+      toast.error(err.message || t('landing.settings.sending.saveError') || 'Failed to save sending settings');
     } finally {
       setSaving(false);
     }
   };
 
   if (!api.activeProjectId) {
-    return <OutreachEmptyState icon={<Zap />} title="No project selected" description="Select a project to manage sending settings." />;
+    return (
+      <OutreachEmptyState 
+        icon={<FolderOpen />} 
+        title={t('common.noProject')} 
+        description={t('common.noProjectDesc')} 
+      />
+    );
   }
 
   return (
     <div className="space-y-10 w-full animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div>
-        <h2 className="text-2xl font-bold text-white tracking-tight">Sending Configuration</h2>
-        <p className="text-sm text-slate-400 mt-1">Optimize your outreach delivery and protect your domains</p>
+        <h2 className="text-2xl font-bold text-white tracking-tight">{t('landing.settings.sending.title')}</h2>
+        <p className="text-sm text-slate-400 mt-1">{t('landing.settings.sending.desc')}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -83,14 +91,14 @@ export const SendingTab: React.FC = () => {
               <Clock className="size-5 text-teal-400" />
             </div>
             <div>
-              <h3 className="font-bold text-white">Sending Interval</h3>
-              <p className="text-xs text-slate-500">Per-mailbox staggering logic</p>
+              <h3 className="font-bold text-white">{t('landing.settings.sending.intervalTitle')}</h3>
+              <p className="text-xs text-slate-500">{t('landing.settings.sending.intervalDesc')}</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Wait Time (Minutes)</label>
+              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">{t('landing.settings.sending.waitTime')}</label>
               <input 
                 type="number"
                 value={sendingInterval}
@@ -100,7 +108,7 @@ export const SendingTab: React.FC = () => {
             </div>
 
             <div className="space-y-1.5 pt-2">
-              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Delay between emails (minutes)</label>
+              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">{t('landing.settings.sending.staggerDelayDesc')}</label>
               <input 
                 type="number"
                 value={staggerDelay}
@@ -109,7 +117,7 @@ export const SendingTab: React.FC = () => {
               />
             </div>
             <p className="text-xs text-slate-400 leading-relaxed italic border-l-2 border-teal-500/30 pl-3">
-              "Minimum wait time between emails sent from the exact same mailbox/alias. This spreads out your outreach to appear more human to spam filters."
+              {t('landing.settings.sending.waitTimeDesc')}
             </p>
           </div>
         </div>
@@ -121,14 +129,14 @@ export const SendingTab: React.FC = () => {
               <Mail className="size-5 text-indigo-400" />
             </div>
             <div>
-              <h3 className="font-bold text-white">Daily Sending Cap</h3>
-              <p className="text-xs text-slate-500">Global safety limits</p>
+              <h3 className="font-bold text-white">{t('landing.settings.sending.dailyCapTitle')}</h3>
+              <p className="text-xs text-slate-500">{t('landing.settings.sending.dailyCapDesc')}</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Max Emails Per Day / Project</label>
+              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">{t('landing.settings.sending.maxEmails')}</label>
               <input 
                 type="number"
                 value={globalDailyLimit}
@@ -137,7 +145,7 @@ export const SendingTab: React.FC = () => {
               />
             </div>
             <p className="text-xs text-slate-400 leading-relaxed italic border-l-2 border-indigo-500/30 pl-3">
-              "Override the aggregate daily send limit for this project. Keep this low (50-100) to protect new domains."
+              {t('landing.settings.sending.maxEmailsDesc')}
             </p>
           </div>
         </div>
@@ -149,8 +157,8 @@ export const SendingTab: React.FC = () => {
               <Clock className="size-5 text-amber-400" />
             </div>
             <div className="flex-1">
-              <h3 className="font-bold text-white">Sending Window</h3>
-              <p className="text-xs text-slate-500">Scheduled delivery hours</p>
+              <h3 className="font-bold text-white">{t('landing.settings.sending.sendingWindowTitle')}</h3>
+              <p className="text-xs text-slate-500">{t('landing.settings.sending.sendingWindowDesc')}</p>
             </div>
             <button
               onClick={() => setRestrictSendingHours(!restrictSendingHours)}
@@ -169,7 +177,7 @@ export const SendingTab: React.FC = () => {
           <div className={cn("space-y-4 transition-opacity", !restrictSendingHours && "opacity-40 pointer-events-none")}>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Start Time</label>
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">{t('landing.settings.sending.startTime')}</label>
                 <input 
                   type="time"
                   value={sendingStartTime}
@@ -179,7 +187,7 @@ export const SendingTab: React.FC = () => {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">End Time</label>
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">{t('landing.settings.sending.endTime')}</label>
                 <input 
                   type="time"
                   value={sendingEndTime}
@@ -190,7 +198,7 @@ export const SendingTab: React.FC = () => {
               </div>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed italic border-l-2 border-amber-500/30 pl-3">
-              "When enabled, emails will only be sent during these hours. Sequences will automatically reschedule to the next valid slot."
+              {t('landing.settings.sending.windowDesc')}
             </p>
           </div>
         </div>
@@ -201,7 +209,7 @@ export const SendingTab: React.FC = () => {
             loading={saving}
             className="h-14 px-10 rounded-2xl shadow-xl shadow-teal-500/10 text-base font-bold"
           >
-            Save Sending Configuration
+            {t('landing.settings.sending.saveBtn')}
           </TealButton>
         </div>
       </div>

@@ -62,7 +62,7 @@ export async function sendGmailMessage(
 
     // 2. Build MIME message using Nodemailer's MailComposer
     // This maintains all our complex logic for attachments, HTML, and signatures
-    const fromEmail = mailbox.smtp_username || mailbox.email;
+    const fromEmail = emailData.fromEmail || mailbox.smtp_username || mailbox.email;
     const fromName = emailData.fromName || mailbox.name;
     const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 
