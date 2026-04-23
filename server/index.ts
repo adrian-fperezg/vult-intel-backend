@@ -3845,6 +3845,7 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
     }
 
     const headers = Object.keys(rows[0]);
+    console.log(`[CSV Import] Started for file: ${fileName}, project: ${project_id}, rows: ${rows.length}`);
     const standardMapping: Record<string, string[]> = {
       email: ['email', 'e-mail', 'mail', 'correo', 'dirección de correo'],
       first_name: ['first name', 'firstname', 'first', 'nombre', 'given name'],
@@ -3857,6 +3858,16 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
       location_country: ['country', 'location_country', 'país', 'nation'],
       website: ['website', 'site', 'url']
     };
+
+    const hasEmailColumn = headers.some(h => {
+      const lh = h.toLowerCase();
+      return lh === 'email' || standardMapping.email.includes(lh);
+    });
+
+    if (!hasEmailColumn) {
+      console.error(`[CSV Import] Missing email column. Headers found: ${headers.join(', ')}`);
+      return res.status(400).json({ error: "CSV is missing an 'email' column or equivalent synonym (e.g. mail, e-mail)." });
+    }
 
     const savedContactIds: string[] = [];
     let suppressedCount = 0;
@@ -3925,10 +3936,14 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
 
         contactData.custom_fields = rawCustomFields;
 
-        if (!contactData.email || !contactData.email.includes('@')) continue;
+        if (!contactData.email || !contactData.email.includes('@')) {
+          console.warn(`[CSV Import] Row skipped - Invalid or missing email:`, contactData.email);
+          continue;
+        }
 
         // --- IMMUTABLE GUARDRAIL ---
-        const suppressed = await tx.prepare("SELECT email FROM suppression_list WHERE email = ?").get(contactData.email);
+        const suppressed = await tx.prepare("SELECT email FROM suppression_list WHERE project_id = ? AND email = ?")
+          .get(project_id, contactData.email);
         if (suppressed) {
           suppressedCount++;
           suppressedEmails.push(contactData.email);
@@ -3976,6 +3991,11 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
           timezone
         ) as any;
 
+        if (!upsertRes || !upsertRes.id) {
+          console.error(`[CSV Import] Failed to upsert contact: ${contactData.email}`);
+          continue;
+        }
+
         const actualContactId = upsertRes.id;
         savedContactIds.push(actualContactId);
 
@@ -3997,7 +4017,7 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
       list_id: autoListId,
       list_name: autoListName,
       suppressed_count: suppressedCount,
-      errors: suppressedCount > 0 ? [{ error: "Unauthorized action: This email is in the global suppression list and cannot be re-added per compliance regulations.", emails: suppressedEmails }] : []
+      errors: suppressedCount > 0 ? [{ error: "Unauthorized action: This email is in the project's suppression list and cannot be re-added per compliance regulations.", emails: suppressedEmails }] : []
     });
   } catch (err: any) {
     console.error("[CSV Import] Critical Failure:", err);
