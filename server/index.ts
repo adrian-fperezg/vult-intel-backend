@@ -3205,7 +3205,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
       }
     }
 
-    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ?", id);
+    const updated = await db.get("SELECT * FROM outreach_sequences WHERE id = ? AND project_id = ?", id, req.projectId);
     res.json(updated);
   } catch (error) {
     console.error('[Sequence Settings Update Error]:', error);

@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Upload, Download, Filter, MoreHorizontal,
   Building2, Mail, Phone, Linkedin, ChevronDown, ChevronUp,
-  User, Tag, Trash2, CheckCircle2, XCircle, Globe, UserCheck, FolderOpen, Settings2, Edit2
+  User, Tag, Trash2, CheckCircle2, XCircle, Globe, UserCheck, FolderOpen, Settings2, Edit2,
+  Check, X, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
@@ -190,6 +191,11 @@ export default function OutreachContacts() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [profileContactId, setProfileContactId] = useState<string | null>(null);
+
+  // Inline Editing States
+  const [editingField, setEditingField] = useState<{ contactId: string, field: 'name' | 'title' | 'email' | 'company' } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [isSavingField, setIsSavingField] = useState(false);
 
   // Lists & Suppression
   const [contactLists, setContactLists] = useState<any[]>([]);
@@ -472,6 +478,62 @@ export default function OutreachContacts() {
     }
   };
 
+  const handleInlineEditSave = async () => {
+    if (!editingField || isSavingField) return;
+
+    const { contactId, field } = editingField;
+    const originalContact = contacts.find(c => c.id === contactId);
+    if (!originalContact) return;
+
+    setIsSavingField(true);
+
+    // Optimistic Update
+    setContacts(prev => prev.map(c => {
+      if (c.id === contactId) {
+        if (field === 'name') {
+          const parts = editValue.trim().split(' ');
+          return {
+            ...c,
+            firstName: parts[0] || '',
+            lastName: parts.slice(1).join(' ') || ''
+          };
+        }
+        return { ...c, [field === 'title' ? 'jobTitle' : field]: editValue.trim() };
+      }
+      return c;
+    }));
+
+    try {
+      let updates: Record<string, any> = {};
+      if (field === 'name') {
+        const parts = editValue.trim().split(' ');
+        updates = {
+          firstName: parts[0] || '',
+          lastName: parts.slice(1).join(' ') || ''
+        };
+      } else if (field === 'title') {
+        updates = { jobTitle: editValue.trim() };
+      } else {
+        updates = { [field]: editValue.trim() };
+      }
+
+      await api.updateContact(contactId, updates);
+      setEditingField(null);
+      toast.success(t.listUpdated);
+    } catch (err) {
+      // Rollback
+      setContacts(prev => prev.map(c => c.id === contactId ? originalContact : c));
+      toast.error(t.failedUpdateList);
+    } finally {
+      setIsSavingField(false);
+    }
+  };
+
+  const handleInlineEditCancel = () => {
+    setEditingField(null);
+    setEditValue('');
+  };
+
   if (!api.activeProjectId) {
     return (
       <OutreachEmptyState
@@ -489,7 +551,7 @@ export default function OutreachContacts() {
   );
 
   return (
-    <>
+    <Fragment>
       <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
       {/* Sidebar Navigator */}
       <div className="w-64 border-r border-white/5 flex flex-col shrink-0 bg-[#0D0D0E]">
@@ -791,23 +853,64 @@ export default function OutreachContacts() {
                             </td>
                             <td className="p-5">
                               <div className="flex items-center gap-3">
-                                <div className="size-10 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-2xl flex items-center justify-center border border-white/5">
+                                <div className="size-8 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
                                   {contact.firstName ? (
-                                    <span className="text-[11px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
+                                    <span className="text-xs font-bold text-teal-400">
+                                      {contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}
+                                    </span>
                                   ) : (
                                     <User className="size-4 text-teal-400" />
                                   )}
                                 </div>
-                                <span className="text-sm font-bold text-white whitespace-nowrap">
-                                {contact.firstName || ''} {contact.lastName || ''}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium">
-                              {contact.jobTitle || contact.title || '—'}
-                            </span>
-                          </td>
+                                {editingField?.contactId === contact.id && editingField.field === 'name' ? (
+                                  <InlineEditCell
+                                    value={`${contact.firstName || ''} ${contact.lastName || ''}`.trim()}
+                                    onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
+                                    onCancel={handleInlineEditCancel}
+                                    isSaving={isSavingField}
+                                    className="min-w-[150px]"
+                                  />
+                                ) : (
+                                  <div 
+                                    className="flex flex-col min-w-0 cursor-edit group/name"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingField({ contactId: contact.id, field: 'name' });
+                                      setEditValue(`${contact.firstName || ''} ${contact.lastName || ''}`.trim());
+                                    }}
+                                  >
+                                    <span className="text-sm font-semibold text-slate-200 truncate group-hover/name:text-teal-400 transition-colors">
+                                      {contact.firstName} {contact.lastName}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
+                                      ID: {contact.id.slice(0, 8)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              {editingField?.contactId === contact.id && editingField.field === 'title' ? (
+                                <InlineEditCell
+                                  value={contact.jobTitle || contact.title || ''}
+                                  onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
+                                  onCancel={handleInlineEditCancel}
+                                  isSaving={isSavingField}
+                                  className="min-w-[120px]"
+                                />
+                              ) : (
+                                <span 
+                                  className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium cursor-edit hover:text-teal-400 transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingField({ contactId: contact.id, field: 'title' });
+                                    setEditValue(contact.jobTitle || contact.title || '');
+                                  }}
+                                >
+                                  {contact.jobTitle || contact.title || '—'}
+                                </span>
+                              )}
+                            </td>
                           <td className="p-3">
                             <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
                               {contact.company || '—'}
@@ -844,7 +947,26 @@ export default function OutreachContacts() {
                           <td className="p-3">
                             <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
                               <Mail className="size-3 text-slate-600 shrink-0" />
-                              <span className="truncate">{contact.email || t.noEmail}</span>
+                              {editingField?.contactId === contact.id && editingField.field === 'email' ? (
+                                <InlineEditCell
+                                  value={contact.email || ''}
+                                  onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
+                                  onCancel={handleInlineEditCancel}
+                                  isSaving={isSavingField}
+                                  className="min-w-[150px]"
+                                />
+                              ) : (
+                                <span 
+                                  className="truncate cursor-edit hover:text-teal-400 transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingField({ contactId: contact.id, field: 'email' });
+                                    setEditValue(contact.email || '');
+                                  }}
+                                >
+                                  {contact.email || t.noEmail}
+                                </span>
+                              )}
                               {contact.verification_status && contact.verification_status !== 'unverified' && (
                                 <OutreachBadge
                                   variant={(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).variant}
@@ -980,6 +1102,7 @@ export default function OutreachContacts() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -1012,7 +1135,7 @@ export default function OutreachContacts() {
                   onClick={() => setIsManageListsOpen(false)}
                   className="p-2 text-gray-400 hover:text-white transition-colors"
                 >
-                  <CheckCircle2 className="w-6 h-6" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
@@ -1028,7 +1151,7 @@ export default function OutreachContacts() {
                       className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white outline-none focus:border-teal-500/50"
                       autoFocus
                     />
-                    <TealButton onClick={handleCreateList} className="py-2">{t.create}</TealButton>
+                    <TealButton onClick={handleCreateList} className="py-2">{t.save}</TealButton>
                     <button
                       onClick={() => setIsCreatingList(false)}
                       className="px-3 py-2 text-gray-400 hover:text-white text-sm"
@@ -1042,7 +1165,7 @@ export default function OutreachContacts() {
                     className="w-full py-2 flex items-center justify-center gap-2 bg-teal-500/10 border border-teal-500/20 rounded-lg text-teal-400 text-sm font-medium hover:bg-teal-500/20 transition-colors"
                   >
                     <Plus className="w-4 h-4" />
-                    {t.createList}
+                    {t.addContact}
                   </button>
                 )}
 
@@ -1095,169 +1218,222 @@ export default function OutreachContacts() {
         )}
       </AnimatePresence>
 
-        {/* Deletion Confirmations */}
-        <OutreachConfirmDialog
-          isOpen={deleteDialog}
-          onClose={() => setDeleteDialog(false)}
-          onConfirm={handleBulkDelete}
-          title={t.deleteContacts}
-          description={t.areYouSureDeleteBulk(selectedIds.size)}
-          confirmLabel={isDeleting ? t.deleting : t.deleteAll}
-          cancelLabel={t.cancel}
-          danger
-        />
+      {/* Deletion Confirmations */}
+      <OutreachConfirmDialog
+        isOpen={deleteDialog}
+        onClose={() => setDeleteDialog(false)}
+        onConfirm={handleBulkDelete}
+        title={t.deleteContacts}
+        description={t.areYouSureDeleteBulk?.(selectedIds.size) || `Are you sure you want to delete ${selectedIds.size} contacts?`}
+        confirmLabel={isDeleting ? t.deleting : t.deleteAll}
+        cancelLabel={t.cancel}
+        danger
+      />
 
-        <OutreachConfirmDialog
-          isOpen={!!contactToDelete}
-          onClose={() => setContactToDelete(null)}
-          onConfirm={handleSingleDelete}
-          title={t.deleteContact}
-          description={t.areYouSureDeleteSingle}
-          confirmLabel={isDeleting ? t.deleting : t.delete}
-          cancelLabel={t.cancel}
-          danger
-        />
+      <OutreachConfirmDialog
+        isOpen={!!contactToDelete}
+        onClose={() => setContactToDelete(null)}
+        onConfirm={handleSingleDelete}
+        title={t.deleteContact}
+        description={t.areYouSureDeleteSingle}
+        confirmLabel={isDeleting ? t.deleting : t.delete}
+        cancelLabel={t.cancel}
+        danger
+      />
 
-        {/* Custom List Delete Dialog */}
-        <AnimatePresence>
-          {listToDelete && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                onClick={() => setListToDelete(null)}
-              />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative bg-[#161b22] border border-[#30363d] rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
-              >
-                <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Trash2 className="size-5 text-red-400" />
-                    {t.deleteList}: <span className="text-teal-400">{listToDelete.name}</span>
-                  </h3>
-                  <p className="text-sm text-slate-400 leading-relaxed">
-                    {t.howHandleContacts}
-                  </p>
-                </div>
+      {/* Custom List Delete Dialog */}
+      <AnimatePresence>
+        {listToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setListToDelete(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-[#161b22] border border-[#30363d] rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
+            >
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Trash2 className="size-5 text-red-400" />
+                  {t.deleteList}: <span className="text-teal-400">{listToDelete.name}</span>
+                </h3>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  {t.howHandleContacts}
+                </p>
+              </div>
 
-                <div className="space-y-3">
-                  <button
-                    onClick={() => setDeleteListOption('only_list')}
-                    className={cn(
-                      "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
-                      deleteListOption === 'only_list'
-                        ? "bg-teal-500/10 border-teal-500/40 text-white"
-                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
-                    )}
-                  >
-                    <div className={cn(
-                      "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                      deleteListOption === 'only_list' ? "border-teal-400" : "border-slate-600"
-                    )}>
-                      {deleteListOption === 'only_list' && <div className="size-2 rounded-full bg-teal-400" />}
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm">{t.deleteListOnly}</p>
-                      <p className="text-xs opacity-70 mt-0.5">{t.contactsRemainUnassigned}</p>
-                    </div>
-                  </button>
+              <div className="space-y-3">
+                <button
+                  onClick={() => setDeleteListOption('only_list')}
+                  className={cn(
+                    "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
+                    deleteListOption === 'only_list'
+                      ? "bg-teal-500/10 border-teal-500/40 text-white"
+                      : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
+                  )}
+                >
+                  <div className={cn(
+                    "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                    deleteListOption === 'only_list' ? "border-teal-400" : "border-slate-600"
+                  )}>
+                    {deleteListOption === 'only_list' && <div className="size-2 rounded-full bg-teal-400" />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">{t.deleteListOnly}</p>
+                    <p className="text-xs opacity-70 mt-0.5">{t.contactsRemainUnassigned}</p>
+                  </div>
+                </button>
 
-                  <button
-                    onClick={() => setDeleteListOption('list_and_contacts')}
-                    className={cn(
-                      "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
-                      deleteListOption === 'list_and_contacts'
-                        ? "bg-red-500/10 border-red-500/40 text-white"
-                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
-                    )}
-                  >
-                    <div className={cn(
-                      "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                      deleteListOption === 'list_and_contacts' ? "border-red-400" : "border-slate-600"
-                    )}>
-                      {deleteListOption === 'list_and_contacts' && <div className="size-2 rounded-full bg-red-400" />}
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm">{t.deleteListAndExclusive}</p>
-                      <p className="text-xs opacity-70 mt-0.5">{t.removesExclusiveDesc}</p>
-                    </div>
-                  </button>
-                </div>
+                <button
+                  onClick={() => setDeleteListOption('list_and_contacts')}
+                  className={cn(
+                    "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
+                    deleteListOption === 'list_and_contacts'
+                      ? "bg-red-500/10 border-red-500/40 text-white"
+                      : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
+                  )}
+                >
+                  <div className={cn(
+                    "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                    deleteListOption === 'list_and_contacts' ? "border-red-400" : "border-slate-600"
+                  )}>
+                    {deleteListOption === 'list_and_contacts' && <div className="size-2 rounded-full bg-red-400" />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">{t.deleteListAndExclusive}</p>
+                    <p className="text-xs opacity-70 mt-0.5">{t.removesExclusiveDesc}</p>
+                  </div>
+                </button>
+              </div>
 
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setListToDelete(null)}
-                    className="flex-1 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
-                  >
-                    {t.cancel}
-                  </button>
-                  <button
-                    onClick={handleDeleteList}
-                    disabled={isDeleting}
-                    className={cn(
-                      'flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2',
-                      deleteListOption === 'list_and_contacts'
-                        ? 'bg-red-600 hover:bg-red-500 text-white'
-                        : 'bg-teal-600 hover:bg-teal-500 text-white'
-                    )}
-                  >
-                    {isDeleting ? (
-                      <div className="size-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <Trash2 className="size-4" />
-                    )}
-                    {t.confirmDelete}
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setListToDelete(null)}
+                  className="flex-1 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  onClick={handleDeleteList}
+                  disabled={isDeleting}
+                  className={cn(
+                    'flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2',
+                    deleteListOption === 'list_and_contacts'
+                      ? 'bg-red-600 hover:bg-red-500 text-white'
+                      : 'bg-teal-600 hover:bg-teal-500 text-white'
+                  )}
+                >
+                  {isDeleting ? (
+                    <div className="size-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                  {t.confirmDelete}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
-        <ContactProfilePanel
-          contact={contacts.find(c => c.id === profileContactId) || null}
-          isOpen={!!profileContactId}
-          onClose={() => setProfileContactId(null)}
-        />
+      <ContactProfilePanel
+        contact={contacts.find(c => c.id === profileContactId) || null}
+        isOpen={!!profileContactId}
+        onClose={() => setProfileContactId(null)}
+      />
 
-        <BulkAddToListModal
-          isOpen={isBulkAddOpen}
-          onClose={() => setIsBulkAddOpen(false)}
-          onConfirm={handleBulkAddToList}
-          contactLists={contactLists}
-          onReloadLists={loadLists}
-          api={api}
-          selectedCount={selectedIds.size}
-        />
+      <CSVImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => {
+          loadContacts();
+          loadLists();
+        }}
+        defaultListId={listFilter !== 'all' ? listFilter : undefined}
+        lists={contactLists}
+      />
 
-        <CSVImportModal
-          isOpen={isImportModalOpen}
-          onClose={() => setIsImportModalOpen(false)}
+      {isUploadModalOpen && (
+        <UploadListModal
+          isOpen={isUploadModalOpen}
+          onClose={() => setIsUploadModalOpen(false)}
           onSuccess={() => {
-            loadContacts();
             loadLists();
+            loadContacts();
           }}
-          defaultListId={listFilter !== 'all' ? listFilter : undefined}
-          lists={contactLists}
+          language={language as 'en' | 'es'}
         />
+      )}
+      </div>
+    </Fragment>
+  );
+}
 
-        {isUploadModalOpen && (
-          <UploadListModal
-            isOpen={isUploadModalOpen}
-            onClose={() => setIsUploadModalOpen(false)}
-            onSuccess={() => {
-              loadLists();
-              loadContacts();
-            }}
-            language={language as 'en' | 'es'}
-          />
+// Reusable Inline Edit Component
+function InlineEditCell({ 
+  value, 
+  onSave, 
+  onCancel, 
+  isSaving, 
+  placeholder,
+  className 
+}: { 
+  value: string, 
+  onSave: (val: string) => void, 
+  onCancel: () => void, 
+  isSaving: boolean,
+  placeholder?: string,
+  className?: string
+}) {
+  const [tempValue, setTempValue] = useState(value);
+  const inputRef = useCallback((node: HTMLInputElement | null) => {
+    if (node) node.focus();
+  }, []);
+
+  return (
+    <div className={cn("flex items-center gap-1 group/edit w-full", className)} onClick={e => e.stopPropagation()}>
+      <div className="relative flex-1">
+        <input
+          ref={inputRef}
+          type="text"
+          value={tempValue}
+          onChange={e => setTempValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onSave(tempValue);
+            if (e.key === 'Escape') onCancel();
+          }}
+          placeholder={placeholder}
+          disabled={isSaving}
+          className="w-full bg-white/5 border border-teal-500/30 rounded px-2 py-1 text-xs text-white outline-none focus:border-teal-500 transition-all"
+        />
+        {isSaving && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <Loader2 className="size-3 text-teal-500 animate-spin" />
+          </div>
         )}
       </div>
-    </>
+      {!isSaving && (
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => onSave(tempValue)}
+            className="p-1 hover:bg-teal-500/20 text-teal-500 rounded transition-colors"
+          >
+            <Check className="size-3" />
+          </button>
+          <button
+            onClick={onCancel}
+            className="p-1 hover:bg-red-500/20 text-red-500 rounded transition-colors"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
