@@ -174,7 +174,8 @@ export default function OutreachAnalytics() {
   const dailyData = data?.daily_data || [];
 
   return (
-    <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
+    <>
+      <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
       <div className="px-8 py-6 space-y-8 pb-16">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -415,6 +416,6 @@ export default function OutreachAnalytics() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
