@@ -54,8 +54,8 @@ export default function OutreachSequences() {
     setIsLoading(true);
     try {
       const [seqRes, statsRes] = await Promise.all([
-        api.getSequences(),
-        api.getGlobalStats()
+        api.fetchSequences(),
+        api.fetchGlobalStats()
       ]);
       
       if (seqRes) setSequences(seqRes);
