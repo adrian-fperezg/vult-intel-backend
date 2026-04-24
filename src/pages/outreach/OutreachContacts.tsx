@@ -493,9 +493,9 @@ export default function OutreachContacts() {
       <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
       {/* Sidebar Navigator */}
       <div className="w-64 border-r border-white/5 flex flex-col shrink-0 bg-[#0D0D0E]">
-        <div className="p-6">
-          <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">{t.navigation}</h2>
-          <nav className="space-y-1">
+        <div className="p-8">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-6">{t.navigation}</h2>
+          <nav className="space-y-1.5">
             {[
               { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
               { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
@@ -521,18 +521,18 @@ export default function OutreachContacts() {
             ))}
           </nav>
 
-          <div className="mt-8 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">{t.lists}</h2>
+          <div className="mt-10 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
               <button
                 onClick={() => setIsUploadModalOpen(true)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_10px_rgba(20,184,166,0.1)]"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_15px_rgba(20,184,166,0.1)]"
               >
-                <Plus className="size-3" /> {t.new}
+                <Plus className="size-3.5" /> {t.new}
               </button>
             </div>
           </div>
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             {contactLists.map(list => (
               <div key={list.id} className="relative group">
                 {editingListId === list.id ? (
@@ -612,8 +612,8 @@ export default function OutreachContacts() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="px-8 py-5 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex items-center justify-between mb-4">
+        <div className="px-10 py-8 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
+          <div className="flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold text-white">{t.contacts}</h1>
@@ -627,27 +627,27 @@ export default function OutreachContacts() {
                     t.contactsInList(contactLists.find(l => l.id === listFilter)?.name || t.genericList)}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-2xl transition-all"
               >
                 <Upload className="size-4" /> {t.importCsv}
               </button>
-              <TealButton size="sm" onClick={handleCreate} loading={isCreating}>
+              <TealButton className="rounded-2xl px-6 py-2.5" size="sm" onClick={handleCreate} loading={isCreating}>
                 <Plus className="size-4" /> {t.addContact}
               </TealButton>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-xl">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-500" />
               <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder={t.searchPlaceholder}
-                className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-colors"
+                className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-[2rem] text-sm text-white placeholder:text-slate-600 outline-none transition-colors"
               />
             </div>
 
@@ -732,72 +732,73 @@ export default function OutreachContacts() {
           )}
         </AnimatePresence>
 
-        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-40">
+        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-48">
           {filtered.length === 0 ? (
             <OutreachEmptyState
               icon={<User />}
               title={t.noContactsFound}
               description={t.emptyStateDesc}
-              action={<TealButton onClick={handleCreate} loading={isCreating}><Plus className="size-4" /> {t.addContact}</TealButton>}
+              action={<TealButton className="rounded-2xl px-8 py-3" onClick={handleCreate} loading={isCreating}><Plus className="size-5" /> {t.addContact}</TealButton>}
             />
           ) : (
-            <div className="relative">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-20 bg-gray-900 border-b border-white/10 shadow-sm">
-                  <tr>
-                    <th className="p-3 w-10">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.size === filtered.length && filtered.length > 0}
-                        onChange={toggleSelectAll}
-                        className="accent-teal-500 size-3.5 cursor-pointer"
-                      />
-                    </th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>{t.contact} <SortIcon col="firstName" /></th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.title}</th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>{t.company} <SortIcon col="company" /></th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.industry}</th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.size}</th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.location}</th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.email}</th>
-                    <th className="p-3 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>{t.status} <SortIcon col="addedAt" /></th>
-                    <th className="p-3 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.actions}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {filtered.map((contact, idx) => {
-                    const isExpanded = expandedRow === contact.id;
-                    return (
-                      <Fragment key={contact.id}>
-                        <motion.tr
-                          initial={{ opacity: 0, y: 4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: idx * 0.01 }}
-                          className={cn(
-                            'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
-                            selectedIds.has(contact.id) && 'bg-teal-500/5',
-                            isExpanded && 'bg-teal-500/5'
-                          )}
-                          onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
-                        >
-                          <td className="p-3" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(contact.id)}
-                              onChange={() => toggleSelect(contact.id)}
-                              className="accent-teal-500 size-3.5 cursor-pointer"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="size-6 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-md flex items-center justify-center border border-white/5">
-                                {contact.firstName ? (
-                                  <span className="text-[9px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
-                                ) : (
-                                  <User className="size-3 text-teal-400" />
-                                )}
-                              </div>
-                              <span className="text-xs font-bold text-white whitespace-nowrap">
+            <div className="p-10 relative">
+              <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-white/[0.03] border-b border-white/10">
+                    <tr>
+                      <th className="p-5 w-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.size === filtered.length && filtered.length > 0}
+                          onChange={toggleSelectAll}
+                          className="accent-teal-500 size-4 cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>{t.contact} <SortIcon col="firstName" /></th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.title}</th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>{t.company} <SortIcon col="company" /></th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.industry}</th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.size}</th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.location}</th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.email}</th>
+                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>{t.status} <SortIcon col="addedAt" /></th>
+                      <th className="p-5 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.actions}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filtered.map((contact, idx) => {
+                      const isExpanded = expandedRow === contact.id;
+                      return (
+                        <Fragment key={contact.id}>
+                          <motion.tr
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.01 }}
+                            className={cn(
+                              'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
+                              selectedIds.has(contact.id) && 'bg-teal-500/5',
+                              isExpanded && 'bg-teal-500/5'
+                            )}
+                            onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
+                          >
+                            <td className="p-5" onClick={e => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(contact.id)}
+                                onChange={() => toggleSelect(contact.id)}
+                                className="accent-teal-500 size-4 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-5">
+                              <div className="flex items-center gap-3">
+                                <div className="size-10 bg-gradient-to-br from-teal-500/10 to-blue-500/10 rounded-2xl flex items-center justify-center border border-white/5">
+                                  {contact.firstName ? (
+                                    <span className="text-[11px] font-black text-teal-400">{contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}</span>
+                                  ) : (
+                                    <User className="size-4 text-teal-400" />
+                                  )}
+                                </div>
+                                <span className="text-sm font-bold text-white whitespace-nowrap">
                                 {contact.firstName || ''} {contact.lastName || ''}
                               </span>
                             </div>
@@ -881,13 +882,14 @@ export default function OutreachContacts() {
                                 }}
                                 className={cn(
                                   "p-1.5 bg-white/5 rounded-lg border border-white/10 transition-all",
+                                  "p-2.5 rounded-xl transition-all",
                                   contact.status === 'unsubscribed'
                                     ? "opacity-50 cursor-not-allowed text-slate-600"
-                                    : "hover:bg-red-500/20 text-slate-400 hover:text-red-400"
+                                    : "hover:bg-red-500/10 text-slate-500 hover:text-red-400"
                                 )}
                                 title={contact.status === 'unsubscribed' ? t.cannotDeleteUnsubscribed : t.deleteContact}
                               >
-                                <Trash2 className="size-3.5" />
+                                <Trash2 className="size-4" />
                               </button>
                             </div>
                           </td>

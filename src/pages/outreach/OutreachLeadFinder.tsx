@@ -360,16 +360,16 @@ export default function OutreachLeadFinder() {
             </div>
 
             {/* ICP Selection & Filter Block */}
-            <div className="bg-[#111111] border border-white/10 rounded-2xl overflow-hidden shadow-2xl relative">
+            <div className="bg-white/[0.02] border border-white/10 rounded-[2rem] overflow-hidden shadow-2xl relative">
               {/* Header */}
-              <div className="p-4 border-b border-white/5 flex items-center justify-between">
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="size-8 bg-teal-500/10 rounded-lg flex items-center justify-center border border-teal-500/20">
-                    <Filter className="size-4 text-teal-400" />
+                  <div className="size-10 bg-teal-500/10 rounded-xl flex items-center justify-center border border-teal-500/20">
+                    <Filter className="size-5 text-teal-400" />
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Global Baseline</p>
-                    <p className="text-xs font-bold text-white uppercase tracking-tight">{icpData?.name || 'Ideal Customer Profile'}</p>
+                    <p className="text-sm font-bold text-white uppercase tracking-tight">{icpData?.name || 'Ideal Customer Profile'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -378,8 +378,8 @@ export default function OutreachLeadFinder() {
               </div>
 
               {/* Filter Grids */}
-              <div className="p-5 space-y-5">
-                <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-6">
                   {/* Job Titles */}
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 block">Job Titles</label>
@@ -439,9 +439,9 @@ export default function OutreachLeadFinder() {
                   onClick={handleICPSearch}
                   variant="outline"
                   disabled={isLoadingIcp || isSearching || (icpProfile.jobTitles.length === 0 && icpProfile.industries.length === 0)}
-                  className="w-full bg-[#161b22] hover:bg-[#1f242c] border border-white/10 text-slate-300 hover:text-white py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 group"
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white py-4 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 group"
                 >
-                  <Search className="size-3.5 text-slate-500 group-hover:text-teal-400 transition-colors" />
+                  <Search className="size-4 text-slate-500 group-hover:text-teal-400 transition-colors" />
                   Apply ICP & Search Results
                 </TealButton>
               </div>
@@ -449,23 +449,23 @@ export default function OutreachLeadFinder() {
 
             {/* Search Input Box */}
             <div className="relative group">
-              <div className="absolute inset-0 bg-teal-500/5 rounded-2xl blur-xl group-focus-within:bg-teal-500/10 transition-all" />
-              <div className="relative bg-[#0d1117] border border-white/10 rounded-2xl p-2 flex items-center gap-2 focus-within:border-teal-500/50 transition-all shadow-2xl">
+              <div className="absolute inset-0 bg-teal-500/5 rounded-[2rem] blur-xl group-focus-within:bg-teal-500/10 transition-all" />
+              <div className="relative bg-white/[0.02] border border-white/10 rounded-[2rem] p-3 flex items-center gap-3 focus-within:border-teal-500/50 transition-all shadow-2xl">
                 <div className="pl-4">
-                  <Search className="size-5 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
+                  <Search className="size-6 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
                 </div>
                 <input 
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Ask AI to find leads (e.g. 'Founders in NYC SaaS companies with 10-50 employees')"
-                  className="flex-1 bg-transparent border-none py-3 text-sm text-white focus:outline-none placeholder:text-slate-600"
+                  className="flex-1 bg-transparent border-none py-4 text-sm text-white focus:outline-none placeholder:text-slate-600"
                   onKeyDown={(e) => e.key === 'Enter' && handleAiExtract()}
                 />
                 <TealButton 
                   onClick={handleAiExtract} 
                   loading={isExtracting}
                   disabled={!prompt.trim()}
-                  className="rounded-xl px-6 h-11 font-bold"
+                  className="rounded-2xl px-8 h-14 font-bold"
                 >
                   Generate
                 </TealButton>
@@ -475,7 +475,7 @@ export default function OutreachLeadFinder() {
 
           {/* RIGHT COLUMN: AI Extraction Card */}
           <div className="relative h-full">
-            <div className="bg-[#111111] border border-white/10 rounded-[2rem] p-8 h-full shadow-2xl overflow-hidden relative min-h-[300px] flex flex-col">
+            <div className="bg-white/[0.02] border border-white/10 rounded-[2rem] p-8 h-full shadow-2xl overflow-hidden relative min-h-[400px] flex flex-col">
               {/* Background Glow */}
               <div className="absolute -top-24 -right-24 size-48 bg-teal-500/10 blur-[100px] rounded-full" />
               
@@ -608,7 +608,7 @@ export default function OutreachLeadFinder() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full bg-[#111111] border border-white/10 rounded-2xl p-6 flex flex-col gap-4 shadow-2xl relative overflow-hidden"
+              className="w-full bg-white/[0.02] border border-white/10 rounded-[2rem] p-8 flex flex-col gap-6 shadow-2xl relative overflow-hidden"
             >
               <div className="flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-3">
@@ -737,11 +737,11 @@ export default function OutreachLeadFinder() {
 
           <AnimatePresence mode="popLayout">
             {results.length > 0 ? (
-              <div className="bg-[#111111]/50 border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-white/5 bg-white/[0.02]">
-                      <th className="p-4 w-10">
+                      <th className="p-6 w-10">
                         <button 
                           onClick={toggleSelectAll}
                           className={cn(
@@ -754,11 +754,11 @@ export default function OutreachLeadFinder() {
                           {selectedIds.size === results.length && <Check className="size-3 stroke-[4]" />}
                         </button>
                       </th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Lead Contact</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title & Dept</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Source</th>
-                      <th className="p-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
+                      <th className="p-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Lead Contact</th>
+                      <th className="p-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Title & Dept</th>
+                      <th className="p-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Company</th>
+                      <th className="p-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Source</th>
+                      <th className="p-6 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -775,7 +775,7 @@ export default function OutreachLeadFinder() {
                             isSelected && "bg-teal-500/[0.03]"
                           )}
                         >
-                          <td className="p-4">
+                          <td className="p-6">
                             <button 
                               onClick={() => toggleSelect(item.id)}
                               className={cn(
@@ -788,10 +788,10 @@ export default function OutreachLeadFinder() {
                               {isSelected && <Check className="size-3 stroke-[4]" />}
                             </button>
                           </td>
-                          <td className="p-4 cursor-pointer" onClick={() => setSelectedLead(item)}>
+                          <td className="p-6 cursor-pointer" onClick={() => setSelectedLead(item)}>
                             <div className="flex items-center gap-3">
-                              <div className="size-10 bg-teal-500/10 rounded-xl flex items-center justify-center border border-teal-500/20 group-hover:border-teal-500/50 transition-colors">
-                                <User className="size-5 text-teal-400" />
+                              <div className="size-12 bg-teal-500/10 rounded-2xl flex items-center justify-center border border-teal-500/20 group-hover:border-teal-500/50 transition-colors">
+                                <User className="size-6 text-teal-400" />
                               </div>
                               <div className="min-w-0">
                                 <p className="text-sm font-bold text-white group-hover:text-teal-400 transition-colors truncate">{String(item.fullName || item.email || 'Unknown Lead')}</p>
