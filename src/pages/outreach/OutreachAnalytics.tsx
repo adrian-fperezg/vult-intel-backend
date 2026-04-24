@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   BarChart2, TrendingUp, Users, Mail, MousePointer,
   MessageSquare, Globe, AlertTriangle, CheckCircle2, Shield, Loader2,
@@ -38,7 +39,8 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 
 export default function OutreachAnalytics() {
   const { t } = useTranslation();
-  const [timeRange, setTimeRange] = useState<string>('30d');
+  const [searchParams] = useSearchParams();
+  const timeRange = searchParams.get('timeframe') || '7d';
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [funnelStats, setFunnelStats] = useState<FunnelStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -183,19 +185,6 @@ export default function OutreachAnalytics() {
               {t('outreach.analytics.subtitle')}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2 hover:bg-white/10 transition-all group">
-              <Clock className="size-4 text-teal-400 group-hover:scale-110 transition-transform" />
-              <select
-                value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value)}
-                className="bg-transparent border-none text-slate-300 text-xs font-bold outline-none cursor-pointer"
-              >
-                {Object.keys(t('outreach.analytics.timeRange', { returnObjects: true }) as object).map((key) => (
-                  <option key={key} value={key}>{t(`outreach.analytics.timeRange.${key}`)}</option>
-                ))}
-              </select>
-            </div>
             
             <button 
               onClick={handleGenerateReport}

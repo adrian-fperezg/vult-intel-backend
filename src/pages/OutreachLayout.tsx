@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Sparkles, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { useOutreachSubscription } from '@/hooks/useOutreachSubscription';
@@ -18,7 +18,7 @@ import OutreachSettings from './outreach/OutreachSettings';
 import OutreachCompose from './outreach/OutreachCompose';
 import QueueMonitor from './outreach/QueueMonitor';
 import HistoryMonitor from './outreach/HistoryMonitor';
-import { PaperPlaneIcon } from './outreach/OutreachCommon';
+import { PaperPlaneIcon, TimeframeFilter, TealButton } from './outreach/OutreachCommon';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
 type OutreachTab = 'analytics' | 'lead-finder' | 'contacts' | 'compose' | 'campaigns' | 'sequences' | 'inbox' | 'queue-monitor' | 'history-monitor' | 'settings';
@@ -46,6 +46,15 @@ export default function OutreachLayout() {
     setSearchParams(prev => {
       const newParams = new URLSearchParams(prev);
       newParams.set('tab', tab);
+      return newParams;
+    }, { replace: true });
+  };
+
+  const currentTimeframe = searchParams.get('timeframe') || '7d';
+  const setTimeframe = (timeframe: string) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev);
+      newParams.set('timeframe', timeframe);
       return newParams;
     }, { replace: true });
   };
@@ -180,10 +189,30 @@ export default function OutreachLayout() {
               <p className="text-[11px] text-teal-400/60 font-semibold uppercase tracking-widest">Sales Automation Module</p>
             </div>
             {status === 'trial' && (
-              <span className="ml-auto px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-purple-500/15 border border-purple-500/20 text-purple-400">
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-purple-500/15 border border-purple-500/20 text-purple-400">
                 Trial
               </span>
             )}
+
+            <div className="ml-auto flex items-center gap-3">
+              <TimeframeFilter 
+                value={currentTimeframe}
+                onChange={setTimeframe}
+              />
+              
+              <div className="h-6 w-px bg-white/5 mx-1" />
+
+              <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 text-blue-400 text-sm font-bold rounded-xl border border-blue-500/20 transition-all group shadow-lg shadow-blue-900/10">
+                <Sparkles className="size-4 group-hover:scale-110 transition-transform" />
+                AI Assistant
+              </button>
+
+              {activeTab === 'sequences' && (
+                <TealButton onClick={() => window.dispatchEvent(new CustomEvent('outreach-create-sequence'))}>
+                  <Plus className="size-4" /> Create Sequence
+                </TealButton>
+              )}
+            </div>
           </div>
 
           {/* Horizontal Tab Bar */}

@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Sparkles, Mail, Linkedin, Phone, CheckSquare, MoreHorizontal,
+  Plus, Mail, Linkedin, Phone, CheckSquare, MoreHorizontal,
   ArrowRight, Loader2, Trash2, Edit2, Copy, GitBranch, Play, FolderOpen,
-  Filter, Search, BarChart3, Clock, Zap, AlertCircle
+  Filter, Search, Zap, AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, OutreachEmptyState, TealButton, OutreachConfirmDialog, OutreachMetricCard } from './OutreachCommon';
@@ -40,11 +40,11 @@ export default function OutreachSequences() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
-  const [timeframe, setTimeframe] = useState<string>('30d');
   const [globalStats, setGlobalStats] = useState<any>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const editingId = searchParams.get('seqId');
+  const timeframe = searchParams.get('timeframe') || '7d';
 
   const setEditingId = (id: string | null) => {
     setSearchParams(prev => {
@@ -85,6 +85,13 @@ export default function OutreachSequences() {
     setSequences([]);
     loadData();
   }, [loadData]);
+
+  // Listen for global create-sequence event
+  useEffect(() => {
+    const handleGlobalCreate = () => handleCreate();
+    window.addEventListener('outreach-create-sequence', handleGlobalCreate);
+    return () => window.removeEventListener('outreach-create-sequence', handleGlobalCreate);
+  }, []);
 
   const handleCreate = async () => {
     try {
@@ -173,126 +180,34 @@ export default function OutreachSequences() {
 
   return (
     <div className="h-full flex flex-col bg-background-dark overflow-hidden">
-      {/* Header Area */}
-      <div className="p-8 pb-4 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Sequences</h1>
-            <p className="text-sm text-slate-500 mt-1">Automated multi-channel outreach workflows.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all group"
-            >
-              <Sparkles className="size-4 text-teal-400 group-hover:scale-110 transition-transform" />
-              AI Assistant
-            </button>
-            <TealButton onClick={handleCreate}>
-              <Plus className="size-4" /> Create Sequence
-            </TealButton>
-          </div>
-        </div>
-
-        {/* AI Insight Engine Banner */}
-        {globalStats?.insight && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-teal-500/5 border border-teal-500/20 rounded-2xl p-4 flex items-start gap-4"
-          >
-            <div className="p-2 rounded-xl bg-teal-500/10">
-              <Sparkles className="size-5 text-teal-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-teal-500">AI Performance Insight</span>
-                <div className="h-1 w-1 rounded-full bg-teal-500" />
-                <span className="text-[10px] text-slate-500 font-bold">GEMINI 2.0 FLASH</span>
-              </div>
-              <p className="text-sm text-slate-300 leading-relaxed italic">
-                "{globalStats.insight}"
-              </p>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Stats Bar */}
-        <div className="grid grid-cols-4 gap-4">
-          <OutreachMetricCard
-            label="Daily Send Velocity"
-            value={`${globalStats?.dailySendVelocity || 0}`}
-            sub="Emails sent today"
-            teal={(globalStats?.dailySendVelocity || 0) > 0}
-            icon={<Zap className="size-4" />}
-          />
-          <OutreachMetricCard
-            label="Active Sequences"
-            value={globalStats?.activeSequences || 0}
-            icon={<Play className="size-4" />}
-          />
-          <OutreachMetricCard
-            label="Total Recipients"
-            value={globalStats?.totalRecipients || 0}
-            icon={<Mail className="size-4" />}
-          />
-          <OutreachMetricCard
-            label="Overall Open Rate"
-            value={globalStats?.overallOpenRate || "0.0%"}
-            icon={<BarChart3 className="size-4" />}
-          />
-        </div>
-
-        {/* Filters & Search */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
-              {['all', 'active', 'draft'].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s as any)}
-                  className={cn(
-                    "px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize",
-                    filterStatus === s ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-
-            <div className="h-6 w-px bg-white/5 mx-2" />
-
-            <div className="flex items-center gap-2">
-              <Clock className="size-4 text-slate-500" />
-              <select
-                value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value)}
-                className="bg-white/5 border border-white/5 text-slate-300 text-xs font-bold rounded-xl px-3 py-1.5 outline-none hover:bg-white/10 transition-all cursor-pointer"
+      {/* Filters & Search */}
+      <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
+            {['all', 'active', 'draft'].map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s as any)}
+                className={cn(
+                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize",
+                  filterStatus === s ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
+                )}
               >
-                <option value="1d">Last 24h</option>
-                <option value="3d">Last 3 days</option>
-                <option value="7d">Last 7 days</option>
-                <option value="14d">Last 14 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="1m">Last month</option>
-                <option value="Q1">Q1 (Jan-Mar)</option>
-                <option value="Q2">Q2 (Apr-Jun)</option>
-                <option value="Q3">Q3 (Jul-Sep)</option>
-                <option value="Q4">Q4 (Oct-Dec)</option>
-                <option value="1y">Last year</option>
-              </select>
-            </div>
+                {s}
+              </button>
+            ))}
           </div>
-          <div className="flex-1 max-w-md relative group">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
-            <input
-              type="text"
-              placeholder="Search sequences..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full bg-white/5 border border-white/5 focus:border-teal-500/30 rounded-xl pl-10 pr-4 py-2 text-sm outline-none transition-all placeholder:text-slate-600"
-            />
-          </div>
+        </div>
+
+        <div className="flex-1 max-w-md relative group">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
+          <input
+            type="text"
+            placeholder="Search sequences..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full bg-white/5 border border-white/5 focus:border-teal-500/30 rounded-xl pl-10 pr-4 py-2 text-sm outline-none transition-all placeholder:text-slate-600"
+          />
         </div>
       </div>
 
@@ -316,26 +231,34 @@ export default function OutreachSequences() {
                 <motion.div
                   key={seq.id}
                   layout
-                  initial={{ opacity: 0, scale: 0.95 }}
+                  initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="group bg-[#161b22]/40 border border-white/5 rounded-2xl p-6 hover:border-white/15 hover:bg-[#1c2128]/60 transition-all cursor-pointer relative overflow-hidden"
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  className="group bg-[#0d1117]/80 border border-white/5 rounded-[2rem] p-8 hover:border-teal-500/30 hover:bg-[#161b22] transition-all cursor-pointer relative overflow-hidden ring-1 ring-white/5"
                   onClick={() => setEditingId(seq.id)}
                 >
-                  <div className="absolute top-0 left-0 w-1 h-full bg-teal-500 scale-y-0 group-hover:scale-y-100 transition-transform origin-top duration-300" />
-
-                  <div className="flex items-start justify-between mb-4">
-                    <OutreachBadge variant={seq.status === 'active' ? 'green' : 'gray'} dot={seq.status === 'active'}>
-                      {seq.status}
-                    </OutreachBadge>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Subtle Background Glow */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/5 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-teal-500/10 transition-all duration-700" />
+                  
+                  <div className="flex items-start justify-between mb-8">
+                    <div className="flex flex-col gap-2">
+                      <OutreachBadge 
+                        variant={seq.status === 'active' ? 'green' : 'gray'} 
+                        dot={seq.status === 'active'}
+                        className="w-fit px-3 py-1 text-[9px] font-black uppercase tracking-[0.15em]"
+                      >
+                        {seq.status}
+                      </OutreachBadge>
+                      <h3 className="text-xl font-bold text-white group-hover:text-teal-400 transition-colors truncate max-w-[200px]">
+                        {seq.name}
+                      </h3>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5">
                       <button
                         onClick={(e) => { e.stopPropagation(); handlePromote(seq.id, seq.name); }}
                         disabled={isPromoting.has(seq.id)}
-                        className={cn(
-                          "p-1.5 rounded-lg text-slate-600 transition-colors",
-                          isPromoting.has(seq.id) ? "bg-teal-500/10 text-teal-400" : "hover:bg-teal-500/10 hover:text-teal-400"
-                        )}
+                        className="p-2 rounded-xl bg-white/5 text-slate-500 hover:bg-teal-500/10 hover:text-teal-400 transition-all active:scale-90"
                         title="Force Send Now (Promote)"
                       >
                         {isPromoting.has(seq.id) ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
@@ -343,72 +266,73 @@ export default function OutreachSequences() {
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDuplicate(seq.id); }}
                         disabled={!!isDuplicating}
-                        className={cn(
-                          "p-1.5 rounded-lg text-slate-600 transition-colors",
-                          isDuplicating === seq.id ? "bg-teal-500/10 text-teal-400" : "hover:bg-teal-500/10 hover:text-teal-400"
-                        )}
+                        className="p-2 rounded-xl bg-white/5 text-slate-500 hover:bg-blue-500/10 hover:text-blue-400 transition-all active:scale-90"
                         title="Duplicate Sequence"
                       >
                         {isDuplicating === seq.id ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeleteDialog(seq.id); }}
-                        className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors"
+                        className="p-2 rounded-xl bg-white/5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-90"
                       >
                         <Trash2 className="size-4" />
                       </button>
                     </div>
                   </div>
 
-                  <h3 className="text-lg font-bold text-white mb-2 group-hover:text-teal-400 transition-colors truncate">
-                    {seq.name}
-                  </h3>
-
-                  <div className="grid grid-cols-2 gap-4 mt-6">
-                    <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-600">Steps</p>
-                      <p className="text-sm font-semibold text-slate-300">{seq.step_count || 0} stages</p>
+                  {/* Core Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-4 mb-8">
+                    <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 group-hover:bg-white/[0.05] transition-all">
+                      <p className="text-[9px] uppercase tracking-widest font-black text-slate-600 mb-1">Total Enrolled</p>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-bold text-white">{seq.contact_count || 0}</span>
+                        <span className="text-[10px] text-slate-500 font-medium">leads</span>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-600">Enrolled</p>
-                      <p className="text-sm font-semibold text-slate-300">{seq.contact_count || 0} leads</p>
+                    <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 group-hover:bg-white/[0.05] transition-all">
+                      <p className="text-[9px] uppercase tracking-widest font-black text-slate-600 mb-1">Active</p>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-bold text-teal-400">{(seq as any).active_contact_count || 0}</span>
+                        <span className="text-[10px] text-teal-900/50 font-bold uppercase">Ready</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="pt-6 mt-6 border-t border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  {/* Performance Ribbon */}
+                  <div className="flex items-center justify-between px-2 pt-2 border-t border-white/5">
+                    <div className="flex items-center gap-6">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-slate-600 uppercase">Open Rate</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-xs font-bold text-teal-500/80">{seq.open_rate}%</span>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Sent</span>
+                        <span className="text-sm font-bold text-slate-300">{(seq as any).sent_in_period || 0}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Open</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-white">{seq.open_rate}%</span>
                           {seq.opened_in_period > 0 && (
-                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-teal-500/10 text-teal-400">+{seq.opened_in_period}</span>
+                            <span className="text-[9px] font-black text-teal-400">+{seq.opened_in_period}</span>
                           )}
                         </div>
                       </div>
-                      <div className="h-6 w-px bg-white/5" />
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-slate-600 uppercase">Reply Rate</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-xs font-bold text-white/80">{seq.reply_rate}%</span>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Reply</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-white">{seq.reply_rate}%</span>
                           {seq.replied_in_period > 0 && (
-                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">+{seq.replied_in_period}</span>
+                            <span className="text-[9px] font-black text-amber-400">+{seq.replied_in_period}</span>
                           )}
                         </div>
                       </div>
-                      <div className="h-6 w-px bg-white/5" />
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-slate-600 uppercase">Bounce</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className={cn("text-xs font-bold", seq.bounce_rate > 2.5 ? "text-red-400" : "text-white/40")}>{seq.bounce_rate}%</span>
-                          {seq.bounced_in_period > 0 && (
-                            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-red-500/10 text-red-400">+{seq.bounced_in_period}</span>
-                          )}
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Bounce</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn("text-sm font-bold", seq.bounce_rate > 2.5 ? "text-red-400" : "text-slate-500")}>{seq.bounce_rate}%</span>
                         </div>
                       </div>
                     </div>
-                    <div className="p-2 rounded-xl bg-white/5 group-hover:bg-teal-500/10 transition-colors">
-                      <ArrowRight className="size-4 text-slate-600 group-hover:text-teal-400" />
+
+                    <div className="p-3 rounded-full bg-white/5 group-hover:bg-teal-500 text-slate-500 group-hover:text-[#0d1117] transition-all duration-300">
+                      <ArrowRight className="size-4" />
                     </div>
                   </div>
                 </motion.div>

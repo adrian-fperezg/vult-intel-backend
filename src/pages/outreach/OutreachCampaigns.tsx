@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, MoreHorizontal, Play, Pause, Copy, Trash2,
@@ -57,7 +58,8 @@ export default function OutreachCampaigns() {
   const [viewingAnalytics, setViewingAnalytics] = useState<Campaign | null>(null);
   const [funnelStage, setFunnelStage] = useState<'ALL' | 'TOFU' | 'MOFU' | 'BOFU'>('ALL');
   const [funnelStats, setFunnelStats] = useState<any[]>([]);
-  const [timeframe, setTimeframe] = useState<string>('30d');
+  const [searchParams] = useSearchParams();
+  const timeframe = searchParams.get('timeframe') || '7d';
   const [analyticsData, setAnalyticsData] = useState<{ open_rate_change: number | null; reply_rate_change: number | null } | null>(null);
 
   const loadFunnelStats = useCallback(async (tf?: string, tz?: string) => {
@@ -216,26 +218,6 @@ export default function OutreachCampaigns() {
           <p className="text-slate-400 font-medium text-lg">Aggregate B2B sales funnel intelligence and automation.</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-2xl px-4 py-2 hover:bg-white/10 transition-all group">
-            <Clock className="size-5 text-teal-500 group-hover:scale-110 transition-transform" />
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value)}
-              className="bg-transparent border-none text-slate-300 text-sm font-bold outline-none cursor-pointer"
-            >
-              <option value="1d">Last 24h</option>
-              <option value="3d">Last 3 days</option>
-              <option value="7d">Last 7 days</option>
-              <option value="14d">Last 14 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="1m">Last month</option>
-              <option value="Q1">Q1 (Jan-Mar)</option>
-              <option value="Q2">Q2 (Apr-Jun)</option>
-              <option value="Q3">Q3 (Jul-Sep)</option>
-              <option value="Q4">Q4 (Oct-Dec)</option>
-              <option value="1y">Last year</option>
-            </select>
-          </div>
           <TealButton 
             onClick={handleCreate}
             className="h-14 px-8 rounded-2xl shadow-2xl shadow-teal-500/20 active:scale-95 transition-all text-base"

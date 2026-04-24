@@ -280,3 +280,46 @@ export function OutreachConfirmDialog({
     </div>
   );
 }
+
+// ─── TIMEFRAME FILTER ────────────────────────────────────────────────────────
+interface TimeframeFilterProps {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}
+
+export function TimeframeFilter({ value, onChange, className }: TimeframeFilterProps) {
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <div className="p-2 bg-white/5 rounded-xl border border-white/5">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4 text-slate-500">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-white/5 border border-white/5 text-slate-300 text-xs font-bold rounded-xl px-4 py-2 outline-none hover:bg-white/10 transition-all cursor-pointer appearance-none pr-8 relative"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 0.5rem center',
+          backgroundSize: '1.25rem'
+        }}
+      >
+        <option value="1d">Last 24h</option>
+        <option value="3d">Last 3 days</option>
+        <option value="7d">Last 7 days</option>
+        <option value="14d">Last 14 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="1m">Last month</option>
+        <option value="Q1">Q1 (Jan-Mar)</option>
+        <option value="Q2">Q2 (Apr-Jun)</option>
+        <option value="Q3">Q3 (Jul-Sep)</option>
+        <option value="Q4">Q4 (Oct-Dec)</option>
+        <option value="1y">Last year</option>
+      </select>
+    </div>
+  );
+}

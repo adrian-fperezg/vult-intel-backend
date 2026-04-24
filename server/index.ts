@@ -2846,6 +2846,7 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
       SELECT s.*, 
              (SELECT COUNT(*) FROM outreach_sequence_steps WHERE sequence_id = s.id AND project_id = s.project_id) as step_count,
              (SELECT COUNT(*) FROM outreach_sequence_enrollments e WHERE sequence_id = s.id AND project_id = s.project_id AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as contact_count,
+             (SELECT COUNT(*) FROM outreach_sequence_enrollments e WHERE sequence_id = s.id AND project_id = s.project_id AND status IN ('active', 'pending') AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)) as active_contact_count,
              
              (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND sent_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as sent_in_period,
              (SELECT COUNT(DISTINCT event_key) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as opened_in_period,
