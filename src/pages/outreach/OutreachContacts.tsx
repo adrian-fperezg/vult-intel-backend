@@ -4,7 +4,7 @@ import {
   Search, Plus, Upload, Download, Filter, MoreHorizontal,
   Building2, Mail, Phone, Linkedin, ChevronDown, ChevronUp,
   User, Tag, Trash2, CheckCircle2, XCircle, Globe, UserCheck, FolderOpen, Settings2, Edit2,
-  Check, X, Loader2
+  Check, X, Loader2, Menu
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
@@ -191,6 +191,7 @@ export default function OutreachContacts() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [profileContactId, setProfileContactId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Inline Editing States
   const [editingField, setEditingField] = useState<{ contactId: string, field: 'name' | 'title' | 'email' | 'company' } | null>(null);
@@ -553,8 +554,98 @@ export default function OutreachContacts() {
   return (
     <Fragment>
       <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
-      {/* Sidebar Navigator */}
-      <div className="w-64 border-r border-white/5 flex flex-col shrink-0 bg-[#0D0D0E]">
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] lg:hidden"
+            />
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed left-0 top-0 bottom-0 w-[280px] bg-[#0D0D0E] border-r border-white/5 z-[101] lg:hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="size-8 bg-teal-500 rounded-lg flex items-center justify-center">
+                    <User className="size-5 text-white" />
+                  </div>
+                  <span className="font-bold text-white uppercase tracking-wider text-xs">{t.navigation}</span>
+                </div>
+                <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white">
+                  <X className="size-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                <nav className="space-y-1.5">
+                  {[
+                    { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
+                    { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
+                  ].map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => { setListFilter(item.id); setIsSidebarOpen(false); }}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group",
+                        listFilter === item.id
+                          ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                          : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                      )}
+                    >
+                      <span className={cn(
+                        "transition-colors",
+                        listFilter === item.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                      )}>
+                        {item.icon}
+                      </span>
+                      {item.label}
+                    </button>
+                  ))}
+                </nav>
+
+                <div className="mt-10 mb-6 px-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
+                    <button
+                      onClick={() => { setIsUploadModalOpen(true); setIsSidebarOpen(false); }}
+                      className="text-teal-400 hover:text-teal-300"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  </div>
+                </div>
+                <nav className="space-y-1.5">
+                  {contactLists.map(list => (
+                    <button
+                      key={list.id}
+                      onClick={() => { setListFilter(list.id); setIsSidebarOpen(false); }}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
+                        listFilter === list.id
+                          ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                          : "text-slate-400 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <Tag className="size-4 shrink-0 opacity-40" />
+                      <span className="truncate">{list.name}</span>
+                    </button>
+                  ))}
+                </nav>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Sidebar Navigator (Desktop) */}
+      <div className="w-64 border-r border-white/5 hidden lg:flex flex-col shrink-0 bg-[#0D0D0E]">
         <div className="p-8">
           <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-6">{t.navigation}</h2>
           <nav className="space-y-1.5">
@@ -674,11 +765,17 @@ export default function OutreachContacts() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="px-10 py-8 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex items-center justify-between mb-6">
-            <div>
+        <div className="px-4 lg:px-10 py-6 lg:py-8 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-white"
+              >
+                <Menu className="size-6" />
+              </button>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-white">{t.contacts}</h1>
+                <h1 className="text-xl lg:text-2xl font-bold text-white">{t.contacts}</h1>
                 <div className="px-2 py-0.5 bg-white/5 rounded-full border border-white/5">
                   <span className="text-[10px] font-black text-slate-500 uppercase">{contacts.length} {t.total}</span>
                 </div>
@@ -689,21 +786,21 @@ export default function OutreachContacts() {
                     t.contactsInList(contactLists.find(l => l.id === listFilter)?.name || t.genericList)}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-2xl transition-all"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 lg:px-4 py-2 lg:py-2.5 text-xs lg:text-sm font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl lg:rounded-2xl transition-all"
               >
-                <Upload className="size-4" /> {t.importCsv}
+                <Upload className="size-3.5 lg:size-4" /> {t.importCsv}
               </button>
-              <TealButton className="rounded-2xl px-6 py-2.5" size="sm" onClick={handleCreate} loading={isCreating}>
-                <Plus className="size-4" /> {t.addContact}
+              <TealButton className="flex-1 sm:flex-none rounded-xl lg:rounded-2xl px-4 lg:px-6 py-2 lg:py-2.5" size="sm" onClick={handleCreate} loading={isCreating}>
+                <Plus className="size-3.5 lg:size-4" /> {t.addContact}
               </TealButton>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-xl">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-500" />
               <input
                 value={query}
@@ -713,13 +810,13 @@ export default function OutreachContacts() {
               />
             </div>
 
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 no-scrollbar lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0">
               {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={cn(
-                    'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all',
+                    'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap',
                     statusFilter === s
                       ? 'bg-teal-500/15 text-teal-400 border border-teal-500/30'
                       : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
@@ -739,16 +836,16 @@ export default function OutreachContacts() {
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-6 py-4 bg-[#161b22] border border-teal-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(20,184,166,0.1)] flex items-center gap-6 backdrop-blur-xl"
+              className="fixed bottom-6 lg:bottom-8 left-1/2 -translate-x-1/2 z-50 w-[92%] lg:w-auto px-4 lg:px-6 py-3 lg:py-4 bg-[#161b22] border border-teal-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(20,184,166,0.1)] flex items-center gap-3 lg:gap-6 backdrop-blur-xl"
             >
-              <div className="flex items-center gap-3 pr-6 border-r border-white/10">
-                <div className="size-6 bg-teal-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
-                  <span className="text-[10px] font-black text-white">{selectedIds.size}</span>
+              <div className="flex items-center gap-2 lg:gap-3 pr-3 lg:pr-6 border-r border-white/10 shrink-0">
+                <div className="size-5 lg:size-6 bg-teal-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
+                  <span className="text-[9px] lg:text-[10px] font-black text-white">{selectedIds.size}</span>
                 </div>
-                <span className="text-sm font-bold text-white whitespace-nowrap">{t.contactsSelected}</span>
+                <span className="text-xs lg:text-sm font-bold text-white whitespace-nowrap hidden sm:inline">{t.contactsSelected}</span>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 lg:gap-4 overflow-x-auto no-scrollbar">
                 <button
                   onClick={() => setIsBulkAddOpen(true)}
                   className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all"
@@ -761,7 +858,7 @@ export default function OutreachContacts() {
                 <button
                   onClick={handleBulkVerify}
                   disabled={isVerifying}
-                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50"
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50 whitespace-nowrap"
                 >
                   <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} />
                   {isVerifying ? t.verifying : t.verifyEmails}
@@ -803,8 +900,83 @@ export default function OutreachContacts() {
               action={<TealButton className="rounded-2xl px-8 py-3" onClick={handleCreate} loading={isCreating}><Plus className="size-5" /> {t.addContact}</TealButton>}
             />
           ) : (
-            <div className="p-10 relative">
-              <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
+            <div className="p-4 lg:p-10 relative">
+              {/* Mobile Card View */}
+              <div className="grid grid-cols-1 gap-4 lg:hidden">
+                {filtered.map((contact, idx) => (
+                  <motion.div
+                    key={contact.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className={cn(
+                      "bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-4",
+                      selectedIds.has(contact.id) && "border-teal-500/30 bg-teal-500/5"
+                    )}
+                    onClick={() => setProfileContactId(contact.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(contact.id)}
+                            onChange={() => toggleSelect(contact.id)}
+                            className="accent-teal-500 size-5 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                        <div className="size-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+                          {contact.firstName ? (
+                            <span className="text-sm font-bold text-teal-400">
+                              {contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}
+                            </span>
+                          ) : (
+                            <User className="size-5 text-teal-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-white truncate">
+                            {contact.firstName} {contact.lastName}
+                          </h3>
+                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">
+                            {contact.jobTitle || contact.title || t.noTitle}
+                          </p>
+                        </div>
+                      </div>
+                      <OutreachBadge status={contact.status || 'not_enrolled'} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
+                        <Building2 className="size-3.5 shrink-0 text-slate-500" />
+                        <span className="truncate">{contact.company || t.noCompany}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
+                        <Mail className="size-3.5 shrink-0 text-slate-500" />
+                        <span className="truncate">{contact.email || t.noEmail}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setProfileContactId(contact.id); }}
+                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                      >
+                        {t.viewProfile}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setContactToDelete(contact.id); }}
+                        className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Desktop View (Table) */}
+              <div className="hidden lg:block bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-white/[0.03] border-b border-white/10">
                     <tr>

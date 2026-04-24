@@ -178,32 +178,32 @@ export default function OutreachAnalytics() {
       <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
       <div className="px-8 py-6 space-y-8 pb-16">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div>
-            <h1 className="text-2xl font-bold text-white leading-none">{t('outreach.analytics.title')}</h1>
+            <h1 className="text-2xl font-bold text-white leading-none tracking-tight">{t('outreach.analytics.title')}</h1>
             <p className="text-sm text-slate-500 mt-2 flex items-center gap-2">
               <Globe className="size-3.5 text-teal-400" />
               {t('outreach.analytics.subtitle')}
             </p>
           </div>
             
-            <button 
-              onClick={handleGenerateReport}
-              disabled={isGeneratingReport}
-              className="flex items-center gap-2 px-6 py-2 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black text-[#0d1117] transition-all shadow-lg shadow-teal-500/20 active:scale-95"
-            >
-              {isGeneratingReport ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="size-3.5" />
-              )}
-              {t('outreach.analytics.aiReport')}
-            </button>
-          </div>
+          <button 
+            onClick={handleGenerateReport}
+            disabled={isGeneratingReport}
+            className="flex items-center justify-center gap-2 px-6 py-3 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black text-[#0d1117] transition-all shadow-lg shadow-teal-500/20 active:scale-95 w-full sm:w-auto"
+          >
+            {isGeneratingReport ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="size-3.5" />
+            )}
+            {t('outreach.analytics.aiReport')}
+          </button>
+        </div>
         </div>
 
         {/* Core KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <OutreachMetricCard 
             label={t('outreach.analytics.kpis.volume')} 
             value={(data.total_sent ?? 0).toLocaleString()} 
@@ -241,13 +241,13 @@ export default function OutreachAnalytics() {
         {/* Main Analytics Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Timeline */}
-          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8 backdrop-blur-sm">
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-5 sm:p-8 backdrop-blur-sm">
             <OutreachSectionHeader
               icon={<BarChart2 className="size-5 text-teal-400" />}
               title={t('outreach.analytics.charts.engagementTitle')}
               subtitle={t('outreach.analytics.charts.engagementSubtitle')}
             />
-            <div className="h-[320px] mt-8">
+            <div className="h-[250px] sm:h-[320px] mt-8">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dailyData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
@@ -272,13 +272,13 @@ export default function OutreachAnalytics() {
           </div>
 
           {/* Funnel */}
-          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8 backdrop-blur-sm">
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-5 sm:p-8 backdrop-blur-sm">
             <OutreachSectionHeader
               icon={<Filter className="size-5 text-indigo-400" />}
               title={t('outreach.analytics.charts.funnelTitle')}
               subtitle={t('outreach.analytics.charts.funnelSubtitle')}
             />
-            <div className="h-[320px] mt-8">
+            <div className="h-[250px] sm:h-[320px] mt-8">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={funnelStats}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
@@ -297,14 +297,14 @@ export default function OutreachAnalytics() {
         {/* Strategy Layer */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Intent */}
-          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8">
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-5 sm:p-8">
             <OutreachSectionHeader
               icon={<Sparkles className="size-5 text-amber-400" />}
               title={t('outreach.analytics.charts.intentTitle')}
               subtitle={t('outreach.analytics.charts.intentSubtitle')}
             />
-            <div className="flex items-center gap-12 mt-8">
-              <div className="size-48">
+            <div className="flex flex-col sm:flex-row items-center gap-8 sm:gap-12 mt-8">
+              <div className="size-48 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -322,7 +322,7 @@ export default function OutreachAnalytics() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex-1 space-y-4">
+              <div className="w-full space-y-4">
                 {(data.intent_data || []).map((item) => (
                   <div key={item.name} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
@@ -339,7 +339,7 @@ export default function OutreachAnalytics() {
           </div>
 
           {/* Leaders */}
-          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-8">
+          <div className="bg-white/[0.02] border border-white/8 rounded-3xl p-5 sm:p-8">
             <OutreachSectionHeader
               icon={<TrendingUp className="size-5 text-emerald-400" />}
               title={t('outreach.analytics.charts.entitiesTitle')}
@@ -347,10 +347,10 @@ export default function OutreachAnalytics() {
             />
             <div className="h-[240px] mt-8">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart layout="vertical" data={data.campaign_comparison} margin={{ left: 0, right: 40 }}>
+                <BarChart layout="vertical" data={data.campaign_comparison} margin={{ left: -20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" horizontal={false} />
                   <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={11} width={120} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={10} width={100} tickLine={false} axisLine={false} />
                   <Tooltip content={<CUSTOM_TOOLTIP />} />
                   <Bar dataKey="reply" name={t('outreach.analytics.charts.labels.replyRate')} fill="url(#emeraldGradient)" radius={[0, 4, 4, 0]} barSize={12} />
                   <Bar dataKey="bounce" name={t('outreach.analytics.charts.labels.bounceRate')} fill="#EF4444" radius={[0, 4, 4, 0]} barSize={4} />

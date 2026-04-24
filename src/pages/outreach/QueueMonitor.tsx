@@ -317,9 +317,9 @@ export default function QueueMonitor() {
           title={t('outreach.queue.title')}
           subtitle={t('outreach.queue.subtitle')}
           actions={
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 w-full sm:w-auto mt-4 sm:mt-0">
               {/* Business Hour Snap Toggle */}
-              <label className="flex items-center gap-3 cursor-pointer group bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-teal-500/30 transition-all">
+              <label className="flex items-center gap-3 cursor-pointer group bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-teal-500/30 transition-all w-full sm:w-auto">
                 <div className="relative inline-flex items-center cursor-pointer">
                   <input 
                     type="checkbox" 
@@ -335,14 +335,14 @@ export default function QueueMonitor() {
                 </div>
               </label>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                 {failedCount > 0 && (
                   <TealButton 
                     variant="outline" 
                     size="sm" 
                     onClick={handleRetryAll} 
                     loading={isRetryingAll}
-                    className="px-4 border-teal-500/30 text-teal-400 hover:bg-teal-500/10"
+                    className="px-4 border-teal-500/30 text-teal-400 hover:bg-teal-500/10 flex-1 sm:flex-none"
                   >
                     <RefreshCw className={cn("size-3.5 mr-2", isRetryingAll && "animate-spin")} />
                     {t('outreach.queue.retryAll')} ({failedCount})
@@ -354,7 +354,7 @@ export default function QueueMonitor() {
                   size="sm" 
                   onClick={handlePurgeOrphans} 
                   loading={isPurging}
-                  className="px-4 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                  className="px-4 border-red-500/30 text-red-400 hover:bg-red-500/10 flex-1 sm:flex-none"
                 >
                   <Trash2 className={cn("size-3.5 mr-2", isPurging && "animate-pulse")} />
                   {t('outreach.queue.purgeOrphans')}
@@ -365,7 +365,7 @@ export default function QueueMonitor() {
                   size="sm" 
                   onClick={handleRebalance} 
                   loading={isRebalancing}
-                  className="px-4 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  className="px-4 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 flex-1 sm:flex-none"
                 >
                   <Zap className={cn("size-3.5 mr-2", isRebalancing && "animate-pulse")} />
                   {t('outreach.queue.rebalance')}
@@ -376,7 +376,7 @@ export default function QueueMonitor() {
                   size="sm" 
                   onClick={() => loadQueue(true)} 
                   loading={isLoading}
-                  className="px-4"
+                  className="px-4 flex-1 sm:flex-none"
                 >
                   <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
                   {t('outreach.queue.refresh')}
@@ -400,8 +400,8 @@ export default function QueueMonitor() {
         ) : (
           <div className="space-y-4">
             {/* Filter Bar */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-              <div className="relative group">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+              <div className="relative group sm:col-span-2 lg:col-span-1">
                 <Search className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
                 <input 
                   type="text" 
@@ -486,142 +486,249 @@ export default function QueueMonitor() {
                 description={t('outreach.queue.noResultsDesc')}
               />
             ) : (
-              <div className="bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-white/[0.02] border-b border-white/5">
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.time')}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.recipient')}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.sequence')}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.sender')}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.action')}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.status')}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">{t('outreach.queue.headers.actions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredJobs.map((job, idx) => (
-                      <motion.tr 
-                        key={job.jobId}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03 }}
-                        className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+              <>
+              {/* Mobile View (Cards) */}
+              <div className="grid grid-cols-1 gap-4 lg:hidden">
+              {filteredJobs.map((job, idx) => (
+                <motion.div
+                  key={job.jobId}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className="bg-white/[0.02] border border-white/5 rounded-3xl p-5 space-y-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="size-10 rounded-xl bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                        <Calendar className="size-5 text-teal-400" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-white">{formatTime(job.scheduledTime)}</span>
+                        {getRelativeDayTag(job.scheduledTime) && (
+                          <span className="text-[10px] font-black uppercase tracking-widest text-teal-400">
+                            {getRelativeDayTag(job.scheduledTime)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {job.status === 'Failed' ? (
+                      <OutreachBadge variant="red" dot>{t('outreach.queue.failed')}</OutreachBadge>
+                    ) : job.status === 'Retrying' ? (
+                      <OutreachBadge variant="orange" dot>{job.attempts}</OutreachBadge>
+                    ) : (
+                      <OutreachBadge variant="teal" dot>{t('outreach.queue.scheduled')}</OutreachBadge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.queue.headers.recipient')}</span>
+                      <div className="flex items-center gap-2">
+                        <User className="size-3 text-slate-400" />
+                        <span className="text-xs font-bold text-white truncate">
+                          {(job.contactName || '').replace(/\bnull\b/gi, '').trim() || job.contactEmail}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.queue.headers.sequence')}</span>
+                      <div className="flex items-center gap-2">
+                        <Layers className="size-3 text-indigo-400" />
+                        <span className="text-xs font-bold text-white truncate">
+                          {job.sequenceName === "Unknown Sequence" ? t('outreach.queue.unknownSequence') : job.sequenceName}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.queue.headers.sender')}</span>
+                      <div className="flex items-center gap-2">
+                        <Mail className="size-3 text-sky-400" />
+                        <span className="text-xs font-medium text-slate-300 truncate">
+                          {job.senderEmail === "Waiting for email assignment" ? t('outreach.queue.waitingForEmail') : job.senderEmail}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.queue.headers.action')}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-1.5 py-0.5 rounded bg-white/10 text-[9px] font-black text-slate-300 uppercase">
+                          {job.action}
+                        </span>
+                        <span className="text-[10px] text-slate-400">Step {job.stepNumber}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    {job.status === 'Failed' && (
+                      <button 
+                        onClick={() => handleRetry(job.jobId)}
+                        disabled={retryingJobs.has(job.jobId)}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-500/10 text-teal-400 rounded-xl border border-teal-500/10 font-bold text-xs"
                       >
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
-                              <Calendar className="size-4 text-teal-400" />
-                            </div>
-                            <div className="flex flex-col">
-                              {getRelativeDayTag(job.scheduledTime) && (
-                                <span className="text-[10px] font-black uppercase tracking-widest text-teal-400 mb-0.5">
-                                  {getRelativeDayTag(job.scheduledTime)}
-                                </span>
-                              )}
-                              <span className="text-sm font-bold text-white tabular-nums">
-                                {formatTime(job.scheduledTime)}
+                        <RefreshCw className={cn("size-3.5", retryingJobs.has(job.jobId) && "animate-spin")} />
+                        {t('outreach.queue.retry')}
+                      </button>
+                    )}
+                    {job.status !== 'Failed' && (
+                      <button 
+                        onClick={() => handleSendNow(job.jobId)}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/10 font-bold text-xs"
+                      >
+                        <Zap className="size-3.5" />
+                        {t('outreach.queue.sendNow')}
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 rounded-xl border border-red-500/10 font-bold text-xs"
+                    >
+                      <Trash2 className="size-3.5" />
+                      {t('outreach.queue.deleteSends')}
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Desktop View (Table) */}
+            <div className="hidden lg:block bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-white/[0.02] border-b border-white/5">
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.time')}</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.recipient')}</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.sequence')}</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.sender')}</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.action')}</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.queue.headers.status')}</th>
+                      <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500 text-right">{t('outreach.queue.headers.actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredJobs.map((job, idx) => (
+                    <motion.tr 
+                      key={job.jobId}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                    >
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                            <Calendar className="size-4 text-teal-400" />
+                          </div>
+                          <div className="flex flex-col">
+                            {getRelativeDayTag(job.scheduledTime) && (
+                              <span className="text-[10px] font-black uppercase tracking-widest text-teal-400 mb-0.5">
+                                {getRelativeDayTag(job.scheduledTime)}
                               </span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2" title={`Contact ID: ${job.contactId}`}>
-                            <div className="size-7 rounded-full bg-slate-500/10 flex items-center justify-center">
-                              <User className="size-3.5 text-slate-400" />
-                            </div>
-                            <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                              {(() => {
-                                const cleanName = (job.contactName || '').replace(/\bnull\b/gi, '').trim();
-                                return cleanName || job.contactEmail;
-                              })()}
+                            )}
+                            <span className="text-sm font-bold text-white tabular-nums">
+                              {formatTime(job.scheduledTime)}
                             </span>
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2" title={`Sequence ID: ${job.sequenceId}`}>
-                            <Layers className="size-3.5 text-indigo-400" />
-                            <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                              {job.sequenceName === "Unknown Sequence" 
-                                ? t('outreach.queue.unknownSequence') 
-                                : job.sequenceName}
-                            </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2" title={`Contact ID: ${job.contactId}`}>
+                          <div className="size-7 rounded-full bg-slate-500/10 flex items-center justify-center">
+                            <User className="size-3.5 text-slate-400" />
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                            <Mail className={cn("size-3.5", job.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
-                            <span className={cn(
-                              "text-xs font-medium truncate max-w-[180px]",
-                              job.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
-                            )}>
-                              {job.senderEmail === "Waiting for email assignment" 
-                                ? t('outreach.queue.waitingForEmail') 
-                                : job.senderEmail}
-                            </span>
+                          <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                            {(() => {
+                              const cleanName = (job.contactName || '').replace(/\bnull\b/gi, '').trim();
+                              return cleanName || job.contactEmail;
+                            })()}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2" title={`Sequence ID: ${job.sequenceId}`}>
+                          <Layers className="size-3.5 text-indigo-400" />
+                          <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                            {job.sequenceName === "Unknown Sequence" 
+                              ? t('outreach.queue.unknownSequence') 
+                              : job.sequenceName}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2">
+                          <Mail className={cn("size-3.5", job.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
+                          <span className={cn(
+                            "text-xs font-medium truncate max-w-[180px]",
+                            job.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
+                          )}>
+                            {job.senderEmail === "Waiting for email assignment" 
+                              ? t('outreach.queue.waitingForEmail') 
+                              : job.senderEmail}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2">
+                          <div className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-black text-slate-300">
+                            {job.action.toUpperCase()}
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                            <div className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-black text-slate-300">
-                              {job.action.toUpperCase()}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          {job.status === 'Failed' ? (
-                            <OutreachBadge variant="red" dot>{t('outreach.queue.failed')}</OutreachBadge>
-                          ) : job.status === 'Retrying' ? (
-                            <OutreachBadge variant="orange" dot>{t('outreach.queue.retrying')} ({job.attempts})</OutreachBadge>
-                          ) : (
-                            <OutreachBadge variant="teal" dot>{t('outreach.queue.scheduled')}</OutreachBadge>
-                          )}
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                              {job.status === 'Failed' && (
-                                <button 
-                                  onClick={() => handleRetry(job.jobId)}
-                                  disabled={retryingJobs.has(job.jobId)}
-                                  className={cn(
-                                    "flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-xl transition-all border border-teal-500/10 hover:border-teal-500/30 group",
-                                    retryingJobs.has(job.jobId) && "opacity-50 cursor-not-allowed"
-                                  )}
-                                  title={t('outreach.queue.retry')}
-                                >
-                                  <RefreshCw className={cn("size-3.5", retryingJobs.has(job.jobId) && "animate-spin")} />
-                                  <span className="text-[10px] font-black uppercase tracking-tight">
-                                    {retryingJobs.has(job.jobId) ? t('common.loading') : t('outreach.queue.retry')}
-                                  </span>
-                                </button>
-                              )}
-                              {job.status !== 'Failed' && (
-                                <button 
-                                  onClick={() => handleSendNow(job.jobId)}
-                                  className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-xl transition-all border border-amber-500/10 hover:border-amber-500/30 group"
-                                  title={t('outreach.queue.sendNow')}
-                                >
-                                  <Zap className="size-3.5" />
-                                  <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.sendNow')}</span>
-                                </button>
-                              )}
-                            <button 
-                              onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group"
-                              title={t('outreach.queue.deleteSends')}
-                            >
-                              <Trash2 className="size-3.5" />
-                              <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.deleteSends')}</span>
-                            </button>
-                          </div>
-                        </td>
-                      </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        {job.status === 'Failed' ? (
+                          <OutreachBadge variant="red" dot>{t('outreach.queue.failed')}</OutreachBadge>
+                        ) : job.status === 'Retrying' ? (
+                          <OutreachBadge variant="orange" dot>{t('outreach.queue.retrying')} ({job.attempts})</OutreachBadge>
+                        ) : (
+                          <OutreachBadge variant="teal" dot>{t('outreach.queue.scheduled')}</OutreachBadge>
+                        )}
+                      </td>
+                      <td className="px-6 py-5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                            {job.status === 'Failed' && (
+                              <button 
+                                onClick={() => handleRetry(job.jobId)}
+                                disabled={retryingJobs.has(job.jobId)}
+                                className={cn(
+                                  "flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-xl transition-all border border-teal-500/10 hover:border-teal-500/30 group",
+                                  retryingJobs.has(job.jobId) && "opacity-50 cursor-not-allowed"
+                                )}
+                                title={t('outreach.queue.retry')}
+                              >
+                                <RefreshCw className={cn("size-3.5", retryingJobs.has(job.jobId) && "animate-spin")} />
+                                <span className="text-[10px] font-black uppercase tracking-tight">
+                                  {retryingJobs.has(job.jobId) ? t('common.loading') : t('outreach.queue.retry')}
+                                </span>
+                              </button>
+                            )}
+                            {job.status !== 'Failed' && (
+                              <button 
+                                onClick={() => handleSendNow(job.jobId)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-xl transition-all border border-amber-500/10 hover:border-amber-500/30 group"
+                                title={t('outreach.queue.sendNow')}
+                              >
+                                <Zap className="size-3.5" />
+                                <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.sendNow')}</span>
+                              </button>
+                            )}
+                          <button 
+                            onClick={() => handleClearSequence(job.sequenceId, job.sequenceName, job.jobId)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/10 hover:border-red-500/30 group"
+                            title={t('outreach.queue.deleteSends')}
+                          >
+                            <Trash2 className="size-3.5" />
+                            <span className="text-[10px] font-black uppercase tracking-tight">{t('outreach.queue.deleteSends')}</span>
+                          </button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+              </div>
+              </>
             )}
           </div>
         )}

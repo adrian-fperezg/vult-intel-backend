@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, X, Sparkles, Plus } from 'lucide-react';
+import { Loader2, X, Sparkles, Plus, Menu, LayoutDashboard, Send, Users, Inbox, Settings, ListChecks, History, Search as SearchIcon, PenSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { useOutreachSubscription } from '@/hooks/useOutreachSubscription';
@@ -179,44 +179,51 @@ export default function OutreachLayout() {
         </AnimatePresence>
 
         {/* Module Title + Tab Bar */}
-        <div className="px-8 pt-6 pb-0">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="p-2 bg-teal-500/10 rounded-xl border border-teal-500/20 shadow-[0_0_20px_rgba(20,184,166,0.1)]">
-              <PaperPlaneIcon className="size-5 text-teal-400" />
+        <div className="px-4 md:px-8 pt-4 md:pt-6 pb-0">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-3 mb-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-teal-500/10 rounded-xl border border-teal-500/20 shadow-[0_0_20px_rgba(20,184,166,0.1)]">
+                <PaperPlaneIcon className="size-5 text-teal-400" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white tracking-tight">Outreach</h1>
+                <p className="text-[11px] text-teal-400/60 font-semibold uppercase tracking-widest">Sales Automation</p>
+              </div>
+              {status === 'trial' && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-purple-500/15 border border-purple-500/20 text-purple-400">
+                  Trial
+                </span>
+              )}
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Outreach</h1>
-              <p className="text-[11px] text-teal-400/60 font-semibold uppercase tracking-widest">Sales Automation Module</p>
-            </div>
-            {status === 'trial' && (
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-purple-500/15 border border-purple-500/20 text-purple-400">
-                Trial
-              </span>
-            )}
 
-            <div className="ml-auto flex items-center gap-3">
-              <TimeframeFilter 
-                value={currentTimeframe}
-                onChange={setTimeframe}
-              />
+            <div className="flex items-center gap-2 md:ml-auto">
+              <div className="flex-1 md:flex-none">
+                <TimeframeFilter 
+                  value={currentTimeframe}
+                  onChange={setTimeframe}
+                />
+              </div>
               
-              <div className="h-6 w-px bg-white/5 mx-1" />
+              <div className="hidden md:block h-6 w-px bg-white/5 mx-1" />
 
-              <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 text-blue-400 text-sm font-bold rounded-xl border border-blue-500/20 transition-all group shadow-lg shadow-blue-900/10">
+              <button className="hidden md:flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 text-blue-400 text-sm font-bold rounded-xl border border-blue-500/20 transition-all group shadow-lg shadow-blue-900/10">
                 <Sparkles className="size-4 group-hover:scale-110 transition-transform" />
                 AI Assistant
               </button>
 
               {activeTab === 'sequences' && (
-                <TealButton onClick={() => window.dispatchEvent(new CustomEvent('outreach-create-sequence'))}>
-                  <Plus className="size-4" /> Create Sequence
+                <TealButton 
+                  onClick={() => window.dispatchEvent(new CustomEvent('outreach-create-sequence'))}
+                  className="flex-1 md:flex-none justify-center"
+                >
+                  <Plus className="size-4" /> <span className="md:inline">Create Sequence</span>
                 </TealButton>
               )}
             </div>
           </div>
 
-          {/* Horizontal Tab Bar */}
-          <nav className="flex items-center gap-0" role="tablist">
+          {/* Desktop Tab Bar */}
+          <nav className="hidden md:flex items-center gap-0 overflow-x-auto no-scrollbar" role="tablist">
             {TABS.map(({ id, label, badge }) => {
               const isActive = activeTab === id;
               return (
@@ -281,6 +288,46 @@ export default function OutreachLayout() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0d1117] border-t border-white/5 px-2 pb-safe-offset-2 pt-2 z-50">
+        <div className="flex items-center justify-around">
+          {[
+            { id: 'analytics', icon: <LayoutDashboard className="size-5" />, label: 'Stats' },
+            { id: 'sequences', icon: <Send className="size-5" />, label: 'Sequences' },
+            { id: 'inbox', icon: <Inbox className="size-5" />, label: 'Inbox', badge: unreadInboxCount },
+            { id: 'contacts', icon: <Users className="size-5" />, label: 'Contacts' },
+            { id: 'settings', icon: <Settings className="size-5" />, label: 'Settings' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as OutreachTab)}
+              className={cn(
+                "flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all relative",
+                activeTab === item.id ? "text-teal-400" : "text-slate-500"
+              )}
+            >
+              <div className={cn(
+                "p-1 rounded-lg transition-all",
+                activeTab === item.id ? "bg-teal-500/10" : ""
+              )}>
+                {item.icon}
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+              {item.badge ? (
+                <span className="absolute top-1 right-2 size-4 bg-teal-500 text-white text-[8px] flex items-center justify-center rounded-full font-black border-2 border-[#0d1117]">
+                  {item.badge}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Mobile AI Assistant FAB */}
+      <button className="md:hidden fixed bottom-24 right-4 size-14 bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-full shadow-2xl shadow-blue-500/40 flex items-center justify-center z-40 active:scale-95 transition-transform">
+        <Sparkles className="size-6" />
+      </button>
     </div>
   );
 }

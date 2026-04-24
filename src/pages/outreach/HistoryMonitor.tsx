@@ -159,27 +159,32 @@ export default function HistoryMonitor() {
     <div className="h-full flex flex-col overflow-hidden bg-background-dark">
       <div className="px-8 py-6 space-y-8 pb-16 flex-1 overflow-y-auto custom-scrollbar">
         {/* Header */}
-        <OutreachSectionHeader
-          icon={<CheckCircle2 className="size-5 text-teal-400" />}
-          title={t('outreach.history.title') || 'Sent History'}
-          subtitle={t('outreach.history.subtitle') || 'Monitor successfully sent emails across all active sequences.'}
-          actions={
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <TealButton 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => loadHistory(true)} 
-                  loading={isLoading}
-                  className="px-4"
-                >
-                  <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
-                  {t('outreach.history.refresh') || 'Refresh'}
-                </TealButton>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-2xl bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                <CheckCircle2 className="size-5 text-teal-400" />
               </div>
+              <h1 className="text-2xl font-bold text-white tracking-tight">{t('outreach.history.title') || 'Sent History'}</h1>
             </div>
-          }
-        />
+            <p className="text-sm text-slate-500 mt-2 max-w-xl">
+              {t('outreach.history.subtitle') || 'Monitor successfully sent emails across all active sequences.'}
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-3 w-full lg:w-auto">
+            <TealButton 
+              variant="outline" 
+              size="sm" 
+              onClick={() => loadHistory(true)} 
+              loading={isLoading}
+              className="flex-1 lg:flex-none px-4 h-10"
+            >
+              <RefreshCw className={cn("size-3.5 mr-2", isLoading && "animate-spin")} />
+              {t('outreach.history.refresh') || 'Refresh'}
+            </TealButton>
+          </div>
+        </div>
 
         {error ? (
           <div className="p-12 text-center border border-red-500/10 bg-red-500/5 rounded-[40px]">
@@ -195,7 +200,7 @@ export default function HistoryMonitor() {
         ) : (
           <div className="space-y-4">
             {/* Filter Bar */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <div className="relative group">
                 <Search className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
                 <input 
@@ -245,8 +250,8 @@ export default function HistoryMonitor() {
             </div>
 
             {/* Stats & Pagination bar */}
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+              <div className="flex flex-wrap gap-3">
                 <div className="px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-2">
                   <Database className="size-4 text-teal-400" />
                   <span className="text-xs text-white">
@@ -263,7 +268,7 @@ export default function HistoryMonitor() {
                 )}
               </div>
               
-              <div className="flex items-center gap-2 px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl">
+              <div className="flex items-center gap-2 px-4 py-2 bg-white/[0.02] border border-white/5 rounded-xl w-full sm:w-auto justify-between sm:justify-start">
                 <button 
                   onClick={handlePrevPage} 
                   disabled={offset === 0}
@@ -271,7 +276,7 @@ export default function HistoryMonitor() {
                 >
                   <ChevronLeft className="size-4 text-slate-300" />
                 </button>
-                <span className="text-xs font-medium text-slate-300">
+                <span className="text-xs font-medium text-slate-300 tabular-nums">
                   {offset + 1} - {Math.min(offset + limit, total)} {t('common.of') || 'of'} {total}
                 </span>
                 <button 
@@ -291,92 +296,179 @@ export default function HistoryMonitor() {
                 description={t('outreach.history.noResultsDesc') || 'Try adjusting your filters to see more results.'}
               />
             ) : (
-              <div className="bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-white/[0.02] border-b border-white/5">
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.time') || 'TIME SENT'}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.recipient') || 'RECIPIENT'}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.sequence') || 'SEQUENCE'}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.sender') || 'SENDER'}</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.status') || 'STATUS'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEmails.map((email, idx) => (
-                      <motion.tr 
-                        key={email.id}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03 }}
-                        className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
-                      >
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
-                              <Calendar className="size-4 text-teal-400" />
-                            </div>
-                            <span className="text-sm font-bold text-white tabular-nums">
-                              {formatTime(email.sentAt)}
+              <div className="space-y-4 lg:space-y-0">
+                {/* Mobile Card View */}
+                <div className="grid grid-cols-1 gap-4 lg:hidden pb-12">
+                  {filteredEmails.map((email, idx) => (
+                    <motion.div
+                      key={email.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      className="p-5 bg-white/[0.03] border border-white/10 rounded-2xl space-y-4"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="size-10 rounded-xl bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                            <Calendar className="size-5 text-teal-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-white">{formatTime(email.sentAt)}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-black">
+                              {t('outreach.history.headers.time') || 'TIME SENT'}
+                            </p>
+                          </div>
+                        </div>
+                        <OutreachBadge variant={email.status === 'Sent' ? 'teal' : 'gray'} dot>
+                          {email.status}
+                        </OutreachBadge>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 py-4 border-y border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="size-8 rounded-full bg-slate-500/10 flex items-center justify-center shrink-0">
+                            <User className="size-4 text-slate-400" />
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-bold text-white truncate">
+                              {(() => {
+                                const cleanName = (email.contactName || '').replace(/\bnull\b/gi, '').trim();
+                                return cleanName || email.contactEmail;
+                              })()}
                             </span>
+                            {email.contactName && email.contactName.trim() !== '' && email.contactName.toLowerCase() !== 'null null' && (
+                              <span className="text-[10px] text-slate-500 truncate">{email.contactEmail}</span>
+                            )}
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2" title={`Contact ID: ${email.contactId}`}>
-                            <div className="size-7 rounded-full bg-slate-500/10 flex items-center justify-center">
-                              <User className="size-3.5 text-slate-400" />
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                                {(() => {
-                                  const cleanName = (email.contactName || '').replace(/\bnull\b/gi, '').trim();
-                                  return cleanName || email.contactEmail;
-                                })()}
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="size-8 rounded-full bg-indigo-500/10 flex items-center justify-center shrink-0">
+                            <Layers className="size-4 text-indigo-400" />
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-bold text-white truncate">
+                              {email.sequenceName === "Unknown Sequence" 
+                                ? t('outreach.history.unknownSequence') || 'Unknown Sequence'
+                                : email.sequenceName}
+                            </span>
+                            {email.stepNumber && (
+                              <span className="text-[10px] text-slate-500">
+                                {t('outreach.history.stepLabel', { number: String(email.stepNumber) }) || `Step ${email.stepNumber}`}
                               </span>
-                              {email.contactName && email.contactName.trim() !== '' && email.contactName.toLowerCase() !== 'null null' && (
-                                <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{email.contactEmail}</span>
-                              )}
-                            </div>
+                            )}
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2" title={`Sequence ID: ${email.sequenceId}`}>
-                            <Layers className="size-3.5 text-indigo-400" />
-                            <div className="flex flex-col">
-                              <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                                {email.sequenceName === "Unknown Sequence" 
-                                  ? t('outreach.history.unknownSequence') || 'Unknown Sequence'
-                                  : email.sequenceName}
-                              </span>
-                              {email.stepNumber && (
-                                <span className="text-[10px] text-slate-500">
-                                  {t('outreach.history.stepLabel', { number: String(email.stepNumber) }) || `Step ${email.stepNumber}`}
-                                </span>
-                              )}
-                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="size-8 rounded-full bg-teal-500/10 flex items-center justify-center shrink-0">
+                            <Mail className={cn("size-4", email.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                            <Mail className={cn("size-3.5", email.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
+                          <div className="flex flex-col min-w-0">
                             <span className={cn(
-                              "text-xs font-medium truncate max-w-[180px]",
+                              "text-xs font-medium truncate",
                               email.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
                             )}>
                               {email.senderEmail}
                             </span>
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-black">
+                              {t('outreach.history.headers.sender') || 'SENDER'}
+                            </span>
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                           <OutreachBadge variant={email.status === 'Sent' ? 'teal' : 'gray'} dot>
-                             {email.status}
-                           </OutreachBadge>
-                        </td>
-                      </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden lg:block bg-white/[0.02] border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-white/[0.02] border-b border-white/5">
+                          <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.time') || 'TIME SENT'}</th>
+                          <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.recipient') || 'RECIPIENT'}</th>
+                          <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.sequence') || 'SEQUENCE'}</th>
+                          <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.sender') || 'SENDER'}</th>
+                          <th className="px-6 py-4 text-[10px] uppercase font-black tracking-widest text-slate-500">{t('outreach.history.headers.status') || 'STATUS'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredEmails.map((email, idx) => (
+                        <motion.tr 
+                          key={email.id}
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.03 }}
+                          className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                        >
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-3">
+                              <div className="size-8 rounded-lg bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                                <Calendar className="size-4 text-teal-400" />
+                              </div>
+                              <span className="text-sm font-bold text-white tabular-nums">
+                                {formatTime(email.sentAt)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-2" title={`Contact ID: ${email.contactId}`}>
+                              <div className="size-7 rounded-full bg-slate-500/10 flex items-center justify-center">
+                                <User className="size-3.5 text-slate-400" />
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                                  {(() => {
+                                    const cleanName = (email.contactName || '').replace(/\bnull\b/gi, '').trim();
+                                    return cleanName || email.contactEmail;
+                                  })()}
+                                </span>
+                                {email.contactName && email.contactName.trim() !== '' && email.contactName.toLowerCase() !== 'null null' && (
+                                  <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{email.contactEmail}</span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-2" title={`Sequence ID: ${email.sequenceId}`}>
+                              <Layers className="size-3.5 text-indigo-400" />
+                              <div className="flex flex-col">
+                                <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                                  {email.sequenceName === "Unknown Sequence" 
+                                    ? t('outreach.history.unknownSequence') || 'Unknown Sequence'
+                                    : email.sequenceName}
+                                </span>
+                                {email.stepNumber && (
+                                  <span className="text-[10px] text-slate-500">
+                                    {t('outreach.history.stepLabel', { number: String(email.stepNumber) }) || `Step ${email.stepNumber}`}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-2">
+                              <Mail className={cn("size-3.5", email.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
+                              <span className={cn(
+                                "text-xs font-medium truncate max-w-[180px]",
+                                email.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
+                              )}>
+                                {email.senderEmail}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5">
+                             <OutreachBadge variant={email.status === 'Sent' ? 'teal' : 'gray'} dot>
+                               {email.status}
+                             </OutreachBadge>
+                          </td>
+                        </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
