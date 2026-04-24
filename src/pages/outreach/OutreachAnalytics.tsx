@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BarChart2, TrendingUp, Users, Mail, MousePointer,
@@ -9,7 +9,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell
 } from 'recharts';
-import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader } from './OutreachCommon';
+import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader, OutreachEmptyState } from './OutreachCommon';
 import { cn } from '@/lib/utils';
 import { useOutreachApi, AnalyticsData, FunnelStat } from '@/hooks/useOutreachApi';
 import { useTranslation } from '@/contexts/TranslationContext';
@@ -39,8 +39,8 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
 
 export default function OutreachAnalytics() {
   const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
-  const timeRange = searchParams.get('timeframe') || '7d';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const timeframe = searchParams.get('timeframe') || '7d';
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [funnelStats, setFunnelStats] = useState<FunnelStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -81,38 +81,40 @@ export default function OutreachAnalytics() {
     return change > 0 ? 'up' : 'down';
   }
 
-  useEffect(() => {
-    async function load() {
-      if (!activeProjectId) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const [res, funnel] = await Promise.all([
-          fetchAnalytics(timeRange, undefined, userTz),
-          getFunnelStats(timeRange, userTz)
-        ]);
-        
-        if (res) setData(res);
-        if (funnel) setFunnelStats(funnel);
-        
-        if (!res) setError(t('outreach.analytics.errorDesc'));
-      } catch (err: any) {
-        console.error('Failed to load analytics:', err);
-        setError(err.message || t('outreach.analytics.errorDesc'));
-      } finally {
-        setIsLoading(false);
-      }
+  const loadData = useCallback(async () => {
+    if (!activeProjectId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const [res, funnel] = await Promise.all([
+        fetchAnalytics(timeframe, undefined, userTz),
+        getFunnelStats(timeframe, userTz)
+      ]);
+      
+      if (res) setData(res);
+      if (funnel) setFunnelStats(funnel);
+      
+      if (!res) setError(t('outreach.analytics.errorDesc'));
+    } catch (err: any) {
+      console.error('Failed to load analytics:', err);
+      setError(err.message || t('outreach.analytics.errorDesc'));
+    } finally {
+      setIsLoading(false);
     }
-    load();
-  }, [timeRange, activeProjectId, fetchAnalytics, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, timeframe]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleGenerateReport = async () => {
     if (!data) return;
     setIsGeneratingReport(true);
     try {
       const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const res = await generateAiReport({ timeframe: timeRange, timezone: userTz });
+      const res = await generateAiReport({ timeframe, timezone: userTz });
       if (res && res.report) {
         setReportContent(res.report);
         setShowReportModal(true);
@@ -127,12 +129,12 @@ export default function OutreachAnalytics() {
   const handleDownloadReport = async () => {
     try {
       const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const blob = await exportAiReport(timeRange, userTz);
+      const blob = await exportAiReport(timeframe, userTz);
       if (!blob) return;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `VultIntel_Outreach_Report_${timeRange}_${new Date().toISOString().split('T')[0]}.md`;
+      a.download = `VultIntel_Outreach_Report_${timeframe}_${new Date().toISOString().split('T')[0]}.md`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -141,6 +143,16 @@ export default function OutreachAnalytics() {
       console.error("Export failed:", err);
     }
   };
+
+  if (!activeProjectId) {
+    return (
+      <OutreachEmptyState
+        icon={<Globe />}
+        title={t('outreach.analytics.noProjectTitle') || "No project selected"}
+        description={t('outreach.analytics.noProjectDesc') || "Select a project from the top bar to view your funnel analytics and performance intelligence."}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -176,13 +188,18 @@ export default function OutreachAnalytics() {
   return (
     <>
       <div className="h-full overflow-y-auto custom-scrollbar bg-background-dark">
-      <div className="px-8 py-6 space-y-8 pb-16">
+      <div className="px-8 py-6 space-y-10 pb-16 max-w-[1600px] mx-auto">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white leading-none tracking-tight">{t('outreach.analytics.title')}</h1>
-            <p className="text-sm text-slate-500 mt-2 flex items-center gap-2">
-              <Globe className="size-3.5 text-teal-400" />
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="space-y-1">
+            <h1 className="text-4xl font-black tracking-tight text-white flex items-center gap-4">
+              {t('outreach.analytics.title')}
+              <div className="flex items-center gap-1 bg-teal-500/10 border border-teal-500/20 px-3 py-1 rounded-full">
+                <div className="size-2 rounded-full bg-teal-500 animate-pulse" />
+                <span className="text-[10px] font-black uppercase text-teal-400 tracking-widest">Performance Intelligence</span>
+              </div>
+            </h1>
+            <p className="text-slate-400 font-medium text-lg">
               {t('outreach.analytics.subtitle')}
             </p>
           </div>
@@ -190,16 +207,39 @@ export default function OutreachAnalytics() {
           <button 
             onClick={handleGenerateReport}
             disabled={isGeneratingReport}
-            className="flex items-center justify-center gap-2 px-6 py-3 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-black text-[#0d1117] transition-all shadow-lg shadow-teal-500/20 active:scale-95 w-full sm:w-auto"
+            className="flex items-center justify-center gap-3 px-8 h-14 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl text-sm font-black text-[#0d1117] transition-all shadow-xl shadow-teal-500/20 active:scale-95 w-full sm:w-auto"
           >
             {isGeneratingReport ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-5 animate-spin" />
             ) : (
-              <Sparkles className="size-3.5" />
+              <Sparkles className="size-5" />
             )}
             {t('outreach.analytics.aiReport')}
           </button>
         </div>
+
+        {/* Filter Bar - Consistent with Sequences */}
+        <div className="flex items-center justify-between gap-4 py-2 border-b border-white/5">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
+              {['7d', '30d', '90d', 'all'].map((range) => (
+                <button
+                  key={range}
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams);
+                    params.set('timeframe', range);
+                    setSearchParams(params);
+                  }}
+                  className={cn(
+                    "px-4 py-1.5 text-xs font-bold rounded-lg transition-all uppercase",
+                    timeframe === range ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Core KPIs */}
@@ -365,6 +405,8 @@ export default function OutreachAnalytics() {
             </div>
           </div>
         </div>
+
+      </div>
       </div>
 
       {/* Ai Report Modal */}

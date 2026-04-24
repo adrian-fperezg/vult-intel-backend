@@ -51,6 +51,7 @@ export default function OutreachSequences() {
   const [globalStats, setGlobalStats] = useState<any>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const timeframe = searchParams.get('timeframe') || '7d';
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
   const [isPromoting, setIsPromoting] = useState<Set<string>>(new Set());
@@ -61,9 +62,10 @@ export default function OutreachSequences() {
 
     setIsLoading(true);
     try {
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const [seqRes, statsRes] = await Promise.all([
-        fetchSequences(),
-        fetchGlobalStats()
+        fetchSequences(timeframe, userTz),
+        fetchGlobalStats(timeframe, userTz)
       ]);
 
       if (seqRes) setSequences(seqRes);
@@ -74,7 +76,8 @@ export default function OutreachSequences() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeProjectId, fetchSequences, fetchGlobalStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, timeframe]);
 
   useEffect(() => {
     loadData();
@@ -195,6 +198,25 @@ export default function OutreachSequences() {
       {/* Filters & Search */}
       <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
+          <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
+            {['7d', '30d', '90d', 'all'].map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  const params = new URLSearchParams(searchParams);
+                  params.set('timeframe', t);
+                  setSearchParams(params);
+                }}
+                className={cn(
+                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all uppercase",
+                  timeframe === t ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
+                )}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
             {['all', 'active', 'draft'].map((s) => (
               <button

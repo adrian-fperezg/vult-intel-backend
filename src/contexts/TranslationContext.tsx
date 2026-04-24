@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useCallback } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
 import enTranslations from '../locales/en.json';
 import esTranslations from '../locales/es.json';
