@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProject } from '@/contexts/ProjectContext';
 
@@ -223,8 +223,8 @@ export function useOutreachApi() {
     return get<any[]>('/campaigns', params);
   }, [get]);
 
-  const createCampaign = (name = 'New Campaign', funnel_stage = 'TOFU') => 
-    post<any>('/campaigns', { name, type: 'email', funnel_stage });
+  const createCampaign = useCallback((name = 'New Campaign', funnel_stage = 'TOFU') => 
+    post<any>('/campaigns', { name, type: 'email', funnel_stage }), [post]);
 
 
   const toggleCampaignStatus = useCallback(
@@ -840,7 +840,7 @@ export function useOutreachApi() {
     [del]
   );
 
-  return {
+  return useMemo(() => ({
     activeProjectId,
     // Campaigns
     fetchCampaigns,
@@ -957,5 +957,111 @@ export function useOutreachApi() {
     exportAiReport,
     getFunnelStats,
     promoteSequenceJobs,
-  };
+  }), [
+    activeProjectId,
+    fetchCampaigns,
+    createCampaign,
+    toggleCampaignStatus,
+    deleteCampaign,
+    launchCampaign,
+    getDeliveryEstimate,
+    fetchSequences,
+    getSequence,
+    createSequence,
+    duplicateSequence,
+    updateSequence,
+    updateSequenceSteps,
+    launchSequence,
+    deleteSequence,
+    activateSequence,
+    fetchStepAnalytics,
+    fetchSequenceStats,
+    addSequenceRecipients,
+    removeSequenceRecipient,
+    toggleRecipientStatus,
+    getGlobalLimitStatus,
+    fetchGlobalStats,
+    fetchContacts,
+    fetchContactActivity,
+    createContact,
+    createContactsBulk,
+    saveContactsToList,
+    updateContact,
+    deleteContact,
+    deleteContactsBulk,
+    fetchUnifiedInbox,
+    markInboxMessageAsRead,
+    sendInboxReply,
+    summarizeInboxThread,
+    fetchInboxUnreadCount,
+    fetchIndividualEmails,
+    getIndividualEmail,
+    createIndividualEmail,
+    updateIndividualEmail,
+    deleteIndividualEmail,
+    sendIndividualEmail,
+    uploadFile,
+    fetchMailboxes,
+    disconnectMailbox,
+    connectGmail,
+    fetchScheduledQueue,
+    fetchSentHistory,
+    rebalanceQueue,
+    purgeOrphansQueue,
+    clearSequenceJobs,
+    retryQueueJob,
+    retryAllFailedJobs,
+    promoteSequenceQueue,
+    sendNowQueueJob,
+    authHeaders,
+    fetchSnippets,
+    createSnippet,
+    updateSnippet,
+    deleteSnippet,
+    fetchAnalytics,
+    fetchContactLists,
+    createContactList,
+    deleteContactList,
+    updateContactList,
+    fetchContactListMembers,
+    addContactsToList,
+    fetchSuppressionList,
+    addToSuppressionList,
+    removeFromSuppressionList,
+    fetchSettings,
+    updateSettings,
+    fetchHunterAccount,
+    hunterDomainSearch,
+    hunterDiscover,
+    hunterSearchPeople,
+    hunterEmailFinder,
+    hunterEmailVerifier,
+    hunterAiExtract,
+    fetchSavedSearches,
+    fetchSavedSearchLeads,
+    saveHunterSearch,
+    exportToGoogleSheets,
+    fetchIcp,
+    updateIcp,
+    deleteIcp,
+    fetchZeroBounceCredits,
+    fetchPdlUsage,
+    fetchIntegrationStatus,
+    verifyEmailsBulk,
+    connectSmtp,
+    fetchIdentities,
+    addAlias,
+    fetchAliases,
+    syncGmailAliases,
+    fetchVerifiedDomains,
+    addVerifiedDomain,
+    verifyDomain,
+    deleteVerifiedDomain,
+    importContactsCSV,
+    createPopulatedList,
+    generateAiReport,
+    exportAiReport,
+    getFunnelStats,
+    promoteSequenceJobs,
+  ]);
 }

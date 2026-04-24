@@ -21,7 +21,7 @@ const TranslationContext = createContext<TranslationContextType | undefined>(und
 export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { language } = useSettings();
 
-    const t = (key: string, options?: Record<string, any>): any => {
+    const t = useCallback((key: string, options?: Record<string, any>): any => {
         const keys = key.split('.');
         let value: any = translations[language];
 
@@ -58,10 +58,12 @@ export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         return value;
-    };
+    }, [language]);
+
+    const value = React.useMemo(() => ({ language, t }), [language, t]);
 
     return (
-        <TranslationContext.Provider value={{ language, t }}>
+        <TranslationContext.Provider value={value}>
             {children}
         </TranslationContext.Provider>
     );

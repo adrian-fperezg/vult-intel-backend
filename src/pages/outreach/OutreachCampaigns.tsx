@@ -47,7 +47,16 @@ const STATUS_CONFIG: Record<CampaignStatus, { label: string; variant: 'green' | 
 };
 
 export default function OutreachCampaigns() {
-  const api = useOutreachApi();
+  const { 
+    activeProjectId, 
+    fetchCampaigns, 
+    fetchAnalytics, 
+    getFunnelStats, 
+    toggleCampaignStatus,
+    deleteCampaign,
+    launchCampaign,
+    getDeliveryEstimate
+  } = useOutreachApi();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -64,21 +73,21 @@ export default function OutreachCampaigns() {
 
   const loadFunnelStats = useCallback(async (tf?: string, tz?: string) => {
     try {
-      const stats = await api.getFunnelStats(tf, tz);
+      const stats = await getFunnelStats(tf, tz);
       setFunnelStats(stats || []);
     } catch (err) {
       console.error("Error loading funnel stats:", err);
     }
-  }, [api.getFunnelStats]);
+  }, [getFunnelStats]);
 
   const loadCampaigns = useCallback(async () => {
-    if (!api.activeProjectId) return;
+    if (!activeProjectId) return;
     setIsLoading(true);
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const [data, analytics] = await Promise.all([
-        api.fetchCampaigns(timeframe, tz),
-        api.fetchAnalytics(timeframe, undefined, tz),
+        fetchCampaigns(timeframe, tz),
+        fetchAnalytics(timeframe, undefined, tz),
         loadFunnelStats(timeframe, tz)
       ]);
       setCampaigns((data ?? []).map((c: any) => ({
@@ -101,7 +110,7 @@ export default function OutreachCampaigns() {
     } finally {
       setIsLoading(false);
     }
-  }, [api.activeProjectId, api.fetchCampaigns, api.fetchAnalytics, loadFunnelStats, timeframe]);
+  }, [activeProjectId, fetchCampaigns, fetchAnalytics, loadFunnelStats, timeframe]);
 
   // Immediately clear stale data when project switches, then re-fetch
   useEffect(() => {
@@ -145,7 +154,7 @@ export default function OutreachCampaigns() {
     setCampaigns(prev => prev.map(x => x.id === id ? { ...x, status: x.status === 'active' ? 'paused' : 'active' } : x));
     setOpenMenu(null);
     try {
-      await api.toggleCampaignStatus(id, c.status);
+      await toggleCampaignStatus(id, c.status);
     } catch {
       // Revert on failure
       setCampaigns(prev => prev.map(x => x.id === id ? { ...x, status: c.status } : x));
@@ -155,7 +164,7 @@ export default function OutreachCampaigns() {
   const handleDelete = async (id: string) => {
     setCampaigns(prev => prev.filter(c => c.id !== id));
     if (selected === id) setSelected(null);
-    try { await api.deleteCampaign(id); } catch { await loadCampaigns(); }
+    try { await deleteCampaign(id); } catch { await loadCampaigns(); }
   };
 
   // Redesigned: Global KPIs
@@ -183,7 +192,7 @@ export default function OutreachCampaigns() {
     return 'bofu';
   };
 
-  if (!api.activeProjectId) {
+  if (!activeProjectId) {
     return (
       <OutreachEmptyState
         icon={<FolderOpen />}

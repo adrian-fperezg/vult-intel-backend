@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
     User,
     signInWithPopup,
@@ -100,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, []);
 
-    const loginWithGoogle = async () => {
+    const loginWithGoogle = useCallback(async () => {
         try {
             googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
             const result = await signInWithPopup(auth, googleProvider);
@@ -129,9 +129,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error("Error signing in with Google:", error);
             throw error;
         }
-    };
+    }, []);
 
-    const login = async (email: string, pass: string) => {
+    const login = useCallback(async (email: string, pass: string) => {
         try {
             await signInWithEmailAndPassword(auth, email, pass);
             logAuthEvent('email', 'login');
@@ -139,9 +139,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error("Error logging in:", error);
             throw error;
         }
-    };
+    }, []);
 
-    const register = async (email: string, pass: string) => {
+    const register = useCallback(async (email: string, pass: string) => {
         try {
             const result = await createUserWithEmailAndPassword(auth, email, pass);
             logAuthEvent('email', 'signup');
@@ -166,18 +166,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error("Error registering:", error);
             throw error;
         }
-    };
+    }, []);
 
-    const logout = async () => {
+    const logout = useCallback(async () => {
         try {
             await signOut(auth);
         } catch (error) {
             console.error("Error logging out:", error);
             throw error;
         }
-    };
+    }, []);
 
-    const value = {
+    const value = React.useMemo(() => ({
         currentUser,
         isAdmin,
         isTester,
@@ -188,7 +188,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout
-    };
+    }), [currentUser, isAdmin, isTester, totalTokensUsed, loading, loginWithGoogle, login, register, logout]);
 
     return (
         <AuthContext.Provider value={value}>

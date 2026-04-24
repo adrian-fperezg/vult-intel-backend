@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { Project, getProjectById, getProjects } from '@/services/scanService';
 import { BrandVoice, BuyerPersona, ContentPillar, getBrandVoices, getBuyerPersonas, getContentPillars } from '@/services/brandStrategyService';
 import { useAuth } from './AuthContext';
@@ -87,7 +87,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         }
     }, [activeProjectId, currentUser, loadProjectData]);
 
-    const selectProject = async (projectId: string | null) => {
+    const selectProject = useCallback(async (projectId: string | null) => {
         setIsLoading(true);
         setActiveProject(null); // Clear state immediately as requested to prevent data mix-ups
 
@@ -100,32 +100,34 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
             localStorage.removeItem('activeProjectId');
         }
         setIsLoading(false);
-    };
+    }, [loadProjectData]);
 
-    const refreshProjectData = async () => {
+    const refreshProjectData = useCallback(async () => {
         if (activeProjectId) {
             await loadProjectData(activeProjectId);
         }
-    };
+    }, [activeProjectId, loadProjectData]);
 
-    const refreshProjectsList = async () => {
+    const refreshProjectsList = useCallback(async () => {
         await loadProjects();
-    };
+    }, [loadProjects]);
+
+    const value = useMemo(() => ({
+        projects,
+        activeProjectId,
+        activeProject,
+        isLoading,
+        selectProject,
+        refreshProjectData,
+        refreshProjectsList
+    }), [projects, activeProjectId, activeProject, isLoading, selectProject, refreshProjectData, refreshProjectsList]);
 
     return (
-        <ProjectContext.Provider value={{
-            projects,
-            activeProjectId,
-            activeProject,
-            isLoading,
-            selectProject,
-            refreshProjectData,
-            refreshProjectsList
-        }}>
+        <ProjectContext.Provider value={value}>
             {children}
         </ProjectContext.Provider>
     );
-}
+};
 
 export const useProject = () => {
     const context = useContext(ProjectContext);

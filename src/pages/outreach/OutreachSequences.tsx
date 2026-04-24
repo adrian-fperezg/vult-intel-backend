@@ -34,8 +34,16 @@ interface Sequence {
 }
 
 export default function OutreachSequences() {
-  const api = useOutreachApi();
-  const { activeProjectId } = api;
+  const { 
+    activeProjectId, 
+    fetchSequences, 
+    fetchGlobalStats, 
+    deleteSequence, 
+    promoteSequenceJobs, 
+    duplicateSequence,
+    createSequence,
+    updateSequence
+  } = useOutreachApi();
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,8 +62,8 @@ export default function OutreachSequences() {
     setIsLoading(true);
     try {
       const [seqRes, statsRes] = await Promise.all([
-        api.fetchSequences(),
-        api.fetchGlobalStats()
+        fetchSequences(),
+        fetchGlobalStats()
       ]);
 
       if (seqRes) setSequences(seqRes);
@@ -66,7 +74,7 @@ export default function OutreachSequences() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeProjectId, api]);
+  }, [activeProjectId, fetchSequences, fetchGlobalStats]);
 
   useEffect(() => {
     loadData();
@@ -82,7 +90,7 @@ export default function OutreachSequences() {
   const handleCreate = async () => {
     const toastId = toast.loading('Creating new sequence...');
     try {
-      const newSeq = await api.createSequence('New Outreach Sequence');
+      const newSeq = await createSequence('New Outreach Sequence');
 
       if (newSeq && newSeq.id) {
         toast.success('Sequence created!', { id: toastId });
@@ -97,7 +105,7 @@ export default function OutreachSequences() {
   const handleDelete = async (id: string) => {
     const toastId = toast.loading('Deleting sequence...');
     try {
-      await api.deleteSequence(id);
+      await deleteSequence(id);
       setSequences(prev => prev.filter(s => s.id !== id));
       toast.success('Sequence deleted', { id: toastId });
       setDeleteDialog(null);
@@ -111,7 +119,7 @@ export default function OutreachSequences() {
     setIsDuplicating(id);
     const toastId = toast.loading('Duplicating sequence...');
     try {
-      const newSeq = await api.duplicateSequence(id);
+      const newSeq = await duplicateSequence(id);
       if (newSeq) {
         setSequences(prev => [newSeq, ...prev]);
         toast.success('Sequence duplicated!', { id: toastId });
@@ -129,7 +137,7 @@ export default function OutreachSequences() {
     const toastId = toast.loading(`Promoting ${name} jobs...`);
 
     try {
-      const res = await api.promoteSequenceJobs(id);
+      const res = await promoteSequenceJobs(id);
       if (res?.success) {
         toast.success(res.message || "Jobs promoted successfully!", { id: toastId });
       } else {
@@ -152,7 +160,7 @@ export default function OutreachSequences() {
     setSequences(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
 
     try {
-      await api.updateSequence(id, { name: newName });
+      await updateSequence(id, { name: newName });
       toast.success('Sequence renamed');
     } catch (error) {
       console.error('Error renaming sequence:', error);
@@ -162,7 +170,7 @@ export default function OutreachSequences() {
     }
   };
 
-  if (!api.activeProjectId) {
+  if (!activeProjectId) {
     return (
       <OutreachEmptyState
         icon={<FolderOpen />}
