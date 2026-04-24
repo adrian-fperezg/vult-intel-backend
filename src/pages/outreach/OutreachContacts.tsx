@@ -554,1011 +554,1013 @@ export default function OutreachContacts() {
   return (
     <Fragment>
       <div className="h-full flex overflow-hidden bg-[#0A0A0B]">
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {isSidebarOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] lg:hidden"
-            />
-            <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-0 bottom-0 w-[280px] bg-[#0D0D0E] border-r border-white/5 z-[101] lg:hidden flex flex-col"
-            >
-              <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="size-8 bg-teal-500 rounded-lg flex items-center justify-center">
-                    <User className="size-5 text-white" />
-                  </div>
-                  <span className="font-bold text-white uppercase tracking-wider text-xs">{t.navigation}</span>
-                </div>
-                <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white">
-                  <X className="size-5" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6">
-                <nav className="space-y-1.5">
-                  {[
-                    { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
-                    { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
-                  ].map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => { setListFilter(item.id); setIsSidebarOpen(false); }}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group",
-                        listFilter === item.id
-                          ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
-                          : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
-                      )}
-                    >
-                      <span className={cn(
-                        "transition-colors",
-                        listFilter === item.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
-                      )}>
-                        {item.icon}
-                      </span>
-                      {item.label}
-                    </button>
-                  ))}
-                </nav>
-
-                <div className="mt-10 mb-6 px-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
-                    <button
-                      onClick={() => { setIsUploadModalOpen(true); setIsSidebarOpen(false); }}
-                      className="text-teal-400 hover:text-teal-300"
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </div>
-                </div>
-                <nav className="space-y-1.5">
-                  {contactLists.map(list => (
-                    <button
-                      key={list.id}
-                      onClick={() => { setListFilter(list.id); setIsSidebarOpen(false); }}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                        listFilter === list.id
-                          ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
-                          : "text-slate-400 hover:text-white hover:bg-white/5"
-                      )}
-                    >
-                      <Tag className="size-4 shrink-0 opacity-40" />
-                      <span className="truncate">{list.name}</span>
-                    </button>
-                  ))}
-                </nav>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar Navigator (Desktop) */}
-      <div className="w-64 border-r border-white/5 hidden lg:flex flex-col shrink-0 bg-[#0D0D0E]">
-        <div className="p-8">
-          <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-6">{t.navigation}</h2>
-          <nav className="space-y-1.5">
-            {[
-              { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
-              { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
-            ].map(item => (
-              <button
-                key={item.id}
-                onClick={() => setListFilter(item.id)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
-                  listFilter === item.id
-                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
-                    : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
-                )}
-              >
-                <span className={cn(
-                  "transition-colors",
-                  listFilter === item.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
-                )}>
-                  {item.icon}
-                </span>
-                {item.label}
-              </button>
-            ))}
-          </nav>
-
-          <div className="mt-10 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
-              <button
-                onClick={() => setIsUploadModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_15px_rgba(20,184,166,0.1)]"
-              >
-                <Plus className="size-3.5" /> {t.new}
-              </button>
-            </div>
-          </div>
-          <nav className="space-y-1.5">
-            {contactLists.map(list => (
-              <div key={list.id} className="relative group">
-                {editingListId === list.id ? (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-xl">
-                    <input
-                      type="text"
-                      value={editListName}
-                      onChange={e => setEditListName(e.target.value)}
-                      className="flex-1 bg-transparent border-none text-sm text-white focus:outline-none"
-                      autoFocus
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleUpdateList(list.id);
-                        if (e.key === 'Escape') setEditingListId(null);
-                      }}
-                    />
-                    <button 
-                      onClick={() => handleUpdateList(list.id)}
-                      className="text-teal-400 hover:text-teal-300"
-                    >
-                      <CheckCircle2 className="size-4" />
-                    </button>
-                    <button 
-                      onClick={() => setEditingListId(null)}
-                      className="text-slate-500 hover:text-slate-300"
-                    >
-                      <XCircle className="size-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => setListFilter(list.id)}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group-hover:bg-white/5",
-                        listFilter === list.id
-                          ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
-                          : "text-slate-400 hover:text-white border border-transparent"
-                      )}
-                    >
-                      <FolderOpen className={cn(
-                        "size-4 transition-colors",
-                        listFilter === list.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
-                      )} />
-                      <span className="truncate pr-12">{list.name}</span>
-                    </button>
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                      <button
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          setEditingListId(list.id); 
-                          setEditListName(list.name); 
-                        }}
-                        className="p-1.5 text-slate-600 hover:text-teal-400 rounded-lg hover:bg-white/5"
-                        title={t.edit}
-                      >
-                        <Edit2 className="size-3" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setListToDelete({ id: list.id, name: list.name }); }}
-                        className="p-1.5 text-slate-600 hover:text-red-400 rounded-lg hover:bg-red-500/10"
-                        title={t.delete}
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            {contactLists.length === 0 && (
-              <p className="px-3 py-2 text-[10px] text-slate-600 italic">{t.noCustomLists}</p>
-            )}
-          </nav>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="px-4 lg:px-10 py-6 lg:py-8 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => setIsSidebarOpen(true)}
-                className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-white"
-              >
-                <Menu className="size-6" />
-              </button>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl lg:text-2xl font-bold text-white">{t.contacts}</h1>
-                <div className="px-2 py-0.5 bg-white/5 rounded-full border border-white/5">
-                  <span className="text-[10px] font-black text-slate-500 uppercase">{contacts.length} {t.total}</span>
-                </div>
-              </div>
-              <p className="text-sm text-slate-400 mt-0.5">
-                {listFilter === 'all' ? t.allAvailableContacts :
-                  listFilter === 'unassigned' ? t.contactsNotInAnyList :
-                    t.contactsInList(contactLists.find(l => l.id === listFilter)?.name || t.genericList)}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button
-                onClick={() => setIsImportModalOpen(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 lg:px-4 py-2 lg:py-2.5 text-xs lg:text-sm font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl lg:rounded-2xl transition-all"
-              >
-                <Upload className="size-3.5 lg:size-4" /> {t.importCsv}
-              </button>
-              <TealButton className="flex-1 sm:flex-none rounded-xl lg:rounded-2xl px-4 lg:px-6 py-2 lg:py-2.5" size="sm" onClick={handleCreate} loading={isCreating}>
-                <Plus className="size-3.5 lg:size-4" /> {t.addContact}
-              </TealButton>
-            </div>
-          </div>
-
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-500" />
-              <input
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder={t.searchPlaceholder}
-                className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-[2rem] text-sm text-white placeholder:text-slate-600 outline-none transition-colors"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 no-scrollbar lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0">
-              {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap',
-                    statusFilter === s
-                      ? 'bg-teal-500/15 text-teal-400 border border-teal-500/30'
-                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
-                  )}
-                >
-                  {s === 'all' ? t.allStatus : t.statusCfg[s].label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Floating Bulk Action Bar */}
+        {/* Mobile Sidebar Overlay */}
         <AnimatePresence>
-          {selectedIds.size > 0 && (
-            <motion.div
-              initial={{ y: 100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 100, opacity: 0 }}
-              className="fixed bottom-6 lg:bottom-8 left-1/2 -translate-x-1/2 z-50 w-[92%] lg:w-auto px-4 lg:px-6 py-3 lg:py-4 bg-[#161b22] border border-teal-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(20,184,166,0.1)] flex items-center gap-3 lg:gap-6 backdrop-blur-xl"
-            >
-              <div className="flex items-center gap-2 lg:gap-3 pr-3 lg:pr-6 border-r border-white/10 shrink-0">
-                <div className="size-5 lg:size-6 bg-teal-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
-                  <span className="text-[9px] lg:text-[10px] font-black text-white">{selectedIds.size}</span>
-                </div>
-                <span className="text-xs lg:text-sm font-bold text-white whitespace-nowrap hidden sm:inline">{t.contactsSelected}</span>
-              </div>
-
-              <div className="flex items-center gap-2 lg:gap-4 overflow-x-auto no-scrollbar">
-                <button
-                  onClick={() => setIsBulkAddOpen(true)}
-                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all"
-                >
-                  <FolderOpen className="size-4" /> {t.addToList}
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all">
-                  <Mail className="size-4" /> {t.enrollInSequence}
-                </button>
-                <button
-                  onClick={handleBulkVerify}
-                  disabled={isVerifying}
-                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50 whitespace-nowrap"
-                >
-                  <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} />
-                  {isVerifying ? t.verifying : t.verifyEmails}
-                </button>
-                <div className="h-6 w-px bg-white/5" />
-                <div
-                  title={hasUnsubscribedSelected ? t.cannotDeleteUnsubscribed : undefined}
-                >
-                  <button
-                    onClick={() => setDeleteDialog(true)}
-                    disabled={hasUnsubscribedSelected}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all border',
-                      hasUnsubscribedSelected
-                        ? 'text-slate-600 border-slate-700 cursor-not-allowed opacity-50'
-                        : 'text-red-400 hover:text-white hover:bg-red-500/20 border-red-500/20'
-                    )}
-                  >
-                    <Trash2 className="size-4" /> {t.delete}
+          {isSidebarOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsSidebarOpen(false)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] lg:hidden"
+              />
+              <motion.div
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed left-0 top-0 bottom-0 w-[280px] bg-[#0D0D0E] border-r border-white/5 z-[101] lg:hidden flex flex-col"
+              >
+                <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="size-8 bg-teal-500 rounded-lg flex items-center justify-center">
+                      <User className="size-5 text-white" />
+                    </div>
+                    <span className="font-bold text-white uppercase tracking-wider text-xs">{t.navigation}</span>
+                  </div>
+                  <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white">
+                    <X className="size-5" />
                   </button>
                 </div>
-                <button
-                  onClick={() => setSelectedIds(new Set())}
-                  className="p-2 text-slate-500 hover:text-white"
-                >
-                  <XCircle className="size-4" />
-                </button>
-              </div>
-            </motion.div>
+                <div className="flex-1 overflow-y-auto p-6">
+                  <nav className="space-y-1.5">
+                    {[
+                      { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
+                      { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => { setListFilter(item.id); setIsSidebarOpen(false); }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group",
+                          listFilter === item.id
+                            ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                            : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                        )}
+                      >
+                        <span className={cn(
+                          "transition-colors",
+                          listFilter === item.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                        )}>
+                          {item.icon}
+                        </span>
+                        {item.label}
+                      </button>
+                    ))}
+                  </nav>
+
+                  <div className="mt-10 mb-6 px-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
+                      <button
+                        onClick={() => { setIsUploadModalOpen(true); setIsSidebarOpen(false); }}
+                        className="text-teal-400 hover:text-teal-300"
+                      >
+                        <Plus className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <nav className="space-y-1.5">
+                    {contactLists.map(list => (
+                      <button
+                        key={list.id}
+                        onClick={() => { setListFilter(list.id); setIsSidebarOpen(false); }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
+                          listFilter === list.id
+                            ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                            : "text-slate-400 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        <Tag className="size-4 shrink-0 opacity-40" />
+                        <span className="truncate">{list.name}</span>
+                      </button>
+                    ))}
+                  </nav>
+                </div>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
 
-        <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-48">
-          {filtered.length === 0 ? (
-            <OutreachEmptyState
-              icon={<User />}
-              title={t.noContactsFound}
-              description={t.emptyStateDesc}
-              action={<TealButton className="rounded-2xl px-8 py-3" onClick={handleCreate} loading={isCreating}><Plus className="size-5" /> {t.addContact}</TealButton>}
-            />
-          ) : (
-            <div className="p-4 lg:p-10 relative">
-              {/* Mobile Card View */}
-              <div className="grid grid-cols-1 gap-4 lg:hidden">
-                {filtered.map((contact, idx) => (
-                  <motion.div
-                    key={contact.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className={cn(
-                      "bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-4",
-                      selectedIds.has(contact.id) && "border-teal-500/30 bg-teal-500/5"
-                    )}
-                    onClick={() => setProfileContactId(contact.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-1" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(contact.id)}
-                            onChange={() => toggleSelect(contact.id)}
-                            className="accent-teal-500 size-5 rounded-lg cursor-pointer"
-                          />
-                        </div>
-                        <div className="size-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-                          {contact.firstName ? (
-                            <span className="text-sm font-bold text-teal-400">
-                              {contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}
-                            </span>
-                          ) : (
-                            <User className="size-5 text-teal-400" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-bold text-white truncate">
-                            {contact.firstName} {contact.lastName}
-                          </h3>
-                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">
-                            {contact.jobTitle || contact.title || t.noTitle}
-                          </p>
-                        </div>
-                      </div>
-                      <OutreachBadge status={contact.status || 'not_enrolled'} />
-                    </div>
+        {/* Sidebar Navigator (Desktop) */}
+        <div className="w-64 border-r border-white/5 hidden lg:flex flex-col shrink-0 bg-[#0D0D0E]">
+          <div className="p-8">
+            <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-6">{t.navigation}</h2>
+            <nav className="space-y-1.5">
+              {[
+                { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
+                { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setListFilter(item.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group",
+                    listFilter === item.id
+                      ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                      : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                  )}
+                >
+                  <span className={cn(
+                    "transition-colors",
+                    listFilter === item.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                  )}>
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+            </nav>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
-                        <Building2 className="size-3.5 shrink-0 text-slate-500" />
-                        <span className="truncate">{contact.company || t.noCompany}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
-                        <Mail className="size-3.5 shrink-0 text-slate-500" />
-                        <span className="truncate">{contact.email || t.noEmail}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2">
+            <div className="mt-10 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
+                <button
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_15px_rgba(20,184,166,0.1)]"
+                >
+                  <Plus className="size-3.5" /> {t.new}
+                </button>
+              </div>
+            </div>
+            <nav className="space-y-1.5">
+              {contactLists.map(list => (
+                <div key={list.id} className="relative group">
+                  {editingListId === list.id ? (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-xl">
+                      <input
+                        type="text"
+                        value={editListName}
+                        onChange={e => setEditListName(e.target.value)}
+                        className="flex-1 bg-transparent border-none text-sm text-white focus:outline-none"
+                        autoFocus
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleUpdateList(list.id);
+                          if (e.key === 'Escape') setEditingListId(null);
+                        }}
+                      />
                       <button
-                        onClick={(e) => { e.stopPropagation(); setProfileContactId(contact.id); }}
-                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                        onClick={() => handleUpdateList(list.id)}
+                        className="text-teal-400 hover:text-teal-300"
                       >
-                        {t.viewProfile}
+                        <CheckCircle2 className="size-4" />
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); setContactToDelete(contact.id); }}
-                        className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all"
+                        onClick={() => setEditingListId(null)}
+                        className="text-slate-500 hover:text-slate-300"
                       >
-                        <Trash2 className="size-4" />
+                        <XCircle className="size-4" />
                       </button>
                     </div>
-                  </motion.div>
-                ))}
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setListFilter(list.id)}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group-hover:bg-white/5",
+                          listFilter === list.id
+                            ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                            : "text-slate-400 hover:text-white border border-transparent"
+                        )}
+                      >
+                        <FolderOpen className={cn(
+                          "size-4 transition-colors",
+                          listFilter === list.id ? "text-teal-400" : "text-slate-500 group-hover:text-slate-300"
+                        )} />
+                        <span className="truncate pr-12">{list.name}</span>
+                      </button>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingListId(list.id);
+                            setEditListName(list.name);
+                          }}
+                          className="p-1.5 text-slate-600 hover:text-teal-400 rounded-lg hover:bg-white/5"
+                          title={t.edit}
+                        >
+                          <Edit2 className="size-3" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setListToDelete({ id: list.id, name: list.name }); }}
+                          className="p-1.5 text-slate-600 hover:text-red-400 rounded-lg hover:bg-red-500/10"
+                          title={t.delete}
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {contactLists.length === 0 && (
+                <p className="px-3 py-2 text-[10px] text-slate-600 italic">{t.noCustomLists}</p>
+              )}
+            </nav>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Header */}
+          <div className="px-4 lg:px-10 py-6 lg:py-8 border-b border-white/5 shrink-0 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-white"
+                >
+                  <Menu className="size-6" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl lg:text-2xl font-bold text-white">{t.contacts}</h1>
+                  <div className="px-2 py-0.5 bg-white/5 rounded-full border border-white/5">
+                    <span className="text-[10px] font-black text-slate-500 uppercase">{contacts.length} {t.total}</span>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-400 mt-0.5">
+                  {listFilter === 'all' ? t.allAvailableContacts :
+                    listFilter === 'unassigned' ? t.contactsNotInAnyList :
+                      t.contactsInList(contactLists.find(l => l.id === listFilter)?.name || t.genericList)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 lg:px-4 py-2 lg:py-2.5 text-xs lg:text-sm font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl lg:rounded-2xl transition-all"
+                >
+                  <Upload className="size-3.5 lg:size-4" /> {t.importCsv}
+                </button>
+                <TealButton className="flex-1 sm:flex-none rounded-xl lg:rounded-2xl px-4 lg:px-6 py-2 lg:py-2.5" size="sm" onClick={handleCreate} loading={isCreating}>
+                  <Plus className="size-3.5 lg:size-4" /> {t.addContact}
+                </TealButton>
+              </div>
+            </div>
+
+            <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-500" />
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder={t.searchPlaceholder}
+                  className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-[2rem] text-sm text-white placeholder:text-slate-600 outline-none transition-colors"
+                />
               </div>
 
-              {/* Desktop View (Table) */}
-              <div className="hidden lg:block bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-white/[0.03] border-b border-white/10">
-                    <tr>
-                      <th className="p-5 w-10">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.size === filtered.length && filtered.length > 0}
-                          onChange={toggleSelectAll}
-                          className="accent-teal-500 size-4 cursor-pointer"
-                        />
-                      </th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>{t.contact} <SortIcon col="firstName" /></th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.title}</th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>{t.company} <SortIcon col="company" /></th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.industry}</th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.size}</th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.location}</th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.email}</th>
-                      <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>{t.status} <SortIcon col="addedAt" /></th>
-                      <th className="p-5 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.actions}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filtered.map((contact, idx) => {
-                      const isExpanded = expandedRow === contact.id;
-                      return (
-                        <Fragment key={contact.id}>
-                          <motion.tr
-                            initial={{ opacity: 0, y: 4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: idx * 0.01 }}
-                            className={cn(
-                              'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
-                              selectedIds.has(contact.id) && 'bg-teal-500/5',
-                              isExpanded && 'bg-teal-500/5'
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 no-scrollbar lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0">
+                {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap',
+                      statusFilter === s
+                        ? 'bg-teal-500/15 text-teal-400 border border-teal-500/30'
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
+                    )}
+                  >
+                    {s === 'all' ? t.allStatus : t.statusCfg[s].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Floating Bulk Action Bar */}
+          <AnimatePresence>
+            {selectedIds.size > 0 && (
+              <motion.div
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 100, opacity: 0 }}
+                className="fixed bottom-6 lg:bottom-8 left-1/2 -translate-x-1/2 z-50 w-[92%] lg:w-auto px-4 lg:px-6 py-3 lg:py-4 bg-[#161b22] border border-teal-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(20,184,166,0.1)] flex items-center gap-3 lg:gap-6 backdrop-blur-xl"
+              >
+                <div className="flex items-center gap-2 lg:gap-3 pr-3 lg:pr-6 border-r border-white/10 shrink-0">
+                  <div className="size-5 lg:size-6 bg-teal-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
+                    <span className="text-[9px] lg:text-[10px] font-black text-white">{selectedIds.size}</span>
+                  </div>
+                  <span className="text-xs lg:text-sm font-bold text-white whitespace-nowrap hidden sm:inline">{t.contactsSelected}</span>
+                </div>
+
+                <div className="flex items-center gap-2 lg:gap-4 overflow-x-auto no-scrollbar">
+                  <button
+                    onClick={() => setIsBulkAddOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all"
+                  >
+                    <FolderOpen className="size-4" /> {t.addToList}
+                  </button>
+                  <button className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all">
+                    <Mail className="size-4" /> {t.enrollInSequence}
+                  </button>
+                  <button
+                    onClick={handleBulkVerify}
+                    disabled={isVerifying}
+                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50 whitespace-nowrap"
+                  >
+                    <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} />
+                    {isVerifying ? t.verifying : t.verifyEmails}
+                  </button>
+                  <div className="h-6 w-px bg-white/5" />
+                  <div
+                    title={hasUnsubscribedSelected ? t.cannotDeleteUnsubscribed : undefined}
+                  >
+                    <button
+                      onClick={() => setDeleteDialog(true)}
+                      disabled={hasUnsubscribedSelected}
+                      className={cn(
+                        'flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all border',
+                        hasUnsubscribedSelected
+                          ? 'text-slate-600 border-slate-700 cursor-not-allowed opacity-50'
+                          : 'text-red-400 hover:text-white hover:bg-red-500/20 border-red-500/20'
+                      )}
+                    >
+                      <Trash2 className="size-4" /> {t.delete}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="p-2 text-slate-500 hover:text-white"
+                  >
+                    <XCircle className="size-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-48">
+            {filtered.length === 0 ? (
+              <OutreachEmptyState
+                icon={<User />}
+                title={t.noContactsFound}
+                description={t.emptyStateDesc}
+                action={<TealButton className="rounded-2xl px-8 py-3" onClick={handleCreate} loading={isCreating}><Plus className="size-5" /> {t.addContact}</TealButton>}
+              />
+            ) : (
+              <div className="p-4 lg:p-10 relative">
+                {/* Mobile Card View */}
+                <div className="grid grid-cols-1 gap-4 lg:hidden">
+                  {filtered.map((contact, idx) => (
+                    <motion.div
+                      key={contact.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      className={cn(
+                        "bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-4",
+                        selectedIds.has(contact.id) && "border-teal-500/30 bg-teal-500/5"
+                      )}
+                      onClick={() => setProfileContactId(contact.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-1" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(contact.id)}
+                              onChange={() => toggleSelect(contact.id)}
+                              className="accent-teal-500 size-5 rounded-lg cursor-pointer"
+                            />
+                          </div>
+                          <div className="size-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+                            {contact.firstName ? (
+                              <span className="text-sm font-bold text-teal-400">
+                                {contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}
+                              </span>
+                            ) : (
+                              <User className="size-5 text-teal-400" />
                             )}
-                            onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
-                          >
-                            <td className="p-5" onClick={e => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(contact.id)}
-                                onChange={() => toggleSelect(contact.id)}
-                                className="accent-teal-500 size-4 cursor-pointer"
-                              />
-                            </td>
-                            <td className="p-5">
-                              <div className="flex items-center gap-3">
-                                <div className="size-8 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-                                  {contact.firstName ? (
-                                    <span className="text-xs font-bold text-teal-400">
-                                      {contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}
-                                    </span>
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-bold text-white truncate">
+                              {contact.firstName} {contact.lastName}
+                            </h3>
+                            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">
+                              {contact.jobTitle || contact.title || '—'}
+                            </p>
+                          </div>
+                        </div>
+                        <OutreachBadge variant={(t.statusCfg[contact.status as keyof typeof t.statusCfg] || t.statusCfg.not_enrolled).variant}>
+                          {(t.statusCfg[contact.status as keyof typeof t.statusCfg] || t.statusCfg.not_enrolled).label}
+                        </OutreachBadge>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
+                          <Building2 className="size-3.5 shrink-0 text-slate-500" />
+                          <span className="truncate">{contact.company || '—'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
+                          <Mail className="size-3.5 shrink-0 text-slate-500" />
+                          <span className="truncate">{contact.email || t.noEmail}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setProfileContactId(contact.id); }}
+                          className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                        >
+                          {t.viewProfile}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setContactToDelete(contact.id); }}
+                          className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* Desktop View (Table) */}
+                <div className="hidden lg:block bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-white/[0.03] border-b border-white/10">
+                      <tr>
+                        <th className="p-5 w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.size === filtered.length && filtered.length > 0}
+                            onChange={toggleSelectAll}
+                            className="accent-teal-500 size-4 cursor-pointer"
+                          />
+                        </th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>{t.contact} <SortIcon col="firstName" /></th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.title}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>{t.company} <SortIcon col="company" /></th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.industry}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.size}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.location}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.email}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>{t.status} <SortIcon col="addedAt" /></th>
+                        <th className="p-5 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.actions}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {filtered.map((contact, idx) => {
+                        const isExpanded = expandedRow === contact.id;
+                        return (
+                          <Fragment key={contact.id}>
+                            <motion.tr
+                              initial={{ opacity: 0, y: 4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: idx * 0.01 }}
+                              className={cn(
+                                'group border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer',
+                                selectedIds.has(contact.id) && 'bg-teal-500/5',
+                                isExpanded && 'bg-teal-500/5'
+                              )}
+                              onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
+                            >
+                              <td className="p-5" onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(contact.id)}
+                                  onChange={() => toggleSelect(contact.id)}
+                                  className="accent-teal-500 size-4 cursor-pointer"
+                                />
+                              </td>
+                              <td className="p-5">
+                                <div className="flex items-center gap-3">
+                                  <div className="size-8 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+                                    {contact.firstName ? (
+                                      <span className="text-xs font-bold text-teal-400">
+                                        {contact.firstName[0]}{contact.lastName ? contact.lastName[0] : ''}
+                                      </span>
+                                    ) : (
+                                      <User className="size-4 text-teal-400" />
+                                    )}
+                                  </div>
+                                  {editingField?.contactId === contact.id && editingField.field === 'name' ? (
+                                    <InlineEditCell
+                                      value={`${contact.firstName || ''} ${contact.lastName || ''}`.trim()}
+                                      onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
+                                      onCancel={handleInlineEditCancel}
+                                      isSaving={isSavingField}
+                                      className="min-w-[150px]"
+                                    />
                                   ) : (
-                                    <User className="size-4 text-teal-400" />
+                                    <div
+                                      className="flex flex-col min-w-0 cursor-edit group/name"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingField({ contactId: contact.id, field: 'name' });
+                                        setEditValue(`${contact.firstName || ''} ${contact.lastName || ''}`.trim());
+                                      }}
+                                    >
+                                      <span className="text-sm font-semibold text-slate-200 truncate group-hover/name:text-teal-400 transition-colors">
+                                        {contact.firstName} {contact.lastName}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
+                                        ID: {contact.id.slice(0, 8)}
+                                      </span>
+                                    </div>
                                   )}
                                 </div>
-                                {editingField?.contactId === contact.id && editingField.field === 'name' ? (
+                              </td>
+                              <td className="p-3">
+                                {editingField?.contactId === contact.id && editingField.field === 'title' ? (
                                   <InlineEditCell
-                                    value={`${contact.firstName || ''} ${contact.lastName || ''}`.trim()}
+                                    value={contact.jobTitle || contact.title || ''}
                                     onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
                                     onCancel={handleInlineEditCancel}
                                     isSaving={isSavingField}
-                                    className="min-w-[150px]"
+                                    className="min-w-[120px]"
                                   />
                                 ) : (
-                                  <div 
-                                    className="flex flex-col min-w-0 cursor-edit group/name"
+                                  <span
+                                    className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium cursor-edit hover:text-teal-400 transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setEditingField({ contactId: contact.id, field: 'name' });
-                                      setEditValue(`${contact.firstName || ''} ${contact.lastName || ''}`.trim());
+                                      setEditingField({ contactId: contact.id, field: 'title' });
+                                      setEditValue(contact.jobTitle || contact.title || '');
                                     }}
                                   >
-                                    <span className="text-sm font-semibold text-slate-200 truncate group-hover/name:text-teal-400 transition-colors">
-                                      {contact.firstName} {contact.lastName}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
-                                      ID: {contact.id.slice(0, 8)}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              {editingField?.contactId === contact.id && editingField.field === 'title' ? (
-                                <InlineEditCell
-                                  value={contact.jobTitle || contact.title || ''}
-                                  onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
-                                  onCancel={handleInlineEditCancel}
-                                  isSaving={isSavingField}
-                                  className="min-w-[120px]"
-                                />
-                              ) : (
-                                <span 
-                                  className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block font-medium cursor-edit hover:text-teal-400 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingField({ contactId: contact.id, field: 'title' });
-                                    setEditValue(contact.jobTitle || contact.title || '');
-                                  }}
-                                >
-                                  {contact.jobTitle || contact.title || '—'}
-                                </span>
-                              )}
-                            </td>
-                          <td className="p-3">
-                            <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
-                              {contact.company || '—'}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
-                              {contact.industry || '—'}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
-                              {contact.companySize || contact.size || '—'}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
-                                {contact.locationCountry ? (
-                                  <span className="flex items-center gap-1">
-                                    {contact.locationCity && <span>{contact.locationCity},</span>}
-                                    <span className="truncate">{contact.locationCountry}</span>
+                                    {contact.jobTitle || contact.title || '—'}
                                   </span>
-                                ) : (contact.location || '—')}
-                              </span>
-                              {contact.inferred_timezone && (
-                                <span className="flex items-center gap-1 text-[8px] text-teal-500/70 font-bold uppercase tracking-tighter">
-                                  <Globe className="size-2" />
-                                  {contact.inferred_timezone.split('/').pop()?.replace('_', ' ')}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
-                              <Mail className="size-3 text-slate-600 shrink-0" />
-                              {editingField?.contactId === contact.id && editingField.field === 'email' ? (
-                                <InlineEditCell
-                                  value={contact.email || ''}
-                                  onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
-                                  onCancel={handleInlineEditCancel}
-                                  isSaving={isSavingField}
-                                  className="min-w-[150px]"
-                                />
-                              ) : (
-                                <span 
-                                  className="truncate cursor-edit hover:text-teal-400 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingField({ contactId: contact.id, field: 'email' });
-                                    setEditValue(contact.email || '');
-                                  }}
-                                >
-                                  {contact.email || t.noEmail}
-                                </span>
-                              )}
-                              {contact.verification_status && contact.verification_status !== 'unverified' && (
-                                <OutreachBadge
-                                  variant={(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).variant}
-                                  className="text-[8px] px-1 py-0 scale-90 origin-left"
-                                >
-                                  {(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).label}
-                                </OutreachBadge>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <OutreachBadge variant={(t.statusCfg[contact.status] || t.statusCfg.not_enrolled).variant} className="text-[9px] px-1.5 py-0">
-                                {(t.statusCfg[contact.status] || t.statusCfg.not_enrolled).label}
-                              </OutreachBadge>
-                            </div>
-                          </td>
-                          <td className="p-3 text-right">
-                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
-                                className="p-1.5 bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 rounded-lg border border-white/10 transition-all"
-                                title={t.viewProfile}
-                              >
-                                <User className="size-3.5" />
-                              </button>
-                              <button
-                                onClick={e => { 
-                                  e.stopPropagation(); 
-                                  if (contact.status === 'unsubscribed') {
-                                    toast.error(t.cannotDeleteUnsubscribed);
-                                    return;
-                                  }
-                                  setContactToDelete(contact.id); 
-                                }}
-                                className={cn(
-                                  "p-1.5 bg-white/5 rounded-lg border border-white/10 transition-all",
-                                  "p-2.5 rounded-xl transition-all",
-                                  contact.status === 'unsubscribed'
-                                    ? "opacity-50 cursor-not-allowed text-slate-600"
-                                    : "hover:bg-red-500/10 text-slate-500 hover:text-red-400"
                                 )}
-                                title={contact.status === 'unsubscribed' ? t.cannotDeleteUnsubscribed : t.deleteContact}
-                              >
-                                <Trash2 className="size-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </motion.tr>
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.tr
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="bg-teal-500/[0.03] border-b border-white/5"
-                            >
-                              <td colSpan={10} className="px-8 py-6">
-                                <div className="flex items-start gap-12">
-                                  <div className="space-y-4 flex-1">
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                      <div className="space-y-1">
-                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.phone}</p>
-                                        <p className="text-sm text-white font-medium">{contact.phone || t.notAvailable}</p>
-                                      </div>
-                                      <div className="space-y-1">
-                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.linkedin}</p>
-                                        <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || t.notAvailable}</p>
-                                      </div>
-                                      <div className="space-y-1">
-                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.website}</p>
-                                        <p className="text-sm text-slate-300 font-medium">{contact.website || t.notAvailable}</p>
-                                      </div>
-                                      <div className="space-y-1">
-                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.lastActivity}</p>
-                                        <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || t.noRecentActivity}</p>
-                                      </div>
-                                    </div>
-
-                                    {/* 3. ACTUALIZACIÓN: Renderizar Custom Fields (Snippets) si existen */}
-                                    {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
-                                      <div className="mt-4 pt-4 border-t border-white/5">
-                                        <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-3">{t.customFields}</p>
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                          {Object.entries(contact.custom_fields).map(([key, value]) => (
-                                            <div key={key} className="bg-white/5 p-2 rounded-lg border border-white/5">
-                                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate">{key}</p>
-                                              <p className="text-xs text-white font-medium truncate mt-0.5">{String(value)}</p>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
+                              </td>
+                              <td className="p-3">
+                                <span className="text-xs text-slate-400 whitespace-nowrap truncate max-w-[120px] block">
+                                  {contact.company || '—'}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px] block font-medium">
+                                  {contact.industry || '—'}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
+                                  {contact.companySize || contact.size || '—'}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
+                                    {contact.locationCountry ? (
+                                      <span className="flex items-center gap-1">
+                                        {contact.locationCity && <span>{contact.locationCity},</span>}
+                                        <span className="truncate">{contact.locationCountry}</span>
+                                      </span>
+                                    ) : (contact.location || '—')}
+                                  </span>
+                                  {contact.inferred_timezone && (
+                                    <span className="flex items-center gap-1 text-[8px] text-teal-500/70 font-bold uppercase tracking-tighter">
+                                      <Globe className="size-2" />
+                                      {contact.inferred_timezone.split('/').pop()?.replace('_', ' ')}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-hidden">
+                                  <Mail className="size-3 text-slate-600 shrink-0" />
+                                  {editingField?.contactId === contact.id && editingField.field === 'email' ? (
+                                    <InlineEditCell
+                                      value={contact.email || ''}
+                                      onSave={(val) => { setEditValue(val); handleInlineEditSave(); }}
+                                      onCancel={handleInlineEditCancel}
+                                      isSaving={isSavingField}
+                                      className="min-w-[150px]"
+                                    />
+                                  ) : (
+                                    <span
+                                      className="truncate cursor-edit hover:text-teal-400 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingField({ contactId: contact.id, field: 'email' });
+                                        setEditValue(contact.email || '');
+                                      }}
+                                    >
+                                      {contact.email || t.noEmail}
+                                    </span>
+                                  )}
+                                  {contact.verification_status && contact.verification_status !== 'unverified' && (
+                                    <OutreachBadge
+                                      variant={(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).variant}
+                                      className="text-[8px] px-1 py-0 scale-90 origin-left"
+                                    >
+                                      {(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).label}
+                                    </OutreachBadge>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <OutreachBadge variant={(t.statusCfg[contact.status] || t.statusCfg.not_enrolled).variant} className="text-[9px] px-1.5 py-0">
+                                    {(t.statusCfg[contact.status] || t.statusCfg.not_enrolled).label}
+                                  </OutreachBadge>
+                                </div>
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
+                                    className="p-1.5 bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 rounded-lg border border-white/10 transition-all"
+                                    title={t.viewProfile}
+                                  >
+                                    <User className="size-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      if (contact.status === 'unsubscribed') {
+                                        toast.error(t.cannotDeleteUnsubscribed);
+                                        return;
+                                      }
+                                      setContactToDelete(contact.id);
+                                    }}
+                                    className={cn(
+                                      "p-1.5 bg-white/5 rounded-lg border border-white/10 transition-all",
+                                      "p-2.5 rounded-xl transition-all",
+                                      contact.status === 'unsubscribed'
+                                        ? "opacity-50 cursor-not-allowed text-slate-600"
+                                        : "hover:bg-red-500/10 text-slate-500 hover:text-red-400"
                                     )}
-
-                                    <div className="pt-4 flex items-center gap-2 flex-wrap">
-                                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">{t.tags}:</p>
-                                      {contact.tags.length > 0 ? contact.tags.map(tag => (
-                                        <span 
-                                          key={tag} 
-                                          className={cn(
-                                            "px-2 py-0.5 border rounded text-[10px] font-bold transition-all hover:scale-105",
-                                            getTagStyle(tag)
-                                          )}
-                                        >
-                                          #{tag}
-                                        </span>
-                                      )) : <span className="text-[10px] text-slate-600 italic">{t.noTags}</span>}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex flex-col gap-2 min-w-[180px]">
-                                    <TealButton size="sm" className="w-full">{t.enrollInSequence}</TealButton>
-                                    <button
-                                      onClick={() => handleSuppress(contact.email)}
-                                      className="w-full py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold transition-all"
-                                    >
-                                      {t.suppressEmail}
-                                    </button>
-                                    <button
-                                      onClick={() => setProfileContactId(contact.id)}
-                                      className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold border border-white/5 transition-all"
-                                    >
-                                      {t.fullDetails}
-                                    </button>
-                                  </div>
+                                    title={contact.status === 'unsubscribed' ? t.cannotDeleteUnsubscribed : t.deleteContact}
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </button>
                                 </div>
                               </td>
                             </motion.tr>
-                          )}
-                        </AnimatePresence>
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          )}
-        </div>
+                            <AnimatePresence>
+                              {isExpanded && (
+                                <motion.tr
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="bg-teal-500/[0.03] border-b border-white/5"
+                                >
+                                  <td colSpan={10} className="px-8 py-6">
+                                    <div className="flex items-start gap-12">
+                                      <div className="space-y-4 flex-1">
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                          <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.phone}</p>
+                                            <p className="text-sm text-white font-medium">{contact.phone || t.notAvailable}</p>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.linkedin}</p>
+                                            <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || t.notAvailable}</p>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.website}</p>
+                                            <p className="text-sm text-slate-300 font-medium">{contact.website || t.notAvailable}</p>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.lastActivity}</p>
+                                            <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || t.noRecentActivity}</p>
+                                          </div>
+                                        </div>
 
-      </div>
+                                        {/* 3. ACTUALIZACIÓN: Renderizar Custom Fields (Snippets) si existen */}
+                                        {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
+                                          <div className="mt-4 pt-4 border-t border-white/5">
+                                            <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-3">{t.customFields}</p>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                              {Object.entries(contact.custom_fields).map(([key, value]) => (
+                                                <div key={key} className="bg-white/5 p-2 rounded-lg border border-white/5">
+                                                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate">{key}</p>
+                                                  <p className="text-xs text-white font-medium truncate mt-0.5">{String(value)}</p>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
 
-      <BulkAddToListModal
-        isOpen={isBulkAddOpen}
-        onClose={() => setIsBulkAddOpen(false)}
-        onConfirm={handleBulkAddToList}
-        contactLists={contactLists}
-        onReloadLists={loadLists}
-        api={api}
-        selectedCount={selectedIds.size}
-      />
+                                        <div className="pt-4 flex items-center gap-2 flex-wrap">
+                                          <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">{t.tags}:</p>
+                                          {contact.tags.length > 0 ? contact.tags.map(tag => (
+                                            <span
+                                              key={tag}
+                                              className={cn(
+                                                "px-2 py-0.5 border rounded text-[10px] font-bold transition-all hover:scale-105",
+                                                getTagStyle(tag)
+                                              )}
+                                            >
+                                              #{tag}
+                                            </span>
+                                          )) : <span className="text-[10px] text-slate-600 italic">{t.noTags}</span>}
+                                        </div>
+                                      </div>
 
-      {/* Manage Lists Modal */}
-      <AnimatePresence>
-        {isManageListsOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-gray-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white">{t.manageLists}</h3>
-                <button
-                  onClick={() => setIsManageListsOpen(false)}
-                  className="p-2 text-gray-400 hover:text-white transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                {/* Create New List */}
-                {isCreatingList ? (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newListName}
-                      onChange={e => setNewListName(e.target.value)}
-                      placeholder={t.listNamePlaceholder}
-                      className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white outline-none focus:border-teal-500/50"
-                      autoFocus
-                    />
-                    <TealButton onClick={handleCreateList} className="py-2">{t.save}</TealButton>
-                    <button
-                      onClick={() => setIsCreatingList(false)}
-                      className="px-3 py-2 text-gray-400 hover:text-white text-sm"
-                    >
-                      {t.cancel}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setIsCreatingList(true)}
-                    className="w-full py-2 flex items-center justify-center gap-2 bg-teal-500/10 border border-teal-500/20 rounded-lg text-teal-400 text-sm font-medium hover:bg-teal-500/20 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {t.addContact}
-                  </button>
-                )}
-
-                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                  {contactLists.map(list => (
-                    <div key={list.id} className="group flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
-                      {editingListId === list.id ? (
-                        <div className="flex-1 flex gap-2">
-                          <input
-                            type="text"
-                            value={editListName}
-                            onChange={e => setEditListName(e.target.value)}
-                            className="flex-1 px-2 py-1 bg-gray-800 border border-white/10 rounded text-sm text-white outline-none"
-                            autoFocus
-                          />
-                          <button onClick={() => handleUpdateList(list.id)} className="text-teal-400 text-xs font-medium">{t.save}</button>
-                          <button onClick={() => setEditingListId(null)} className="text-gray-500 text-xs">{t.cancel}</button>
-                        </div>
-                      ) : (
-                        <>
-                          <div>
-                            <p className="text-sm font-medium text-white">{list.name}</p>
-                            <p className="text-[10px] text-gray-500">{t.systemId}: {list.id}</p>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => {
-                                setEditingListId(list.id);
-                                setEditListName(list.name);
-                              }}
-                              className="p-1.5 text-gray-400 hover:text-teal-400 transition-colors"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setListToDelete({ id: list.id, name: list.name })}
-                              className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
+                                      <div className="flex flex-col gap-2 min-w-[180px]">
+                                        <TealButton size="sm" className="w-full">{t.enrollInSequence}</TealButton>
+                                        <button
+                                          onClick={() => handleSuppress(contact.email)}
+                                          className="w-full py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold transition-all"
+                                        >
+                                          {t.suppressEmail}
+                                        </button>
+                                        <button
+                                          onClick={() => setProfileContactId(contact.id)}
+                                          className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold border border-white/5 transition-all"
+                                        >
+                                          {t.fullDetails}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </motion.tr>
+                              )}
+                            </AnimatePresence>
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </motion.div>
+            )}
           </div>
-        )}
-      </AnimatePresence>
 
-      {/* Deletion Confirmations */}
-      <OutreachConfirmDialog
-        isOpen={deleteDialog}
-        onClose={() => setDeleteDialog(false)}
-        onConfirm={handleBulkDelete}
-        title={t.deleteContacts}
-        description={t.areYouSureDeleteBulk?.(selectedIds.size) || `Are you sure you want to delete ${selectedIds.size} contacts?`}
-        confirmLabel={isDeleting ? t.deleting : t.deleteAll}
-        cancelLabel={t.cancel}
-        danger
-      />
+        </div>
 
-      <OutreachConfirmDialog
-        isOpen={!!contactToDelete}
-        onClose={() => setContactToDelete(null)}
-        onConfirm={handleSingleDelete}
-        title={t.deleteContact}
-        description={t.areYouSureDeleteSingle}
-        confirmLabel={isDeleting ? t.deleting : t.delete}
-        cancelLabel={t.cancel}
-        danger
-      />
-
-      {/* Custom List Delete Dialog */}
-      <AnimatePresence>
-        {listToDelete && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setListToDelete(null)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-[#161b22] border border-[#30363d] rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
-            >
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Trash2 className="size-5 text-red-400" />
-                  {t.deleteList}: <span className="text-teal-400">{listToDelete.name}</span>
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  {t.howHandleContacts}
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <button
-                  onClick={() => setDeleteListOption('only_list')}
-                  className={cn(
-                    "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
-                    deleteListOption === 'only_list'
-                      ? "bg-teal-500/10 border-teal-500/40 text-white"
-                      : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
-                  )}
-                >
-                  <div className={cn(
-                    "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                    deleteListOption === 'only_list' ? "border-teal-400" : "border-slate-600"
-                  )}>
-                    {deleteListOption === 'only_list' && <div className="size-2 rounded-full bg-teal-400" />}
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm">{t.deleteListOnly}</p>
-                    <p className="text-xs opacity-70 mt-0.5">{t.contactsRemainUnassigned}</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setDeleteListOption('list_and_contacts')}
-                  className={cn(
-                    "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
-                    deleteListOption === 'list_and_contacts'
-                      ? "bg-red-500/10 border-red-500/40 text-white"
-                      : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
-                  )}
-                >
-                  <div className={cn(
-                    "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                    deleteListOption === 'list_and_contacts' ? "border-red-400" : "border-slate-600"
-                  )}>
-                    {deleteListOption === 'list_and_contacts' && <div className="size-2 rounded-full bg-red-400" />}
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm">{t.deleteListAndExclusive}</p>
-                    <p className="text-xs opacity-70 mt-0.5">{t.removesExclusiveDesc}</p>
-                  </div>
-                </button>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setListToDelete(null)}
-                  className="flex-1 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  onClick={handleDeleteList}
-                  disabled={isDeleting}
-                  className={cn(
-                    'flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2',
-                    deleteListOption === 'list_and_contacts'
-                      ? 'bg-red-600 hover:bg-red-500 text-white'
-                      : 'bg-teal-600 hover:bg-teal-500 text-white'
-                  )}
-                >
-                  {isDeleting ? (
-                    <div className="size-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <Trash2 className="size-4" />
-                  )}
-                  {t.confirmDelete}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <ContactProfilePanel
-        contact={contacts.find(c => c.id === profileContactId) || null}
-        isOpen={!!profileContactId}
-        onClose={() => setProfileContactId(null)}
-      />
-
-      <CSVImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onSuccess={() => {
-          loadContacts();
-          loadLists();
-        }}
-        defaultListId={listFilter !== 'all' ? listFilter : undefined}
-        lists={contactLists}
-      />
-
-      {isUploadModalOpen && (
-        <UploadListModal
-          isOpen={isUploadModalOpen}
-          onClose={() => setIsUploadModalOpen(false)}
-          onSuccess={() => {
-            loadLists();
-            loadContacts();
-          }}
-          language={language as 'en' | 'es'}
+        <BulkAddToListModal
+          isOpen={isBulkAddOpen}
+          onClose={() => setIsBulkAddOpen(false)}
+          onConfirm={handleBulkAddToList}
+          contactLists={contactLists}
+          onReloadLists={loadLists}
+          api={api}
+          selectedCount={selectedIds.size}
         />
-      )}
+
+        {/* Manage Lists Modal */}
+        <AnimatePresence>
+          {isManageListsOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-md bg-gray-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+              >
+                <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-white">{t.manageLists}</h3>
+                  <button
+                    onClick={() => setIsManageListsOpen(false)}
+                    className="p-2 text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  {/* Create New List */}
+                  {isCreatingList ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newListName}
+                        onChange={e => setNewListName(e.target.value)}
+                        placeholder={t.listNamePlaceholder}
+                        className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white outline-none focus:border-teal-500/50"
+                        autoFocus
+                      />
+                      <TealButton onClick={handleCreateList} className="py-2">{t.save}</TealButton>
+                      <button
+                        onClick={() => setIsCreatingList(false)}
+                        className="px-3 py-2 text-gray-400 hover:text-white text-sm"
+                      >
+                        {t.cancel}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsCreatingList(true)}
+                      className="w-full py-2 flex items-center justify-center gap-2 bg-teal-500/10 border border-teal-500/20 rounded-lg text-teal-400 text-sm font-medium hover:bg-teal-500/20 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      {t.addContact}
+                    </button>
+                  )}
+
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                    {contactLists.map(list => (
+                      <div key={list.id} className="group flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
+                        {editingListId === list.id ? (
+                          <div className="flex-1 flex gap-2">
+                            <input
+                              type="text"
+                              value={editListName}
+                              onChange={e => setEditListName(e.target.value)}
+                              className="flex-1 px-2 py-1 bg-gray-800 border border-white/10 rounded text-sm text-white outline-none"
+                              autoFocus
+                            />
+                            <button onClick={() => handleUpdateList(list.id)} className="text-teal-400 text-xs font-medium">{t.save}</button>
+                            <button onClick={() => setEditingListId(null)} className="text-gray-500 text-xs">{t.cancel}</button>
+                          </div>
+                        ) : (
+                          <>
+                            <div>
+                              <p className="text-sm font-medium text-white">{list.name}</p>
+                              <p className="text-[10px] text-gray-500">{t.systemId}: {list.id}</p>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingListId(list.id);
+                                  setEditListName(list.name);
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-teal-400 transition-colors"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setListToDelete({ id: list.id, name: list.name })}
+                                className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Deletion Confirmations */}
+        <OutreachConfirmDialog
+          isOpen={deleteDialog}
+          onClose={() => setDeleteDialog(false)}
+          onConfirm={handleBulkDelete}
+          title={t.deleteContacts}
+          description={t.areYouSureDeleteBulk?.(selectedIds.size) || `Are you sure you want to delete ${selectedIds.size} contacts?`}
+          confirmLabel={isDeleting ? t.deleting : t.deleteAll}
+          cancelLabel={t.cancel}
+          danger
+        />
+
+        <OutreachConfirmDialog
+          isOpen={!!contactToDelete}
+          onClose={() => setContactToDelete(null)}
+          onConfirm={handleSingleDelete}
+          title={t.deleteContact}
+          description={t.areYouSureDeleteSingle}
+          confirmLabel={isDeleting ? t.deleting : t.delete}
+          cancelLabel={t.cancel}
+          danger
+        />
+
+        {/* Custom List Delete Dialog */}
+        <AnimatePresence>
+          {listToDelete && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setListToDelete(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative bg-[#161b22] border border-[#30363d] rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
+              >
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Trash2 className="size-5 text-red-400" />
+                    {t.deleteList}: <span className="text-teal-400">{listToDelete.name}</span>
+                  </h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    {t.howHandleContacts}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setDeleteListOption('only_list')}
+                    className={cn(
+                      "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
+                      deleteListOption === 'only_list'
+                        ? "bg-teal-500/10 border-teal-500/40 text-white"
+                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
+                    )}
+                  >
+                    <div className={cn(
+                      "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      deleteListOption === 'only_list' ? "border-teal-400" : "border-slate-600"
+                    )}>
+                      {deleteListOption === 'only_list' && <div className="size-2 rounded-full bg-teal-400" />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">{t.deleteListOnly}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{t.contactsRemainUnassigned}</p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setDeleteListOption('list_and_contacts')}
+                    className={cn(
+                      "w-full text-left p-4 rounded-xl border transition-all flex items-start gap-4",
+                      deleteListOption === 'list_and_contacts'
+                        ? "bg-red-500/10 border-red-500/40 text-white"
+                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/[0.08]"
+                    )}
+                  >
+                    <div className={cn(
+                      "mt-1 size-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      deleteListOption === 'list_and_contacts' ? "border-red-400" : "border-slate-600"
+                    )}>
+                      {deleteListOption === 'list_and_contacts' && <div className="size-2 rounded-full bg-red-400" />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">{t.deleteListAndExclusive}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{t.removesExclusiveDesc}</p>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setListToDelete(null)}
+                    className="flex-1 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button
+                    onClick={handleDeleteList}
+                    disabled={isDeleting}
+                    className={cn(
+                      'flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2',
+                      deleteListOption === 'list_and_contacts'
+                        ? 'bg-red-600 hover:bg-red-500 text-white'
+                        : 'bg-teal-600 hover:bg-teal-500 text-white'
+                    )}
+                  >
+                    {isDeleting ? (
+                      <div className="size-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4" />
+                    )}
+                    {t.confirmDelete}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <ContactProfilePanel
+          contact={contacts.find(c => c.id === profileContactId) || null}
+          isOpen={!!profileContactId}
+          onClose={() => setProfileContactId(null)}
+        />
+
+        <CSVImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onSuccess={() => {
+            loadContacts();
+            loadLists();
+          }}
+          defaultListId={listFilter !== 'all' ? listFilter : undefined}
+          lists={contactLists}
+        />
+
+        {isUploadModalOpen && (
+          <UploadListModal
+            isOpen={isUploadModalOpen}
+            onClose={() => setIsUploadModalOpen(false)}
+            onSuccess={() => {
+              loadLists();
+              loadContacts();
+            }}
+            language={language as 'en' | 'es'}
+          />
+        )}
       </div>
     </Fragment>
   );
 }
 
 // Reusable Inline Edit Component
-function InlineEditCell({ 
-  value, 
-  onSave, 
-  onCancel, 
-  isSaving, 
+function InlineEditCell({
+  value,
+  onSave,
+  onCancel,
+  isSaving,
   placeholder,
-  className 
-}: { 
-  value: string, 
-  onSave: (val: string) => void, 
-  onCancel: () => void, 
+  className
+}: {
+  value: string,
+  onSave: (val: string) => void,
+  onCancel: () => void,
   isSaving: boolean,
   placeholder?: string,
   className?: string

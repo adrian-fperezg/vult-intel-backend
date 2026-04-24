@@ -50,14 +50,14 @@ export default function OutreachSequences() {
 
   const loadData = useCallback(async () => {
     if (!activeProjectId) return;
-    
+
     setIsLoading(true);
     try {
       const [seqRes, statsRes] = await Promise.all([
         api.fetchSequences(),
         api.fetchGlobalStats()
       ]);
-      
+
       if (seqRes) setSequences(seqRes);
       if (statsRes) setGlobalStats(statsRes);
     } catch (error) {
@@ -82,11 +82,8 @@ export default function OutreachSequences() {
   const handleCreate = async () => {
     const toastId = toast.loading('Creating new sequence...');
     try {
-      const newSeq = await api.createSequence({
-        name: 'New Outreach Sequence',
-        status: 'draft'
-      });
-      
+      const newSeq = await api.createSequence('New Outreach Sequence');
+
       if (newSeq && newSeq.id) {
         toast.success('Sequence created!', { id: toastId });
         setEditingId(newSeq.id);
@@ -130,7 +127,7 @@ export default function OutreachSequences() {
   const handlePromote = async (id: string, name: string) => {
     setIsPromoting(prev => new Set(prev).add(id));
     const toastId = toast.loading(`Promoting ${name} jobs...`);
-    
+
     try {
       const res = await api.promoteSequenceJobs(id);
       if (res?.success) {
