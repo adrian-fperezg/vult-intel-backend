@@ -11,3 +11,4 @@ coverage/
 *.db
 *.db-shm
 *.db-wal
+tests/test_output.txt
