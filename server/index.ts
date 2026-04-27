@@ -1601,6 +1601,9 @@ app.get("/api/outreach/history", async (req: AuthRequest, res) => {
         s.name as sequence_name,
         m.email as sender_email,
         m.name as sender_name,
+        e.from_email,
+        e.from_name,
+        e.sender_alias,
         st.step_number
       FROM outreach_individual_emails e
       LEFT JOIN outreach_contacts c ON e.contact_id = c.id
@@ -1630,7 +1633,8 @@ app.get("/api/outreach/history", async (req: AuthRequest, res) => {
       sequenceId: row.sequence_id,
       sequenceName: row.sequence_name || 'Unknown Sequence',
       mailboxId: row.mailbox_id,
-      senderEmail: row.sender_email || 'Unknown',
+      senderEmail: row.from_email || row.sender_email || 'Unknown',
+      senderAlias: row.sender_alias || row.from_name || row.sender_name || null,
       stepId: row.step_id,
       stepNumber: row.step_number || 0,
       sentAt: row.sent_at || row.created_at,

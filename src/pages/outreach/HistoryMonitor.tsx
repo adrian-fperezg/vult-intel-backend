@@ -25,6 +25,7 @@ interface SentEmail {
   sequenceName: string;
   mailboxId: string;
   senderEmail: string;
+  senderAlias?: string;
   stepId: string;
   stepNumber: number;
   sentAt: string;
@@ -371,7 +372,12 @@ export default function HistoryMonitor() {
                             )}>
                               {email.senderEmail}
                             </span>
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-black">
+                            {email.senderAlias && (
+                              <span className="text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-md w-fit mt-1 border border-white/5 font-medium">
+                                {email.senderAlias}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-black mt-1">
                               {t('outreach.history.headers.sender') || 'SENDER'}
                             </span>
                           </div>
@@ -451,12 +457,19 @@ export default function HistoryMonitor() {
                           <td className="px-6 py-5">
                             <div className="flex items-center gap-2">
                               <Mail className={cn("size-3.5", email.senderEmail.includes('@') ? "text-teal-400" : "text-amber-400")} />
-                              <span className={cn(
-                                "text-xs font-medium truncate max-w-[180px]",
-                                email.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
-                              )}>
-                                {email.senderEmail}
-                              </span>
+                              <div className="flex flex-col min-w-0">
+                                <span className={cn(
+                                  "text-xs font-medium truncate max-w-[180px]",
+                                  email.senderEmail.includes('@') ? "text-slate-300" : "text-amber-400/80 italic"
+                                )}>
+                                  {email.senderEmail}
+                                </span>
+                                {email.senderAlias && (
+                                  <span className="text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-md w-fit mt-1 border border-white/5 font-medium">
+                                    {email.senderAlias}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="px-6 py-5">
