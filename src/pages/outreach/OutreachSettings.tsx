@@ -699,15 +699,15 @@ export default function OutreachSettings() {
                                                 <div className="flex items-center gap-2 mt-1">
                                                   <span className={cn(
                                                     "text-[10px] uppercase font-bold",
-                                                    alias.spf_verified ? "text-teal-500" : "text-red-500"
+                                                    mb.spf_verified ? "text-green-400" : "text-red-400"
                                                   )}>SPF</span>
                                                   <span className={cn(
                                                     "text-[10px] uppercase font-bold",
-                                                    alias.dkim_verified ? "text-teal-500" : "text-red-500"
+                                                    mb.dkim_verified ? "text-green-400" : "text-red-400"
                                                   )}>DKIM</span>
                                                   <span className={cn(
                                                     "text-[10px] uppercase font-bold",
-                                                    alias.dmarc_verified ? "text-teal-500" : "text-red-500"
+                                                    mb.dmarc_verified ? "text-green-400" : "text-red-400"
                                                   )}>DMARC</span>
                                                 </div>
                                               </div>
@@ -716,8 +716,8 @@ export default function OutreachSettings() {
                                                   <span className="text-[10px] text-slate-500 uppercase font-bold">Health Score</span>
                                                   <span className={cn(
                                                     "text-sm font-bold",
-                                                    (alias.health_score ?? 100) >= 85 ? "text-teal-400" : (alias.health_score ?? 100) >= 70 ? "text-yellow-400" : "text-red-400"
-                                                  )}>{alias.health_score ?? 100}%</span>
+                                                    (alias.health_score ?? mb.health_score ?? 0) >= 85 ? "text-teal-400" : (alias.health_score ?? mb.health_score ?? 0) >= 70 ? "text-yellow-400" : "text-red-400"
+                                                  )}>{alias.health_score ?? mb.health_score ?? 0}%</span>
                                                 </div>
                                                 <button 
                                                   onClick={(e) => { e.stopPropagation(); handleVerifyDns(alias.id); }}
