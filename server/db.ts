@@ -1037,6 +1037,62 @@ export const initDb = async () => {
     await db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_emails_contact_id_is_reply ON outreach_individual_emails (contact_id, is_reply)`);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_emails_mailbox_status ON outreach_individual_emails (mailbox_id, status)`);
 
+    // 23. Intel Radar Tables
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS radar_sources (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        domain_url TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, domain_url)
+      )
+    `);
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS radar_schedules (
+        project_id TEXT PRIMARY KEY,
+        frequency TEXT NOT NULL DEFAULT 'weekly',
+        is_active BOOLEAN DEFAULT TRUE,
+        last_run_at TIMESTAMP,
+        next_run_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS radar_articles (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        summary TEXT,
+        relevance_score REAL,
+        source_domain TEXT,
+        published_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, url)
+      )
+    `);
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS radar_social_posts (
+        id TEXT PRIMARY KEY,
+        article_id TEXT NOT NULL REFERENCES radar_articles(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        content TEXT NOT NULL,
+        thumbnail_url TEXT,
+        veo_job_id TEXT,
+        status TEXT DEFAULT 'draft',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await applyTrigger('radar_schedules');
+    await applyTrigger('radar_social_posts');
+
     console.log("✅ Database initialized successfully");
   } catch (err) {
     console.error("❌ Database initialization failed:", err);

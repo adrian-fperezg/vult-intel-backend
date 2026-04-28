@@ -269,11 +269,42 @@
         "webGrowthPlan": "Web Growth Plan",
         "globalBrandStrategy": "Global Brand Strategy",
         "personaStudio": "Persona Studio",
+        "intelRadar": "Intel Radar",
+        "growthMastermind": "Growth Mastermind",
         "campaignArchitect": "Campaign Architect",
         "visualWorkflows": "Visual Workflows",
+        "outreach": "Outreach",
+        "veoStudio": "Veo Studio",
         "signOut": "Sign Out",
         "signIn": "Sign In to Vult Intel",
         "marketingPlatform": "Marketing Platform"
+    },
+    "radar": {
+        "title": "Intel Radar",
+        "subtitle": "Autonomous industry intelligence and trend discovery.",
+        "runNow": "Run Radar Now",
+        "running": "Radar Active...",
+        "schedule": {
+            "title": "Scheduling",
+            "frequency": "Frequency",
+            "daily": "Daily",
+            "weekly": "Weekly",
+            "biweekly": "Bi-weekly",
+            "monthly": "Monthly"
+        },
+        "sources": {
+            "title": "Trusted Sources",
+            "add": "Add Domain",
+            "placeholder": "https://example.com",
+            "reputation": "Reputation"
+        },
+        "articles": {
+            "title": "Latest Intelligence",
+            "summary": "Summary",
+            "draftPost": "Draft Social Post",
+            "generateThumbnail": "Generate Thumbnail",
+            "noArticles": "No articles found yet. Run the radar to start discovery."
+        }
     },
     "outreach": {
         "inbox": {

@@ -17,7 +17,8 @@ import {
   Briefcase,
   UserCircle,
   Target,
-  Clapperboard
+  Clapperboard,
+  Radio
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -33,17 +34,18 @@ import ProjectSelector from './ProjectSelector';
 import { formatTokens } from '@/utils/formatters';
 
 const navItems = [
-  { icon: Activity, key: 'navProjectsHub', path: '/projects-hub' },
-  { icon: Search, key: 'navFullScanReport', path: '/deep-scan' },
-  { icon: Palette, key: 'navContentGenerator', path: '/content-generator' },
-  { icon: Cpu, key: 'navWebGrowthPlan', path: '/web-growth-plan' },
-  { icon: Compass, key: 'navGlobalBrandStrategy', path: '/global-brand-strategy' },
-  { icon: UserCircle, key: 'navPersonaStudio', path: '/persona-studio' },
-  { icon: Target, key: 'Growth Mastermind', path: '/growth-mastermind' },
-  { icon: Briefcase, key: 'navCampaignArchitect', path: '/campaign-architect' },
-  { icon: LayoutGrid, key: 'navVisualWorkflows', path: '/visual-workflows' },
-  { icon: null, key: 'Outreach', path: '/outreach', teal: true },
-  { icon: Clapperboard, key: 'Veo Studio', path: '/veo-studio', amber: true },
+  { icon: Activity, key: 'projectsHub', path: '/projects-hub' },
+  { icon: Search, key: 'fullScanReport', path: '/deep-scan' },
+  { icon: Palette, key: 'contentGenerator', path: '/content-generator' },
+  { icon: Cpu, key: 'webGrowthPlan', path: '/web-growth-plan' },
+  { icon: Compass, key: 'globalBrandStrategy', path: '/global-brand-strategy' },
+  { icon: UserCircle, key: 'personaStudio', path: '/persona-studio' },
+  { icon: Radio, key: 'intelRadar', path: '/intel-radar' },
+  { icon: Target, key: 'growthMastermind', path: '/growth-mastermind' },
+  { icon: Briefcase, key: 'campaignArchitect', path: '/campaign-architect' },
+  { icon: LayoutGrid, key: 'visualWorkflows', path: '/visual-workflows' },
+  { icon: null, key: 'outreach', path: '/outreach', teal: true },
+  { icon: Clapperboard, key: 'veoStudio', path: '/veo-studio', amber: true },
 ];
 
 export default function Sidebar() {
@@ -56,21 +58,6 @@ export default function Sidebar() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const NAV_LABELS: Record<string, Record<string, string>> = {
-    navProjectsHub: { en: 'Projects Hub', es: 'Centro de Proyectos' },
-    navFullScanReport: { en: 'Deep Scan', es: 'Escaneo Profundo' },
-    navContentGenerator: { en: 'Content Generator', es: 'Generador de Contenido' },
-    navWebGrowthPlan: { en: 'Web Growth Plan', es: 'Plan de Crecimiento Web' },
-    navGlobalBrandStrategy: { en: 'Brand Strategy', es: 'Estrategia de Marca' },
-    navPersonaStudio: { en: 'Persona Studio', es: 'Estudio de Personas' },
-    'Growth Mastermind': { en: 'Growth Mastermind', es: 'Growth Mastermind' },
-    navCampaignArchitect: { en: 'Campaign Architect', es: 'Arquitecto de Campañas' },
-    navVisualWorkflows: { en: 'Visual Workflows', es: 'Flujos Visuales' }
-  };
-
-  const getNavLabel = (key: string) => {
-    return NAV_LABELS[key]?.[language] || key;
-  };
 
   const isUnlimited = isFounder;
   const TOKEN_MAX = totalLimits.tokens || 500000;
@@ -168,7 +155,7 @@ export default function Sidebar() {
                   isActive && "font-semibold",
                   isActive && isAmber && "text-amber-100"
                 )}>
-                  {isTeal ? 'Outreach' : isAmber ? 'Veo Studio' : getNavLabel(item.key)}
+                  {t(`navigation.${item.key}`)}
                 </span>
                 {isActive && (
                   <ChevronRight className={cn(

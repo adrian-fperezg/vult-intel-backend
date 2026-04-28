@@ -13,6 +13,7 @@ import PendingCheckout from './pages/PendingCheckout';
 import Settings from './pages/Settings';
 import GlobalBrandStrategy from './pages/GlobalBrandStrategy';
 import GrowthMastermind from './pages/GrowthMastermind';
+import IntelRadar from './pages/IntelRadar';
 import CampaignArchitectLayout from './components/CampaignArchitectLayout';
 import PersonaStudioLayout from './components/PersonaStudioLayout';
 import OutreachLayout from './pages/OutreachLayout';
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="visual-workflows" element={<Workflows />} />
             <Route path="global-brand-strategy" element={<GlobalBrandStrategy />} />
             <Route path="persona-studio" element={<PersonaStudioLayout />} />
+            <Route path="intel-radar" element={<IntelRadar />} />
             <Route path="campaign-architect" element={<CampaignArchitectLayout />} />
             <Route path="growth-mastermind" element={<GrowthMastermind />} />
             <Route path="settings" element={<Settings />} />

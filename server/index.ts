@@ -126,6 +126,9 @@ import { gmailWebhookHandler } from "./api/webhooks/gmailWebhook.js";
 import { AnalyticsData, AiReportResponse } from "../shared/types/outreach";
 import { sendAlert } from "./lib/notifier.js";
 import { checkDNS } from "./utils/dnsChecker.js";
+import { radarQueue, initRadarScheduler } from "./queues/radarQueue.js";
+import { processRadarRun } from "./lib/radar/radarService.js";
+
 
 
 
@@ -298,7 +301,9 @@ const startServices = async () => {
 
     // Schedule recurring tasks by first purging any stale BullMQ jobs
     await resetRepeatableJobs();
+    await initRadarScheduler();
     console.log('[QUEUE] Background jobs initialized and scheduled.');
+
   } catch (err) {
     console.error('[CRITICAL STARTUP ERROR] Initialization failed, but proceeding anyway:', err);
     // DO NOT process.exit(1) - we want the health check to be available
@@ -1571,6 +1576,156 @@ app.post("/api/outreach/queue/send-now/:jobId", async (req: AuthRequest, res) =>
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ─── INTEL RADAR OPERATIONS ───────────────────────────────────────────────
+
+app.get("/api/outreach/radar/sources", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const sources = await db.all("SELECT * FROM radar_sources WHERE project_id = ? ORDER BY created_at DESC", [projectId]);
+    res.json(sources);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/radar/sources", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { domainUrl, name } = req.body;
+  if (!projectId || !domainUrl) return res.status(400).json({ error: "Project ID and Domain URL are required" });
+
+  try {
+    const id = uuidv4();
+    await db.run(
+      "INSERT INTO radar_sources (id, project_id, domain_url, name) VALUES (?, ?, ?, ?)",
+      [id, projectId, domainUrl, name || domainUrl]
+    );
+    res.json({ success: true, id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/outreach/radar/sources/:id", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const projectId = req.projectId;
+
+  try {
+    await db.run("DELETE FROM radar_sources WHERE id = ? AND project_id = ?", [id, projectId]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/outreach/radar/schedule", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    let schedule = await db.get("SELECT * FROM radar_schedules WHERE project_id = ?", [projectId]);
+    if (!schedule) {
+      // Create a default disabled weekly schedule if none exists
+      const id = uuidv4();
+      await db.run(
+        "INSERT INTO radar_schedules (id, project_id, user_id, frequency, is_enabled) VALUES (?, ?, ?, 'weekly', false)",
+        [id, projectId, req.user?.uid]
+      );
+      schedule = await db.get("SELECT * FROM radar_schedules WHERE id = ?", [id]);
+    }
+    res.json(schedule);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/radar/schedule", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { frequency, isEnabled } = req.body;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    await db.run(
+      `INSERT INTO radar_schedules (id, project_id, user_id, frequency, is_enabled) 
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (project_id) DO UPDATE SET 
+         frequency = EXCLUDED.frequency, 
+         is_enabled = EXCLUDED.is_enabled,
+         updated_at = CURRENT_TIMESTAMP`,
+      [uuidv4(), projectId, req.user?.uid, frequency, isEnabled]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/outreach/radar/articles", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const articles = await db.all(
+      "SELECT * FROM radar_articles WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+      [projectId]
+    );
+    res.json(articles);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/outreach/radar/social-posts", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const posts = await db.all(`
+      SELECT p.*, a.title as article_title, a.url as article_url 
+      FROM radar_social_posts p
+      JOIN radar_articles a ON p.article_id = a.id
+      WHERE p.project_id = ? 
+      ORDER BY p.created_at DESC
+    `, [projectId]);
+    res.json(posts);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/radar/run", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const job = await radarQueue.add(`manual-${projectId}-${Date.now()}`, {
+      uid: req.user?.uid!,
+      projectId
+    });
+    res.json({ success: true, jobId: job.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/outreach/radar/social-posts/:id", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const { status, content } = req.body;
+  const projectId = req.projectId;
+
+  try {
+    await db.run(
+      "UPDATE radar_social_posts SET status = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?",
+      [status, content, id, projectId]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ─── SENT HISTORY ─────────────────────────────────────────────────────────────
 

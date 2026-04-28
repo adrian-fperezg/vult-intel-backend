@@ -269,11 +269,42 @@
         "webGrowthPlan": "Plan Growth Web",
         "globalBrandStrategy": "Estrategia de Marca",
         "personaStudio": "Estudio de Personas",
+        "intelRadar": "Radar de Inteligencia",
+        "growthMastermind": "Growth Mastermind",
         "campaignArchitect": "Arquitecto de Campañas",
         "visualWorkflows": "Flujos de Trabajo Visuales",
+        "outreach": "Outreach",
+        "veoStudio": "Veo Studio",
         "signOut": "Cerrar Sesión",
         "signIn": "Iniciar Sesión en Vult Intel",
         "marketingPlatform": "Plataforma de Marketing"
+    },
+    "radar": {
+        "title": "Radar de Inteligencia",
+        "subtitle": "Inteligencia industrial autónoma y descubrimiento de tendencias.",
+        "runNow": "Ejecutar Radar Ahora",
+        "running": "Radar Activo...",
+        "schedule": {
+            "title": "Programación",
+            "frequency": "Frecuencia",
+            "daily": "Diario",
+            "weekly": "Semanal",
+            "biweekly": "Quincenal",
+            "monthly": "Mensual"
+        },
+        "sources": {
+            "title": "Fuentes de Confianza",
+            "add": "Agregar Dominio",
+            "placeholder": "https://ejemplo.com",
+            "reputation": "Reputación"
+        },
+        "articles": {
+            "title": "Última Inteligencia",
+            "summary": "Resumen",
+            "draftPost": "Borrador de Publicación",
+            "generateThumbnail": "Generar Miniatura",
+            "noArticles": "No se encontraron artículos aún. Ejecuta el radar para comenzar."
+        }
     },
     "outreach": {
         "inbox": {
