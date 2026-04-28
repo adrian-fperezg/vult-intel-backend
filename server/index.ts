@@ -1695,10 +1695,15 @@ app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {
 // Helper to calculate dynamic health score
 function calculateHealthScore(mb: any, bounceRate: number) {
   let score = 100;
-  score -= Math.round(bounceRate * 5); // -5 per 1% bounce rate
+  
+  // DNS Penalties
   if (!mb.spf_verified) score -= 20;
   if (!mb.dkim_verified) score -= 20;
-  if (!mb.dmarc_verified) score -= 20;
+  if (!mb.dmarc_verified) score -= 10;
+  
+  // Bounce Penalties (1 point per 1% bounce rate)
+  score -= Math.round(bounceRate);
+  
   return Math.max(0, score);
 }
 
@@ -1737,7 +1742,7 @@ app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
       const bounced = parseInt(mb.bounced_total) || 0;
       const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0;
       
-      mb.score = calculateHealthScore(mb, bounceRate);
+      mb.health_score = calculateHealthScore(mb, bounceRate);
       mb.aliases = aliases;
       
       return mb;
@@ -1836,7 +1841,7 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
         name: mb.name,
         connection_type: mb.connection_type,
         is_alias: false,
-        score: mbScore,
+        health_score: mbScore,
         spf_verified: mb.spf_verified,
         dkim_verified: mb.dkim_verified,
         dmarc_verified: mb.dmarc_verified
@@ -1862,7 +1867,7 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
             name: alias.name || mb.name,
             connection_type: mb.connection_type,
             is_alias: true,
-            score: aliasScore,
+            health_score: aliasScore,
             spf_verified: alias.spf_verified,
             dkim_verified: alias.dkim_verified,
             dmarc_verified: alias.dmarc_verified

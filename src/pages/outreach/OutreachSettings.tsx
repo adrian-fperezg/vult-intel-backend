@@ -614,8 +614,8 @@ export default function OutreachSettings() {
                   ) : (
                     <div className="grid grid-cols-1 gap-4">
                       {mailboxes.map(mb => {
-                        const score = mb.score ?? 100;
-                        const scoreColor = score >= 85 ? 'teal' : score >= 70 ? 'yellow' : 'red';
+                        const health = mb.health_score ?? 100;
+                        const scoreColor = health >= 90 ? 'green' : health >= 70 ? 'yellow' : 'red';
                         const statusIcon = mb.status === 'healthy' || !mb.status
                           ? <CheckCircle2 className="size-4 text-teal-400" />
                           : mb.status === 'warning'
@@ -635,7 +635,7 @@ export default function OutreachSettings() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2.5 mb-0.5">
                                   <p className="font-semibold text-white text-sm">{mb.email}</p>
-                                  <OutreachBadge variant={scoreColor as any}>Health: {score}%</OutreachBadge>
+                                  <OutreachBadge variant={scoreColor as any}>Health: {health}%</OutreachBadge>
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-slate-500">
                                   <span className="flex items-center gap-1.5 capitalize">
@@ -716,7 +716,7 @@ export default function OutreachSettings() {
                                                   <span className="text-[10px] text-slate-500 uppercase font-bold">Health Score</span>
                                                   <span className={cn(
                                                     "text-sm font-bold",
-                                                    (alias.health_score ?? mb.health_score ?? 0) >= 85 ? "text-teal-400" : (alias.health_score ?? mb.health_score ?? 0) >= 70 ? "text-yellow-400" : "text-red-400"
+                                                    (alias.health_score ?? mb.health_score ?? 0) >= 90 ? "text-green-400" : (alias.health_score ?? mb.health_score ?? 0) >= 70 ? "text-yellow-400" : "text-red-400"
                                                   )}>{alias.health_score ?? mb.health_score ?? 0}%</span>
                                                 </div>
                                                 <button 
