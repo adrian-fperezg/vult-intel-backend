@@ -1749,12 +1749,12 @@ app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, r
     if (!article) return res.status(404).json({ error: "Article not found" });
 
     const icp = await db.get("SELECT * FROM icp_profiles WHERE project_id = ?", [projectId]) as any;
-    const context = icp ? `Niche: \${icp.industries || 'Industry News'}\\nKeywords: \${icp.keywords || 'relevant content'}\\nTarget Audience: \${icp.job_titles || 'professionals'}` : 'General industry news';
+    const context = icp ? `Niche: ${icp.industries || 'Industry News'}\nKeywords: ${icp.keywords || 'relevant content'}\nTarget Audience: ${icp.job_titles || 'professionals'}` : 'General industry news';
 
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
 
-    const prompt = \`You are a high-performance Social Media Manager.\\n\\nARTICLE TITLE: \${article.title}\\nARTICLE SUMMARY: \${article.summary}\\n\\nBRAND CONTEXT:\\n\${context}\\n\\nTASK:\\nGenerate a compelling \${platform} post based on this article.\\nTONE: \${tone || 'Professional'}\\n\\nGUIDELINES:\\n- Use hooks that grab attention.\\n- Add relevant hashtags.\\n- Maintain the selected tone throughout.\\n- Include a call to action if appropriate.\\n- Keep it within \${platform === 'Twitter' ? '280' : '2000'} characters.\\n\\nOUTPUT:\\nReturn ONLY the post content. No extra text.\`;
+    const prompt = `You are a high-performance Social Media Manager.\n\nARTICLE TITLE: ${article.title}\nARTICLE SUMMARY: ${article.summary}\n\nBRAND CONTEXT:\n${context}\n\nTASK:\nGenerate a compelling ${platform} post based on this article.\nTONE: ${tone || 'Professional'}\n\nGUIDELINES:\n- Use hooks that grab attention.\n- Add relevant hashtags.\n- Maintain the selected tone throughout.\n- Include a call to action if appropriate.\n- Keep it within ${platform === 'Twitter' ? '280' : '2000'} characters.\n\nOUTPUT:\nReturn ONLY the post content. No extra text.`;
 
     const result = await ai.models.generateContent({
       model: 'gemini-1.5-flash',
