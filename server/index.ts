@@ -1667,10 +1667,21 @@ app.get("/api/outreach/radar/articles", async (req: AuthRequest, res) => {
   if (!projectId) return res.status(400).json({ error: "Project ID is required" });
 
   try {
-    const articles = await db.all(
-      "SELECT * FROM radar_articles WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+    const articles = await db.all(`
+      SELECT a.*, p.content as socialPostDraft 
+      FROM radar_articles a
+      LEFT JOIN radar_social_posts p ON p.id = (
+        SELECT id FROM radar_social_posts 
+        WHERE article_id = a.id 
+        ORDER BY created_at DESC 
+        LIMIT 1
+      )
+      WHERE a.project_id = ? 
+      ORDER BY a.created_at DESC 
+      LIMIT 50`,
       [projectId]
     );
+
     res.json(articles);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1725,6 +1736,44 @@ app.patch("/api/outreach/radar/social-posts/:id", async (req: AuthRequest, res) 
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { articleId, platform, tone } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+  if (!articleId) return res.status(400).json({ error: "Article ID is required" });
+
+  try {
+    const article = await db.get("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]) as any;
+    if (!article) return res.status(404).json({ error: "Article not found" });
+
+    const icp = await db.get("SELECT * FROM icp_profiles WHERE project_id = ?", [projectId]) as any;
+    const context = icp ? `Niche: \${icp.industries || 'Industry News'}\\nKeywords: \${icp.keywords || 'relevant content'}\\nTarget Audience: \${icp.job_titles || 'professionals'}` : 'General industry news';
+
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const prompt = \`You are a high-performance Social Media Manager.\\n\\nARTICLE TITLE: \${article.title}\\nARTICLE SUMMARY: \${article.summary}\\n\\nBRAND CONTEXT:\\n\${context}\\n\\nTASK:\\nGenerate a compelling \${platform} post based on this article.\\nTONE: \${tone || 'Professional'}\\n\\nGUIDELINES:\\n- Use hooks that grab attention.\\n- Add relevant hashtags.\\n- Maintain the selected tone throughout.\\n- Include a call to action if appropriate.\\n- Keep it within \${platform === 'Twitter' ? '280' : '2000'} characters.\\n\\nOUTPUT:\\nReturn ONLY the post content. No extra text.\`;
+
+    const result = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    });
+
+    const generatedContent = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!generatedContent) throw new Error("AI failed to generate content");
+
+    const postId = uuidv4();
+    await db.run("INSERT INTO radar_social_posts (id, article_id, project_id, platform, content, status) VALUES (?, ?, ?, ?, ?, 'draft')", [postId, articleId, projectId, platform, generatedContent]);
+
+    res.json({ id: postId, content: generatedContent });
+  } catch (err: any) {
+    console.error("[Radar Social Post Gen Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 // ─── SENT HISTORY ─────────────────────────────────────────────────────────────

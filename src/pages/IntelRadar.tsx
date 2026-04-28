@@ -31,6 +31,9 @@ export default function IntelRadar() {
   const [loading, setLoading] = useState(true);
   const [generatingPostId, setGeneratingPostId] = useState<string | null>(null);
   const [generatingThumbnailId, setGeneratingThumbnailId] = useState<string | null>(null);
+  const [configPostId, setConfigPostId] = useState<string | null>(null);
+  const [selectedPlatform, setSelectedPlatform] = useState('LinkedIn');
+  const [selectedTone, setSelectedTone] = useState('Professional');
 
   useEffect(() => {
     loadData();
@@ -100,11 +103,17 @@ export default function IntelRadar() {
   };
 
   const handleGeneratePost = async (articleId: string) => {
+    if (configPostId !== articleId) {
+      setConfigPostId(articleId);
+      return;
+    }
+
     setGeneratingPostId(articleId);
     try {
-      await api.generateSocialPost(articleId);
+      await api.generateSocialPost(articleId, selectedPlatform, selectedTone);
       loadData();
       toast.success('Social post drafted');
+      setConfigPostId(null);
     } catch (error) {
       toast.error('Failed to generate post');
     } finally {
@@ -319,28 +328,73 @@ export default function IntelRadar() {
                       )}
                     </div>
 
-                    <div className="p-4 border-t border-white/5 bg-white/[0.02] flex items-center gap-2">
-                      <button 
-                        onClick={() => handleGeneratePost(article.id)}
-                        disabled={generatingPostId === article.id}
-                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-all"
-                      >
-                        {generatingPostId === article.id ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />}
-                        {t('radar.articles.draftPost')}
-                      </button>
-                      <button 
-                        onClick={() => handleGenerateThumbnail(article.id, article.title)}
-                        disabled={generatingThumbnailId === article.id}
-                        className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 disabled:opacity-50"
-                        title="Generate Thumbnail with Veo Studio"
-                      >
-                        {generatingThumbnailId === article.id ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <ImageIcon className="size-4" />
-                        )}
-                      </button>
+                    <div className="p-4 border-t border-white/5 bg-white/[0.02] flex flex-col gap-4">
+                      {configPostId === article.id && (
+                        <motion.div 
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="space-y-4 p-4 rounded-2xl bg-primary/5 border border-primary/20"
+                        >
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Platform</label>
+                              <select 
+                                value={selectedPlatform}
+                                onChange={(e) => setSelectedPlatform(e.target.value)}
+                                className="w-full bg-surface-dark border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary/50"
+                              >
+                                <option value="LinkedIn">LinkedIn</option>
+                                <option value="Twitter">Twitter / X</option>
+                                <option value="Instagram">Instagram</option>
+                                <option value="Threads">Threads</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Tone</label>
+                              <select 
+                                value={selectedTone}
+                                onChange={(e) => setSelectedTone(e.target.value)}
+                                className="w-full bg-surface-dark border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary/50"
+                              >
+                                <option value="Professional">Professional</option>
+                                <option value="Witty">Witty</option>
+                                <option value="Educational">Educational</option>
+                                <option value="Controversial">Controversial</option>
+                              </select>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => handleGeneratePost(article.id)}
+                          disabled={generatingPostId === article.id}
+                          className={cn(
+                            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all",
+                            configPostId === article.id 
+                              ? "bg-primary text-white shadow-lg shadow-primary/20"
+                              : "bg-white/5 hover:bg-white/10 text-white"
+                          )}
+                        >
+                          {generatingPostId === article.id ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />}
+                          {configPostId === article.id ? 'Confirm & Generate' : t('radar.articles.draftPost')}
+                        </button>
+                        <button 
+                          onClick={() => handleGenerateThumbnail(article.id, article.title)}
+                          disabled={generatingThumbnailId === article.id}
+                          className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 disabled:opacity-50"
+                          title="Generate Thumbnail with Veo Studio"
+                        >
+                          {generatingThumbnailId === article.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <ImageIcon className="size-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
+
                   </motion.article>
                 ))
               ) : (

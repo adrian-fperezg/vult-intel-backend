@@ -104,6 +104,16 @@ export const useIntelRadarApi = () => {
     return response.json();
   };
 
+  const generateSocialPost = async (articleId: string, platform: string, tone: string) => {
+    const headers = await getHeaders();
+    const response = await fetch(`${API_BASE_URL}/outreach/radar/social-posts/generate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ articleId, platform, tone }),
+    });
+    return response.json();
+  };
+
   return {
     runRadar,
     updateSchedule,
@@ -115,3 +125,4 @@ export const useIntelRadarApi = () => {
     generateThumbnail,
   };
 };
+
