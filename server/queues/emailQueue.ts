@@ -15,6 +15,7 @@ import { recordOutreachEvent } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
 import { encryptToken } from '../lib/outreach/encrypt.js';
 import { DateTime } from 'luxon';
+import { parseSpintax } from '../utils/spintax.js';
 
 
 dotenv.config();
@@ -389,6 +390,10 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             subject = subject.replace(regex, valStr);
             bodyHtml = bodyHtml.replace(regex, valStr);
           });
+
+          // Apply Spintax
+          subject = parseSpintax(subject);
+          bodyHtml = parseSpintax(bodyHtml);
 
           // Resolve attachments and log for debugging
           const rawAttachments = JSON.parse(step.attachments || "[]");
@@ -1042,6 +1047,10 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           subject = subject.replace(regex, value);
           bodyHtml = bodyHtml.replace(regex, value);
         });
+
+        // Apply Spintax
+        subject = parseSpintax(subject);
+        bodyHtml = parseSpintax(bodyHtml);
 
 
         const finalMailboxUuid = campaign.mailbox_id?.includes(':') ? campaign.mailbox_id.split(':')[0] : campaign.mailbox_id;
