@@ -1044,5 +1044,47 @@
                 "desc": "Identificando frameworks y herramientas"
             }
         }
+    },
+    "radar": {
+        "title": "Intel Radar",
+        "subtitle": "Rastrea competidores, escanea URLs y genera inteligencia de marketing.",
+        "sources": {
+            "title": "Fuentes y Feeds de URL",
+            "description": "Administra las URLs que Vult rastrea para tu proyecto. Cuando se publique un nuevo artículo en uno de estos sitios, Vult lo escaneará automáticamente en 24 horas.",
+            "addNewSource": "Agregar Nueva Fuente",
+            "addSourcePlaceholder": "https://ejemplo.com",
+            "addError": "Error al agregar URL",
+            "deleteError": "Error al eliminar fuente",
+            "sourceAdded": "Fuente agregada con éxito",
+            "sourceDeleted": "Fuente eliminada con éxito"
+        },
+        "articles": {
+            "title": "Últimos Artículos",
+            "description": "Artículos curados por IA de tus fuentes rastreadas, procesados y etiquetados por Vult.",
+            "filters": {
+                "all": "Todas las Fuentes",
+                "linkedin": "LinkedIn",
+                "website": "Sitio Web"
+            },
+            "noArticlesYet": "Aún no hay artículos procesados por IA.",
+            "noArticlesDesc": "Vult aparecerá aquí una vez que escanee y procese el primer artículo de tus fuentes.",
+            "scanningArticle": "Escaneando artículo...",
+            "processingArticle": "Procesando con modelos NLP...",
+            "errorProcessing": "Error al procesar el artículo.",
+            "scanArticle": "Escanear Artículo",
+            "scanError": "Error al escanear el artículo.",
+            "viewInSource": "Ver en la Fuente",
+            "processing": "Procesando...",
+            "generating": "Generando...",
+            "generated": "¡Generado!",
+            "draftPost": "Borrador de Post",
+            "generatedTitle": "Post Generado por IA",
+            "generatedDesc": "Este post de LinkedIn fue generado automáticamente usando el contenido del artículo. Puedes editarlo y publicarlo.",
+            "articleScanned": "Artículo escaneado con éxito",
+            "errorScanning": "Error al escanear el artículo:",
+            "generatePost": "Generar Post",
+            "generatePostError": "Error al generar el post.",
+            "scanArticleError": "Error al escanear el artículo"
+        }
     }
 }

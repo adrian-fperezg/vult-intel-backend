@@ -1152,7 +1152,6 @@
         "footerNote": "Only the last messages are sent to optimize costs.",
         "error": "Sorry, there was an error processing your request. Please try again."
     },
-
     "mastermind": {
         "title": "Growth Mastermind",
         "subtitle": "Synthesize your Full Scan, Brand Strategy, and Personas into a highly tactical Marketing Masterplan.",
@@ -1244,4 +1243,46 @@
             }
         }
     },
+    "radar": {
+        "title": "Intel Radar",
+        "subtitle": "Track competitors, scan URLs, and generate marketing intelligence.",
+        "sources": {
+            "title": "Sources & URL Feeds",
+            "description": "Manage the URLs that Vult tracks for your project. When a new article is published on one of these sites, Vult will automatically scan it within 24 hours.",
+            "addNewSource": "Add New Source",
+            "addSourcePlaceholder": "https://example.com",
+            "addError": "Failed to add URL",
+            "deleteError": "Failed to delete source",
+            "sourceAdded": "Source added successfully",
+            "sourceDeleted": "Source deleted successfully"
+        },
+        "articles": {
+            "title": "Latest Articles",
+            "description": "AI-curated articles from your tracked sources, processed and tagged by Vult.",
+            "filters": {
+                "all": "All Sources",
+                "linkedin": "LinkedIn",
+                "website": "Website"
+            },
+            "noArticlesYet": "No AI-processed articles yet.",
+            "noArticlesDesc": "Vult will appear here once it scans and processes the first article from your sources.",
+            "scanningArticle": "Scanning article...",
+            "processingArticle": "Processing with NLP models...",
+            "errorProcessing": "Error processing article.",
+            "scanArticle": "Scan Article",
+            "scanError": "Error scanning article.",
+            "viewInSource": "View in Source",
+            "processing": "Processing...",
+            "generating": "Generating...",
+            "generated": "Generated!",
+            "draftPost": "Draft Post",
+            "generatedTitle": "AI-Generated Post",
+            "generatedDesc": "This LinkedIn post was automatically generated using the contents of the article. You can edit and publish it.",
+            "articleScanned": "Article scanned successfully",
+            "errorScanning": "Error scanning article:",
+            "generatePost": "Generate Post",
+            "generatePostError": "Error generating post.",
+            "scanArticleError": "Error scanning article"
+        }
+    }
 }
