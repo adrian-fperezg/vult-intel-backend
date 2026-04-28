@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   X, Settings, Mail, Users, Zap, Search, 
   Upload, ChevronRight, ChevronLeft, Loader2,
@@ -20,6 +21,7 @@ interface CampaignWizardProps {
 type WizardStep = 'settings' | 'content' | 'contacts' | 'scheduling' | 'review';
 
 export default function CampaignWizard({ isOpen, onClose, onComplete }: CampaignWizardProps) {
+  const { t } = useTranslation();
   const { 
     fetchMailboxes, 
     fetchIdentities,
@@ -131,12 +133,12 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
         scheduling
       });
       
-      toast.success('Campaign launched successfully!');
+      toast.success(t('outreach.wizard.toast.success'));
       onComplete();
       onClose();
     } catch (err) {
       console.error(err);
-      toast.error('Failed to launch campaign');
+      toast.error(t('outreach.wizard.toast.error'));
     } finally {
       setIsSubmitting(false);
     }
@@ -144,7 +146,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
 
   const handleOptimize = async () => {
     if (!content.body_html || content.body_html.length < 20) {
-      toast.error('Please write some content first.');
+      toast.error(t('outreach.wizard.toast.contentMissing'));
       return;
     }
     setIsOptimizing(true);
@@ -160,10 +162,10 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
       if (!response.ok) throw new Error('Failed to optimize');
       const data = await response.json();
       setContent(prev => ({ ...prev, body_html: data.optimizedContent }));
-      toast.success('Optimized with Gemini!');
+      toast.success(t('outreach.wizard.toast.aiSuccess'));
     } catch (err) {
       console.error(err);
-      toast.error('AI Optimization failed');
+      toast.error(t('outreach.wizard.toast.aiError'));
     } finally {
       setIsOptimizing(false);
     }
@@ -174,11 +176,11 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
     : "loading...";
 
   const steps: { key: WizardStep; label: string; icon: any }[] = [
-    { key: 'settings', label: 'Settings', icon: <Settings className="size-4" /> },
-    { key: 'content', label: 'Content', icon: <Mail className="size-4" /> },
-    { key: 'contacts', label: 'Contacts', icon: <Users className="size-4" /> },
-    { key: 'scheduling', label: 'Scheduling', icon: <Clock className="size-4" /> },
-    { key: 'review', label: 'Review', icon: <Search className="size-4" /> },
+    { key: 'settings', label: t('outreach.wizard.steps.settings'), icon: <Settings className="size-4" /> },
+    { key: 'content', label: t('outreach.wizard.steps.content'), icon: <Mail className="size-4" /> },
+    { key: 'contacts', label: t('outreach.wizard.steps.contacts'), icon: <Users className="size-4" /> },
+    { key: 'scheduling', label: t('outreach.wizard.steps.scheduling'), icon: <Clock className="size-4" /> },
+    { key: 'review', label: t('outreach.wizard.steps.review'), icon: <Search className="size-4" /> },
   ];
 
   return (
@@ -193,8 +195,8 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
               <Zap className="size-5 text-teal-400" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">Create Campaign</h2>
-              <p className="text-xs text-slate-400">Launch a new automated outreach campaign</p>
+              <h2 className="text-xl font-bold text-white">{t('outreach.wizard.title')}</h2>
+              <p className="text-xs text-slate-400">{t('outreach.wizard.subtitle')}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white transition-colors">
@@ -238,21 +240,21 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Settings className="size-5 text-teal-400" />
-                    Campaign Settings
+                    {t('outreach.wizard.settings.title')}
                   </h3>
                   <div className="grid gap-6">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Campaign Name</label>
+                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">{t('outreach.wizard.settings.name')}</label>
                       <input 
                         type="text" 
                         value={settings.name}
                         onChange={e => setSettings({...settings, name: e.target.value})}
-                        placeholder="e.g. Q1 SaaS Founders Outreach"
+                        placeholder={t('outreach.wizard.settings.namePlaceholder')}
                         className="w-full px-4 py-3 bg-[#161b22] border border-[#30363d] rounded-xl text-white focus:outline-none focus:border-teal-500/50 transition-colors"
                       />
                     </div>
                     <div className="space-y-1.5 relative">
-                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Sender Mailbox</label>
+                      <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">{t('outreach.wizard.settings.sender')}</label>
                       <button
                         type="button"
                         onClick={() => setIsMailboxOpen(!isMailboxOpen)}
@@ -261,12 +263,12 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                         <div className="flex items-center gap-2 truncate">
                           {(() => {
                             const selected = identities.find(i => i.email === settings.from_email) || identities.find(i => i.mailbox_id === settings.mailbox_id);
-                            if (!selected) return <span className="text-slate-500">Select a sender...</span>;
+                            if (!selected) return <span className="text-slate-500">{t('outreach.wizard.settings.selectSender')}</span>;
                             return (
                               <div className="flex items-center gap-2">
                                 <Mail className="size-4 text-slate-400 shrink-0" />
                                 <span className="truncate">{selected.name ? `${selected.name} <${selected.email}>` : selected.email}</span>
-                                {selected.is_alias && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 shrink-0">Alias</span>}
+                                {selected.is_alias && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 shrink-0">{t('outreach.wizard.settings.alias')}</span>}
                               </div>
                             );
                           })()}
@@ -296,7 +298,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                             >
                               <Mail className="size-4 text-slate-400 shrink-0" />
                               <div className="flex flex-col min-w-0">
-                                <span className="truncate font-medium">{ident.name || 'Primary'}</span>
+                                <span className="truncate font-medium">{ident.name || t('outreach.wizard.settings.primary')}</span>
                                 <span className="truncate text-[10px] opacity-60">{ident.email}</span>
                               </div>
                               {ident.is_alias ? (
@@ -316,16 +318,16 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                     <div className="space-y-1">
                       <h4 className="text-base font-bold text-white flex items-center gap-2">
                         <Layers className="size-5 text-teal-400" />
-                        Funnel Placement
+                        {t('outreach.wizard.settings.funnel')}
                       </h4>
-                      <p className="text-sm text-slate-500">How does this campaign contribute to your B2B sales cycle?</p>
+                      <p className="text-sm text-slate-500">{t('outreach.wizard.settings.funnelDesc')}</p>
                     </div>
 
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { id: 'TOFU', label: 'Top of Funnel', desc: 'Awareness & Outreach', variant: 'tofu' },
-                        { id: 'MOFU', label: 'Middle of Funnel', desc: 'Education & Interest', variant: 'mofu' },
-                        { id: 'BOFU', label: 'Bottom of Funnel', desc: 'Decision & Closing', variant: 'bofu' }
+                        { id: 'TOFU', label: t('outreach.wizard.settings.tofu'), desc: t('outreach.wizard.settings.tofuDesc'), variant: 'tofu' },
+                        { id: 'MOFU', label: t('outreach.wizard.settings.mofu'), desc: t('outreach.wizard.settings.mofuDesc'), variant: 'mofu' },
+                        { id: 'BOFU', label: t('outreach.wizard.settings.bofu'), desc: t('outreach.wizard.settings.bofuDesc'), variant: 'bofu' }
                       ].map((stage) => (
                         <button
                           key={stage.id}
@@ -360,7 +362,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 </div>
 
                 <div className="p-6 bg-teal-500/5 border border-teal-500/10 rounded-2xl space-y-4">
-                  <h4 className="text-sm font-bold text-teal-400">Tracking Options</h4>
+                  <h4 className="text-sm font-bold text-teal-400">{t('outreach.wizard.settings.tracking')}</h4>
                   <div className="flex gap-8">
                     <label className="flex items-center gap-3 cursor-pointer group">
                       <input 
@@ -369,7 +371,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                         onChange={e => setSettings({...settings, track_opens: e.target.checked})}
                         className="size-5 rounded border-[#30363d] bg-[#161b22] text-teal-500 focus:ring-teal-500/20"
                       />
-                      <span className="text-sm text-slate-300 group-hover:text-white transition-colors">Track Email Opens</span>
+                      <span className="text-sm text-slate-300 group-hover:text-white transition-colors">{t('outreach.wizard.settings.trackOpens')}</span>
                     </label>
                     <label className="flex items-center gap-3 cursor-pointer group">
                       <input 
@@ -378,7 +380,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                         onChange={e => setSettings({...settings, track_clicks: e.target.checked})}
                         className="size-5 rounded border-[#30363d] bg-[#161b22] text-teal-500 focus:ring-teal-500/20"
                       />
-                      <span className="text-sm text-slate-300 group-hover:text-white transition-colors">Track Link Clicks</span>
+                      <span className="text-sm text-slate-300 group-hover:text-white transition-colors">{t('outreach.wizard.settings.trackClicks')}</span>
                     </label>
                   </div>
                 </div>
@@ -390,15 +392,15 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Mail className="size-5 text-teal-400" />
-                    Email Content
+                    {t('outreach.wizard.content.title')}
                   </h3>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">Subject Line</label>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest pl-1">{t('outreach.wizard.content.subject')}</label>
                     <input 
                       type="text" 
                       value={content.subject}
                       onChange={e => setContent({...content, subject: e.target.value})}
-                      placeholder="Hi {{first_name}}, quick question..."
+                      placeholder={t('outreach.wizard.content.subjectPlaceholder')}
                       className="w-full px-4 py-3 bg-[#161b22] border border-[#30363d] rounded-xl text-white focus:outline-none focus:border-teal-500/50 transition-colors"
                     />
                   </div>
@@ -418,7 +420,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Users className="size-5 text-teal-400" />
-                    Import Contacts
+                    {t('outreach.wizard.contacts.title')}
                   </h3>
                   
                   {contacts.length === 0 ? (
@@ -426,9 +428,9 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                       <div className="size-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-6">
                         <Upload className="size-8 text-slate-400" />
                       </div>
-                      <h4 className="text-lg font-bold text-white">Upload CSV File</h4>
+                      <h4 className="text-lg font-bold text-white">{t('outreach.wizard.contacts.upload')}</h4>
                       <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                        Import your leads from a CSV file. We'll help you map the columns to our contact fields.
+                        {t('outreach.wizard.contacts.uploadDesc')}
                       </p>
                       <input 
                         type="file" 
@@ -438,7 +440,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                         id="csv-upload" 
                       />
                       <TealButton onClick={() => document.getElementById('csv-upload')?.click()}>
-                        Choose File
+                        {t('outreach.wizard.contacts.chooseFile')}
                       </TealButton>
                     </div>
                   ) : (
@@ -446,19 +448,19 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <CheckCircle2 className="size-5 text-green-400" />
-                          <span className="text-white font-semibold">{contacts.length} Contacts Ready</span>
+                          <span className="text-white font-semibold">{t('outreach.wizard.contacts.ready', { count: contacts.length })}</span>
                         </div>
                         <button 
                           onClick={() => { setContacts([]); setCsvPreview([]); }}
                           className="text-xs text-red-400 hover:text-red-300 font-bold flex items-center gap-1"
                         >
-                          <Trash2 className="size-3" /> Remove File
+                          <Trash2 className="size-3" /> {t('outreach.wizard.contacts.remove')}
                         </button>
                       </div>
 
                       <div className="bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden">
                         <div className="p-4 border-b border-[#30363d] bg-white/5">
-                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Column Mapping</h4>
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t('outreach.wizard.contacts.mapping')}</h4>
                         </div>
                         <div className="p-6 grid grid-cols-2 gap-6">
                           {['email', 'first_name', 'last_name', 'company'].map(field => (
@@ -472,7 +474,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                                 onChange={e => setColumnMapping({...columnMapping, [field]: e.target.value})}
                                 className="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-sm text-white focus:outline-none"
                               >
-                                <option value="">Select column...</option>
+                                <option value="">{t('outreach.wizard.contacts.selectColumn')}</option>
                                 {csvPreview[0]?.map(h => (
                                   <option key={h} value={h}>{h}</option>
                                 ))}
@@ -491,16 +493,16 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Clock className="size-5 text-teal-400" />
-                    Scheduling & Smart Send
+                    {t('outreach.wizard.scheduling.title')}
                   </h3>
-                  <p className="text-sm text-slate-400">Optimize deliverability by controlling send speed and windows.</p>
+                  <p className="text-sm text-slate-400">{t('outreach.wizard.scheduling.desc')}</p>
                 </div>
 
                 <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 space-y-6">
                   <div className="flex items-center justify-between pb-6 border-b border-white/5">
                     <div>
-                      <h4 className="font-bold text-white">Smart Send</h4>
-                      <p className="text-sm text-slate-400">Randomize sending intervals to mimic human behavior</p>
+                      <h4 className="font-bold text-white">{t('outreach.wizard.scheduling.smartSend')}</h4>
+                      <p className="text-sm text-slate-400">{t('outreach.wizard.scheduling.smartSendDesc')}</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" checked={scheduling.smart_send} onChange={e => setScheduling({...scheduling, smart_send: e.target.checked})} className="sr-only peer" />
@@ -511,7 +513,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                   {scheduling.smart_send && (
                     <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl mb-6 text-sm text-emerald-400 font-medium flex items-start gap-3">
                       <Shield className="size-5 shrink-0 mt-0.5" />
-                      <p>🛡️ Reputation Protection Active: Emails are being sent gradually to mimic human behavior and protect your domain reputation. If daily limits are reached, pending emails will be automatically queued for the next business day.</p>
+                      <p>🛡️ {t('outreach.wizard.scheduling.reputationActive')}</p>
                     </div>
                   )}
 
@@ -520,7 +522,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
 
                   <div className="p-6 bg-[#161b22] border border-[#30363d] rounded-2xl space-y-4">
                     <div className="flex items-center justify-between mb-2">
-                       <h4 className="text-sm font-bold text-white">Delay Between Emails</h4>
+                       <h4 className="text-sm font-bold text-white">{t('outreach.wizard.scheduling.delayTitle')}</h4>
                        <span className="text-teal-400 font-mono text-xs">{scheduling.min_delay}-{scheduling.max_delay} min</span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -538,7 +540,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                         className="w-20 px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-sm text-white"
                       />
                     </div>
-                    <p className="text-[10px] text-slate-500">Randomized delay to simulate human-like behavior.</p>
+                    <p className="text-[10px] text-slate-500">{t('outreach.wizard.scheduling.delayDesc')}</p>
                   </div>
                 </div>
 
@@ -551,8 +553,8 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                       className="size-5 rounded border-[#30363d] bg-[#161b22] text-teal-500 focus:ring-teal-500/20"
                     />
                     <div>
-                      <span className="text-sm text-slate-300 group-hover:text-white transition-colors block">Send on Weekends</span>
-                      <span className="text-[10px] text-slate-500">Emails will be queued 7 days a week if enabled.</span>
+                      <span className="text-sm text-slate-300 group-hover:text-white transition-colors block">{t('outreach.wizard.scheduling.weekends')}</span>
+                      <span className="text-[10px] text-slate-500">{t('outreach.wizard.scheduling.weekendsDesc')}</span>
                     </div>
                   </label>
                 </div>
@@ -567,28 +569,28 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                   <CheckCircle2 className="size-10 text-teal-400" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-white">Ready to Launch?</h3>
-                  <p className="text-slate-400 mt-2">Everything looks good. Your campaign is ready to go.</p>
+                  <h3 className="text-2xl font-bold text-white">{t('outreach.wizard.review.title')}</h3>
+                  <p className="text-slate-400 mt-2">{t('outreach.wizard.review.desc')}</p>
                 </div>
 
                 <div className="max-w-md mx-auto grid grid-cols-2 gap-4 text-left">
                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">Campaign</p>
+                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">{t('outreach.wizard.review.campaign')}</p>
                     <p className="text-sm text-white font-semibold truncate">{settings.name}</p>
                   </div>
                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">Contacts</p>
-                    <p className="text-sm text-white font-semibold">{contacts.length} Prospects</p>
+                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">{t('outreach.wizard.review.contacts')}</p>
+                    <p className="text-sm text-white font-semibold">{t('outreach.wizard.review.prospects', { count: contacts.length })}</p>
                   </div>
                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5 col-span-2">
-                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">Strategy</p>
+                    <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">{t('outreach.wizard.review.strategy')}</p>
                     <div className="flex items-center gap-2">
                       <div className={cn(
                         "size-3 rounded-full",
                         settings.funnel_stage === 'TOFU' ? "bg-sky-400" :
                         settings.funnel_stage === 'MOFU' ? "bg-amber-400" : "bg-emerald-400"
                       )} />
-                      <p className="text-sm text-white font-semibold">{settings.funnel_stage} Pipeline Optimization</p>
+                      <p className="text-sm text-white font-semibold">{t('outreach.wizard.review.optimization', { stage: t(`outreach.campaigns.funnel.${settings.funnel_stage.toLowerCase()}`) })}</p>
                     </div>
                   </div>
                 </div>
@@ -597,15 +599,15 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                   <div className="flex items-start gap-4 p-4 bg-teal-500/5 border border-teal-500/20 rounded-2xl text-left max-w-lg mx-auto mb-4">
                     <Zap className="size-5 text-teal-400 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-bold text-teal-400 leading-tight">Delivery Estimate</p>
-                      <p className="text-xs text-slate-400 mt-1">Processing will complete {deliveryEstimate}</p>
+                      <p className="text-sm font-bold text-teal-400 leading-tight">{t('outreach.wizard.review.deliveryEstimate')}</p>
+                      <p className="text-xs text-slate-400 mt-1">{t('outreach.wizard.review.processingWillComplete')} {deliveryEstimate}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-4 p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl text-left max-w-lg mx-auto">
                     <AlertCircle className="size-5 text-amber-500 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-bold text-amber-500 leading-tight">Proceed with Caution</p>
-                      <p className="text-xs text-slate-400 mt-1">This will immediately start sending emails to your contact list based on your mailbox settings.</p>
+                      <p className="text-sm font-bold text-amber-500 leading-tight">{t('outreach.wizard.review.caution')}</p>
+                      <p className="text-xs text-slate-400 mt-1">{t('outreach.wizard.review.cautionDesc')}</p>
                     </div>
                   </div>
                 </div>
@@ -626,12 +628,12 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
             disabled={step === 'settings'}
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 transition-all disabled:opacity-0"
           >
-            <ChevronLeft className="size-4" /> Back
+            <ChevronLeft className="size-4" /> {t('outreach.wizard.actions.back')}
           </button>
           
           <div className="flex gap-4">
             <button onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white transition-colors text-sm font-semibold">
-              Cancel
+              {t('outreach.wizard.actions.cancel')}
             </button>
             {step === 'review' ? (
               <TealButton 
@@ -639,21 +641,21 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 loading={isSubmitting}
                 className="px-10"
               >
-                Launch Campaign
+                {t('outreach.wizard.actions.launch')}
               </TealButton>
             ) : (
               <TealButton 
                 onClick={() => {
                   if (step === 'settings') {
-                    if (!settings.name) return toast.error('Please enter a campaign name');
-                    if (!settings.funnel_stage) return toast.error('Please select a funnel stage');
+                    if (!settings.name) return toast.error(t('outreach.wizard.validation.name'));
+                    if (!settings.funnel_stage) return toast.error(t('outreach.wizard.validation.stage'));
                     setStep('content');
                   } else if (step === 'content') {
-                    if (!content.subject) return toast.error('Please enter a subject line');
+                    if (!content.subject) return toast.error(t('outreach.wizard.validation.subject'));
                     setStep('contacts');
                   } else if (step === 'contacts') {
-                    if (contacts.length === 0) return toast.error('Please import at least one contact');
-                    if (!columnMapping['email']) return toast.error('Please map the email column');
+                    if (contacts.length === 0) return toast.error(t('outreach.wizard.validation.contacts'));
+                    if (!columnMapping['email']) return toast.error(t('outreach.wizard.validation.emailMapping'));
                     setStep('scheduling');
                   } else if (step === 'scheduling') {
                     setStep('review');
@@ -661,7 +663,7 @@ export default function CampaignWizard({ isOpen, onClose, onComplete }: Campaign
                 }}
                 className="px-10"
               >
-                Next <ChevronRight className="size-4" />
+                {t('outreach.wizard.actions.next')} <ChevronRight className="size-4" />
               </TealButton>
             )}
           </div>

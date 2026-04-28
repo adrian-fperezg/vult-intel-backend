@@ -31,14 +31,14 @@ import { useProject } from '@/contexts/ProjectContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/contexts/TranslationContext';
 
-const scanSteps = [
-  { id: 'brand', label: 'Brand Identity', description: 'Logo, Colors, Typography extracted', icon: Zap },
-  { id: 'presence', label: 'Digital Presence', description: 'Social links & meta tags found', icon: Globe },
-  { id: 'seo', label: 'SEO Structure', description: 'Keywords & headings mapped', icon: Search },
-  { id: 'content', label: 'Content Analysis', description: 'Processing NLP models...', icon: FileText },
-  { id: 'conversion', label: 'Conversion', description: 'Analyzing funnel points', icon: BarChart3 },
-  { id: 'trust', label: 'Trust & Security', description: 'SSL & Trust signals check', icon: ShieldCheck },
-  { id: 'tech', label: 'Tech Stack', description: 'Identifying frameworks & tools', icon: Cpu },
+const scanStepsConfig = [
+  { id: 'brand', icon: Zap },
+  { id: 'presence', icon: Globe },
+  { id: 'seo', icon: Search },
+  { id: 'content', icon: FileText },
+  { id: 'conversion', icon: BarChart3 },
+  { id: 'trust', icon: ShieldCheck },
+  { id: 'tech', icon: Cpu },
 ];
 
 const CircularScore = ({ score, label, colorClass }: { score: number, label: string, colorClass: string }) => {
@@ -95,6 +95,12 @@ export default function ProjectsHub() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { selectProject, refreshProjectsList } = useProject();
+
+  const scanSteps = scanStepsConfig.map(step => ({
+    ...step,
+    label: t(`pulse.steps.${step.id}.label`),
+    description: t(`pulse.steps.${step.id}.desc`)
+  }));
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -179,20 +185,20 @@ export default function ProjectsHub() {
 
       // Display the error inline inside the modal so the user actually sees it and the UI isn't stuck holding at 90%
       const errorMsg = error?.message || "An unknown error occurred.";
-      setScanError(`Scan failed: ${errorMsg}. Please check the console for more details.`);
+      setScanError(t('pulse.scanFailedDetail', { error: errorMsg }));
     }
   };
 
   const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(t('confirmDeleteScan'))) return;
+    if (!window.confirm(t('pulse.confirmDelete'))) return;
 
     try {
       await deleteProject(projectId);
       setProjects(current => current.filter(p => p.id !== projectId));
     } catch (error) {
       console.error("Error deleting project:", error);
-      alert(t('deleteScanFailed'));
+      alert(t('pulse.deleteScanFailed'));
     }
   };
 
@@ -201,10 +207,10 @@ export default function ProjectsHub() {
       {/* Header */}
       <header className="sticky top-0 z-10 px-8 py-6 bg-background-dark/80 backdrop-blur-md flex justify-between items-center border-b border-white/5">
         <div>
-          <h2 className="text-white text-2xl font-bold tracking-tight">{t('projectsHub')}</h2>
+          <h2 className="text-white text-2xl font-bold tracking-tight">{t('pulse.title')}</h2>
           <p className="text-slate-400 text-sm mt-1 flex items-center gap-2">
             <span className="inline-block size-1.5 rounded-full bg-emerald-500"></span>
-            {t('projectsHubSubtitle')}
+            {t('pulse.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -223,8 +229,8 @@ export default function ProjectsHub() {
           {/* Section A: Start a Marketing Scan */}
           <section className="flex flex-col items-center justify-center space-y-8 py-8">
             <div className="text-center space-y-2">
-              <h1 className="text-4xl font-bold text-white tracking-tight">{t('startMarketingScan')}</h1>
-              <p className="text-slate-400 text-lg">{t('scanSubtitle')}</p>
+              <h1 className="text-4xl font-bold text-white tracking-tight">{t('pulse.startScan')}</h1>
+              <p className="text-slate-400 text-lg">{t('pulse.scanSubtitle')}</p>
             </div>
 
             <div className="w-full max-w-2xl space-y-4">
@@ -239,7 +245,7 @@ export default function ProjectsHub() {
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleRunScan()}
-                    placeholder={t('scanPlaceholder')}
+                    placeholder={t('pulse.placeholder')}
                     className="flex-1 bg-transparent border-none text-white text-lg placeholder:text-slate-600 focus:outline-none focus:ring-0 py-2"
                   />
                   <button
@@ -248,7 +254,7 @@ export default function ProjectsHub() {
                     className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isScanning ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
-                    {t('runScan')}
+                    {t('pulse.runScan')}
                   </button>
                 </div>
               </div>
@@ -261,7 +267,7 @@ export default function ProjectsHub() {
                 >
                   <div className="flex items-center gap-2">
                     <Info className="size-4 text-blue-500" />
-                    {t('whatYouGet')}
+                    {t('pulse.whatYouGet')}
                   </div>
                   <ChevronDown className={cn("size-4 transition-transform duration-200", isAccordionOpen && "rotate-180")} />
                 </button>
@@ -270,21 +276,21 @@ export default function ProjectsHub() {
                   <div className="px-5 pb-5 pt-2 border-t border-white/5 bg-white/[0.02]">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
                       <div>
-                        <h4 className="text-white font-medium mb-2">{t('strategicOutputs')}</h4>
+                        <h4 className="text-white font-medium mb-2">{t('pulse.strategicOutputs')}</h4>
                         <ul className="space-y-1.5 text-slate-400">
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('scanOutputExecutiveSummary')}</li>
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('scanOutputSnapshot')}</li>
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('scanOutputFootprint')}</li>
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('scanOutputActionPlan')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('pulse.outputs.summary')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('pulse.outputs.snapshot')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('pulse.outputs.footprint')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-blue-500"></div>{t('pulse.outputs.actionPlan')}</li>
                         </ul>
                       </div>
                       <div>
-                        <h4 className="text-white font-medium mb-2">{t('technicalAnalysis')}</h4>
+                        <h4 className="text-white font-medium mb-2">{t('pulse.technicalAnalysis')}</h4>
                         <ul className="space-y-1.5 text-slate-400">
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('scanOutputSeo')}</li>
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('scanOutputConversion')}</li>
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('scanOutputTechStack')}</li>
-                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('scanOutputPerformance')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('pulse.outputs.seo')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('pulse.outputs.conversion')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('pulse.outputs.techStack')}</li>
+                          <li className="flex items-center gap-2"><div className="size-1 rounded-full bg-emerald-500"></div>{t('pulse.outputs.performance')}</li>
                         </ul>
                       </div>
                     </div>
@@ -299,9 +305,9 @@ export default function ProjectsHub() {
           {/* Section B: Your Projects */}
           <section className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">{t('yourProjects')}</h3>
+              <h3 className="text-xl font-bold text-white">{t('pulse.yourProjects')}</h3>
               <button className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-400 hover:text-white bg-surface-dark border border-white/10 rounded-lg transition-colors">
-                {t('sortByRecent')}
+                {t('pulse.sortByRecent')}
                 <Filter className="size-3" />
               </button>
             </div>
@@ -316,11 +322,11 @@ export default function ProjectsHub() {
                     <span className="text-white text-xs font-bold">{loadingTimer.toFixed(1)}s</span>
                   </div>
                 </div>
-                <p className="text-slate-400 font-medium">{t('syncingDatabase')}</p>
+                <p className="text-slate-400 font-medium">{t('pulse.syncingDatabase')}</p>
               </div>
             ) : projects.length === 0 ? (
               <div className="text-center py-12 text-slate-500">
-                <p>{t('noProjectsYet')}</p>
+                <p>{t('pulse.noProjectsYet')}</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -350,18 +356,18 @@ export default function ProjectsHub() {
                       </a>
 
                       <p className="text-sm text-slate-400 line-clamp-3 mb-2 min-h-[60px]">
-                        {project.description || t('noDescription')}
+                        {project.description || t('pulse.noDescription')}
                       </p>
                     </div>
 
                     <div className="relative z-10 grid grid-cols-2 gap-4 mb-8">
                       <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/5 group-hover:bg-white/[0.04] transition-colors">
                         <span className="text-3xl font-bold text-emerald-500">{project.scores.website}</span>
-                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mt-1">Website</span>
+                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mt-1">{t('pulse.website')}</span>
                       </div>
                       <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/5 group-hover:bg-white/[0.04] transition-colors">
                         <span className="text-3xl font-bold text-blue-500">{project.scores.marketing}</span>
-                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mt-1">Marketing</span>
+                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mt-1">{t('pulse.marketing')}</span>
                       </div>
                     </div>
 
@@ -369,7 +375,7 @@ export default function ProjectsHub() {
                       onClick={() => navigate(`/deep-scan/${project.id}`)}
                       className="relative z-10 mt-auto w-full py-3.5 bg-white text-black hover:bg-slate-200 font-semibold rounded-xl text-sm transition-all shadow-lg shadow-white/5 flex items-center justify-center gap-2 group-hover:scale-[1.02]"
                     >
-                      {t('viewFullReport')}
+                      {t('pulse.viewFullReport')}
                       <ChevronDown className="size-4 -rotate-90" />
                     </button>
                   </div>
@@ -401,7 +407,7 @@ export default function ProjectsHub() {
                 <div className="flex items-center gap-2">
                   <div className={cn("size-2 rounded-full", scanError ? "bg-red-500" : "bg-blue-500 animate-pulse")} />
                   <span className={cn("text-xs font-bold tracking-wider", scanError ? "text-red-500" : "text-blue-500")}>
-                    {scanError ? t('scanFailed') : t('scanActive')}
+                    {scanError ? t('pulse.scanFailed') : t('pulse.scanActive')}
                   </span>
                 </div>
                 <button onClick={() => setIsScanning(false)} className="text-slate-500 hover:text-white transition-colors">
@@ -412,13 +418,13 @@ export default function ProjectsHub() {
               {/* Content */}
               <div className="p-6 space-y-6 overflow-y-auto">
                 <div>
-                  <h3 className="text-lg font-bold text-white">{t('analyzingUrl')}</h3>
+                  <h3 className="text-lg font-bold text-white">{t('pulse.analyzingUrl')}</h3>
                   <p className="text-slate-400 text-sm truncate">{url}</p>
                 </div>
 
                 {scanError && (
                   <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl space-y-1">
-                    <h4 className="text-red-500 font-bold mb-1">{t('errorDuringScan')}</h4>
+                    <h4 className="text-red-500 font-bold mb-1">{t('pulse.errorDuringScan')}</h4>
                     <p className="text-sm text-red-200">{scanError}</p>
                   </div>
                 )}
@@ -426,7 +432,7 @@ export default function ProjectsHub() {
                 {/* Progress */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs font-medium">
-                    <span className="text-slate-300">{t('overallProgress')}</span>
+                    <span className="text-slate-300">{t('pulse.overallProgress')}</span>
                     <span className="text-blue-400">{Math.round(scanProgress)}%</span>
                   </div>
                   <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -471,7 +477,7 @@ export default function ProjectsHub() {
                             <p className="text-xs text-blue-400 mt-0.5 animate-pulse">{step.description}</p>
                           )}
                           {status === 'completed' && (
-                            <p className="text-xs text-slate-500 mt-0.5">{t('completed')}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{t('pulse.completed')}</p>
                           )}
                         </div>
                         {status === 'completed' && <CheckCircle2 className="size-4 text-green-500" />}
@@ -485,7 +491,7 @@ export default function ProjectsHub() {
               {/* Footer */}
               <div className="p-4 border-t border-white/5 bg-white/[0.02] flex justify-end items-center">
                 <button onClick={() => setIsScanning(false)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-medium rounded-lg border border-white/10 transition-colors">
-                  {t('cancelScan')}
+                  {t('pulse.cancelScan')}
                 </button>
               </div>
             </motion.div>

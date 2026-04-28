@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -38,15 +38,16 @@ interface Campaign {
 }
 
 
-const STATUS_CONFIG: Record<CampaignStatus, { label: string; variant: 'green' | 'yellow' | 'gray' | 'teal' | 'blue' }> = {
-  active:    { label: 'Active',    variant: 'green' },
-  paused:    { label: 'Paused',    variant: 'yellow' },
-  draft:     { label: 'Draft',     variant: 'gray' },
-  completed: { label: 'Completed', variant: 'blue' },
-  scheduled: { label: 'Scheduled', variant: 'teal' },
+const STATUS_CONFIG: Record<CampaignStatus, { labelKey: string; variant: 'green' | 'yellow' | 'gray' | 'teal' | 'blue' }> = {
+  active:    { labelKey: 'outreach.campaigns.status.active',    variant: 'green' },
+  paused:    { labelKey: 'outreach.campaigns.status.paused',    variant: 'yellow' },
+  draft:     { labelKey: 'outreach.campaigns.status.draft',     variant: 'gray' },
+  completed: { labelKey: 'outreach.campaigns.status.completed', variant: 'blue' },
+  scheduled: { labelKey: 'outreach.campaigns.status.scheduled', variant: 'teal' },
 };
 
 export default function OutreachCampaigns() {
+  const { t } = useTranslation();
   const { 
     activeProjectId, 
     fetchCampaigns, 
@@ -179,7 +180,7 @@ export default function OutreachCampaigns() {
   const chartData = ['TOFU', 'MOFU', 'BOFU'].map(stage => {
     const s = funnelStats.find(x => x.funnel_stage === stage) || { total_sent: 0, total_replies: 0 };
     return {
-      name: stage,
+      name: t(`outreach.campaigns.funnel.${stage.toLowerCase()}`),
       sent: s.total_sent || 0,
       replies: s.total_replies || 0,
       rate: s.total_sent > 0 ? ((s.total_replies / s.total_sent) * 100).toFixed(1) : "0"
@@ -196,8 +197,8 @@ export default function OutreachCampaigns() {
     return (
       <OutreachEmptyState
         icon={<FolderOpen />}
-        title="No project selected"
-        description="Select a project from the top bar to view and manage its campaigns."
+        title={t('common.noProjectSelected')}
+        description={t('common.noProjectDesc')}
       />
     );
   }
@@ -218,13 +219,13 @@ export default function OutreachCampaigns() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-1">
           <h1 className="text-4xl font-black tracking-tight text-white flex items-center gap-4">
-            Campaigns
+            {t('outreach.campaigns.title')}
             <div className="flex items-center gap-1 bg-teal-500/10 border border-teal-500/20 px-3 py-1 rounded-full">
               <div className="size-2 rounded-full bg-teal-500 animate-pulse" />
-              <span className="text-[10px] font-black uppercase text-teal-400 tracking-widest">Live Performance</span>
+              <span className="text-[10px] font-black uppercase text-teal-400 tracking-widest">{t('outreach.campaigns.livePerformance')}</span>
             </div>
           </h1>
-          <p className="text-slate-400 font-medium text-lg">Aggregate B2B sales funnel intelligence and automation.</p>
+          <p className="text-slate-400 font-medium text-lg">{t('outreach.campaigns.subtitle')}</p>
         </div>
         <div className="flex items-center gap-4">
           <TealButton 
@@ -232,7 +233,7 @@ export default function OutreachCampaigns() {
             className="h-14 px-8 rounded-2xl shadow-2xl shadow-teal-500/20 active:scale-95 transition-all text-base"
           >
             <Plus className="size-5 mr-3 shrink-0" />
-            New Campaign
+            {t('outreach.campaigns.newCampaign')}
           </TealButton>
         </div>
       </div>
@@ -240,31 +241,31 @@ export default function OutreachCampaigns() {
       {/* SECTION 1: GLOBAL KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <OutreachMetricCard 
-          label="Total Funnel Volume" 
+          label={t('outreach.campaigns.kpis.totalVolume')}
           value={totalSent.toLocaleString()} 
           icon={<Send className="text-sky-400" />}
-          sub="Emails sent across all stages"
+          sub={t('outreach.campaigns.kpis.totalVolumeDesc')}
           teal
         />
         <OutreachMetricCard 
-          label="Avg. Open Rate" 
+          label={t('outreach.campaigns.kpis.avgOpenRate')}
           value={`${avgOpenRate}%`} 
           icon={<MousePointer2 className="text-amber-400" />}
           trend={analyticsData?.open_rate_change == null ? 'neutral' : analyticsData.open_rate_change > 0 ? 'up' : 'down'}
           trendValue={analyticsData?.open_rate_change != null ? `${analyticsData.open_rate_change > 0 ? '+' : ''}${analyticsData.open_rate_change}pp` : undefined}
         />
         <OutreachMetricCard 
-          label="Avg. Reply Rate" 
+          label={t('outreach.campaigns.kpis.avgReplyRate')}
           value={`${avgReplyRate}%`} 
           icon={<MessageSquare className="text-emerald-400" />}
           trend={analyticsData?.reply_rate_change == null ? 'neutral' : analyticsData.reply_rate_change > 0 ? 'up' : 'down'}
           trendValue={analyticsData?.reply_rate_change != null ? `${analyticsData.reply_rate_change > 0 ? '+' : ''}${analyticsData.reply_rate_change}pp` : undefined}
         />
         <OutreachMetricCard 
-          label="Conversion Engine" 
+          label={t('outreach.campaigns.kpis.conversionEngine')}
           value={campaigns.filter(c => c.status === 'active').length.toString()} 
           icon={<Play className="text-purple-400" />}
-          sub="Currently active campaigns"
+          sub={t('outreach.campaigns.kpis.activeCount')}
         />
       </div>
 
@@ -279,18 +280,18 @@ export default function OutreachCampaigns() {
             <div className="space-y-1">
               <h3 className="text-xl font-bold flex items-center gap-2">
                 <Layers className="size-5 text-teal-400" />
-                Funnel Throughput
+                {t('outreach.campaigns.funnel.throughput')}
               </h3>
-              <p className="text-sm text-slate-500">Volume vs. Engagement by funnel stage</p>
+              <p className="text-sm text-slate-500">{t('outreach.campaigns.funnel.throughputDesc')}</p>
             </div>
             <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest text-slate-500">
                <div className="flex items-center gap-2">
                  <div className="size-3 rounded-full bg-teal-500/20 border border-teal-500/50" />
-                 Sent
+                 {t('outreach.campaigns.funnel.sent')}
                </div>
                <div className="flex items-center gap-2">
                  <div className="size-3 rounded-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.3)]" />
-                 Replies
+                 {t('outreach.campaigns.funnel.replies')}
                </div>
             </div>
           </div>
@@ -314,11 +315,11 @@ export default function OutreachCampaigns() {
                       const data = payload[0].payload;
                       return (
                         <div className="bg-[#0d1117] border border-[#30363d] p-4 rounded-xl shadow-2xl">
-                          <p className="text-sm font-black text-white mb-2">{data.name} Analysis</p>
+                          <p className="text-sm font-black text-white mb-2">{t('outreach.campaigns.funnel.analysis', { stage: data.name })}</p>
                           <div className="space-y-1">
-                            <p className="text-xs text-slate-400 flex justify-between gap-8">Sent: <span className="text-white font-bold">{data.sent}</span></p>
-                            <p className="text-xs text-slate-400 flex justify-between gap-8">Replies: <span className="text-teal-400 font-bold">{data.replies}</span></p>
-                            <p className="text-[10px] font-black text-teal-500 pt-1 border-t border-white/5 mt-1">{data.rate}% Final Conversion</p>
+                            <p className="text-xs text-slate-400 flex justify-between gap-8">{t('outreach.campaigns.funnel.sent')}: <span className="text-white font-bold">{data.sent}</span></p>
+                            <p className="text-xs text-slate-400 flex justify-between gap-8">{t('outreach.campaigns.funnel.replies')}: <span className="text-teal-400 font-bold">{data.replies}</span></p>
+                            <p className="text-[10px] font-black text-teal-500 pt-1 border-t border-white/5 mt-1">{t('outreach.campaigns.funnel.finalConversion', { rate: data.rate })}</p>
                           </div>
                         </div>
                       );
@@ -353,9 +354,9 @@ export default function OutreachCampaigns() {
              <div className="space-y-1">
                <h3 className="text-xl font-bold flex items-center gap-2">
                  <TrendingUp className="size-5 text-teal-400" />
-                 Engine Optimization
+                 {t('outreach.campaigns.funnel.optimization')}
                </h3>
-               <p className="text-sm text-slate-500">Suggested improvements based on data</p>
+               <p className="text-sm text-slate-500">{t('outreach.campaigns.funnel.optimizationDesc')}</p>
              </div>
              
              <div className="space-y-4">
@@ -373,13 +374,13 @@ export default function OutreachCampaigns() {
                           {d.name[0]}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-white">{d.name} Pipeline</p>
-                          <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{d.sent} Prospects Active</p>
+                          <p className="text-sm font-bold text-white">{t('outreach.campaigns.funnel.pipeline', { stage: d.name })}</p>
+                          <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{t('outreach.campaigns.funnel.prospectsActive', { count: d.sent })}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className={cn("text-sm font-black", lowRate ? "text-amber-500" : "text-teal-400")}>{d.rate}%</p>
-                        <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">{lowRate ? "Needs Focus" : "Healthy"}</p>
+                        <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">{lowRate ? t('outreach.campaigns.funnel.needsFocus') : t('outreach.campaigns.funnel.healthy')}</p>
                       </div>
                    </div>
                  );
@@ -389,7 +390,7 @@ export default function OutreachCampaigns() {
            
            <div className="pt-6">
              <button className="w-full h-12 rounded-xl bg-white/5 border border-white/10 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white hover:bg-teal-500 hover:border-teal-400 transition-all">
-               Generate AI Audit Report
+               {t('outreach.campaigns.funnel.aiReport')}
              </button>
            </div>
         </div>
@@ -399,7 +400,7 @@ export default function OutreachCampaigns() {
       <div className="bg-[#161b22] border border-[#30363d] rounded-[32px] overflow-hidden shadow-2xl relative">
         <div className="p-8 border-b border-[#30363d] flex items-center justify-between bg-white/[0.02]">
            <div className="flex items-center gap-4">
-              <h3 className="text-xl font-bold">Campaign Inventory</h3>
+              <h3 className="text-xl font-bold">{t('outreach.campaigns.inventory.title')}</h3>
               <div className="flex items-center gap-2 h-8 px-2 bg-[#0d1117] rounded-lg border border-[#30363d]">
                 {['ALL', 'TOFU', 'MOFU', 'BOFU'].map((stage) => (
                   <button
@@ -412,7 +413,7 @@ export default function OutreachCampaigns() {
                         : "text-slate-500 hover:text-slate-300"
                     )}
                   >
-                    {stage}
+                    {t(`outreach.campaigns.funnel.${stage.toLowerCase()}`)}
                   </button>
                 ))}
               </div>
@@ -422,7 +423,7 @@ export default function OutreachCampaigns() {
                 <Search className="size-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-teal-400 transition-colors" />
                 <input 
                   type="text" 
-                  placeholder="Search campaigns..." 
+                  placeholder={t('outreach.campaigns.inventory.search')} 
                   className="h-10 pl-10 pr-4 bg-[#0d1117] border border-[#30363d] rounded-xl text-sm focus:outline-none focus:border-teal-500/50 transition-all w-64"
                 />
               </div>
@@ -433,11 +434,11 @@ export default function OutreachCampaigns() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-white/[0.01]">
-                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">Campaign Details</th>
-                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">Funnel Stage</th>
-                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">Status</th>
-                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d] text-center">Performance</th>
-                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d] text-right">Actions</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">{t('outreach.campaigns.inventory.details')}</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">{t('outreach.campaigns.inventory.stage')}</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d]">{t('outreach.campaigns.inventory.status')}</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d] text-center">{t('outreach.campaigns.inventory.performance')}</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] border-b border-[#30363d] text-right">{t('outreach.campaigns.inventory.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#30363d]">
@@ -445,15 +446,15 @@ export default function OutreachCampaigns() {
                 <tr>
                   <td colSpan={5} className="py-20 text-center">
                     <Loader2 className="size-8 text-teal-500 animate-spin mx-auto mb-4" />
-                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Hydrating data from engine...</span>
+                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">{t('outreach.campaigns.inventory.loading')}</span>
                   </td>
                 </tr>
               ) : filteredCampaigns.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-20 text-center">
                      <Mail className="size-12 text-slate-700 mx-auto mb-4 opacity-50" />
-                     <h4 className="text-xl font-bold text-slate-500">Zero Campaigns Discovered</h4>
-                     <button onClick={handleCreate} className="mt-4 text-teal-400 font-bold hover:underline">Deploy your first campaign →</button>
+                     <h4 className="text-xl font-bold text-slate-500">{t('outreach.campaigns.inventory.empty')}</h4>
+                     <button onClick={handleCreate} className="mt-4 text-teal-400 font-bold hover:underline">{t('outreach.campaigns.inventory.deployFirst')}</button>
                   </td>
                 </tr>
               ) : (
@@ -474,13 +475,13 @@ export default function OutreachCampaigns() {
                           <p className="text-base font-bold text-white group-hover/row:text-teal-400 transition-colors">{campaign.name}</p>
                           <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                             <span className="flex items-center gap-1"><Calendar className="size-3" /> {campaign.createdAt}</span>
-                            <span className="flex items-center gap-1"><Users className="size-3" /> {campaign.leads} Leased</span>
+                            <span className="flex items-center gap-1"><Users className="size-3" /> {t('outreach.campaigns.inventory.leads', { count: campaign.leads })}</span>
                           </div>
                         </div>
                       </td>
                       <td className="px-8 py-6">
                         <OutreachBadge variant={getFunnelVariant(campaign.funnel_stage)}>
-                          {campaign.funnel_stage}
+                          {t(`outreach.campaigns.funnel.${campaign.funnel_stage.toLowerCase()}`)}
                         </OutreachBadge>
                       </td>
                       <td className="px-8 py-6">
@@ -493,7 +494,7 @@ export default function OutreachCampaigns() {
                              "text-[10px] font-black uppercase tracking-widest",
                              campaign.status === 'active' ? "text-green-500" : "text-slate-500"
                            )}>
-                             {campaign.status}
+                             {t(STATUS_CONFIG[campaign.status].labelKey)}
                            </span>
                         </div>
                       </td>
@@ -501,15 +502,15 @@ export default function OutreachCampaigns() {
                          <div className="flex items-center justify-center gap-10">
                             <div className="text-center">
                               <p className="text-sm font-black text-white">{campaign.sent_count}</p>
-                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">Sent</p>
+                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">{t('outreach.campaigns.inventory.sent')}</p>
                             </div>
                             <div className="text-center">
                               <p className="text-sm font-black text-teal-400">{openRate}%</p>
-                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">Open</p>
+                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">{t('outreach.campaigns.inventory.open')}</p>
                             </div>
                             <div className="text-center">
                               <p className="text-sm font-black text-blue-400">{replyRate}%</p>
-                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">Reply</p>
+                              <p className="text-[9px] uppercase font-bold text-slate-600 tracking-tighter">{t('outreach.campaigns.inventory.reply')}</p>
                             </div>
                          </div>
                       </td>
@@ -540,20 +541,20 @@ export default function OutreachCampaigns() {
                                   className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-300 hover:bg-teal-500/10 hover:text-teal-400 transition-colors flex items-center gap-3"
                                 >
                                   {campaign.status === 'active' ? <Pause className="size-4" /> : <Play className="size-4" />}
-                                  {campaign.status === 'active' ? 'Pause Engine' : 'Resume Engine'}
+                                  {campaign.status === 'active' ? t('outreach.campaigns.menu.pause') : t('outreach.campaigns.menu.resume')}
                                 </button>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); handleDuplicate(campaign.id); }}
                                   className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-300 hover:bg-teal-500/10 hover:text-teal-400 transition-colors flex items-center gap-3"
                                 >
-                                  <Copy className="size-4" /> Duplicate
+                                  <Copy className="size-4" /> {t('outreach.campaigns.menu.duplicate')}
                                 </button>
                                 <div className="h-px bg-[#30363d] my-1" />
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); setDeleteDialog(campaign.id); setOpenMenu(null); }}
                                   className="w-full px-4 py-2.5 text-left text-sm font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-3"
                                 >
-                                  <Trash2 className="size-4" /> Terminate
+                                  <Trash2 className="size-4" /> {t('outreach.campaigns.menu.terminate')}
                                 </button>
                               </div>
                             )}
@@ -573,9 +574,9 @@ export default function OutreachCampaigns() {
         isOpen={!!deleteDialog}
         onClose={() => setDeleteDialog(null)}
         onConfirm={() => deleteDialog && handleDelete(deleteDialog)}
-        title="Delete campaign?"
-        description="This campaign and all its configuration will be permanently deleted. Enrolled lead data and analytics are preserved."
-        confirmLabel="Delete Campaign"
+        title={t('outreach.campaigns.delete.title')}
+        description={t('outreach.campaigns.delete.desc')}
+        confirmLabel={t('outreach.campaigns.delete.confirm')}
         danger
       />
 

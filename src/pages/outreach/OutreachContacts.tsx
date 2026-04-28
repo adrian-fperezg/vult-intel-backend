@@ -9,7 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-import { useSettings } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/contexts/TranslationContext';
 import toast from 'react-hot-toast';
 import ContactProfilePanel from './contacts/ContactProfilePanel';
 import BulkAddToListModal from './contacts/BulkAddToListModal';
@@ -61,124 +61,31 @@ const getTagStyle = (tag: string) => {
   if (normalized === 'lead' || normalized === 'prospecto') {
     return "bg-green-500/10 text-green-400 border-green-500/20";
   }
-  // Default for sequences or other tags
+// Default for sequences or other tags
   return "bg-teal-500/10 text-teal-400 border-teal-500/20";
 };
 
+const STATUS_VARIANTS: Record<ContactStatus, any> = {
+  active: 'teal',
+  paused: 'orange',
+  finished: 'gray',
+  bounced: 'red',
+  unsubscribed: 'orange',
+  replied: 'green',
+  not_enrolled: 'gray'
+};
+
+const VERIFICATION_VARIANTS: Record<string, any> = {
+  valid: 'green',
+  invalid: 'red',
+  catch_all: 'yellow',
+  unknown: 'gray',
+  unverified: 'gray'
+};
+
 export default function OutreachContacts() {
+  const { t } = useTranslation();
   const api = useOutreachApi();
-  const { language } = useSettings();
-  const t = useMemo(() => {
-    const isEs = language === 'es';
-    return {
-      navigation: isEs ? 'Navegación' : 'Navigation',
-      manageLists: isEs ? 'Gestionar Listas' : 'Manage Lists',
-      allContacts: isEs ? 'Todos los Contactos' : 'All Contacts',
-      unassigned: isEs ? 'Sin Asignar' : 'Unassigned',
-      lists: isEs ? 'LISTAS' : 'LISTS',
-      noCustomLists: isEs ? 'No hay listas personalizadas aún.' : 'No custom lists yet.',
-      cancel: isEs ? 'Cancelar' : 'Cancel',
-      save: isEs ? 'Guardar' : 'Save',
-      edit: isEs ? 'Editar' : 'Edit',
-      delete: isEs ? 'Eliminar' : 'Delete',
-      systemId: isEs ? 'ID del Sistema' : 'System ID',
-      contacts: isEs ? 'Contactos' : 'Contacts',
-      total: isEs ? 'Total' : 'Total',
-      allAvailableContacts: isEs ? 'Todos los contactos disponibles' : 'All available contacts',
-      contactsNotInAnyList: isEs ? 'Contactos que no están en ninguna lista' : 'Contacts not in any list',
-      contactsInList: (name: string) => isEs ? `Contactos en ${name}` : `Contacts in ${name}`,
-      importCsv: isEs ? 'Importar CSV' : 'Import CSV',
-      addContact: isEs ? 'Agregar Contacto' : 'Add Contact',
-      searchPlaceholder: isEs ? 'Buscar en esta vista...' : 'Search within this view...',
-      allStatus: isEs ? 'Todos los Estados' : 'All Status',
-      contactsSelected: isEs ? 'Contactos Seleccionados' : 'Contacts Selected',
-      addToList: isEs ? 'Agregar a Lista' : 'Add to List',
-      enrollInSequence: isEs ? 'Inscribir en Secuencia' : 'Enroll in Sequence',
-      verifyEmails: isEs ? 'Verificar Correos' : 'Verify Emails',
-      verifying: isEs ? 'Verificando...' : 'Verifying...',
-      noContactsFound: isEs ? 'No se encontraron contactos' : 'No contacts found',
-      emptyStateDesc: isEs ? 'Importa un archivo CSV o agrega contactos manualmente para construir tu lista de prospección.' : 'Import a CSV file or add contacts manually to build your prospecting list.',
-      contact: isEs ? 'Contacto' : 'Contact',
-      title: isEs ? 'Título' : 'Title',
-      company: isEs ? 'Empresa' : 'Company',
-      industry: isEs ? 'Industria' : 'Industry',
-      size: isEs ? 'Tamaño' : 'Size',
-      location: isEs ? 'Ubicación' : 'Location',
-      email: isEs ? 'Correo' : 'Email',
-      status: isEs ? 'Estado' : 'Status',
-      actions: isEs ? 'Acciones' : 'Actions',
-      noEmail: isEs ? 'Sin correo' : 'No email',
-      viewProfile: isEs ? 'Ver Perfil' : 'View Profile',
-      cannotDeleteUnsubscribed: isEs ? 'Los contactos desuscritos no pueden ser eliminados.' : 'Unsubscribed contacts cannot be deleted.',
-      phone: isEs ? 'Teléfono' : 'Phone',
-      linkedin: isEs ? 'LinkedIn' : 'LinkedIn',
-      website: isEs ? 'Sitio Web' : 'Website',
-      lastActivity: isEs ? 'Última Actividad' : 'Last Activity',
-      noRecentActivity: isEs ? 'Sin actividad reciente' : 'No recent activity',
-      customFields: isEs ? 'Campos Personalizados (Snippets)' : 'Custom Fields (Snippets)',
-      tags: isEs ? 'Etiquetas' : 'Tags',
-      noTags: isEs ? 'Sin etiquetas' : 'No tags',
-      suppressEmail: isEs ? 'Suprimir Correo' : 'Suppress Email',
-      fullDetails: isEs ? 'Detalles Completos' : 'Full Details',
-      deleteList: isEs ? 'Eliminar Lista' : 'Delete List',
-      howHandleContacts: isEs ? '¿Cómo te gustaría manejar los contactos en esta lista?' : 'How would you like to handle the contacts in this list?',
-      deleteListOnly: isEs ? 'Eliminar solo la lista' : 'Delete list only',
-      contactsRemainUnassigned: isEs ? 'Los contactos permanecerán en tu base de datos como no asignados.' : 'Contacts will remain in your database as unassigned.',
-      deleteListAndExclusive: isEs ? 'Eliminar lista y contactos exclusivos' : 'Delete list and exclusive contacts',
-      removesExclusiveDesc: isEs ? 'Elimina permanentemente los contactos que pertenecen SOLO a esta lista.' : 'Permanently removes contacts that belong ONLY to this list.',
-      confirmDelete: isEs ? 'Confirmar Eliminación' : 'Confirm Delete',
-      deleteContacts: isEs ? 'Eliminar Contactos' : 'Delete Contacts',
-      deleteContact: isEs ? 'Eliminar Contacto' : 'Delete Contact',
-      areYouSureDeleteBulk: (count: number) => isEs ? `¿Estás seguro de que quieres eliminar ${count} contactos seleccionados? Esta acción no se puede deshacer.` : `Are you sure you want to delete ${count} selected contacts? This action cannot be undone.`,
-      areYouSureDeleteSingle: isEs ? '¿Estás seguro de que quieres eliminar este contacto? Todos sus datos de secuencia e historial de mensajes se eliminarán permanentemente.' : 'Are you sure you want to delete this contact? All their sequence data and message history will be permanently removed.',
-      deleting: isEs ? 'Eliminando...' : 'Deleting...',
-      deleteAll: isEs ? 'Eliminar Todo' : 'Delete All',
-      listUpdated: isEs ? 'Lista actualizada' : 'List updated',
-      failedUpdateList: isEs ? 'Error al actualizar la lista' : 'Failed to update list',
-      listCreated: isEs ? 'Lista creada con éxito' : 'List created successfully',
-      failedCreateList: isEs ? 'Error al crear la lista' : 'Failed to create list',
-      listDeleted: isEs ? 'Lista eliminada' : 'List deleted',
-      listAndContactsDeleted: isEs ? 'Lista y contactos asociados eliminados' : 'List and associated contacts deleted',
-      failedDeleteList: isEs ? 'Error al eliminar la lista' : 'Failed to delete list',
-      addedToList: (count: number) => isEs ? `Agregados ${count} contactos a la lista` : `Added ${count} contacts to list`,
-      failedAddToList: isEs ? 'Error al agregar contactos a la lista' : 'Failed to add contacts to list',
-      verifyingEmailsCount: (count: number) => isEs ? `Verificando ${count} correos...` : `Verifying ${count} emails...`,
-      verificationComplete: (count: number) => isEs ? `Verificación completada: ${count} procesados` : `Verification complete: ${count} processed`,
-      failedVerifyEmails: isEs ? 'Error al verificar correos' : 'Failed to verify emails',
-      create: isEs ? 'Crear' : 'Create',
-      createList: isEs ? 'Crear Nueva Lista' : 'Create New List',
-      listNamePlaceholder: isEs ? 'Nombre de la lista...' : 'List name...',
-      new: isEs ? 'Nueva' : 'New',
-      unsubscribedSelectionError: isEs ? 'La selección incluye contactos desuscritos. Elimínalos de la selección antes de borrar.' : 'Selection includes unsubscribed contacts. Remove them from the selection before deleting.',
-      deletedCount: (count: number) => isEs ? `Eliminados ${count} contactos` : `Deleted ${count} contacts`,
-      deleteFailed: isEs ? 'Error al eliminar contactos' : 'Failed to delete contacts',
-      contactDeleted: isEs ? 'Contacto eliminado' : 'Contact deleted',
-      failedDeleteContact: isEs ? 'Error al eliminar el contacto' : 'Failed to delete contact',
-      noProjectSelected: isEs ? 'No hay proyecto seleccionado' : 'No project selected',
-      noProjectDesc: isEs ? 'Selecciona un proyecto de la barra superior para ver y gestionar sus contactos.' : 'Select a project from the top bar to view and manage its contacts.',
-      genericList: isEs ? 'lista' : 'list',
-      notAvailable: isEs ? 'N/A' : 'N/A',
-      noActivity: isEs ? 'Sin actividad' : 'No activity',
-      newFirstName: isEs ? 'Nuevo' : 'New',
-      newLastName: isEs ? 'Contacto' : 'Contact',
-      statusCfg: {
-        active: { label: isEs ? 'Activo' : 'Active', variant: 'teal' as const },
-        paused: { label: isEs ? 'Pausado' : 'Paused', variant: 'orange' as const },
-        finished: { label: isEs ? 'Finalizado' : 'Finished', variant: 'gray' as const },
-        bounced: { label: isEs ? 'Rebotado' : 'Bounced', variant: 'red' as const },
-        unsubscribed: { label: isEs ? 'Desuscrito' : 'Unsubscribed', variant: 'orange' as const },
-        replied: { label: isEs ? 'Respondido' : 'Replied', variant: 'green' as const },
-        not_enrolled: { label: isEs ? 'Sin inscribir' : 'Not Enrolled', variant: 'gray' as const }
-      },
-      verificationCfg: {
-        valid: { label: isEs ? 'Válido' : 'Valid', variant: 'green' as const },
-        invalid: { label: isEs ? 'Inválido' : 'Invalid', variant: 'red' as const },
-        catch_all: { label: isEs ? 'Catch-all' : 'Catch-all', variant: 'yellow' as const },
-        unknown: { label: isEs ? 'Desconocido' : 'Unknown', variant: 'gray' as const },
-        unverified: { label: isEs ? 'Sin verificar' : 'Unverified', variant: 'gray' as const },
-      }
-    };
-  }, [language]);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -227,9 +134,9 @@ export default function OutreachContacts() {
       setContactLists(prev => [...prev, newList]);
       setNewListName('');
       setIsCreatingList(false);
-      toast.success(t.listCreated);
+      toast.success(t('outreach.contacts.listCreated'));
     } catch (err) {
-      toast.error(t.failedCreateList);
+      toast.error(t('outreach.contacts.failedCreateList'));
     }
   };
 
@@ -241,11 +148,11 @@ export default function OutreachContacts() {
       await api.deleteContactList(listToDelete.id, deleteContacts);
       setContactLists(prev => prev.filter(l => l.id !== listToDelete.id));
       if (listFilter === listToDelete.id) setListFilter('all');
-      toast.success(deleteContacts ? t.listAndContactsDeleted : t.listDeleted);
+      toast.success(deleteContacts ? t('outreach.contacts.listAndContactsDeleted') : t('outreach.contacts.listDeleted'));
       setListToDelete(null);
       if (deleteContacts) loadContacts();
     } catch (err) {
-      toast.error(t.failedDeleteList);
+      toast.error(t('outreach.contacts.failedDeleteList'));
     } finally {
       setIsDeleting(false);
     }
@@ -257,9 +164,9 @@ export default function OutreachContacts() {
       await api.updateContactList(id, { name: editListName.trim() });
       setContactLists(prev => prev.map(l => l.id === id ? { ...l, name: editListName.trim() } : l));
       setEditingListId(null);
-      toast.success(t.listUpdated);
+      toast.success(t('outreach.contacts.listUpdated'));
     } catch (err) {
-      toast.error(t.failedUpdateList);
+      toast.error(t('outreach.contacts.failedUpdateList'));
     }
   };
 
@@ -273,7 +180,6 @@ export default function OutreachContacts() {
     }
   }, [api.activeProjectId, api.fetchContactLists]);
 
-  // 2. ACTUALIZACIÓN: Procesar custom_fields al cargar contactos
   const loadContacts = useCallback(async () => {
     if (!api.activeProjectId) return;
     setIsLoading(true);
@@ -288,7 +194,6 @@ export default function OutreachContacts() {
         try { tags = Array.isArray(m.tags) ? m.tags : (typeof m.tags === 'string' ? JSON.parse(m.tags) : []); }
         catch (e) { console.warn('Failed to parse tags', e); }
 
-        // Mapeo seguro de custom_fields
         try {
           if (m.custom_fields) {
             parsedCustomFields = typeof m.custom_fields === 'string' ? JSON.parse(m.custom_fields) : m.custom_fields;
@@ -299,12 +204,12 @@ export default function OutreachContacts() {
         return {
           ...m,
           id: m.id || `contact-${Math.random()}`,
-          firstName: m.first_name || t.notAvailable,
+          firstName: m.first_name || t('outreach.contacts.notAvailable'),
           lastName: m.last_name || '',
           email: m.email || '',
           company: m.company || '—',
-          addedAt: isValidDate ? createdAt!.toISOString().slice(0, 10) : t.notAvailable,
-          lastActivity: isValidDate ? createdAt!.toLocaleDateString() : t.noActivity,
+          addedAt: isValidDate ? createdAt!.toISOString().slice(0, 10) : t('outreach.contacts.notAvailable'),
+          lastActivity: isValidDate ? createdAt!.toLocaleDateString() : t('outreach.contacts.noActivity'),
           tags: tags,
           emailVerified: !!m.email_verified,
           companySize: m.company_size || m.size || '—',
@@ -347,8 +252,8 @@ export default function OutreachContacts() {
     setIsCreating(true);
     try {
       await api.createContact({
-        first_name: t.newFirstName,
-        last_name: t.newLastName,
+        first_name: t('outreach.contacts.newFirstName'),
+        last_name: t('outreach.contacts.newLastName'),
         email: `new.${Date.now()}@example.com`,
         status: 'not_enrolled'
       });
@@ -382,7 +287,6 @@ export default function OutreachContacts() {
     else { setSortKey(key); setSortDir('asc'); }
   };
 
-  // Compliance guard: prevent deletion of unsubscribed contacts
   const hasUnsubscribedSelected = useMemo(() => {
     return contacts.some(c => selectedIds.has(c.id) && c.status === 'unsubscribed');
   }, [contacts, selectedIds]);
@@ -390,21 +294,20 @@ export default function OutreachContacts() {
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
 
-    // Hard compliance block: refuse to delete unsubscribed contacts
     if (hasUnsubscribedSelected) {
-      toast.error(t.unsubscribedSelectionError);
+      toast.error(t('outreach.contacts.unsubscribedSelectionError'));
       return;
     }
 
     setIsDeleting(true);
     try {
       await api.deleteContactsBulk(Array.from(selectedIds));
-      toast.success(t.deletedCount(selectedIds.size));
+      toast.success(t('outreach.contacts.deletedCount', { count: selectedIds.size }));
       setSelectedIds(new Set());
       setDeleteDialog(false);
       loadContacts();
     } catch (error) {
-      toast.error(t.deleteFailed);
+      toast.error(t('outreach.contacts.deleteFailed'));
     } finally {
       setIsDeleting(false);
     }
@@ -415,11 +318,11 @@ export default function OutreachContacts() {
     setIsDeleting(true);
     try {
       await api.deleteContact(contactToDelete);
-      toast.success(t.contactDeleted);
+      toast.success(t('outreach.contacts.contactDeleted'));
       setContactToDelete(null);
       loadContacts();
     } catch (error) {
-      toast.error(t.failedDeleteContact);
+      toast.error(t('outreach.contacts.failedDeleteContact'));
     } finally {
       setIsDeleting(false);
     }
@@ -441,26 +344,26 @@ export default function OutreachContacts() {
   const handleBulkAddToList = async (listId: string) => {
     try {
       await api.addContactsToList(listId, [...selectedIds]);
-      toast.success(t.addedToList(selectedIds.size));
+      toast.success(t('outreach.contacts.addedToList', { count: selectedIds.size }));
       setSelectedIds(new Set());
       setIsBulkAddOpen(false);
       await loadContacts();
     } catch (err) {
-      toast.error(t.failedAddToList);
+      toast.error(t('outreach.contacts.failedAddToList'));
     }
   };
 
   const handleBulkVerify = async () => {
     if (selectedIds.size === 0) return;
     setIsVerifying(true);
-    const loadingToast = toast.loading(t.verifyingEmailsCount(selectedIds.size));
+    const loadingToast = toast.loading(t('outreach.contacts.verifyingEmailsCount', { count: selectedIds.size }));
     try {
       const results = await api.verifyEmailsBulk(Array.from(selectedIds));
-      toast.success(t.verificationComplete(results.length), { id: loadingToast });
+      toast.success(t('outreach.contacts.verificationComplete', { count: results.length }), { id: loadingToast });
       setSelectedIds(new Set());
       await loadContacts();
     } catch (err: any) {
-      toast.error(err.message || t.failedVerifyEmails, { id: loadingToast });
+      toast.error(err.message || t('outreach.contacts.failedVerifyEmails'), { id: loadingToast });
     } finally {
       setIsVerifying(false);
     }
@@ -488,7 +391,6 @@ export default function OutreachContacts() {
 
     setIsSavingField(true);
 
-    // Optimistic Update
     setContacts(prev => prev.map(c => {
       if (c.id === contactId) {
         if (field === 'name') {
@@ -520,11 +422,10 @@ export default function OutreachContacts() {
 
       await api.updateContact(contactId, updates);
       setEditingField(null);
-      toast.success(t.listUpdated);
+      toast.success(t('outreach.contacts.listUpdated'));
     } catch (err) {
-      // Rollback
       setContacts(prev => prev.map(c => c.id === contactId ? originalContact : c));
-      toast.error(t.failedUpdateList);
+      toast.error(t('outreach.contacts.failedUpdateList'));
     } finally {
       setIsSavingField(false);
     }
@@ -539,8 +440,8 @@ export default function OutreachContacts() {
     return (
       <OutreachEmptyState
         icon={<FolderOpen />}
-        title={t.noProjectSelected}
-        description={t.noProjectDesc}
+        title={t('outreach.contacts.noProjectSelected')}
+        description={t('outreach.contacts.noProjectDesc')}
       />
     );
   }
@@ -577,7 +478,7 @@ export default function OutreachContacts() {
                     <div className="size-8 bg-teal-500 rounded-lg flex items-center justify-center">
                       <User className="size-5 text-white" />
                     </div>
-                    <span className="font-bold text-white uppercase tracking-wider text-xs">{t.navigation}</span>
+                    <span className="font-bold text-white uppercase tracking-wider text-xs">{t('outreach.contacts.navigation')}</span>
                   </div>
                   <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white">
                     <X className="size-5" />
@@ -586,8 +487,8 @@ export default function OutreachContacts() {
                 <div className="flex-1 overflow-y-auto p-6">
                   <nav className="space-y-1.5">
                     {[
-                      { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
-                      { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
+                      { id: 'all', label: t('outreach.contacts.allContacts'), icon: <User className="size-4" /> },
+                      { id: 'unassigned', label: t('outreach.contacts.unassigned'), icon: <XCircle className="size-4" /> },
                     ].map(item => (
                       <button
                         key={item.id}
@@ -612,7 +513,7 @@ export default function OutreachContacts() {
 
                   <div className="mt-10 mb-6 px-3">
                     <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
+                      <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{t('outreach.contacts.lists')}</h2>
                       <button
                         onClick={() => { setIsUploadModalOpen(true); setIsSidebarOpen(false); }}
                         className="text-teal-400 hover:text-teal-300"
@@ -647,11 +548,11 @@ export default function OutreachContacts() {
         {/* Sidebar Navigator (Desktop) */}
         <div className="w-64 border-r border-white/5 hidden lg:flex flex-col shrink-0 bg-[#0D0D0E]">
           <div className="p-8">
-            <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-6">{t.navigation}</h2>
+            <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-6">{t('outreach.contacts.navigation')}</h2>
             <nav className="space-y-1.5">
               {[
-                { id: 'all', label: t.allContacts, icon: <User className="size-4" /> },
-                { id: 'unassigned', label: t.unassigned, icon: <XCircle className="size-4" /> },
+                { id: 'all', label: t('outreach.contacts.allContacts'), icon: <User className="size-4" /> },
+                { id: 'unassigned', label: t('outreach.contacts.unassigned'), icon: <XCircle className="size-4" /> },
               ].map(item => (
                 <button
                   key={item.id}
@@ -676,12 +577,12 @@ export default function OutreachContacts() {
 
             <div className="mt-10 mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.lists}</h2>
+                <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t('outreach.contacts.lists')}</h2>
                 <button
                   onClick={() => setIsUploadModalOpen(true)}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 hover:bg-teal-500/20 transition-all shadow-[0_0_15px_rgba(20,184,166,0.1)]"
                 >
-                  <Plus className="size-3.5" /> {t.new}
+                  <Plus className="size-3.5" /> {t('outreach.contacts.new')}
                 </button>
               </div>
             </div>
@@ -739,14 +640,14 @@ export default function OutreachContacts() {
                             setEditListName(list.name);
                           }}
                           className="p-1.5 text-slate-600 hover:text-teal-400 rounded-lg hover:bg-white/5"
-                          title={t.edit}
+                          title={t('common.edit')}
                         >
                           <Edit2 className="size-3" />
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setListToDelete({ id: list.id, name: list.name }); }}
                           className="p-1.5 text-slate-600 hover:text-red-400 rounded-lg hover:bg-red-500/10"
-                          title={t.delete}
+                          title={t('common.delete')}
                         >
                           <Trash2 className="size-3" />
                         </button>
@@ -755,9 +656,7 @@ export default function OutreachContacts() {
                   )}
                 </div>
               ))}
-              {contactLists.length === 0 && (
-                <p className="px-3 py-2 text-[10px] text-slate-600 italic">{t.noCustomLists}</p>
-              )}
+              {contactLists.length === 0 && <p className="text-[10px] text-slate-600 italic px-4 py-3">{t('outreach.contacts.noCustomLists')}</p>}
             </nav>
           </div>
         </div>
@@ -774,27 +673,28 @@ export default function OutreachContacts() {
                 >
                   <Menu className="size-6" />
                 </button>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl lg:text-2xl font-bold text-white">{t.contacts}</h1>
-                  <div className="px-2 py-0.5 bg-white/5 rounded-full border border-white/5">
-                    <span className="text-[10px] font-black text-slate-500 uppercase">{contacts.length} {t.total}</span>
-                  </div>
+                <div className="flex flex-col">
+                  <h1 className="text-xl font-bold text-white mb-1">
+                    {listFilter === 'all' ? t('outreach.contacts.allContacts') :
+                     listFilter === 'unassigned' ? t('outreach.contacts.unassigned') :
+                     t('outreach.contacts.contactsInList', { name: contactLists.find(l => l.id === listFilter)?.name || t('outreach.contacts.genericList') })}
+                  </h1>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {listFilter === 'all' ? t('outreach.contacts.allAvailableContacts') :
+                     listFilter === 'unassigned' ? t('outreach.contacts.contactsNotInAnyList') :
+                     t('outreach.contacts.total')} • {contacts.length} {t('outreach.contacts.contacts')}
+                  </p>
                 </div>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  {listFilter === 'all' ? t.allAvailableContacts :
-                    listFilter === 'unassigned' ? t.contactsNotInAnyList :
-                      t.contactsInList(contactLists.find(l => l.id === listFilter)?.name || t.genericList)}
-                </p>
               </div>
               <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   onClick={() => setIsImportModalOpen(true)}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 lg:px-4 py-2 lg:py-2.5 text-xs lg:text-sm font-bold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl lg:rounded-2xl transition-all"
                 >
-                  <Upload className="size-3.5 lg:size-4" /> {t.importCsv}
+                  <Upload className="size-3.5 lg:size-4" /> {t('outreach.contacts.importCsv')}
                 </button>
                 <TealButton className="flex-1 sm:flex-none rounded-xl lg:rounded-2xl px-4 lg:px-6 py-2 lg:py-2.5" size="sm" onClick={handleCreate} loading={isCreating}>
-                  <Plus className="size-3.5 lg:size-4" /> {t.addContact}
+                  <Plus className="size-3.5 lg:size-4" /> {t('outreach.contacts.addContact')}
                 </TealButton>
               </div>
             </div>
@@ -803,9 +703,10 @@ export default function OutreachContacts() {
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-500" />
                 <input
+                  type="text"
+                  placeholder={t('outreach.contacts.searchPlaceholder')}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder={t.searchPlaceholder}
                   className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-[2rem] text-sm text-white placeholder:text-slate-600 outline-none transition-colors"
                 />
               </div>
@@ -822,7 +723,7 @@ export default function OutreachContacts() {
                         : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
                     )}
                   >
-                    {s === 'all' ? t.allStatus : t.statusCfg[s].label}
+                    {s === 'all' ? t('outreach.contacts.allStatus') : t(`outreach.contacts.statusCfg.${s}`)}
                   </button>
                 ))}
               </div>
@@ -842,44 +743,28 @@ export default function OutreachContacts() {
                   <div className="size-5 lg:size-6 bg-teal-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
                     <span className="text-[9px] lg:text-[10px] font-black text-white">{selectedIds.size}</span>
                   </div>
-                  <span className="text-xs lg:text-sm font-bold text-white whitespace-nowrap hidden sm:inline">{t.contactsSelected}</span>
+                  <span className="text-xs font-bold text-teal-400">{selectedIds.size} {t('outreach.contacts.contactsSelected')}</span>
                 </div>
 
-                <div className="flex items-center gap-2 lg:gap-4 overflow-x-auto no-scrollbar">
-                  <button
-                    onClick={() => setIsBulkAddOpen(true)}
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all"
-                  >
-                    <FolderOpen className="size-4" /> {t.addToList}
-                  </button>
-                  <button className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all">
-                    <Mail className="size-4" /> {t.enrollInSequence}
-                  </button>
-                  <button
-                    onClick={handleBulkVerify}
+                <div className="flex items-center gap-2">
+                  <TealButton onClick={() => setIsBulkAddOpen(true)} variant="outline" className="px-3 h-8 text-[10px]">
+                    <Plus className="size-3.5" /> {t('outreach.contacts.addToList')}
+                  </TealButton>
+                  <TealButton variant="outline" className="px-3 h-8 text-[10px]">
+                    <Zap className="size-3.5" /> {t('outreach.contacts.enrollInSequence')}
+                  </TealButton>
+                  <TealButton 
+                    onClick={handleBulkVerify} 
+                    variant="outline" 
+                    className="px-3 h-8 text-[10px]"
                     disabled={isVerifying}
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-teal-400 hover:bg-teal-500/5 rounded-xl transition-all disabled:opacity-50 whitespace-nowrap"
                   >
-                    <CheckCircle2 className={cn("size-4", isVerifying && "animate-pulse")} />
-                    {isVerifying ? t.verifying : t.verifyEmails}
-                  </button>
-                  <div className="h-6 w-px bg-white/5" />
-                  <div
-                    title={hasUnsubscribedSelected ? t.cannotDeleteUnsubscribed : undefined}
-                  >
-                    <button
-                      onClick={() => setDeleteDialog(true)}
-                      disabled={hasUnsubscribedSelected}
-                      className={cn(
-                        'flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all border',
-                        hasUnsubscribedSelected
-                          ? 'text-slate-600 border-slate-700 cursor-not-allowed opacity-50'
-                          : 'text-red-400 hover:text-white hover:bg-red-500/20 border-red-500/20'
-                      )}
-                    >
-                      <Trash2 className="size-4" /> {t.delete}
-                    </button>
-                  </div>
+                    {isVerifying ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                    {isVerifying ? t('outreach.contacts.verifying') : t('outreach.contacts.verifyEmails')}
+                  </TealButton>
+                  <TealButton onClick={() => setDeleteDialog(true)} variant="outline" className="px-3 h-8 text-[10px] text-red-400 border-red-400/20 hover:bg-red-400/10">
+                    <Trash2 className="size-3.5" /> {t('outreach.contacts.delete')}
+                  </TealButton>
                   <button
                     onClick={() => setSelectedIds(new Set())}
                     className="p-2 text-slate-500 hover:text-white"
@@ -894,10 +779,10 @@ export default function OutreachContacts() {
           <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-48">
             {filtered.length === 0 ? (
               <OutreachEmptyState
-                icon={<User />}
-                title={t.noContactsFound}
-                description={t.emptyStateDesc}
-                action={<TealButton className="rounded-2xl px-8 py-3" onClick={handleCreate} loading={isCreating}><Plus className="size-5" /> {t.addContact}</TealButton>}
+                icon={<UserCheck />}
+                title={t('outreach.contacts.noContactsFound')}
+                description={t('outreach.contacts.emptyStateDesc')}
+                action={<TealButton onClick={() => setIsUploadModalOpen(true)}><Upload className="size-4" /> {t('outreach.contacts.importCsv')}</TealButton>}
               />
             ) : (
               <div className="p-4 lg:p-10 relative">
@@ -943,8 +828,8 @@ export default function OutreachContacts() {
                             </p>
                           </div>
                         </div>
-                        <OutreachBadge variant={(t.statusCfg[contact.status as keyof typeof t.statusCfg] || t.statusCfg.not_enrolled).variant}>
-                          {(t.statusCfg[contact.status as keyof typeof t.statusCfg] || t.statusCfg.not_enrolled).label}
+                        <OutreachBadge variant={STATUS_VARIANTS[contact.status] || STATUS_VARIANTS.not_enrolled}>
+                          {t(`outreach.contacts.statusCfg.${contact.status}`)}
                         </OutreachBadge>
                       </div>
 
@@ -955,7 +840,7 @@ export default function OutreachContacts() {
                         </div>
                         <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/[0.02] p-2 rounded-lg">
                           <Mail className="size-3.5 shrink-0 text-slate-500" />
-                          <span className="truncate">{contact.email || t.noEmail}</span>
+                          <span className="truncate">{contact.email || t('outreach.contacts.noEmail')}</span>
                         </div>
                       </div>
 
@@ -964,11 +849,11 @@ export default function OutreachContacts() {
                           onClick={(e) => { e.stopPropagation(); setProfileContactId(contact.id); }}
                           className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
                         >
-                          {t.viewProfile}
+                          {t('outreach.contacts.viewProfile')}
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setContactToDelete(contact.id); }}
-                          className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all"
+                          className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl transition-all"
                         >
                           <Trash2 className="size-4" />
                         </button>
@@ -990,15 +875,18 @@ export default function OutreachContacts() {
                             className="accent-teal-500 size-4 cursor-pointer"
                           />
                         </th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>{t.contact} <SortIcon col="firstName" /></th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.title}</th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>{t.company} <SortIcon col="company" /></th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.industry}</th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.size}</th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.location}</th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.email}</th>
-                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('addedAt')}>{t.status} <SortIcon col="addedAt" /></th>
-                        <th className="p-5 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.actions}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('firstName')}>
+                          <div className="flex items-center gap-2">{t('outreach.contacts.contact')} <ChevronUp className={cn("size-3.5 transition-transform", sortKey === 'firstName' && sortDir === 'desc' ? "rotate-180" : "")} /></div>
+                        </th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.title')}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:text-slate-300" onClick={() => toggleSort('company')}>
+                          <div className="flex items-center gap-2">{t('outreach.contacts.company')} <ChevronUp className={cn("size-3.5 transition-transform", sortKey === 'company' && sortDir === 'desc' ? "rotate-180" : "")} /></div>
+                        </th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.industry')}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.location')}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.email')}</th>
+                        <th className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.status')}</th>
+                        <th className="p-5 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.actions')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -1096,11 +984,6 @@ export default function OutreachContacts() {
                                 </span>
                               </td>
                               <td className="p-3">
-                                <span className="text-[10px] text-slate-500 whitespace-nowrap block font-medium">
-                                  {contact.companySize || contact.size || '—'}
-                                </span>
-                              </td>
-                              <td className="p-3">
                                 <div className="flex flex-col gap-1">
                                   <span className="text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[120px] block font-medium">
                                     {contact.locationCountry ? (
@@ -1138,7 +1021,7 @@ export default function OutreachContacts() {
                                         setEditValue(contact.email || '');
                                       }}
                                     >
-                                      {contact.email || t.noEmail}
+                                      {contact.email || t('outreach.contacts.noEmail')}
                                     </span>
                                   )}
                                   {contact.verification_status && contact.verification_status !== 'unverified' && (
@@ -1163,7 +1046,7 @@ export default function OutreachContacts() {
                                   <button
                                     onClick={e => { e.stopPropagation(); setProfileContactId(contact.id); }}
                                     className="p-1.5 bg-white/5 hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 rounded-lg border border-white/10 transition-all"
-                                    title={t.viewProfile}
+                                    title={t('outreach.contacts.viewProfile')}
                                   >
                                     <User className="size-3.5" />
                                   </button>
@@ -1171,19 +1054,18 @@ export default function OutreachContacts() {
                                     onClick={e => {
                                       e.stopPropagation();
                                       if (contact.status === 'unsubscribed') {
-                                        toast.error(t.cannotDeleteUnsubscribed);
+                                        toast.error(t('outreach.contacts.cannotDeleteUnsubscribed'));
                                         return;
                                       }
                                       setContactToDelete(contact.id);
                                     }}
                                     className={cn(
                                       "p-1.5 bg-white/5 rounded-lg border border-white/10 transition-all",
-                                      "p-2.5 rounded-xl transition-all",
                                       contact.status === 'unsubscribed'
                                         ? "opacity-50 cursor-not-allowed text-slate-600"
                                         : "hover:bg-red-500/10 text-slate-500 hover:text-red-400"
                                     )}
-                                    title={contact.status === 'unsubscribed' ? t.cannotDeleteUnsubscribed : t.deleteContact}
+                                    title={contact.status === 'unsubscribed' ? t('outreach.contacts.cannotDeleteUnsubscribed') : t('outreach.contacts.deleteContact')}
                                   >
                                     <Trash2 className="size-4" />
                                   </button>
@@ -1203,27 +1085,26 @@ export default function OutreachContacts() {
                                       <div className="space-y-4 flex-1">
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                           <div className="space-y-1">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.phone}</p>
-                                            <p className="text-sm text-white font-medium">{contact.phone || t.notAvailable}</p>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.phone')}</p>
+                                            <p className="text-sm text-white font-medium">{contact.phone || t('outreach.contacts.notAvailable')}</p>
                                           </div>
                                           <div className="space-y-1">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.linkedin}</p>
-                                            <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || t.notAvailable}</p>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.linkedin')}</p>
+                                            <p className="text-sm text-blue-400 font-medium truncate max-w-[150px]">{contact.linkedin || t('outreach.contacts.notAvailable')}</p>
                                           </div>
                                           <div className="space-y-1">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.website}</p>
-                                            <p className="text-sm text-slate-300 font-medium">{contact.website || t.notAvailable}</p>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.website')}</p>
+                                            <p className="text-sm text-slate-300 font-medium">{contact.website || t('outreach.contacts.notAvailable')}</p>
                                           </div>
                                           <div className="space-y-1">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.lastActivity}</p>
-                                            <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || t.noRecentActivity}</p>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('outreach.contacts.lastActivity')}</p>
+                                            <p className="text-sm text-slate-400 font-medium">{contact.lastActivity || t('outreach.contacts.noRecentActivity')}</p>
                                           </div>
                                         </div>
 
-                                        {/* 3. ACTUALIZACIÓN: Renderizar Custom Fields (Snippets) si existen */}
                                         {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
                                           <div className="mt-4 pt-4 border-t border-white/5">
-                                            <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-3">{t.customFields}</p>
+                                            <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-3">{t('outreach.contacts.customFields')}</p>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                               {Object.entries(contact.custom_fields).map(([key, value]) => (
                                                 <div key={key} className="bg-white/5 p-2 rounded-lg border border-white/5">
@@ -1236,7 +1117,7 @@ export default function OutreachContacts() {
                                         )}
 
                                         <div className="pt-4 flex items-center gap-2 flex-wrap">
-                                          <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">{t.tags}:</p>
+                                          <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mr-2">{t('outreach.contacts.tags')}:</p>
                                           {contact.tags.length > 0 ? contact.tags.map(tag => (
                                             <span
                                               key={tag}
@@ -1247,23 +1128,23 @@ export default function OutreachContacts() {
                                             >
                                               #{tag}
                                             </span>
-                                          )) : <span className="text-[10px] text-slate-600 italic">{t.noTags}</span>}
+                                          )) : <span className="text-[10px] text-slate-600 italic">{t('outreach.contacts.noTags')}</span>}
                                         </div>
                                       </div>
 
                                       <div className="flex flex-col gap-2 min-w-[180px]">
-                                        <TealButton size="sm" className="w-full">{t.enrollInSequence}</TealButton>
+                                        <TealButton size="sm" className="w-full">{t('outreach.contacts.enrollInSequence')}</TealButton>
                                         <button
                                           onClick={() => handleSuppress(contact.email)}
                                           className="w-full py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold transition-all"
                                         >
-                                          {t.suppressEmail}
+                                          {t('outreach.contacts.suppressEmail')}
                                         </button>
                                         <button
                                           onClick={() => setProfileContactId(contact.id)}
                                           className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold border border-white/5 transition-all"
                                         >
-                                          {t.fullDetails}
+                                          {t('outreach.contacts.fullDetails')}
                                         </button>
                                       </div>
                                     </div>
@@ -1304,7 +1185,7 @@ export default function OutreachContacts() {
                 className="w-full max-w-md bg-gray-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
               >
                 <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">{t.manageLists}</h3>
+                  <h3 className="text-lg font-semibold text-white">{t('outreach.contacts.manageLists')}</h3>
                   <button
                     onClick={() => setIsManageListsOpen(false)}
                     className="p-2 text-gray-400 hover:text-white transition-colors"
@@ -1321,16 +1202,16 @@ export default function OutreachContacts() {
                         type="text"
                         value={newListName}
                         onChange={e => setNewListName(e.target.value)}
-                        placeholder={t.listNamePlaceholder}
+                        placeholder={t('outreach.contacts.listNamePlaceholder')}
                         className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white outline-none focus:border-teal-500/50"
                         autoFocus
                       />
-                      <TealButton onClick={handleCreateList} className="py-2">{t.save}</TealButton>
+                      <TealButton onClick={handleCreateList} className="py-2">{t('common.save')}</TealButton>
                       <button
                         onClick={() => setIsCreatingList(false)}
                         className="px-3 py-2 text-gray-400 hover:text-white text-sm"
                       >
-                        {t.cancel}
+                        {t('common.cancel')}
                       </button>
                     </div>
                   ) : (
@@ -1339,7 +1220,7 @@ export default function OutreachContacts() {
                       className="w-full py-2 flex items-center justify-center gap-2 bg-teal-500/10 border border-teal-500/20 rounded-lg text-teal-400 text-sm font-medium hover:bg-teal-500/20 transition-colors"
                     >
                       <Plus className="w-4 h-4" />
-                      {t.addContact}
+                      {t('outreach.contacts.addList')}
                     </button>
                   )}
 
@@ -1355,14 +1236,14 @@ export default function OutreachContacts() {
                               className="flex-1 px-2 py-1 bg-gray-800 border border-white/10 rounded text-sm text-white outline-none"
                               autoFocus
                             />
-                            <button onClick={() => handleUpdateList(list.id)} className="text-teal-400 text-xs font-medium">{t.save}</button>
-                            <button onClick={() => setEditingListId(null)} className="text-gray-500 text-xs">{t.cancel}</button>
+                            <button onClick={() => handleUpdateList(list.id)} className="text-teal-400 text-xs font-medium">{t('common.save')}</button>
+                            <button onClick={() => setEditingListId(null)} className="text-gray-500 text-xs">{t('common.cancel')}</button>
                           </div>
                         ) : (
                           <>
                             <div>
                               <p className="text-sm font-medium text-white">{list.name}</p>
-                              <p className="text-[10px] text-gray-500">{t.systemId}: {list.id}</p>
+                              <p className="text-[10px] text-gray-500">{t('outreach.contacts.systemId')}: {list.id}</p>
                             </div>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
@@ -1397,10 +1278,10 @@ export default function OutreachContacts() {
           isOpen={deleteDialog}
           onClose={() => setDeleteDialog(false)}
           onConfirm={handleBulkDelete}
-          title={t.deleteContacts}
-          description={t.areYouSureDeleteBulk?.(selectedIds.size) || `Are you sure you want to delete ${selectedIds.size} contacts?`}
-          confirmLabel={isDeleting ? t.deleting : t.deleteAll}
-          cancelLabel={t.cancel}
+          title={t('outreach.contacts.deleteContacts')}
+          description={t('outreach.contacts.areYouSureDeleteBulk', { count: selectedIds.size })}
+          confirmLabel={isDeleting ? t('outreach.contacts.deleting') : t('outreach.contacts.deleteAll')}
+          cancelLabel={t('common.cancel')}
           danger
         />
 
@@ -1408,10 +1289,10 @@ export default function OutreachContacts() {
           isOpen={!!contactToDelete}
           onClose={() => setContactToDelete(null)}
           onConfirm={handleSingleDelete}
-          title={t.deleteContact}
-          description={t.areYouSureDeleteSingle}
-          confirmLabel={isDeleting ? t.deleting : t.delete}
-          cancelLabel={t.cancel}
+          title={t('outreach.contacts.deleteContact')}
+          description={t('outreach.contacts.areYouSureDeleteSingle')}
+          confirmLabel={isDeleting ? t('outreach.contacts.deleting') : t('common.delete')}
+          cancelLabel={t('common.cancel')}
           danger
         />
 
@@ -1435,10 +1316,10 @@ export default function OutreachContacts() {
                 <div className="space-y-2">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Trash2 className="size-5 text-red-400" />
-                    {t.deleteList}: <span className="text-teal-400">{listToDelete.name}</span>
+                    {t('outreach.contacts.deleteList')}: <span className="text-teal-400">{listToDelete.name}</span>
                   </h3>
                   <p className="text-sm text-slate-400 leading-relaxed">
-                    {t.howHandleContacts}
+                    {t('outreach.contacts.howHandleContacts')}
                   </p>
                 </div>
 
@@ -1459,8 +1340,8 @@ export default function OutreachContacts() {
                       {deleteListOption === 'only_list' && <div className="size-2 rounded-full bg-teal-400" />}
                     </div>
                     <div>
-                      <p className="font-bold text-sm">{t.deleteListOnly}</p>
-                      <p className="text-xs opacity-70 mt-0.5">{t.contactsRemainUnassigned}</p>
+                      <p className="font-bold text-sm">{t('outreach.contacts.deleteListOnly')}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{t('outreach.contacts.contactsRemainUnassigned')}</p>
                     </div>
                   </button>
 
@@ -1480,8 +1361,8 @@ export default function OutreachContacts() {
                       {deleteListOption === 'list_and_contacts' && <div className="size-2 rounded-full bg-red-400" />}
                     </div>
                     <div>
-                      <p className="font-bold text-sm">{t.deleteListAndExclusive}</p>
-                      <p className="text-xs opacity-70 mt-0.5">{t.removesExclusiveDesc}</p>
+                      <p className="font-bold text-sm">{t('outreach.contacts.deleteListAndExclusive')}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{t('outreach.contacts.removesExclusiveDesc')}</p>
                     </div>
                   </button>
                 </div>
@@ -1491,7 +1372,7 @@ export default function OutreachContacts() {
                     onClick={() => setListToDelete(null)}
                     className="flex-1 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
                   >
-                    {t.cancel}
+                    {t('common.cancel')}
                   </button>
                   <button
                     onClick={handleDeleteList}
@@ -1508,7 +1389,7 @@ export default function OutreachContacts() {
                     ) : (
                       <Trash2 className="size-4" />
                     )}
-                    {t.confirmDelete}
+                    {t('common.confirmDelete')}
                   </button>
                 </div>
               </motion.div>

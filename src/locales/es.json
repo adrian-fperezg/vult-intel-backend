@@ -143,6 +143,15 @@
             "terms": "Términos de Servicio"
         },
         "settings": {
+            "tabs": {
+                "mailboxes": "Motores de Envío",
+                "sending": "Configuración de Envío",
+                "warmup": "Calentamiento de Email",
+                "snippets": "Snippets y Firmas",
+                "integrations": "Integraciones",
+                "api": "API de Desarrollador",
+                "notifications": "Notificaciones"
+            },
             "sending": {
                 "title": "Configuración de Envío",
                 "desc": "Optimiza la entrega de tu outreach y protege tus dominios",
@@ -165,7 +174,43 @@
                 "endTime": "Hora de Fin",
                 "windowDesc": "Cuando esté habilitado, los correos solo se enviarán durante la ventana especificada.",
                 "saveBtn": "Guardar Configuración de Envío",
-                "saveSuccess": "Configuración de envío actualizada"
+                "saveSuccess": "Configuración de envío actualizada",
+                "loadError": "Error al cargar la configuración de envío",
+                "saveError": "Error al guardar la configuración de envío"
+            },
+            "mailboxes": {
+                "title": "Configuración de Buzones",
+                "desc": "Configura tus dominios y cuentas conectadas",
+                "addBtn": "Añadir Buzón",
+                "emptyTitle": "No hay buzones conectados",
+                "emptyDesc": "Conecta tu cuenta de Gmail o SMTP personalizado para empezar a enviar correos de outreach.",
+                "complianceTitle": "Cumplimiento y Pie de Página",
+                "complianceDesc": "Esta dirección se inyecta en el pie de página de cada correo de outreach, reemplazando el marcador [[BUSINESS_ADDRESS]]. Requerido para el cumplimiento de CAN-SPAM / GDPR.",
+                "businessAddress": "Dirección Física de la Empresa",
+                "saveAddress": "Guardar Dirección",
+                "dnsVerification": "Verificación de Propiedad DNS",
+                "identityManagement": "Gestión de Identidad Basada en Dominio",
+                "noVerifiedDomains": "Aún no hay dominios verificados. Completa la verificación anterior para empezar a gestionar alias.",
+                "connectedEngines": "Motores de Envío Conectados",
+                "authStatus": "Estado de Autenticación",
+                "verified": "Verificado",
+                "failing": "Fallando",
+                "aliasesHealth": "Salud de los Alias de Remitente",
+                "senderAlias": "Alias de Remitente",
+                "healthScore": "Puntuación de Salud",
+                "recheckDns": "Re-verificar DNS",
+                "runSpamTest": "Ejecutar Test de Spam",
+                "disconnecting": "Desconectando...",
+                "disconnectMailbox": "Desconectar Buzón",
+                "saveSuccess": "Dirección comercial actualizada",
+                "saveError": "Error al guardar la dirección comercial"
+            },
+            "warmup": {
+                "title": "Calentamiento de Email",
+                "desc": "Aumenta gradualmente el volumen de envío para establecer la reputación del remitente",
+                "active": "Activo",
+                "progress": "Progreso de calentamiento",
+                "dayXofY": "Día {{day}} de {{total}} del plan de calentamiento"
             }
         }
     },
@@ -231,6 +276,278 @@
         "marketingPlatform": "Plataforma de Marketing"
     },
     "outreach": {
+        "inbox": {
+            "title": "Buzón Unificado",
+            "subtitle": "Gestiona todos tus leads y respuestas entrantes en un solo lugar.",
+            "syncing": "Sincronizando mensajes...",
+            "emptyTitle": "Buzón Vacío",
+            "emptyDesc": "No se encontraron mensajes nuevos. ¡Tu buzón está limpio!",
+            "refresh": "Actualizar",
+            "results": "Resultados",
+            "result": "Resultado",
+            "searchPlaceholder": "Buscar leads...",
+            "intents": {
+                "all": "Todas las Intenciones",
+                "interested": "Interesado",
+                "meeting": "Reunión Solicitada",
+                "notInterested": "No Interesado",
+                "later": "Esperar / Más tarde",
+                "wrongPerson": "Persona Equivocada",
+                "general": "Consulta General"
+            },
+            "summarize": "Resumir",
+            "reply": "Responder",
+            "cancel": "Cancelar",
+            "aiSummary": "Resumen IA",
+            "drafting": "Redactando Respuesta",
+            "typePlaceholder": "Escribe tu respuesta...",
+            "sending": "Enviando...",
+            "sendSuccess": "Respuesta enviada con éxito",
+            "sendReply": "Enviar Respuesta",
+            "selectTitle": "Selecciona un mensaje",
+            "selectDesc": "Selecciona una conversación de la izquierda para leer y responder.",
+            "respondingAs": "Respondiendo como: {{email}}"
+        },
+        "contacts": {
+            "title": "Centro de Contactos",
+            "subtitle": "Gestiona y segmenta tu audiencia de outreach",
+            "searchPlaceholder": "Buscar contactos...",
+            "allContacts": "Todos los Contactos",
+            "active": "Activos",
+            "unsubscribed": "Desuscritos",
+            "bounced": "Rebotados",
+            "addContact": "Añadir Contacto",
+            "importCsv": "Importar CSV",
+            "export": "Exportar",
+            "headers": {
+                "name": "Nombre",
+                "email": "Email",
+                "company": "Empresa",
+                "status": "Estado",
+                "lastContact": "Último Contacto",
+                "tags": "Etiquetas",
+                "actions": "Acciones"
+            },
+            "stats": {
+                "total": "Total de Contactos",
+                "growth": "Crecimiento (30d)",
+                "activeRate": "Tasa de Interacción",
+                "bounces": "Rebotes"
+            },
+            "actions": {
+                "edit": "Editar Contacto",
+                "delete": "Eliminar",
+                "message": "Mensaje",
+                "view": "Ver Perfil"
+            },
+            "filters": {
+                "title": "Filtros",
+                "clear": "Limpiar todo",
+                "industry": "Industria",
+                "location": "Ubicación",
+                "dealValue": "Valor del Trato"
+            }
+        },
+        "campaigns": {
+            "title": "Campañas",
+            "subtitle": "Inteligencia y automatización agregada del embudo de ventas B2B.",
+            "livePerformance": "Rendimiento en Vivo",
+            "newCampaign": "Nueva Campaña",
+            "kpis": {
+                "totalVolume": "Volumen Total del Embudo",
+                "totalVolumeDesc": "Correos enviados en todas las etapas",
+                "avgOpenRate": "Tasa de Apertura Promedio",
+                "avgReplyRate": "Tasa de Respuesta Promedio",
+                "conversionEngine": "Motor de Conversión",
+                "activeCount": "Campañas activas actualmente"
+            },
+            "funnel": {
+                "throughput": "Rendimiento del Embudo",
+                "throughputDesc": "Volumen vs. Interacción por etapa del embudo",
+                "sent": "Enviado",
+                "replies": "Respuestas",
+                "analysis": "Análisis",
+                "finalConversion": "Conversión Final",
+                "optimization": "Optimización del Motor",
+                "optimizationDesc": "Mejoras sugeridas basadas en datos",
+                "pipeline": "Pipeline",
+                "prospectsActive": "Prospectos Activos",
+                "needsFocus": "Requiere Atención",
+                "healthy": "Saludable",
+                "aiReport": "Generar Informe de Auditoría IA"
+            },
+            "inventory": {
+                "title": "Inventario de Campañas",
+                "search": "Buscar campañas...",
+                "details": "Detalles de la Campaña",
+                "stage": "Etapa del Embudo",
+                "status": "Estado",
+                "performance": "Rendimiento",
+                "actions": "Acciones",
+                "loading": "Hidratando datos desde el motor...",
+                "empty": "Cero Campañas Descubiertas",
+                "deployFirst": "Despliega tu primera campaña →",
+                "leads": "Prospectos",
+                "sent": "Enviado",
+                "open": "Apertura",
+                "reply": "Respuesta"
+            },
+            "menu": {
+                "pause": "Pausar Motor",
+                "resume": "Reanudar Motor",
+                "duplicate": "Duplicar",
+                "terminate": "Terminar"
+            },
+            "delete": {
+                "title": "¿Eliminar campaña?",
+                "desc": "Esta campaña y toda su configuración se eliminarán permanentemente. Los datos de prospectos inscritos y analíticas se conservan.",
+                "confirm": "Eliminar Campaña"
+            },
+            "status": {
+                "draft": "Borrador",
+                "active": "Activa",
+                "paused": "Pausada",
+                "completed": "Completada",
+                "scheduled": "Programada"
+            },
+            "funnel": {
+                "all": "TODOS",
+                "tofu": "TOFU",
+                "mofu": "MOFU",
+                "bofu": "BOFU"
+            }
+        },
+        "wizard": {
+            "title": "Crear Campaña",
+            "subtitle": "Lanza una nueva campaña de outreach automatizada",
+            "steps": {
+                "settings": "Ajustes",
+                "content": "Contenido",
+                "contacts": "Contactos",
+                "scheduling": "Programación",
+                "review": "Revisión"
+            },
+            "settings": {
+                "title": "Ajustes de la Campaña",
+                "name": "Nombre de la Campaña",
+                "namePlaceholder": "ej. Outreach Fundadores SaaS Q1",
+                "sender": "Buzón de Remitente",
+                "selectSender": "Selecciona un remitente...",
+                "alias": "Alias",
+                "primary": "Primario",
+                "funnel": "Ubicación en el Embudo",
+                "funnelDesc": "¿Cómo contribuye esta campaña a tu ciclo de ventas B2B?",
+                "tofu": "Parte Superior del Embudo",
+                "tofuDesc": "Conciencia y Outreach",
+                "mofu": "Parte Media del Embudo",
+                "mofuDesc": "Educación e Interés",
+                "bofu": "Parte Inferior del Embudo",
+                "bofuDesc": "Decisión y Cierre",
+                "tracking": "Opciones de Seguimiento",
+                "trackOpens": "Rastrear Aperturas de Correo",
+                "trackClicks": "Rastrear Clics en Enlaces"
+            },
+            "content": {
+                "title": "Contenido del Correo",
+                "subject": "Línea de Asunto",
+                "subjectPlaceholder": "Hola {{first_name}}, una pregunta rápida..."
+            },
+            "contacts": {
+                "title": "Importar Contactos",
+                "upload": "Subir Archivo CSV",
+                "uploadDesc": "Importa tus prospectos desde un archivo CSV. Te ayudaremos a mapear las columnas a nuestros campos de contacto.",
+                "chooseFile": "Elegir Archivo",
+                "ready": "Contactos Listos",
+                "remove": "Eliminar Archivo",
+                "mapping": "Mapeo de Columnas",
+                "selectColumn": "Seleccionar columna..."
+            },
+            "scheduling": {
+                "title": "Programación y Envío Inteligente",
+                "desc": "Optimiza la entregabilidad controlando la velocidad y las ventanas de envío.",
+                "smartSend": "Envío Inteligente",
+                "smartSendDesc": "Aleatoriza los intervalos de envío para imitar el comportamiento humano",
+                "reputationActive": "Protección de Reputación Activa: Los correos se envían gradualmente para imitar el comportamiento humano y proteger la reputación de tu dominio. Si se alcanzan los límites diarios, los correos pendientes se pondrán en cola automáticamente para el siguiente día hábil.",
+                "delayTitle": "Retraso entre Correos",
+                "delayDesc": "Retraso aleatorio para simular comportamiento humano.",
+                "weekends": "Enviar en Fines de Semana",
+                "weekendsDesc": "Los correos se pondrán en cola los 7 días de la semana si está habilitado."
+            },
+            "review": {
+                "title": "¿Listo para Lanzar?",
+                "desc": "Todo parece estar bien. Tu campaña está lista para comenzar.",
+                "campaign": "Campaña",
+                "contacts": "Contactos",
+                "prospects": "Prospectos",
+                "strategy": "Estrategia",
+                "optimization": "Optimización del Pipeline",
+                "deliveryEstimate": "Estimación de Entrega",
+                "processingWillComplete": "El procesamiento se completará",
+                "caution": "Procede con Precaución",
+                "cautionDesc": "Esto comenzará a enviar correos inmediatamente a tu lista de contactos basándose en los ajustes de tu buzón."
+            },
+            "actions": {
+                "cancel": "Cancelar",
+                "launch": "Lanzar Campaña",
+                "next": "Siguiente",
+                "back": "Atrás"
+            },
+            "validation": {
+                "name": "Por favor ingresa un nombre para la campaña",
+                "stage": "Por favor selecciona una etapa del embudo",
+                "subject": "Por favor ingresa una línea de asunto",
+                "contacts": "Por favor importa al menos un contacto",
+                "emailMapping": "Por favor mapea la columna de correo electrónico"
+            },
+            "toast": {
+                "success": "¡Campaña lanzada con éxito!",
+                "error": "Error al lanzar la campaña",
+                "aiSuccess": "¡Optimizado con Gemini!",
+                "aiError": "Error en la optimización por IA",
+                "contentMissing": "Por favor escribe algo de contenido primero."
+            }
+        },
+        "upgrade": {
+            "premiumAddon": "Complemento Premium",
+            "title": "Automatización de Outreach",
+            "desc": "Convierte contactos fríos en conversaciones cálidas — automáticamente. Envía desde tu propio Gmail, rastrea cada interacción y cierra tratos mientras duermes.",
+            "included": "Qué está incluido",
+            "features": [
+                "Programación de correos con inteligencia de tiempo de envío óptimo",
+                "Seguimiento de aperturas y clics con tecnología de píxeles",
+                "Motor de Spintax para mensajes únicos y resistentes al spam",
+                "Secuencias de correo de varios pasos con parada automática al responder",
+                "Secuencias multicanal: correo, LinkedIn, llamadas y tareas",
+                "Generador de secuencias con IA y detección de OOO",
+                "Bandeja de entrada de respuesta unificada (Unibox) en todos los buzones",
+                "Categorización de intención de leads (INTERESADO, REUNIÓN, etc.)",
+                "Base de datos de leads B2B e integración de buscador de correos",
+                "Analíticas de campaña con tasas de apertura, clics y respuesta",
+                "Calentamiento de correo y seguimiento de puntuación de entregabilidad",
+                "Verificador de autenticación SPF / DKIM / DMARC"
+            ],
+            "unlock": "Desbloquear Outreach",
+            "footer": "Cancela en cualquier momento · Acceso instantáneo · Facturación mensual"
+        },
+        "settings": {
+            "tabs": {
+                "mailboxes": "Motores de Envío Conectados",
+                "safety": "Seguridad y Límites",
+                "windows": "Ventanas de Envío"
+            },
+            "mailboxes": {
+                "title": "Buzones",
+                "health": "Puntuación de Salud",
+                "dns": "Estado DNS",
+                "verified": "Verificado",
+                "failed": "Fallido",
+                "senderAliases": "SALUD DE ALIAS DE REMITENTE"
+            },
+            "confirm": {
+                "deleteMailboxTitle": "¿Eliminar Buzón?",
+                "deleteMailboxDesc": "Esto detendrá todas las secuencias activas que usen este remitente. Esta acción no se puede deshacer."
+            }
+        },
         "queue": {
             "title": "Monitor de Cola de Secuencias",
             "subtitle": "Visibilidad en tiempo real de los próximos pasos de secuencia programados en BullMQ.",
@@ -605,40 +922,7 @@
         "footerNote": "Solo se envían los últimos mensajes para optimizar costos.",
         "error": "Lo siento, hubo un error al procesar tu solicitud. Por favor intenta de nuevo."
     },
-    "projects": {
-        "hub": "Centro de Proyectos",
-        "hubSubtitle": "Gestiona escaneos e inteligencia de marketing",
-        "startScan": "Iniciar un Escaneo de Marketing",
-        "scanSubtitle": "Ingresa la URL de un competidor para extraer inteligencia profunda.",
-        "scanPlaceholder": "https://ejemplo.com",
-        "runScan": "Ejecutar Escaneo",
-        "whatYouGet": "Qué obtendrás con este escaneo",
-        "strategicOutputs": "Resultados Estratégicos",
-        "technicalAnalysis": "Análisis Técnico",
-        "yourProjects": "Tus Proyectos",
-        "sortByRecent": "Ordenar por: Reciente",
-        "syncing": "Sincronizando Base de Datos...",
-        "noProjects": "Sin proyectos aún. Ejecuta un escaneo para comenzar.",
-        "viewReport": "Ver Reporte Completo",
-        "scanFailed": "ESCANEO FALLIDO",
-        "scanActive": "ESCANEO ACTIVO",
-        "analyzing": "Analizando URL Objetivo",
-        "errorDuringScan": "Error Durante el Escaneo",
-        "cancelScan": "Cancelar Escaneo",
-        "confirmDelete": "¿Estás seguro de que quieres eliminar permanentemente este reporte?",
-        "deleteFailed": "Error al eliminar el proyecto. Por favor intenta de nuevo.",
-        "outputs": {
-            "summary": "Resumen Ejecutivo",
-            "snapshot": "Diagnóstico del Negocio y Objetivos",
-            "footprint": "Mapa de Huella Digital",
-            "actionPlan": "Plan de Acción a 30 Días",
-            "seo": "Auditoría SEO y de Contenido",
-            "conversion": "Escaneo de Conversión y UX",
-            "techStack": "Señales del Stack Tecnológico",
-            "performance": "Métricas de Rendimiento"
-        },
-        "noDescription": "Sin descripción disponible."
-    },
+
     "mastermind": {
         "title": "Growth Mastermind",
         "subtitle": "Sintetiza tu Escaneo Profundo, Estrategia de Marca y Personas en un Plan de Marketing altamente táctico.",
@@ -659,5 +943,75 @@
         "deleted": "Estrategia eliminada exitosamente",
         "deleteTitle": "¿Eliminar Masterplan?",
         "deleteDesc": "Esta acción no se puede deshacer. Este masterplan será eliminado permanentemente de tu proyecto."
+    },
+    "pulse": {
+        "title": "System Pulse",
+        "subtitle": "Salud del motor y señales de sincronización en tiempo real.",
+        "hub": "Centro de Proyectos",
+        "hubSubtitle": "Gestiona escaneos e inteligencia de marketing",
+        "startScan": "Iniciar un Escaneo de Marketing",
+        "scanSubtitle": "Ingresa la URL de un competidor para extraer inteligencia profunda.",
+        "placeholder": "https://ejemplo.com",
+        "runScan": "Ejecutar Escaneo",
+        "yourProjects": "Tus Proyectos",
+        "sortByRecent": "Ordenar por: Reciente",
+        "syncingDatabase": "Sincronizando Base de Datos...",
+        "noProjectsYet": "Sin proyectos aún. Ejecuta un escaneo para comenzar.",
+        "viewFullReport": "Ver Reporte Completo",
+        "scanActive": "ESCANEO ACTIVO",
+        "scanFailed": "ESCANEO FALLIDO",
+        "analyzingUrl": "Analizando URL Objetivo",
+        "errorDuringScan": "Error Durante el Escaneo",
+        "overallProgress": "Progreso General",
+        "deleteScan": "Eliminar Escaneo",
+        "deleteScanFailed": "Error al eliminar el reporte",
+        "confirmDelete": "¿Estás seguro de que quieres eliminar permanentemente este reporte?",
+        "unknownError": "Ha ocurrido un error desconocido.",
+        "scanFailedDetail": "Fallo en el escaneo: {{error}}. Revisa la consola para más detalles.",
+        "website": "Sitio Web",
+        "marketing": "Marketing",
+        "outputs": {
+            "summary": "Resumen Ejecutivo",
+            "snapshot": "Diagnóstico del Negocio y Objetivos",
+            "footprint": "Mapa de Huella Digital",
+            "actionPlan": "Plan de Acción a 30 Días",
+            "seo": "Auditoría SEO y de Contenido",
+            "conversion": "Escaneo de Conversión y UX",
+            "techStack": "Señales del Stack Tecnológico",
+            "performance": "Métricas de Rendimiento"
+        },
+        "cancelScan": "Cancelar Escaneo",
+        "noDescription": "Sin descripción disponible.",
+        "completed": "Completado",
+        "steps": {
+            "brand": {
+                "label": "Identidad de Marca",
+                "desc": "Logo, Colores, Tipografía extraídos"
+            },
+            "presence": {
+                "label": "Presencia Digital",
+                "desc": "Enlaces sociales y meta tags encontrados"
+            },
+            "seo": {
+                "label": "Estructura SEO",
+                "desc": "Palabras clave y encabezados mapeados"
+            },
+            "content": {
+                "label": "Análisis de Contenido",
+                "desc": "Procesando modelos NLP..."
+            },
+            "conversion": {
+                "label": "Conversión",
+                "desc": "Analizando puntos del embudo"
+            },
+            "trust": {
+                "label": "Confianza y Seguridad",
+                "desc": "Check de SSL y señales de confianza"
+            },
+            "tech": {
+                "label": "Stack Técnico",
+                "desc": "Identificando frameworks y herramientas"
+            }
+        }
     }
 }

@@ -1,27 +1,18 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { PaperPlaneIcon, TealButton } from './OutreachCommon';
 import { Check } from 'lucide-react';
 
-const FEATURES = [
-  'Email scheduling with optimal send-time intelligence',
-  'Email open & click tracking with pixel-based technology',
-  'Spintax engine for unique, spam-resistant messages',
-  'Multi-step email sequences with auto-stop on reply',
-  'Multichannel sequences: email, LinkedIn, calls & tasks',
-  'AI-powered sequence generator & OOO detection',
-  'Unified reply inbox (Unibox) across all mailboxes',
-  'Lead intent categorization (INTERESTED, MEETING_REQUEST, etc.)',
-  'B2B lead database & email finder integration',
-  'Campaign analytics with open, click, and reply rates',
-  'Email warmup & deliverability score tracking',
-  'SPF / DKIM / DMARC authentication checker',
-];
+// FEATURES are now managed via i18n
 
 interface OutreachUpgradeScreenProps {
   onSubscribe?: () => void;
 }
 
 export default function OutreachUpgradeScreen({ onSubscribe }: OutreachUpgradeScreenProps) {
+  const { t } = useTranslation();
+
+  const features = t('outreach.upgrade.features', { returnObjects: true }) as string[];
 
   const handleSubscribe = async () => {
     // TODO: call POST /api/subscriptions/addons/outreach/subscribe
@@ -59,13 +50,13 @@ export default function OutreachUpgradeScreen({ onSubscribe }: OutreachUpgradeSc
           className="space-y-3"
         >
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 text-xs font-bold uppercase tracking-widest">
-            Premium Add-on
+            {t('outreach.upgrade.premiumAddon')}
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight leading-tight">
-            Outreach <span className="text-teal-400">Automation</span>
+            Outreach <span className="text-teal-400">{t('outreach.upgrade.title').split(' ')[1] || 'Automation'}</span>
           </h1>
           <p className="text-lg text-slate-400 max-w-lg mx-auto leading-relaxed">
-            Turn cold contacts into warm conversations — automatically. Send from your own Gmail, track every interaction, and close deals while you sleep.
+            {t('outreach.upgrade.desc')}
           </p>
         </motion.div>
 
@@ -76,9 +67,9 @@ export default function OutreachUpgradeScreen({ onSubscribe }: OutreachUpgradeSc
           transition={{ delay: 0.3, duration: 0.4 }}
           className="bg-white/[0.02] border border-white/8 rounded-2xl p-6 text-left"
         >
-          <p className="text-xs font-bold uppercase tracking-widest text-teal-400 mb-4">What's included</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-teal-400 mb-4">{t('outreach.upgrade.included')}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {FEATURES.map((feature) => (
+            {features.map((feature) => (
               <div key={feature} className="flex items-start gap-2.5">
                 <div className="size-5 rounded-full bg-teal-500/15 border border-teal-500/30 flex items-center justify-center shrink-0 mt-0.5">
                   <Check className="size-3 text-teal-400" />
@@ -98,9 +89,9 @@ export default function OutreachUpgradeScreen({ onSubscribe }: OutreachUpgradeSc
         >
           <TealButton size="lg" onClick={handleSubscribe} className="min-w-[220px] text-base">
             <PaperPlaneIcon className="size-5" />
-            Unlock Outreach
+            {t('outreach.upgrade.unlock')}
           </TealButton>
-          <p className="text-xs text-slate-500">Cancel anytime · Instant access · Billed monthly</p>
+          <p className="text-xs text-slate-500">{t('outreach.upgrade.footer')}</p>
         </motion.div>
       </motion.div>
     </div>

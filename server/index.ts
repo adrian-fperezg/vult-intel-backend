@@ -1742,8 +1742,19 @@ app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
       const bounced = parseInt(mb.bounced_total) || 0;
       const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0;
       
-      mb.health_score = calculateHealthScore(mb, bounceRate);
-      mb.aliases = aliases;
+      const healthScore = calculateHealthScore(mb, bounceRate);
+      mb.health_score = healthScore;
+
+      // Enrich aliases with parent data if they lack it
+      mb.aliases = aliases.map((alias: any) => ({
+        ...alias,
+        // Aliases inherit parent DNS verification status (usually same domain)
+        spf_verified: alias.spf_verified || mb.spf_verified,
+        dkim_verified: alias.dkim_verified || mb.dkim_verified,
+        dmarc_verified: alias.dmarc_verified || mb.dmarc_verified,
+        // Aliases inherit the parent's calculated health score for reputation consistency
+        health_score: alias.health_score && alias.health_score < 100 ? alias.health_score : healthScore
+      }));
       
       return mb;
     }));

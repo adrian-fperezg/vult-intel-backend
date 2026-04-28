@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState } from './OutreachCommon';
 import { toast } from 'react-hot-toast';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { DomainAliasCard } from './components/DomainAliasCard';
 import DomainVerificationManager from './components/DomainVerificationManager';
 import TipTapEditor from './components/TipTapEditor';
@@ -24,14 +25,14 @@ const extractVars = (html: string) => {
   return [...new Set(matches.map(m => m.replace(/^{{|}}$/g, '')))];
 };
 
-const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<any> }> = [
-  { id: 'mailboxes',     label: 'Mailboxes',     icon: Mail },
-  { id: 'sending',       label: 'Sending',       icon: Zap },
-  { id: 'warmup',       label: 'Warmup',         icon: Thermometer },
-  { id: 'snippets',     label: 'Snippets',       icon: Code2 },
-  { id: 'integrations', label: 'Integrations',   icon: Zap },
-  { id: 'api',          label: 'API & Webhooks', icon: Webhook },
-  { id: 'notifications',label: 'Notifications',  icon: Bell },
+const SETTINGS_TABS: Array<{ id: SettingsTab; labelKey: string; icon: React.ComponentType<any> }> = [
+  { id: 'mailboxes',     labelKey: 'landing.settings.tabs.mailboxes',     icon: Mail },
+  { id: 'sending',       labelKey: 'landing.settings.tabs.sending',       icon: Zap },
+  { id: 'warmup',       labelKey: 'landing.settings.tabs.warmup',         icon: Thermometer },
+  { id: 'snippets',     labelKey: 'landing.settings.tabs.snippets',       icon: Code2 },
+  { id: 'integrations', labelKey: 'landing.settings.tabs.integrations',   icon: Zap },
+  { id: 'api',          labelKey: 'landing.settings.tabs.api',            icon: Webhook },
+  { id: 'notifications',labelKey: 'landing.settings.tabs.notifications',  icon: Bell },
 ];
 
 interface Mailbox {
@@ -66,6 +67,7 @@ interface Mailbox {
 
 export default function OutreachSettings() {
   const api = useOutreachApi();
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>('mailboxes');
   const [showApiKey, setShowApiKey] = useState(false);
   const [expandedMailbox, setExpandedMailbox] = useState<string | null>(null);
@@ -447,7 +449,7 @@ export default function OutreachSettings() {
         toast.error('Verification failed');
       }
     } catch (err: any) {
-      toast.error(err.message || 'Verification failed');
+      toast.error(err.message || t('landing.settings.mailboxes.verifyError') || 'Verification failed');
     } finally {
       setVerifyingDnsId(null);
     }
@@ -457,7 +459,7 @@ export default function OutreachSettings() {
     <div className="h-full w-full flex overflow-hidden">
       {/* Settings Sub-nav */}
       <div className="w-52 shrink-0 border-r border-white/5 bg-surface-dark/20 p-3 space-y-1">
-        {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
+        {SETTINGS_TABS.map(({ id, labelKey, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
@@ -469,7 +471,7 @@ export default function OutreachSettings() {
             )}
           >
             <Icon className="size-4 shrink-0" />
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -483,8 +485,8 @@ export default function OutreachSettings() {
             {/* Header Area */}
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-white tracking-tight">Mailbox Settings</h2>
-                <p className="text-sm text-slate-400 mt-1">Configure your domains and connected accounts</p>
+                <h2 className="text-2xl font-bold text-white tracking-tight">{t('landing.settings.mailboxes.title')}</h2>
+                <p className="text-sm text-slate-400 mt-1">{t('landing.settings.mailboxes.desc')}</p>
               </div>
               <TealButton
                 size="sm"
@@ -492,7 +494,7 @@ export default function OutreachSettings() {
                 onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}
                 disabled={!api.activeProjectId}
               >
-                <Plus className="size-4" /> Add Mailbox
+                <Plus className="size-4" /> {t('landing.settings.mailboxes.addBtn')}
               </TealButton>
             </div>
 
@@ -507,8 +509,8 @@ export default function OutreachSettings() {
             {!api.activeProjectId ? (
               <OutreachEmptyState
                 icon={<FolderOpen />}
-                title="No project selected"
-                description="Select a project to view and manage its connected mailboxes."
+                title={t('common.noProject')}
+                description={t('common.noProjectDesc')}
               />
             ) : (
               <>
@@ -520,15 +522,15 @@ export default function OutreachSettings() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <Shield className="w-5 h-5 text-amber-400" />
-                        <h3 className="text-sm font-bold uppercase tracking-widest text-amber-400">Compliance &amp; Footer</h3>
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-amber-400">{t('landing.settings.mailboxes.complianceTitle')}</h3>
                       </div>
                       <p className="text-sm text-slate-300 pt-1">
-                        This address is injected into the footer of every outreach email, replacing the{' '}
-                        <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-amber-300">{'[[BUSINESS_ADDRESS]]'}</code>{' '}
-                        placeholder. Required for CAN-SPAM / GDPR compliance.
+                        {t('landing.settings.mailboxes.complianceDesc').split('[[BUSINESS_ADDRESS]]')[0]}
+                        <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-amber-300">{'[[BUSINESS_ADDRESS]]'}</code>
+                        {t('landing.settings.mailboxes.complianceDesc').split('[[BUSINESS_ADDRESS]]')[1]}
                       </p>
                       <div className="mt-5 space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Physical Business Address</label>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">{t('landing.settings.mailboxes.businessAddress')}</label>
                         <textarea
                           value={businessAddress}
                           onChange={(e) => setBusinessAddress(e.target.value)}
@@ -544,7 +546,7 @@ export default function OutreachSettings() {
                           disabled={!api.activeProjectId}
                           className="px-6 h-[40px] font-bold"
                         >
-                          Save Address
+                          {t('landing.settings.mailboxes.saveAddress')}
                         </TealButton>
                       </div>
                     </div>
@@ -555,7 +557,7 @@ export default function OutreachSettings() {
                 <section className="space-y-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Shield className="w-5 h-5 text-teal-400" />
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">DNS Ownership Verification</h3>
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">{t('landing.settings.mailboxes.dnsVerification')}</h3>
                   </div>
                   <DomainVerificationManager onStatusChange={loadMailboxes} />
                 </section>
@@ -564,7 +566,7 @@ export default function OutreachSettings() {
                 <section className="space-y-6">
                   <div className="flex items-center gap-2 mb-2">
                     <Users2 className="w-5 h-5 text-teal-400" />
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">Domain-Based Identity Management</h3>
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">{t('landing.settings.mailboxes.identityManagement')}</h3>
                   </div>
                   
                   {domainsLoading ? (
@@ -574,7 +576,7 @@ export default function OutreachSettings() {
                   ) : verifiedDomains.filter(d => d.status === 'verified').length === 0 ? (
                     <div className="p-8 text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
                       <Globe className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-                      <p className="text-sm text-slate-500">No verified domains yet. Complete the verification above to start managing aliases.</p>
+                      <p className="text-sm text-slate-500">{t('landing.settings.mailboxes.noVerifiedDomains')}</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-6">
@@ -597,7 +599,7 @@ export default function OutreachSettings() {
                 <section className="space-y-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Mail className="w-5 h-5 text-teal-400" />
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">Connected Sending Engines</h3>
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">{t('landing.settings.mailboxes.connectedEngines')}</h3>
                   </div>
 
                   {mailboxesLoading ? (
@@ -607,9 +609,9 @@ export default function OutreachSettings() {
                   ) : mailboxes.length === 0 ? (
                     <OutreachEmptyState
                       icon={<Mail />}
-                      title="No mailboxes connected"
-                      description="Connect your Gmail account or custom SMTP to start sending outreach emails."
-                      action={<TealButton onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}><Plus className="size-4" /> Add Mailbox</TealButton>}
+                      title={t('landing.settings.mailboxes.emptyTitle')}
+                      description={t('landing.settings.mailboxes.emptyDesc')}
+                      action={<TealButton onClick={() => { setShowConnectModal(true); setConnectMode('picker'); }}><Plus className="size-4" /> {t('landing.settings.mailboxes.addBtn')}</TealButton>}
                     />
                   ) : (
                     <div className="grid grid-cols-1 gap-4">
@@ -635,7 +637,7 @@ export default function OutreachSettings() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2.5 mb-0.5">
                                   <p className="font-semibold text-white text-sm">{mb.email}</p>
-                                  <OutreachBadge variant={scoreColor as any}>Health: {health}%</OutreachBadge>
+                                  <OutreachBadge variant={scoreColor as any}>{t('landing.settings.mailboxes.healthScore')}: {health}%</OutreachBadge>
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-slate-500">
                                   <span className="flex items-center gap-1.5 capitalize">
@@ -664,7 +666,7 @@ export default function OutreachSettings() {
 
                                     {/* DNS Checks */}
                                     <div>
-                                      <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">Authentication Status</p>
+                                      <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">{t('landing.settings.mailboxes.authStatus')}</p>
                                       <div className="grid grid-cols-3 gap-3">
                                         {[
                                           { label: 'SPF',   pass: !!mb.spf_verified },
@@ -681,7 +683,7 @@ export default function OutreachSettings() {
                                               <span className="font-bold text-xs">{label}</span>
                                               {pass ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />}
                                             </div>
-                                            <span className="text-[10px] opacity-60 uppercase">{pass ? 'Verified' : 'Failing'}</span>
+                                            <span className="text-[10px] opacity-60 uppercase">{pass ? t('landing.settings.mailboxes.verified') : t('landing.settings.mailboxes.failing')}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -690,34 +692,34 @@ export default function OutreachSettings() {
                                     {/* Aliases Health/DNS */}
                                     {mb.aliases && mb.aliases.length > 0 && (
                                       <div className="pt-4 border-t border-white/5">
-                                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">Sender Aliases Health</p>
+                                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">{t('landing.settings.mailboxes.aliasesHealth')}</p>
                                         <div className="space-y-3">
                                           {mb.aliases.map((alias: any) => (
                                             <div key={alias.id} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                                              <div className="flex flex-col">
-                                                <span className="text-xs font-semibold text-white">{alias.email}</span>
-                                                <div className="flex items-center gap-2 mt-1">
+                                              <div className="flex flex-col items-start gap-1">
+                                                <p className="font-bold text-white text-xs">{alias.name || t('landing.settings.mailboxes.senderAlias')}</p>
+                                                <div className="flex gap-2">
                                                   <span className={cn(
                                                     "text-[10px] uppercase font-bold",
-                                                    mb.spf_verified ? "text-green-400" : "text-red-400"
+                                                    alias.spf_verified ? "text-green-400" : "text-red-400"
                                                   )}>SPF</span>
                                                   <span className={cn(
                                                     "text-[10px] uppercase font-bold",
-                                                    mb.dkim_verified ? "text-green-400" : "text-red-400"
+                                                    alias.dkim_verified ? "text-green-400" : "text-red-400"
                                                   )}>DKIM</span>
                                                   <span className={cn(
                                                     "text-[10px] uppercase font-bold",
-                                                    mb.dmarc_verified ? "text-green-400" : "text-red-400"
+                                                    alias.dmarc_verified ? "text-green-400" : "text-red-400"
                                                   )}>DMARC</span>
                                                 </div>
                                               </div>
                                               <div className="flex items-center gap-3">
                                                 <div className="flex flex-col items-end">
-                                                  <span className="text-[10px] text-slate-500 uppercase font-bold">Health Score</span>
+                                                  <span className="text-[10px] text-slate-500 uppercase font-bold">{t('landing.settings.mailboxes.healthScore')}</span>
                                                   <span className={cn(
                                                     "text-sm font-bold",
-                                                    (alias.health_score ?? mb.health_score ?? 0) >= 90 ? "text-green-400" : (alias.health_score ?? mb.health_score ?? 0) >= 70 ? "text-yellow-400" : "text-red-400"
-                                                  )}>{alias.health_score ?? mb.health_score ?? 0}%</span>
+                                                    (alias.health_score ?? 0) >= 90 ? "text-green-400" : (alias.health_score ?? 0) >= 70 ? "text-yellow-400" : "text-red-400"
+                                                  )}>{alias.health_score ?? 0}%</span>
                                                 </div>
                                                 <button 
                                                   onClick={(e) => { e.stopPropagation(); handleVerifyDns(alias.id); }}
@@ -739,17 +741,17 @@ export default function OutreachSettings() {
                                         disabled={verifyingDnsId === mb.id}
                                         className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
                                       >
-                                        {verifyingDnsId === mb.id ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Re-check DNS
+                                        {verifyingDnsId === mb.id ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} {t('landing.settings.mailboxes.recheckDns')}
                                       </button>
                                       <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
-                                        <Search className="size-3.5" /> Run Spam Test
+                                        <Search className="size-3.5" /> {t('landing.settings.mailboxes.runSpamTest')}
                                       </button>
                                       <button
                                         onClick={e => { e.stopPropagation(); handleDisconnect(mb.id); }}
                                         disabled={disconnectingId === mb.id}
                                         className="px-4 py-2 text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-xl transition-all ml-auto disabled:opacity-50"
                                       >
-                                        {disconnectingId === mb.id ? 'Disconnecting…' : 'Disconnect Mailbox'}
+                                        {disconnectingId === mb.id ? t('landing.settings.mailboxes.disconnecting') : t('landing.settings.mailboxes.disconnectMailbox')}
                                       </button>
                                     </div>
                                   </div>
@@ -774,8 +776,8 @@ export default function OutreachSettings() {
         {activeTab === 'warmup' && (
           <div className="space-y-6 w-full">
             <div>
-              <h2 className="text-xl font-bold text-white">Email Warmup</h2>
-              <p className="text-sm text-slate-400 mt-0.5">Gradually increase sending volume to establish sender reputation</p>
+              <h2 className="text-xl font-bold text-white">{t('landing.settings.warmup.title')}</h2>
+              <p className="text-sm text-slate-400 mt-0.5">{t('landing.settings.warmup.desc')}</p>
             </div>
             <div className="space-y-4">
               {mailboxes.filter(m => m.warmupActive).map(mb => (
@@ -787,15 +789,15 @@ export default function OutreachSettings() {
                       </div>
                       <div>
                         <p className="font-semibold text-white text-sm">{mb.email}</p>
-                        <p className="text-xs text-slate-500">Day 14 of 30-day warmup plan</p>
+                        <p className="text-xs text-slate-500">{t('landing.settings.warmup.dayXofY', { day: 14, total: 30 })}</p>
                       </div>
                     </div>
-                    <OutreachBadge variant="teal" dot>Active</OutreachBadge>
+                    <OutreachBadge variant="teal" dot>{t('landing.settings.warmup.active')}</OutreachBadge>
                   </div>
                   <div className="space-y-3">
                     <div>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-500">Warm-up progress</span>
+                        <span className="text-slate-500">{t('landing.settings.warmup.progress')}</span>
                         <span className="text-teal-400 font-bold">47%</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full">
