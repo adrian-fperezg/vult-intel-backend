@@ -205,6 +205,11 @@ export function useOutreachMailboxes() {
     [del]
   );
 
+  const verifyDns = useCallback(
+    (id: string) => post<any>(`/mailboxes/${id}/verify-dns`, {}),
+    [post]
+  );
+
   return {
     fetchMailboxes,
     disconnectMailbox,
@@ -240,5 +245,6 @@ export function useOutreachMailboxes() {
     addVerifiedDomain,
     verifyDomain,
     deleteVerifiedDomain,
+    verifyDns,
   };
 }

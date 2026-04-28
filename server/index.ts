@@ -125,6 +125,7 @@ import admin from 'firebase-admin';
 import { gmailWebhookHandler } from "./api/webhooks/gmailWebhook.js";
 import { AnalyticsData, AiReportResponse } from "../shared/types/outreach";
 import { sendAlert } from "./lib/notifier.js";
+import { checkDNS } from "./utils/dnsChecker.js";
 
 
 
@@ -1691,8 +1692,18 @@ app.get("/api/outreach/subscription", async (req: AuthRequest, res) => {
 
 // ─── MAILBOXES ────────────────────────────────────────────────────────────────
 
+// Helper to calculate dynamic health score
+function calculateHealthScore(mb: any, bounceRate: number) {
+  let score = 100;
+  score -= Math.round(bounceRate * 5); // -5 per 1% bounce rate
+  if (!mb.spf_verified) score -= 20;
+  if (!mb.dkim_verified) score -= 20;
+  if (!mb.dmarc_verified) score -= 20;
+  return Math.max(0, score);
+}
+
 // GET /api/outreach/mailboxes?project_id=xxx
-// Returns mailboxes (without raw tokens)
+// Returns mailboxes with DNS status and health score
 app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id } = req.query as { project_id?: string };
@@ -1702,16 +1713,89 @@ app.get("/api/outreach/mailboxes", async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "project_id is required" });
 
   try {
-    const mailboxes = await db
-      .prepare(
-        "SELECT id, email, name, status, expires_at, scope, connection_type, aliases, created_at FROM outreach_mailboxes WHERE user_id = ? AND project_id = ? AND status != 'disconnected' ORDER BY created_at ASC",
-      )
-      .all(userId, project_id);
+    const mailboxes = await db.all(`
+      SELECT 
+        m.id, m.email, m.name, m.status, m.expires_at, m.scope, m.connection_type, 
+        m.created_at, m.spf_verified, m.dkim_verified, m.dmarc_verified, m.health_score,
+        COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.id END) as sent_total,
+        COUNT(DISTINCT CASE WHEN e.status = 'bounced' THEN e.id END) as bounced_total
+      FROM outreach_mailboxes m
+      LEFT JOIN outreach_individual_emails e ON m.id = e.mailbox_id
+      WHERE m.user_id = ? AND m.project_id = ? AND m.status != 'disconnected'
+      GROUP BY m.id, m.email, m.name, m.status, m.expires_at, m.scope, m.connection_type, m.created_at, m.spf_verified, m.dkim_verified, m.dmarc_verified, m.health_score
+      ORDER BY m.created_at ASC
+    `, userId, project_id);
 
-    res.json(mailboxes);
+    const enrichedMailboxes = await Promise.all(mailboxes.map(async (mb: any) => {
+      const aliases = await db.all(`
+        SELECT id, email, name, is_default, is_verified, spf_verified, dkim_verified, dmarc_verified, health_score
+        FROM outreach_mailbox_aliases
+        WHERE mailbox_id = ?
+      `, mb.id);
+
+      const sent = parseInt(mb.sent_total) || 0;
+      const bounced = parseInt(mb.bounced_total) || 0;
+      const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0;
+      
+      mb.score = calculateHealthScore(mb, bounceRate);
+      mb.aliases = aliases;
+      
+      return mb;
+    }));
+
+    res.json(enrichedMailboxes);
   } catch (err: any) {
     console.error("[GET /mailboxes] Error:", err);
     res.status(500).json({ error: "Failed to fetch mailboxes", details: err.message });
+  }
+});
+
+// POST /api/outreach/mailboxes/:id/verify-dns
+app.post("/api/outreach/mailboxes/:id/verify-dns", async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const userId = req.user?.uid;
+
+  if (!userId) return res.status(401).json({ error: "Auth required" });
+
+  try {
+    let target = await db.prepare("SELECT * FROM outreach_mailboxes WHERE id = ? AND user_id = ?").get(id, userId) as any;
+    let isAlias = false;
+
+    if (!target) {
+      target = await db.prepare(`
+        SELECT a.*, m.user_id 
+        FROM outreach_mailbox_aliases a
+        JOIN outreach_mailboxes m ON a.mailbox_id = m.id
+        WHERE a.id = ? AND m.user_id = ?
+      `).get(id, userId) as any;
+      isAlias = true;
+    }
+
+    if (!target) return res.status(404).json({ error: "Mailbox or alias not found" });
+
+    const domain = target.email.split('@')[1];
+    if (!domain) return res.status(400).json({ error: "Invalid email format" });
+
+    const dnsStatus = await checkDNS(domain);
+
+    if (isAlias) {
+      await db.run(`
+        UPDATE outreach_mailbox_aliases 
+        SET spf_verified = ?, dkim_verified = ?, dmarc_verified = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, dnsStatus.spf, dnsStatus.dkim, dnsStatus.dmarc, id);
+    } else {
+      await db.run(`
+        UPDATE outreach_mailboxes 
+        SET spf_verified = ?, dkim_verified = ?, dmarc_verified = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, dnsStatus.spf, dnsStatus.dkim, dnsStatus.dmarc, id);
+    }
+
+    res.json({ success: true, dnsStatus });
+  } catch (err: any) {
+    console.error("[POST /verify-dns] Error:", err);
+    res.status(500).json({ error: "Verification failed", details: err.message });
   }
 });
 
@@ -1725,44 +1809,67 @@ app.get("/api/outreach/mailboxes/identities", async (req: AuthRequest, res) => {
 
   try {
     const mailboxes = await db.all(`
-      SELECT id, email, name, connection_type, status 
-      FROM outreach_mailboxes 
-      WHERE user_id = ? AND project_id = ? AND status = 'active'
+      SELECT 
+        m.id, m.email, m.name, m.connection_type, m.status,
+        m.spf_verified, m.dkim_verified, m.dmarc_verified,
+        COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.id END) as sent_total,
+        COUNT(DISTINCT CASE WHEN e.status = 'bounced' THEN e.id END) as bounced_total
+      FROM outreach_mailboxes m
+      LEFT JOIN outreach_individual_emails e ON m.id = e.mailbox_id
+      WHERE m.user_id = ? AND m.project_id = ? AND m.status = 'active'
+      GROUP BY m.id, m.email, m.name, m.connection_type, m.status, m.spf_verified, m.dkim_verified, m.dmarc_verified
     `, userId, project_id);
 
     const identities: any[] = [];
 
     // Flatten aliases
     for (const mb of mailboxes as any[]) {
+      const mbSent = parseInt(mb.sent_total) || 0;
+      const mbBounced = parseInt(mb.bounced_total) || 0;
+      const mbBounceRate = mbSent > 0 ? (mbBounced / mbSent) * 100 : 0;
+      const mbScore = calculateHealthScore(mb, mbBounceRate);
+
       // Add primary mailbox as an identity
       identities.push({
         mailbox_id: mb.id,
         email: mb.email,
         name: mb.name,
         connection_type: mb.connection_type,
-        is_alias: false
+        is_alias: false,
+        score: mbScore,
+        spf_verified: mb.spf_verified,
+        dkim_verified: mb.dkim_verified,
+        dmarc_verified: mb.dmarc_verified
       });
 
       // Add aliases
       try {
         const aliases = await db.all(`
-          SELECT email, name 
+          SELECT id, email, name, spf_verified, dkim_verified, dmarc_verified 
           FROM outreach_mailbox_aliases 
           WHERE mailbox_id = ? AND is_verified = ${db.isPostgres ? 'TRUE' : '1'}
         `, mb.id);
 
         for (const alias of aliases as any[]) {
+          // Note: aliases currently share the mailbox bounce stats for health scoring in this simplified model, 
+          // but we could join outreach_individual_emails by from_alias_id if we want granular alias health.
+          const aliasScore = calculateHealthScore(alias, mbBounceRate);
+
           identities.push({
             mailbox_id: mb.id,
+            alias_id: alias.id,
             email: alias.email,
             name: alias.name || mb.name,
             connection_type: mb.connection_type,
-            is_alias: true
+            is_alias: true,
+            score: aliasScore,
+            spf_verified: alias.spf_verified,
+            dkim_verified: alias.dkim_verified,
+            dmarc_verified: alias.dmarc_verified
           });
         }
       } catch (aliasErr: any) {
         console.error(`[GET /mailboxes/identities] Failed to fetch aliases for mailbox ${mb.id}:`, aliasErr.message);
-        // Continue with other mailboxes even if one fails
       }
     }
 

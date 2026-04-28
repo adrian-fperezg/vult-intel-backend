@@ -42,13 +42,22 @@ interface Mailbox {
   status?: 'healthy' | 'warning' | 'degraded';
   dailyLimit?: number;
   sent?: number;
-  spf?: boolean;
-  dkim?: boolean;
-  dmarc?: boolean;
+  spf_verified?: boolean;
+  dkim_verified?: boolean;
+  dmarc_verified?: boolean;
+  health_score?: number;
   warmupActive?: boolean;
   connection_type?: 'gmail' | 'smtp';
-  aliases?: Array<{ email: string; name: string }>;
-  provider?: 'gmail' | 'smtp'; // Added provider for AliasManager
+  aliases?: Array<{ 
+    id: string; 
+    email: string; 
+    name: string;
+    spf_verified?: boolean;
+    dkim_verified?: boolean;
+    dmarc_verified?: boolean;
+    health_score?: number;
+  }>;
+  provider?: 'gmail' | 'smtp';
 }
 
 
@@ -70,6 +79,7 @@ export default function OutreachSettings() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [verifyingDnsId, setVerifyingDnsId] = useState<string | null>(null);
 
   // Snippets States
   const [snippets, setSnippets] = useState<any[]>([]);
@@ -426,6 +436,23 @@ export default function OutreachSettings() {
     }
   };
 
+  const handleVerifyDns = async (id: string) => {
+    setVerifyingDnsId(id);
+    try {
+      const res = await api.verifyDns(id);
+      if (res.success) {
+        toast.success('DNS Verified');
+        loadMailboxes();
+      } else {
+        toast.error('Verification failed');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Verification failed');
+    } finally {
+      setVerifyingDnsId(null);
+    }
+  };
+
   return (
     <div className="h-full w-full flex overflow-hidden">
       {/* Settings Sub-nav */}
@@ -615,10 +642,6 @@ export default function OutreachSettings() {
                                     {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
                                     {mb.connection_type || 'gmail'}
                                   </span>
-                                  <span className="flex items-center gap-1.5 capitalize">
-                                    {mb.connection_type === 'smtp' ? <Wifi className="size-3" /> : <Mail className="size-3" />}
-                                    {mb.connection_type || 'gmail'}
-                                  </span>
                                 </div>
                               </div>
 
@@ -644,9 +667,9 @@ export default function OutreachSettings() {
                                       <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">Authentication Status</p>
                                       <div className="grid grid-cols-3 gap-3">
                                         {[
-                                          { label: 'SPF',   pass: mb.spf ?? true },
-                                          { label: 'DKIM',  pass: mb.dkim ?? true },
-                                          { label: 'DMARC', pass: mb.dmarc ?? true },
+                                          { label: 'SPF',   pass: !!mb.spf_verified },
+                                          { label: 'DKIM',  pass: !!mb.dkim_verified },
+                                          { label: 'DMARC', pass: !!mb.dmarc_verified },
                                         ].map(({ label, pass }) => (
                                           <div key={label} className={cn(
                                             'flex flex-col gap-1 p-3 rounded-xl border text-sm',
@@ -664,9 +687,59 @@ export default function OutreachSettings() {
                                       </div>
                                     </div>
 
+                                    {/* Aliases Health/DNS */}
+                                    {mb.aliases && mb.aliases.length > 0 && (
+                                      <div className="pt-4 border-t border-white/5">
+                                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-600 mb-3">Sender Aliases Health</p>
+                                        <div className="space-y-3">
+                                          {mb.aliases.map((alias: any) => (
+                                            <div key={alias.id} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                                              <div className="flex flex-col">
+                                                <span className="text-xs font-semibold text-white">{alias.email}</span>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                  <span className={cn(
+                                                    "text-[10px] uppercase font-bold",
+                                                    alias.spf_verified ? "text-teal-500" : "text-red-500"
+                                                  )}>SPF</span>
+                                                  <span className={cn(
+                                                    "text-[10px] uppercase font-bold",
+                                                    alias.dkim_verified ? "text-teal-500" : "text-red-500"
+                                                  )}>DKIM</span>
+                                                  <span className={cn(
+                                                    "text-[10px] uppercase font-bold",
+                                                    alias.dmarc_verified ? "text-teal-500" : "text-red-500"
+                                                  )}>DMARC</span>
+                                                </div>
+                                              </div>
+                                              <div className="flex items-center gap-3">
+                                                <div className="flex flex-col items-end">
+                                                  <span className="text-[10px] text-slate-500 uppercase font-bold">Health Score</span>
+                                                  <span className={cn(
+                                                    "text-sm font-bold",
+                                                    (alias.health_score ?? 100) >= 85 ? "text-teal-400" : (alias.health_score ?? 100) >= 70 ? "text-yellow-400" : "text-red-400"
+                                                  )}>{alias.health_score ?? 100}%</span>
+                                                </div>
+                                                <button 
+                                                  onClick={(e) => { e.stopPropagation(); handleVerifyDns(alias.id); }}
+                                                  disabled={verifyingDnsId === alias.id}
+                                                  className="p-1.5 rounded-lg border border-white/10 hover:border-white/20 text-slate-400 hover:text-white transition-all"
+                                                >
+                                                  {verifyingDnsId === alias.id ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
                                     <div className="flex gap-2 pt-2 border-t border-white/5">
-                                      <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
-                                        <RefreshCw className="size-3.5" /> Re-check DNS
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); handleVerifyDns(mb.id); }}
+                                        disabled={verifyingDnsId === mb.id}
+                                        className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
+                                      >
+                                        {verifyingDnsId === mb.id ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Re-check DNS
                                       </button>
                                       <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
                                         <Search className="size-3.5" /> Run Spam Test

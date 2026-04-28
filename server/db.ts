@@ -509,7 +509,11 @@ export const initDb = async () => {
       { name: 'aliases', type: "JSONB DEFAULT '[]'" },
       { name: 'enabled', type: 'BOOLEAN DEFAULT TRUE' },
       { name: 'isPollingActive', type: 'BOOLEAN DEFAULT TRUE' },
-      { name: 'gmail_history_id', type: 'TEXT' }
+      { name: 'gmail_history_id', type: 'TEXT' },
+      { name: 'spf_verified', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'dkim_verified', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'dmarc_verified', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'health_score', type: 'INTEGER DEFAULT 100' }
     ];
 
     for (const col of newMailboxCols) {
@@ -517,6 +521,21 @@ export const initDb = async () => {
         await db.run(`ALTER TABLE outreach_mailboxes ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
       } catch (err) {
         console.warn(`[DB] PG Migration for mailbox column ${col.name} failed:`, (err as Error).message);
+      }
+    }
+
+    const newAliasCols = [
+      { name: 'spf_verified', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'dkim_verified', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'dmarc_verified', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'health_score', type: 'INTEGER DEFAULT 100' }
+    ];
+
+    for (const col of newAliasCols) {
+      try {
+        await db.run(`ALTER TABLE outreach_mailbox_aliases ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for alias column ${col.name} failed:`, (err as Error).message);
       }
     }
 
