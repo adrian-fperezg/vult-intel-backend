@@ -1738,6 +1738,64 @@ app.patch("/api/outreach/radar/social-posts/:id", async (req: AuthRequest, res) 
   }
 });
 
+app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { articleId, platform, tone, language } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+  if (!articleId) return res.status(400).json({ error: "Article ID is required" });
+
+  try {
+    // 1. Fetch article context
+    const article = await db.get("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]);
+    if (!article) return res.status(404).json({ error: "Article not found" });
+
+    // 2. Setup Gemini
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const langDirective = language === 'en' 
+      ? "IMPORTANT: You MUST respond ENTIRELY in ENGLISH."
+      : "IMPORTANTE: DEBES responder TOTALMENTE en ESPAÑOL.";
+
+    const prompt = `
+Platform: ${platform}
+Tone: ${tone}
+Article Title: ${article.title}
+Article Summary: ${article.summary}
+URL: ${article.url}
+
+${langDirective}
+
+Generate a high-converting social media post based on this information. 
+Focus on a strong hook and a clear call to action. 
+Respond ONLY with the raw post content.
+`;
+
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_SOCIAL_POST }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
+
+    const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!generatedText) throw new Error("AI failed to generate post content");
+
+    // 3. Save to radar_social_posts
+    const postId = uuidv4();
+    await db.run(
+      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status) 
+       VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+      [postId, projectId, articleId, platform, tone, generatedText]
+    );
+
+    res.json({ draft: generatedText, postId });
+  } catch (err: any) {
+    console.error("[Social Post Generation Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ─── DEEP SCAN & BRAND STRATEGY PROXY ──────────────────────────────────────
 function parseAIGeminiJSON(text: string) {
@@ -1756,6 +1814,29 @@ function parseAIGeminiJSON(text: string) {
     throw new Error("Failed to parse AI response as JSON");
   }
 }
+
+const SYSTEM_INSTRUCTION_SOCIAL_POST = `
+You are an Elite Social Media Strategist and Content Forge Expert.
+Your goal is to transform a highly relevant article into a viral-ready social media post.
+
+PLATFORM GUIDELINES:
+- LinkedIn: Professional yet provocative, uses line breaks for readability, includes 3-5 relevant hashtags.
+- Twitter/X: Concise, punchy, uses threads if the content is deep, includes 1-2 trending hashtags.
+- Instagram/Threads: Visual storytelling, conversational, lighthearted but informative.
+
+TONE GUIDELINES:
+- Professional: Authoritative, data-driven, serious.
+- Casual: Friendly, relatable, simplified.
+- Humorous: Witty, uses analogies, slightly edgy.
+- Inspirational: Uplifting, focuses on the big picture, uses powerful verbs.
+
+CONSTRAINTS:
+- Use the provided article title, summary, and URL as the core source of truth.
+- DO NOT invent facts not present in the text.
+- Focus on a specific "Hook" to grab attention in the first 2 lines.
+- Always include a clear Call to Action (CTA) at the end.
+- Respond ONLY with the final post content. No pre-amble, no "Here is your post".
+`;
 
 const SYSTEM_INSTRUCTION_DEEP_SCAN = `
 Actúa como un Director de Crecimiento (Head of Growth) y Analista de Mercado Senior.

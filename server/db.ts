@@ -1081,6 +1081,7 @@ export const initDb = async () => {
         article_id TEXT NOT NULL REFERENCES radar_articles(id) ON DELETE CASCADE,
         project_id TEXT NOT NULL,
         platform TEXT NOT NULL,
+        tone TEXT,
         content TEXT NOT NULL,
         thumbnail_url TEXT,
         veo_job_id TEXT,
@@ -1089,6 +1090,13 @@ export const initDb = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration for radar_social_posts
+    try {
+      await db.run(`ALTER TABLE radar_social_posts ADD COLUMN IF NOT EXISTS tone TEXT`);
+    } catch (err) {
+      console.warn(`[DB] PG Migration for radar_social_posts.tone failed:`, (err as Error).message);
+    }
 
     await applyTrigger('radar_schedules');
     await applyTrigger('radar_social_posts');

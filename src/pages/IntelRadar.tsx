@@ -237,7 +237,7 @@ export default function IntelRadar() {
 
     setGeneratingPostId(articleId);
     try {
-      await api.generateSocialPost(articleId, selectedPlatform, selectedTone);
+      await api.generateSocialPost(articleId, selectedPlatform, selectedTone, language);
       loadData();
       toast.success('Social post drafted');
       setConfigPostId(null);

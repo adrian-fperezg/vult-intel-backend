@@ -66,11 +66,12 @@ export const useIntelRadarApi = () => {
     return post<any>('/veo-studio/enhance-prompt', { prompt }, true);
   };
 
-  const generateSocialPost = async (articleId: string, platform: string, tone: string) => {
+  const generateSocialPost = async (articleId: string, platform: string, tone: string, language: string = 'en') => {
     return post<any>('/outreach/radar/social-posts/generate', { 
       articleId, 
       platform, 
-      tone 
+      tone,
+      language
     }, true); // true flag for useRootUrl
   };
 
