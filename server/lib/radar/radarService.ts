@@ -43,7 +43,8 @@ INSTRUCCIONES CRÍTICAS:
    - Un borrador para LinkedIn (profesional, analítico, enfocado en insights).
 
 FORMATO DE SALIDA (JSON ESTRICTO):
-Devuelve ÚNICAMENTE un array JSON de objetos con esta estructura:
+Debes responder ÚNICAMENTE con JSON crudo y válido. No incluyas texto conversacional ni formato markdown fuera del JSON.
+Array JSON de objetos con esta estructura:
 [
   {
     "title": "Título del artículo",
@@ -65,7 +66,7 @@ NICHO: ${project?.niche}
 DESCRIPCIÓN: ${project?.description}
 FUENTES ESPECÍFICAS A MONITOREAR: ${sourceUrls || 'Ninguna (usa búsqueda general)'}
 
-Encuentra y procesa las 5 noticias más impactantes.
+Encuentra y procesa las 5 noticias más impactantes. Respond with valid JSON.
     `;
 
     const response = await fetch(apiUrl, {
@@ -73,7 +74,6 @@ Encuentra y procesa las 5 noticias más impactantes.
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemInstruction }] },
-        generationConfig: { responseMimeType: "application/json" },
         tools: [{ googleSearch: {} }],
         contents: [{ role: "user", parts: [{ text: userPrompt }] }]
       })
@@ -85,10 +85,12 @@ Encuentra y procesa las 5 noticias más impactantes.
     }
 
     const responseData = await response.json();
-    const text = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("No response content from Gemini");
+    const rawText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) throw new Error("No response content from Gemini");
 
-    const articles = JSON.parse(text);
+    // Manual cleanup for JSON parsing as tools + responseMimeType is unsupported
+    const cleanText = rawText.replace(/```json\n?|```/g, '').trim();
+    const articles = JSON.parse(cleanText);
 
     // 4. Save to Database
     for (const art of articles) {
