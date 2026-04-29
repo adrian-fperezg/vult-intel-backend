@@ -65,15 +65,7 @@ const getTagStyle = (tag: string) => {
   return "bg-teal-500/10 text-teal-400 border-teal-500/20";
 };
 
-const STATUS_VARIANTS: Record<ContactStatus, any> = {
-  active: 'teal',
-  paused: 'orange',
-  finished: 'gray',
-  bounced: 'red',
-  unsubscribed: 'orange',
-  replied: 'green',
-  not_enrolled: 'gray'
-};
+
 
 const VERIFICATION_VARIANTS: Record<string, any> = {
   valid: 'green',
@@ -84,7 +76,7 @@ const VERIFICATION_VARIANTS: Record<string, any> = {
 };
 
 export default function OutreachContacts() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const api = useOutreachApi();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -828,8 +820,8 @@ export default function OutreachContacts() {
                             </p>
                           </div>
                         </div>
-                        <OutreachBadge variant={STATUS_VARIANTS[contact.status] || STATUS_VARIANTS.not_enrolled}>
-                          {t(`outreach.contacts.statusCfg.${contact.status}`)}
+                        <OutreachBadge variant={t(`outreach.contacts.statusCfg.${contact.status}`)?.variant || 'gray'}>
+                          {t(`outreach.contacts.statusCfg.${contact.status}`)?.label || t('outreach.contacts.statusCfg.not_enrolled.label')}
                         </OutreachBadge>
                       </div>
 
@@ -1026,20 +1018,23 @@ export default function OutreachContacts() {
                                   )}
                                   {contact.verification_status && contact.verification_status !== 'unverified' && (
                                     <OutreachBadge
-                                      variant={(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).variant}
+                                      variant={t(`outreach.contacts.verificationCfg.${contact.verification_status}`)?.variant || 'gray'}
                                       className="text-[8px] px-1 py-0 scale-90 origin-left"
                                     >
-                                      {(t.verificationCfg[contact.verification_status] || t.verificationCfg.unverified).label}
+                                      {t(`outreach.contacts.verificationCfg.${contact.verification_status}`)?.label || t('outreach.contacts.verificationCfg.unverified.label')}
                                     </OutreachBadge>
                                   )}
                                 </div>
                               </td>
                               <td className="p-3">
-                                <div className="flex items-center gap-2">
-                                  <OutreachBadge variant={(t.statusCfg[contact.status] || t.statusCfg.not_enrolled).variant} className="text-[9px] px-1.5 py-0">
-                                    {(t.statusCfg[contact.status] || t.statusCfg.not_enrolled).label}
-                                  </OutreachBadge>
-                                </div>
+                                  <div className="flex items-center gap-2">
+                                    <OutreachBadge 
+                                      variant={t(`outreach.contacts.statusCfg.${contact.status}`)?.variant || 'gray'} 
+                                      className="text-[9px] px-1.5 py-0"
+                                    >
+                                      {t(`outreach.contacts.statusCfg.${contact.status}`)?.label || t('outreach.contacts.statusCfg.not_enrolled.label')}
+                                    </OutreachBadge>
+                                  </div>
                               </td>
                               <td className="p-3 text-right">
                                 <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

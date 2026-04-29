@@ -8,62 +8,17 @@ import Papa from 'papaparse';
 import { cn } from '@/lib/utils';
 import { TealButton } from '../OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { useTranslation } from '@/contexts/TranslationContext';
 import toast from 'react-hot-toast';
 
 interface UploadListModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  language: 'en' | 'es';
 }
 
-const TEXTS = {
-  en: {
-    title: 'Create New Contact List',
-    subtitle: 'Upload a CSV file to populate your new list',
-    listName: 'List Name',
-    listNamePlaceholder: 'e.g., Q2 Marketing Leads',
-    selectFile: 'Select CSV File',
-    dropFile: 'Drop your CSV file here',
-    orBrowse: 'or click to browse',
-    parseError: 'Failed to parse CSV file',
-    invalidFile: 'Please upload a valid CSV file',
-    processing: 'Processing contacts...',
-    creating: 'Creating list...',
-    success: 'List created successfully with {count} contacts',
-    error: 'Failed to create list',
-    cancel: 'Cancel',
-    upload: 'Create List & Upload',
-    mappedFields: 'We found {count} contacts with valid emails.',
-    noEmailError: 'No contacts with valid emails found in the file.',
-    columnMapping: 'Column Mapping',
-    columnMappingDesc: 'We automatically detect common headers like Email, Name, Company, etc.',
-  },
-  es: {
-    title: 'Crear Nueva Lista de Contactos',
-    subtitle: 'Sube un archivo CSV para poblar tu nueva lista',
-    listName: 'Nombre de la Lista',
-    listNamePlaceholder: 'ej., Leads de Marketing Q2',
-    selectFile: 'Seleccionar Archivo CSV',
-    dropFile: 'Suelta tu archivo CSV aquí',
-    orBrowse: 'o haz clic para buscar',
-    parseError: 'Error al procesar el archivo CSV',
-    invalidFile: 'Por favor, sube un archivo CSV válido',
-    processing: 'Procesando contactos...',
-    creating: 'Creando lista...',
-    success: 'Lista creada con éxito con {count} contactos',
-    error: 'Error al crear la lista',
-    cancel: 'Cancelar',
-    upload: 'Crear Lista y Subir',
-    mappedFields: 'Encontramos {count} contactos con correos válidos.',
-    noEmailError: 'No se encontraron contactos con correos válidos en el archivo.',
-    columnMapping: 'Mapeo de Columnas',
-    columnMappingDesc: 'Detectamos automáticamente encabezados comunes como Email, Nombre, Empresa, etc.',
-  }
-};
-
-export default function UploadListModal({ isOpen, onClose, onSuccess, language }: UploadListModalProps) {
-  const t = TEXTS[language];
+export default function UploadListModal({ isOpen, onClose, onSuccess }: UploadListModalProps) {
+  const { t, language } = useTranslation();
   const api = useOutreachApi();
   const [listName, setListName] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -76,7 +31,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       if (selectedFile.type !== 'text/csv' && !selectedFile.name.endsWith('.csv')) {
-        toast.error(t.invalidFile);
+        toast.error(t('outreach.contacts.uploadModal.invalidFile'));
         return;
       }
       setFile(selectedFile);
@@ -120,7 +75,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
         setIsParsing(false);
       },
       error: () => {
-        toast.error(t.parseError);
+        toast.error(t('outreach.contacts.uploadModal.parseError'));
         setIsParsing(false);
       }
     });
@@ -132,14 +87,14 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
       return;
     }
     if (parsedContacts.length === 0) {
-      toast.error(t.noEmailError);
+      toast.error(t('outreach.contacts.uploadModal.noEmailError'));
       return;
     }
 
     setIsUploading(true);
     try {
       await api.createPopulatedList(listName.trim(), parsedContacts);
-      toast.success(t.success.replace('{count}', parsedContacts.length.toString()));
+      toast.success(t('outreach.contacts.uploadModal.success', { count: parsedContacts.length }));
       onSuccess();
       onClose();
       // Reset state
@@ -148,7 +103,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
       setParsedContacts([]);
     } catch (err) {
       console.error(err);
-      toast.error(t.error);
+      toast.error(t('outreach.contacts.uploadModal.error'));
     } finally {
       setIsUploading(false);
     }
@@ -176,7 +131,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
           {/* Header */}
           <div className="px-8 py-6 border-b border-white/5 bg-gradient-to-r from-teal-500/10 via-transparent to-transparent">
             <div className="flex items-center justify-between mb-1">
-              <h2 className="text-xl font-bold text-white">{t.title}</h2>
+              <h2 className="text-xl font-bold text-white">{t('outreach.contacts.uploadModal.title')}</h2>
               <button
                 onClick={onClose}
                 className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all"
@@ -184,20 +139,20 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
                 <X className="size-5" />
               </button>
             </div>
-            <p className="text-sm text-slate-400">{t.subtitle}</p>
+            <p className="text-sm text-slate-400">{t('outreach.contacts.uploadModal.subtitle')}</p>
           </div>
 
           <div className="p-8 space-y-6">
             {/* List Name Input */}
             <div className="space-y-2">
               <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-1">
-                {t.listName}
+                {t('outreach.contacts.uploadModal.listName')}
               </label>
               <input
                 type="text"
                 value={listName}
                 onChange={e => setListName(e.target.value)}
-                placeholder={t.listNamePlaceholder}
+                placeholder={t('outreach.contacts.uploadModal.listNamePlaceholder')}
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 focus:border-teal-500/40 rounded-2xl text-white placeholder:text-slate-600 outline-none transition-all"
               />
             </div>
@@ -205,7 +160,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
             {/* File Upload Area */}
             <div className="space-y-2">
               <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-1">
-                {t.selectFile}
+                {t('outreach.contacts.uploadModal.selectFile')}
               </label>
               <div 
                 onClick={() => fileInputRef.current?.click()}
@@ -232,7 +187,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
                     <div className="text-center">
                       <p className="text-sm font-bold text-white mb-1">{file.name}</p>
                       <p className="text-xs text-slate-400">
-                        {(file.size / 1024).toFixed(1)} KB • {isParsing ? t.processing : t.mappedFields.replace('{count}', parsedContacts.length.toString())}
+                        {(file.size / 1024).toFixed(1)} KB • {isParsing ? t('outreach.contacts.uploadModal.processing') : t('outreach.contacts.uploadModal.mappedFields', { count: parsedContacts.length })}
                       </p>
                     </div>
                   </>
@@ -242,8 +197,8 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
                       <Upload className="size-8" />
                     </div>
                     <div className="text-center">
-                      <p className="text-sm font-bold text-white mb-1">{t.dropFile}</p>
-                      <p className="text-xs text-slate-400">{t.orBrowse}</p>
+                      <p className="text-sm font-bold text-white mb-1">{t('outreach.contacts.uploadModal.dropFile')}</p>
+                      <p className="text-xs text-slate-400">{t('outreach.contacts.uploadModal.orBrowse')}</p>
                     </div>
                   </>
                 )}
@@ -257,9 +212,9 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
                   <Info className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-teal-400 mb-1">{t.columnMapping}</h4>
+                  <h4 className="text-sm font-bold text-teal-400 mb-1">{t('outreach.contacts.uploadModal.columnMapping')}</h4>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    {t.columnMappingDesc}
+                    {t('outreach.contacts.uploadModal.columnMappingDesc')}
                   </p>
                 </div>
               </div>
@@ -273,7 +228,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
               disabled={isUploading}
               className="px-6 py-2.5 text-sm font-bold text-slate-400 hover:text-white transition-colors"
             >
-              {t.cancel}
+              {t('outreach.contacts.uploadModal.cancel')}
             </button>
             <TealButton
               onClick={handleUpload}
@@ -282,7 +237,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
               className="px-8"
             >
               <CheckCircle2 className="size-4 mr-2" />
-              {t.upload}
+              {t('outreach.contacts.uploadModal.upload')}
             </TealButton>
           </div>
 
@@ -292,7 +247,7 @@ export default function UploadListModal({ isOpen, onClose, onSuccess, language }
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="size-8 text-teal-500 animate-spin" />
                 <p className="text-sm font-bold text-white">
-                  {isParsing ? t.processing : t.creating}
+                  {isParsing ? t('outreach.contacts.uploadModal.processing') : t('outreach.contacts.uploadModal.creating')}
                 </p>
               </div>
             </div>

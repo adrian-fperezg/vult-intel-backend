@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '@/contexts/SettingsContext';
 
 // ─── TEAL COLOR TOKENS ───────────────────────────────────────────────────────
@@ -236,27 +237,22 @@ interface ConfirmDialogProps {
 }
 
 export function OutreachConfirmDialog({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  title, 
-  description, 
-  confirmLabel, 
-  cancelLabel,
-  danger 
+  isOpen, onClose, onConfirm, title, description, confirmLabel, cancelLabel, danger 
 }: ConfirmDialogProps) {
-  const { language } = useSettings();
-  const isEs = language === 'es';
-  const finalConfirm = confirmLabel || (isEs ? 'Confirmar' : 'Confirm');
-  const finalCancel = cancelLabel || (isEs ? 'Cancelar' : 'Cancel');
+  const { t } = useTranslation();
+  
+  const finalTitle = title || t('outreach.common.confirmDialog.title');
+  const finalDesc = description || t('outreach.common.confirmDialog.description');
+  const finalConfirm = confirmLabel || t('outreach.common.confirmDialog.confirm');
+  const finalCancel = cancelLabel || t('outreach.common.confirmDialog.cancel');
 
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-[#161b22] border border-[#30363d] rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
-        <h3 className="text-lg font-bold text-white">{title}</h3>
-        <p className="text-sm text-slate-400 leading-relaxed">{description}</p>
+        <h3 className="text-lg font-bold text-white">{finalTitle}</h3>
+        <p className="text-sm text-slate-400 leading-relaxed">{finalDesc}</p>
         <div className="flex gap-3 pt-2">
           <button
             onClick={onClose}
@@ -289,6 +285,7 @@ interface TimeframeFilterProps {
 }
 
 export function TimeframeFilter({ value, onChange, className }: TimeframeFilterProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <div className="p-2 bg-white/5 rounded-xl border border-white/5">
@@ -308,17 +305,17 @@ export function TimeframeFilter({ value, onChange, className }: TimeframeFilterP
           backgroundSize: '1.25rem'
         }}
       >
-        <option value="1d">Last 24h</option>
-        <option value="3d">Last 3 days</option>
-        <option value="7d">Last 7 days</option>
-        <option value="14d">Last 14 days</option>
-        <option value="30d">Last 30 days</option>
-        <option value="1m">Last month</option>
-        <option value="Q1">Q1 (Jan-Mar)</option>
-        <option value="Q2">Q2 (Apr-Jun)</option>
-        <option value="Q3">Q3 (Jul-Sep)</option>
-        <option value="Q4">Q4 (Oct-Dec)</option>
-        <option value="1y">Last year</option>
+        <option value="1d">{t('outreach.common.timeframe.1d')}</option>
+        <option value="3d">{t('outreach.common.timeframe.3d')}</option>
+        <option value="7d">{t('outreach.common.timeframe.7d')}</option>
+        <option value="14d">{t('outreach.common.timeframe.14d')}</option>
+        <option value="30d">{t('outreach.common.timeframe.30d')}</option>
+        <option value="1m">{t('outreach.common.timeframe.1m')}</option>
+        <option value="Q1">{t('outreach.common.timeframe.Q1')}</option>
+        <option value="Q2">{t('outreach.common.timeframe.Q2')}</option>
+        <option value="Q3">{t('outreach.common.timeframe.Q3')}</option>
+        <option value="Q4">{t('outreach.common.timeframe.Q4')}</option>
+        <option value="1y">{t('outreach.common.timeframe.1y')}</option>
       </select>
     </div>
   );
