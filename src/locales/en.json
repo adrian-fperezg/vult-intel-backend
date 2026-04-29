@@ -1254,7 +1254,8 @@
             "addError": "Failed to add URL",
             "deleteError": "Failed to delete source",
             "sourceAdded": "Source added successfully",
-            "sourceDeleted": "Source deleted successfully"
+            "sourceDeleted": "Source deleted successfully",
+            "placeholder": "Add custom URL to monitor (e.g., https://industry-news.com)..."
         },
         "articles": {
             "title": "Latest Articles",
@@ -1282,7 +1283,18 @@
             "errorScanning": "Error scanning article:",
             "generatePost": "Generate Post",
             "generatePostError": "Error generating post.",
-            "scanArticleError": "Error scanning article"
+            "scanArticleError": "Error scanning article",
+            "noArticles": "No articles found yet. Click 'Run Radar Now' to start scanning your niche."
+        },
+        "runNow": "Run Radar Now",
+        "schedule": {
+            "title": "Automated Search Schedule",
+            "daily": "Daily",
+            "weekly": "Weekly",
+            "biweekly": "Bi-weekly",
+            "monthly": "Monthly"
         }
-    }
+    },
+    "signOut": "Sign Out",
+    "AITOKENSUSEDTHISMONTH": "AI Tokens Used This Month"
 }

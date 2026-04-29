@@ -1056,7 +1056,8 @@
             "addError": "Error al agregar URL",
             "deleteError": "Error al eliminar fuente",
             "sourceAdded": "Fuente agregada con éxito",
-            "sourceDeleted": "Fuente eliminada con éxito"
+            "sourceDeleted": "Fuente eliminada con éxito",
+            "placeholder": "Añadir URL personalizada para monitorear..."
         },
         "articles": {
             "title": "Últimos Artículos",
@@ -1084,7 +1085,18 @@
             "errorScanning": "Error al escanear el artículo:",
             "generatePost": "Generar Post",
             "generatePostError": "Error al generar el post.",
-            "scanArticleError": "Error al escanear el artículo"
+            "scanArticleError": "Error al escanear el artículo",
+            "noArticles": "No hay artículos aún. Haz clic en 'Ejecutar Radar Ahora' para comenzar."
+        },
+        "runNow": "Ejecutar Radar Ahora",
+        "schedule": {
+            "title": "Búsqueda Automatizada",
+            "daily": "Diariamente",
+            "weekly": "Semanalmente",
+            "biweekly": "Quincenalmente",
+            "monthly": "Mensualmente"
         }
-    }
+    },
+    "signOut": "Cerrar Sesión",
+    "AITOKENSUSEDTHISMONTH": "Tokens de IA Usados Este Mes"
 }
