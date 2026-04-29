@@ -1,10 +1,4 @@
-import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
-
-// Initialize Gemini
-// Note: In a real app, you should not expose the API key in the client-side code like this if possible, 
-// but for this preview environment, we use the injected process.env.GEMINI_API_KEY.
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 import { db, auth } from '../lib/firebase';
 import { collection, query, where, getDocs, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
@@ -67,109 +61,53 @@ export interface Project {
   workflows?: WorkflowDefinition[];
 }
 
-const SYSTEM_INSTRUCTION = `
-Actúa como un Director de Crecimiento (Head of Growth) y Analista de Mercado Senior.
-El usuario ha solicitado un escaneo profundo de mercado para una URL o negocio.
+// System instruction is now handled by the backend for security and consistency
 
-INSTRUCCIONES CRÍTICAS DE INVESTIGACIÓN (¡Usa Google Search!):
-DEBES buscar en internet información real, actual y verificable sobre la empresa, su tráfico estimado, su posicionamiento, sus competidores directos y sus brechas de mercado. NO inventes estadísticas. Si un dato no es público, deduce su rendimiento basándote en su presencia digital, calidad de contenido y SEO técnico. 
 
-INSTRUCCIONES DE MARKETING PARA EL "FULL SCAN REPORT":
-El reporte debe ser un análisis crudo y de alto nivel enfocado puramente en CRECIMIENTO y CONVERSIÓN. No des consejos genéricos ("publica más en redes"). Entrega estrategias tácticas, oportunidades de palabras clave específicas y acciones de alto impacto.
-
-FORMATO DE SALIDA (JSON ESTRICTO):
-Devuelve ÚNICAMENTE un objeto JSON válido con las siguientes claves exactas. TODO el contenido de las secciones debe estar en formato MARKDOWN profesional.
-
-1. "marketingImprovements": Listado detallado de mejoras de marketing detectadas (objeto similar al marketingChecklist anterior).
-2. "executiveSummary": Resumen ejecutivo de alto nivel sobre el estado actual del negocio.
-3. "businessSnapshot": Análisis rápido del modelo de negocio, propuesta de valor y posicionamiento.
-4. "audienceAndPositioning": Definición de audiencias objetivo, buyer personas y cómo se posiciona la marca frente a ellas.
-5. "channelsAndPresence": Auditoría de redes sociales, canales de tráfico y presencia digital global.
-6. "siteArchitecture": Análisis de la estructura del sitio, jerarquía de información y flujo del usuario.
-7. "discoveredPagesAndSeoAudit": Lista de páginas detectadas y hallazgos críticos de SEO técnico y on-page.
-8. "contentAudit": Evaluación de la calidad, tono y efectividad del contenido actual.
-9. "seoPerformance": Análisis de rendimiento en buscadores, keywords orgánicas y autoridad.
-10. "conversionAndUx": Auditoría de user experience enfocada en embudos de conversión y fricción.
-11. "techStack": Listado y análisis de las tecnologías detectadas (CMS, Analytics, CRM, etc.).
-12. "quickWins7Days": 3-5 Acciones inmediatas de alto impacto que se pueden ejecutar en una semana.
-13. "actionPlan30Days": Roadmap estratégico para los próximos 30 días con hitos claros.
-
-Estructura JSON Requerida:
-{
-  "project": {
-    "name": "Company Name",
-    "niche": "Industry/Niche",
-    "description": "A brief 1-2 sentence description.",
-    "region": "Primary Region",
-    "image": "https://logo.clearbit.com/[domain]"
-  },
-  "scores": {
-    "website": 0-100,
-    "marketing": 0-100
-  },
-  "competitors": ["domain1.com", "domain2.com"],
-  "marketingChecklist": [
-    { "id": "t1", "task": "Task description", "category": "SEO", "impact": "High", "completed": false }
-  ],
-  "reportSections": {
-    "marketingImprovements": "Markdown content...",
-    "executiveSummary": "Markdown content...",
-    "businessSnapshot": "Markdown content...",
-    "audienceAndPositioning": "Markdown content...",
-    "channelsAndPresence": "Markdown content...",
-    "siteArchitecture": "Markdown content...",
-    "discoveredPagesAndSeoAudit": "Markdown content...",
-    "contentAudit": "Markdown content...",
-    "seoPerformance": "Markdown content...",
-    "conversionAndUx": "Markdown content...",
-    "techStack": "Markdown content...",
-    "quickWins7Days": "Markdown content...",
-    "actionPlan30Days": "Markdown content..."
-  },
-  "buyerPersonas": [...]
-}
-
-INSTRUCCIÓN SOBRE EL NICHO:
-Debes identificar el NICHO exacto basado únicamente en el contenido del sitio web. No inventes una categoría si no estás seguro, pero describe el sector principal de actividad.
-`;
-
-export async function runFullScan(url: string, uid?: string | null): Promise<Project> {
+export async function runFullScan(url: string, uid?: string | null, projectId?: string): Promise<Project> {
   try {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${apiKey}`;
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required for deep scan.");
 
-    console.log("-> scanService: Sending fetch request to Gemini API with Tools...");
+    const idToken = await user.getIdToken();
+    const apiUrl = '/api/outreach/radar/deep-scan';
+
+    console.log("-> scanService: Sending proxy request to backend for Deep Scan...");
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout for deep search
+
+    const headers: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    };
+
+    if (projectId) {
+      headers['x-project-id'] = projectId;
+    }
 
     let response;
     try {
       response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         signal: controller.signal,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION + "\n" + getLanguageDirective() }] },
-          generationConfig: { responseMimeType: "application/json" },
-          tools: [{ googleSearch: {} }],
-          contents: [{ role: "user", parts: [{ text: `Analyze the following website URL: ${url}. Use Google Search to find real information about their services, target audience, and current digital presence. DO NOT hallucinate info.` }] }]
-        })
+        body: JSON.stringify({ url })
       });
     } catch (fetchError: any) {
-      if (fetchError.name === 'AbortError') throw new Error("Request timed out.");
+      if (fetchError.name === 'AbortError') throw new Error("Deep scan timed out. The search is taking longer than expected.");
       throw fetchError;
     } finally {
       clearTimeout(timeoutId);
     }
 
-    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Scan failed with status ${response.status}`);
+    }
 
-    const responseData = await response.json();
-    const text = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("No response from Gemini");
-
-    const data = safeJsonParse(text);
+    const data = await response.json();
+    if (!data) throw new Error("No data returned from backend scan");
 
     // Map new reportSections to Project sections format
     const sectionKeys: Record<string, string> = {
@@ -223,7 +161,7 @@ export async function runFullScan(url: string, uid?: string | null): Promise<Pro
       workflows: []
     };
 
-    incrementUsage(uid, 'deepScansGenerated', 1).catch(console.error);
+    // Token usage is now tracked on the backend, so we no longer call incrementUsage here
     return project;
 
   } catch (error) {

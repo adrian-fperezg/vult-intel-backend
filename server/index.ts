@@ -1,6 +1,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import admin from 'firebase-admin';
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -1737,36 +1738,6 @@ app.patch("/api/outreach/radar/social-posts/:id", async (req: AuthRequest, res) 
   }
 });
 
-app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, res) => {
-  const projectId = req.projectId;
-  const { articleId, platform, tone } = req.body;
-
-  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
-  if (!articleId) return res.status(400).json({ error: "Article ID is required" });
-
-  try {
-    const article = await db.get("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]) as any;
-    if (!article) return res.status(404).json({ error: "Article not found" });
-
-    const icp = await db.get("SELECT * FROM icp_profiles WHERE project_id = ?", [projectId]) as any;
-    const context = icp ? `Niche: ${icp.industries || 'Industry News'}\nKeywords: ${icp.keywords || 'relevant content'}\nTarget Audience: ${icp.job_titles || 'professionals'}` : 'General industry news';
-
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
-
-    const prompt = `You are a high-performance Social Media Manager.\n\nARTICLE TITLE: ${article.title}\nARTICLE SUMMARY: ${article.summary}\n\nBRAND CONTEXT:\n${context}\n\nTASK:\nGenerate a compelling ${platform} post based on this article.\nTONE: ${tone || 'Professional'}\n\nGUIDELINES:\n- Use hooks that grab attention.\n- Add relevant hashtags.\n- Maintain the selected tone throughout.\n- Include a call to action if appropriate.\n- Keep it within ${platform === 'Twitter' ? '280' : '2000'} characters.\n\nOUTPUT:\nReturn ONLY the post content. No extra text.`;
-
-    const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }]
-    });
-
-    const generatedContent = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!generatedContent) throw new Error("AI failed to generate content");
-
-    const postId = uuidv4();
-    await db.run("INSERT INTO radar_social_posts (id, article_id, project_id, platform, content, status) VALUES (?, ?, ?, ?, ?, 'draft')", [postId, articleId, projectId, platform, generatedContent]);
-
     res.json({ id: postId, content: generatedContent });
   } catch (err: any) {
     console.error("[Radar Social Post Gen Error]:", err);
@@ -1774,7 +1745,699 @@ app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, r
   }
 });
 
+// ─── DEEP SCAN & BRAND STRATEGY PROXY ──────────────────────────────────────
 
+const SYSTEM_INSTRUCTION_DEEP_SCAN = `
+Actúa como un Director de Crecimiento (Head of Growth) y Analista de Mercado Senior.
+El usuario ha solicitado un escaneo profundo de mercado para una URL o negocio.
+
+INSTRUCCIONES CRÍTICAS DE INVESTIGACIÓN (¡Usa Google Search!):
+DEBES buscar en internet información real, actual y verificable sobre la empresa, su tráfico estimado, su posicionamiento, sus competidores directos y sus brechas de mercado. NO inventes estadísticas. Si un dato no es público, deduce su rendimiento basándote en su presencia digital, calidad de contenido y SEO técnico. 
+
+INSTRUCCIONES DE MARKETING PARA EL "FULL SCAN REPORT":
+El reporte debe ser un análisis crudo y de alto nivel enfocado puramente en CRECIMIENTO y CONVERSIÓN. No des consejos genéricos ("publica más en redes"). Entrega estrategias tácticas, oportunidades de palabras clave específicas y acciones de alto impacto.
+
+FORMATO DE SALIDA (JSON ESTRICTO):
+Devuelve ÚNICAMENTE un objeto JSON válido con las siguientes claves exactas. TODO el contenido de las secciones debe estar en formato MARKDOWN profesional.
+
+1. "marketingImprovements": Listado detallado de mejoras de marketing detectadas.
+2. "executiveSummary": Resumen ejecutivo de alto nivel sobre el estado actual del negocio.
+3. "businessSnapshot": Análisis rápido del modelo de negocio, propuesta de valor y posicionamiento.
+4. "audienceAndPositioning": Definición de audiencias objetivo, buyer personas y cómo se posiciona la marca frente a ellas.
+5. "channelsAndPresence": Auditoría de redes sociales, canales de tráfico y presencia digital global.
+6. "siteArchitecture": Análisis de la estructura del sitio, jerarquía de información y flujo del usuario.
+7. "discoveredPagesAndSeoAudit": Lista de páginas detectadas y hallazgos críticos de SEO técnico y on-page.
+8. "contentAudit": Evaluación de la calidad, tono y efectividad del contenido actual.
+9. "seoPerformance": Análisis de rendimiento en buscadores, keywords orgánicas y autoridad.
+10. "conversionAndUx": Auditoría de user experience enfocada en embudos de conversión y fricción.
+11. "techStack": Listado y análisis de las tecnologías detectadas (CMS, Analytics, CRM, etc.).
+12. "quickWins7Days": 3-5 Acciones inmediatas de alto impacto que se pueden ejecutar en una semana.
+13. "actionPlan30Days": Roadmap estratégico para los próximos 30 días con hitos claros.
+
+Estructura JSON Requerida:
+{
+  "project": {
+    "name": "Company Name",
+    "niche": "Industry/Niche",
+    "description": "A brief 1-2 sentence description.",
+    "region": "Primary Region",
+    "image": "https://logo.clearbit.com/[domain]"
+  },
+  "scores": {
+    "website": 0-100,
+    "marketing": 0-100
+  },
+  "competitors": ["domain1.com", "domain2.com"],
+  "marketingChecklist": [
+    { "id": "t1", "task": "Task description", "category": "SEO", "impact": "High", "completed": false }
+  ],
+  "reportSections": {
+    "marketingImprovements": "Markdown content...",
+    "executiveSummary": "Markdown content...",
+    "businessSnapshot": "Markdown content...",
+    "audienceAndPositioning": "Markdown content...",
+    "channelsAndPresence": "Markdown content...",
+    "siteArchitecture": "Markdown content...",
+    "discoveredPagesAndSeoAudit": "Markdown content...",
+    "contentAudit": "Markdown content...",
+    "seoPerformance": "Markdown content...",
+    "conversionAndUx": "Markdown content...",
+    "techStack": "Markdown content...",
+    "quickWins7Days": "Markdown content...",
+    "actionPlan30Days": "Markdown content..."
+  },
+  "buyerPersonas": [...]
+}
+`;
+
+app.post("/api/outreach/radar/deep-scan", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { url, language } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+  if (!url) return res.status(400).json({ error: "URL is required" });
+
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const langDirective = language === 'en' 
+      ? "IMPORTANT: You MUST respond ENTIRELY in ENGLISH."
+      : "IMPORTANTE: DEBES responder TOTALMENTE en ESPAÑOL.";
+
+    const prompt = `Analyze the following website URL: ${url}. Use Google Search to find real information about their services, target audience, and current digital presence. DO NOT hallucinate info. ${langDirective}`;
+
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_DEEP_SCAN }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { 
+        responseMimeType: "application/json",
+        tools: [{ googleSearch: {} }]
+      }
+    });
+
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!responseText) throw new Error("AI failed to generate content");
+
+    const tokens = result.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      const dbStore = admin.firestore();
+      dbStore.collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json(JSON.parse(responseText));
+  } catch (err: any) {
+    console.error("[Radar Deep Scan Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/brand-strategy/persona", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { fullScanText, language } = req.body;
+  const projectId = req.headers['x-project-id'] as string;
+
+  if (!fullScanText) return res.status(400).json({ error: "Full scan text is required" });
+  if (!projectId) return res.status(400).json({ error: "x-project-id header is required" });
+
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const langDirective = language === 'en'
+      ? "CRITICAL RULE: You MUST output the entire JSON content in English, translating the keys' values but keeping the JSON keys exactly as requested."
+      : "CRITICAL RULE: You MUST output the entire JSON content in Spanish, translating the keys' values but keeping the JSON keys exactly as requested.";
+
+    const prompt = `Actúa como un Estratega de Marca Experto y Psicólogo de Consumidor.
+Tu tarea es leer un reporte de mercado (Full Scan Report) de un negocio y deducir con precisión quirúrgica quién es su Cliente Ideal (Buyer Persona) de mayor conversión.
+
+REPORTE DE REFERENCIA:
+${fullScanText}
+
+INSTRUCCIONES CRÍTICAS:
+1. Analiza profundamente las secciones de Brand Identity, Competitors y Actionable Recommendations del reporte.
+2. Identifica a la persona que tiene el "dolor" exacto que este negocio resuelve.
+3. No des explicaciones, saludos ni introducciones.
+4. Devuelve ÚNICAMENTE un objeto JSON válido con las siguientes claves exactas.
+5. ${langDirective}
+
+ESTRUCTURA JSON REQUERIDA:
+{
+  "name": "Nombre descriptivo y creativo",
+  "ageRange": "Rango de edad lógico",
+  "gender": "Género",
+  "location": "Ubicación ideal",
+  "jobTitle": "Puesto de trabajo o rol",
+  "income": "Nivel de ingresos estimado",
+  "goals": "Su meta principal de negocio o vida relacionada al reporte",
+  "painPoints": "El problema agudo que el negocio analizado le resuelve",
+  "objections": "La razón principal por la que dudaría en comprar",
+  "mediaHabits": "Redes sociales o plataformas",
+  "preferredTone": "El tono de comunicación",
+  "triggerWords": "3 a 5 palabras clave separadas por comas"
+}`;
+
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0.2,
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!responseText) throw new Error("AI failed to generate persona");
+
+    const tokens = result.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      const dbStore = admin.firestore();
+      dbStore.collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json(JSON.parse(responseText));
+  } catch (err: any) {
+    console.error("[Brand Strategy Persona Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/brand-strategy/strategy", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { fullScanText, language } = req.body;
+  const projectId = req.headers['x-project-id'] as string;
+
+  if (!fullScanText) return res.status(400).json({ error: "Full scan text is required" });
+  if (!projectId) return res.status(400).json({ error: "x-project-id header is required" });
+
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const prompt = `Actúa como un Director Creativo y Estratega de Contenido Senior. Tu tarea es leer el reporte de mercado de un negocio y desarrollar su Identidad de Voz (Brand Voice) y 4 Pilares de Contenido (Content Pillars).
+
+REPORTE DE REFERENCIA:
+${fullScanText}
+
+REGLA CRÍTICA DE IDIOMA:
+Debes generar TODO el contenido de los valores del JSON en el siguiente idioma: ${language || 'es'}. Sin embargo, las CLAVES (keys) del JSON deben permanecer exactamente como se definen abajo en inglés.
+
+INSTRUCCIONES PARA BRAND VOICE:
+- 'archetype': DEBE ser EXACTAMENTE uno de estos valores en inglés: 'The Hero', 'The Outlaw', 'The Explorer', 'The Creator', 'The Ruler', 'The Magician', 'The Lover', 'The Caregiver', 'The Jester', 'The Sage', 'The Innocent', 'The Everyman'.
+- Los valores de tono (formalityCasual, etc.) deben ser números del 0 al 100 donde 50 es neutral.
+
+INSTRUCCIONES PARA CONTENT PILLARS:
+- Crea exactamente 4 pilares de contenido altamente relevantes.
+- 'aiDirective' debe ser una instrucción clara para que futuras IAs sepan cómo escribir sobre este pilar.
+
+FORMATO DE SALIDA (ESTRICTO JSON):
+{
+  "brandVoice": {
+    "valueProposition": "Propuesta de valor única y persuasiva",
+    "archetype": "Debe ser uno de los 12 arquetipos en inglés",
+    "formalityCasual": 50,
+    "authoritativeEmpathetic": 50,
+    "seriousPlayful": 50,
+    "vocabularyAllowlist": ["palabra1", "palabra2"],
+    "vocabularyBanlist": ["cliché1", "cliché2"]
+  },
+  "contentPillars": [
+    {
+      "name": "Nombre corto",
+      "coreTheme": "Descripción",
+      "keywords": ["keyword1"],
+      "aiDirective": "Instrucción de IA",
+      "visualStyle": "Sugerencia de estilo"
+    }
+  ]
+}`;
+
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0.2,
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!responseText) throw new Error("AI failed to generate strategy");
+
+    const tokens = result.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      const dbStore = admin.firestore();
+      dbStore.collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json(JSON.parse(responseText));
+  } catch (err: any) {
+    console.error("[Brand Strategy Generation Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── CONTENT FORGE PROXY ───────────────────────────────────────────────────
+
+function constructContentForgeSystemContext(data: any, language?: string) {
+  const lang = language || 'en';
+  const langDirective = lang === 'en' 
+    ? "IMPORTANT: You MUST respond ENTIRELY in ENGLISH. This applies to all generated text, JSON string values, and markdown. Do NOT use any Spanish unless specifically requested for translation purposes."
+    : "IMPORTANTE: DEBES responder TOTALMENTE en ESPAÑOL. Esto aplica a todo el texto generado, valores de cadenas JSON y markdown. NO uses inglés a menos que se solicite específicamente para fines de traducción.";
+
+  let context = `\n\n--- GLOBAL SYSTEM DIRECTIVE ---\n${langDirective}\n`;
+
+  if (!data) return context;
+
+  context += `\n--- MANDATORY PROJECT CONTEXT: ${data.project?.name || 'Client'} ---\n`;
+  context += `Primary Description: ${data.project?.description || ''}\n`;
+  context += `Niche/Industry: ${data.project?.niche || ''}\n`;
+
+  if (data.voice) {
+    context += `\nBRAND VOICE & POSITIONING:\n`;
+    context += `- Value Proposition: ${data.voice.valueProposition}\n`;
+    context += `- Core Archetype: ${data.voice.archetype}\n`;
+    context += `- Tone Calibration (0-100): Casualness: ${data.voice.formalityCasual}, Empathy: ${data.voice.authoritativeEmpathetic}, Playfulness: ${data.voice.seriousPlayful}\n`;
+    if (data.voice.vocabularyAllowlist?.length > 0) {
+      context += `- Preferred Words (Use frequently): ${data.voice.vocabularyAllowlist.join(', ')}\n`;
+    }
+    if (data.voice.vocabularyBanlist?.length > 0) {
+      context += `- Banned Words (NEVER use): ${data.voice.vocabularyBanlist.join(', ')}\n`;
+    }
+  }
+
+  if (data.personas?.length > 0) {
+    context += `\nTARGET PERSONAS (Write for these people):\n`;
+    data.personas.forEach((p: any) => {
+      context += `- ${p.name} (${p.jobTitle}): Goals: ${p.goals}, Pain: ${p.painPoints}, Tone: ${p.preferredTone}\n`;
+    });
+  }
+
+  if (data.pillars?.length > 0) {
+    context += `\nCONTENT PILLARS & THEMATIC BOUNDARIES:\n`;
+    data.pillars.forEach((p: any) => {
+      context += `- ${p.name}: ${p.coreTheme}. Directive: ${p.aiDirective}\n`;
+    });
+  }
+
+  context += `\nAI DIRECTIVE: You are an expert marketer for this specific brand. Every word you generate must be consistent with this identity. If the user request conflicts with the brand voice, prioritize the brand voice while still answering the request.\n`;
+
+  return context;
+}
+
+app.post("/api/outreach/content-forge/generate", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { 
+    userInstruction, 
+    contentType, 
+    platform, 
+    objective, 
+    selectedAudience, 
+    selectedBrandPersona,
+    generationPurpose,
+    campaignTitle,
+    voicePlayful,
+    voiceCasual,
+    voiceConservative,
+    formattingRules,
+    prohibitedTerms,
+    contextContent,
+    useExternalSources,
+    selectedPillarLabel,
+    targetWordCount,
+    detailLevel,
+    persuasionLevel,
+    includeEmojis,
+    includeHashtags,
+    includeCTA,
+    includeHook,
+    includeBulletPoints,
+    includeQuestions,
+    generateSocialVariations,
+    activeProject,
+    language
+  } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const projectSystemContext = constructContentForgeSystemContext(activeProject, language);
+    const prompt = `
+        Act as a world-class marketing strategist and copywriter for the brand "${activeProject?.project?.name || 'Vult Intel Client'}".
+        
+        ${projectSystemContext}
+
+        CONTEXT:
+        - Niche: ${activeProject?.project?.niche || 'General'}
+        - Description: ${activeProject?.project?.description || 'No description provided'}
+        - Target Audience: ${selectedBrandPersona?.name || selectedAudience} 
+        - Persona Details: ${selectedBrandPersona ? `Job: ${selectedBrandPersona.jobTitle}. Goals: ${selectedBrandPersona.goals}. Pain Points: ${selectedBrandPersona.painPoints}` : 'N/A'}
+        - Generation Purpose/Goal: ${generationPurpose}
+        - Campaign Title: ${campaignTitle}
+        
+        BRAND PERSONA & STYLE SETTINGS:
+        - Playful/Witty: ${voicePlayful}% (0% = Strict Context Adherence, 100% = Max Playful)
+        - Casual/Friendly: ${voiceCasual}% (0% = Strict Context Adherence, 100% = Max Casual)
+        - Innovative/Bold: ${voiceConservative}% (0% = Strict Context Adherence, 100% = Max Innovative)
+        
+        STRICT RULES:
+        - Formatting Rules: ${formattingRules || "None specified"}
+        - Prohibited Terms: ${prohibitedTerms || "None specified"}
+        
+        ${contextContent || ''}
+
+        USER INSTRUCTION: "${userInstruction}"
+        
+        If the user instruction is empty, default to creating a ${contentType?.label || 'content'} for ${platform?.label || 'general platform'} with objective ${objective?.label || 'awareness'}.
+        
+        TASK:
+        1. Analyze the request and categorize it into one of these sections: 'create' (content assets), 'planning' (calendars/schedules), or 'research' (keywords/topics).
+        2. ${generateSocialVariations && contentType?.id === 'social_caption' ? 'Generate exactly 1 overarching variant divided internally into 4 completely distinct adaptations for LinkedIn, Twitter/X, Instagram, and Facebook respectively. Format them clearly with headers inside the SAME variant.' : 'Generate exactly 3 distinct variants/drafts based on the instruction and constraints.'}
+        3. Use the BEST marketing strategies specifically for the "${selectedAudience}" audience in the "${activeProject?.project?.niche || 'relevant'}" industry.
+        
+        IMPORTANT RESTRICTIONS:
+        ${useExternalSources
+          ? "- You MAY use external knowledge from Google Search to enrich the content."
+          : "- You MUST STRICTLY use ONLY the information provided in the 'UPLOADED CONTEXT FILES' and the Project Context above. Do NOT hallucinate or use outside knowledge if it contradicts or is not found in the provided context."}
+
+        STYLE ADAPTATION INSTRUCTIONS:
+        - If a style slider is at 0%, you MUST mimic the tone and style of the UPLOADED CONTEXT FILES exactly.
+        - If a style slider is > 0%, blend that trait into the base style proportionally.
+        - STRICTLY AVOID any terms listed in 'Prohibited Terms'.
+        - STRICTLY FOLLOW any rules listed in 'Formatting Rules'.
+
+        CONSTRAINTS (Apply if relevant to the category):
+        - Content Pillar: ${selectedPillarLabel || "None"} (Ensure content aligns with this pillar)
+        - Max Length: ${platform?.maxLength ? `${platform.maxLength} characters` : 'Appropriate for medium'}
+        - Target Length: ${targetWordCount ? `Approx ${targetWordCount} words` : 'Best practice for platform'}
+        - Detail Level: ${detailLevel}/100
+        - Persuasion Level: ${persuasionLevel}/100
+        - Emojis: ${includeEmojis ? 'Yes (use sparingly)' : 'No'}
+        - Hashtags: ${includeHashtags ? 'Yes (relevant ones)' : 'No'}
+        - CTA: ${includeCTA ? 'Yes (clear and compelling)' : 'No'}
+        - Hook: ${includeHook ? 'Yes (strong attention grabber)' : 'No'}
+        - Bullet Points: ${includeBulletPoints ? 'Yes (for readability)' : 'No'}
+        - Questions: ${includeQuestions ? 'Yes (to drive engagement)' : 'No'}
+        
+        OUTPUT FORMAT (JSON):
+        {
+          "category": "create" | "planning" | "research",
+          "variants": ["Draft 1 content...", "Draft 2 content...", "Draft 3 content..."],
+          "insight": "Brief explanation of the strategy behind these drafts and why they fit the user's request."
+        }
+        
+        ${language === 'en' ? 'RESPOND ENTIRELY IN ENGLISH' : 'RESPONDE TOTALMENTE EN ESPAÑOL'}
+      `;
+
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { 
+        responseMimeType: "application/json",
+        tools: useExternalSources ? [{ googleSearch: {} }] : []
+      }
+    });
+
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!responseText) throw new Error("AI failed to generate content");
+
+    // Track usage securely
+    const tokens = result.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      const db = admin.firestore();
+      db.collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json(JSON.parse(responseText));
+  } catch (err: any) {
+    console.error("[Content Forge Gen Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/content-forge/social-variations", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { generatedContent, language } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+  if (!generatedContent) return res.status(400).json({ error: "Original content is required" });
+
+  try {
+    const lang = language || 'en';
+    const langDirective = lang === 'en' 
+      ? "IMPORTANT: You MUST respond ENTIRELY in ENGLISH. This applies to all generated text, JSON string values, and markdown. Do NOT use any Spanish unless specifically requested for translation purposes."
+      : "IMPORTANTE: DEBES responder TOTALMENTE en ESPAÑOL. Esto aplica a todo el texto generado, valores de cadenas JSON y markdown. NO uses inglés a menos que se solicite específicamente para fines de traducción.";
+
+    const variationPrompt = `
+        You are a social media copy expert. Your ONLY task is to rewrite and adapt the following original copy for 4 different platforms.
+        
+        ORIGINAL COPY:
+        "${generatedContent}"
+        
+        RULES (STRICT — DO NOT deviate):
+        - Keep the SAME central theme, message, and objective as the original.
+        - Only adapt the length, tone, format and style per platform.
+        - Do NOT add new information that is not in the original.
+        - Do NOT change the core CTA or brand positioning.
+        
+        PLATFORM REQUIREMENTS:
+        - LinkedIn: Professional, insightful, 150-300 words, no hashtag spam
+        - Twitter/X: Short & punchy, max 280 chars, 1-2 hashtags, hook in first line
+        - Facebook: Conversational, storytelling-first, 80-150 words, 1 CTA
+        - Instagram: Visual-first caption, emoji-friendly, 3-5 hashtags, 60-100 words
+        
+        OUTPUT FORMAT (JSON only, no markdown):
+        {
+          "variations": [
+            { "platform": "LinkedIn",  "copy": "..." },
+            { "platform": "Twitter/X", "copy": "..." },
+            { "platform": "Facebook",  "copy": "..." },
+            { "platform": "Instagram", "copy": "..." }
+          ]
+        }
+        
+        ${langDirective}
+      `;
+
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: 'user', parts: [{ text: variationPrompt }] }],
+      config: { responseMimeType: "application/json" }
+    });
+
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!responseText) throw new Error("AI failed to generate variations");
+
+    // Track usage securely
+    const tokens = result.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      const db = admin.firestore();
+      db.collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json(JSON.parse(responseText));
+  } catch (err: any) {
+    console.error("[Content Forge Social Variations Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/outreach/content-forge/generate-image", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { prompt } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+  if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ text: prompt }],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1",
+        }
+      }
+    });
+
+    const candidate = response.candidates?.[0];
+    if (!candidate || !candidate.content?.parts) {
+      throw new Error("No image data returned from AI");
+    }
+
+    for (const part of candidate.content.parts) {
+      if (part.inlineData) {
+        // Track usage securely
+        if (req.user?.uid) {
+          const db = admin.firestore();
+          db.collection('customers').doc(req.user.uid).set({
+            imagesGenerated: admin.firestore.FieldValue.increment(1)
+          }, { merge: true }).catch(err => console.error("[Backend Image Tracking Error]:", err));
+        }
+
+        return res.json({ imageUrl: `data:image/png;base64,${part.inlineData.data}` });
+      }
+    }
+    throw new Error("No image generated");
+  } catch (err: any) {
+    console.error("[Content Forge Image Gen Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+// ─── AI PROXY ENDPOINTS ──────────────────────────────────────────────────
+
+app.post("/api/ai/chat", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { messages, projectContext, config } = req.body;
+  const projectId = req.headers['x-project-id'] as string;
+
+  if (!projectId) return res.status(400).json({ error: "x-project-id header is required" });
+  
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: messages,
+      config: config || {},
+    });
+
+    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      const dbStore = admin.firestore();
+      dbStore.collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json({ text: response.text, usage: response.usageMetadata });
+  } catch (err: any) {
+    console.error("[AI Chat Proxy Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/ai/generate-image", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { prompt, aspectRatio = "1:1" } = req.body;
+  const projectId = req.headers['x-project-id'] as string;
+
+  if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+  if (!projectId) return res.status(400).json({ error: "x-project-id header is required" });
+
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: prompt }] },
+      config: { imageConfig: { aspectRatio } }
+    });
+
+    const candidate = response.candidates?.[0];
+    if (!candidate || !candidate.content?.parts) throw new Error("No image data returned from AI");
+
+    for (const part of candidate.content.parts) {
+      if (part.inlineData) {
+        if (req.user?.uid) {
+          admin.firestore().collection('customers').doc(req.user.uid).set({
+            imagesGenerated: admin.firestore.FieldValue.increment(1)
+          }, { merge: true }).catch(err => console.error("[Backend Image Tracking Error]:", err));
+        }
+        return res.json({ imageUrl: `data:image/png;base64,${part.inlineData.data}` });
+      }
+    }
+    throw new Error("No image generated");
+  } catch (err: any) {
+    console.error("[AI Image Gen Proxy Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/ai/generate-speech", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { text, voice = 'Kore' } = req.body;
+  const projectId = req.headers['x-project-id'] as string;
+
+  if (!text) return res.status(400).json({ error: "Text is required" });
+  if (!projectId) return res.status(400).json({ error: "x-project-id header is required" });
+
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-tts',
+      contents: { parts: [{ text }] },
+      config: {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) throw new Error("No audio generated");
+
+    // Tracking usage if needed (optional for speech for now or using a generic metric)
+
+    res.json({ audioUrl: `data:audio/mp3;base64,${base64Audio}` });
+  } catch (err: any) {
+    console.error("[AI Speech Gen Proxy Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generic endpoint as a catch-all/migration bridge
+app.post("/api/outreach/generate-generic", verifyFirebaseToken, async (req: AuthRequest, res) => {
+  const { model, contents, config, tools } = req.body;
+  const projectId = req.headers['x-project-id'] as string;
+
+  if (!projectId) return res.status(400).json({ error: "x-project-id header is required" });
+  
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+    
+    const response = await ai.models.generateContent({
+      model: model || 'gemini-2.5-flash',
+      contents,
+      config: config || {},
+      tools: tools || undefined,
+    });
+
+    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
+    if (req.user?.uid) {
+      admin.firestore().collection('customers').doc(req.user.uid).set({
+        totalTokensUsed: admin.firestore.FieldValue.increment(tokens)
+      }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
+    }
+
+    res.json(response);
+  } catch (err: any) {
+    console.error("[AI Generic Proxy Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── SENT HISTORY ─────────────────────────────────────────────────────────────
 
@@ -3113,7 +3776,7 @@ Use professional, encouraging, and data-driven language. Use Markdown for format
   // ✅ CÓDIGO CORREGIDO
   try {
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash-8b',
+      model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: reportPrompt }] }]
     });
     return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Failed to generate report content.";
@@ -5109,7 +5772,7 @@ app.post("/api/outreach/inbox/:id/summarize", verifyFirebaseToken, async (req: A
     const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
 
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: `Summarize this conversation in 2 sentences:\n\n${threadParts.join("\n")}` }] }]
     });
 
@@ -5592,7 +6255,7 @@ app.post("/api/outreach/ai/optimize", async (req: AuthRequest, res) => {
     `;
 
     const response = await client.models.generateContent({
-      model: "gemini-1.5-flash-8b",
+      model: "gemini-2.5-flash",
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
 
@@ -6942,7 +7605,7 @@ Number of shots: ${shotCount || 4}
 Brief: ${brief}`;
 
     const result = await (ai as any).models.generateContent({
-      model: 'gemini-1.5-flash-8b',
+      model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
     });
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -6980,7 +7643,7 @@ app.post('/api/veo-studio/enhance-prompt', verifyFirebaseToken, async (req: Auth
     const systemPrompt = `You are a world-class AI video director. Enhance the following prompt to make it more cinematic and detailed for ${mode || 'video'} generation in ${style || 'cinematic'} style. Return ONLY the enhanced prompt text, nothing else, no quotes, max 200 words.\n\nOriginal: ${prompt}`;
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const result = await ai.models.generateContent({
-      model: 'gemini-1.5-flash-8b',
+      model: 'gemini-2.5-flash',
       contents: [{ parts: [{ text: systemPrompt }] }],
     });
     const enhanced = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;

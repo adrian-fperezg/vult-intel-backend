@@ -1,4 +1,3 @@
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { doc, increment, setDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { saveBuyerPersona, BuyerPersona } from './brandStrategyService';
@@ -7,102 +6,24 @@ import { isFounder as checkIsFounder } from '@/utils/founderUtils';
 import { safeJsonParse } from '@/utils/jsonUtils';
 import { getLanguageDirective } from '@/utils/aiLanguageUtils';
 
-// WARNING: Cloud transition in progress. Direct client-side calls are being deprecated
-// for security. Use a backend proxy for production deployments.
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; // Temporary until proxy is live
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+// Note: Many functions in this file still use direct client-side AI calls.
+// These are being migrated to backend proxies for security.
+// For now, only the Radar and Brand Strategy endpoints are migrated.
 
 
 // ── Core Imports & Global AI Client ──────────────────────────────────────────
 
 // Define our specific models
-const MODEL_FLASH = 'gemini-1.5-flash';
-const MODEL_PRO = 'gemini-1.5-pro';
+const MODEL_FLASH = 'gemini-2.5-flash';
+const MODEL_PRO = 'gemini-2.5-pro';
 
-// ── Smart AI Router ─────────────────────────────────────────────────────────
-export class AIRouter {
-  static getModel(taskComplexity: 'simple' | 'complex'): string {
-    return taskComplexity === 'complex' ? MODEL_PRO : MODEL_FLASH;
-  }
+export enum ThinkingLevel {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high'
 }
 
-// ── Context Caching ──────────────────────────────────────────────────────────
-export class ContextCacher {
-  // Store generated cache names by project string representation (hash/JSON)
-  private static cacheMap: Map<string, { cacheName: string, expiresAt: number }> = new Map();
-
-  // Simple string hash for the project data
-  private static hashProjectData(data: ActiveProjectData | null | undefined): string {
-    if (!data) return 'default';
-    // We only hash the relevant parts that affect the system instruction
-    return JSON.stringify({
-      p: data.project,
-      v: data.voice,
-      pe: data.personas,
-      pi: data.pillars
-    });
-  }
-
-  static async getCacheConfig(
-    projectContext: ActiveProjectData | null | undefined,
-    fallbackModel: string = 'gemini-2.5-flash'
-  ): Promise<{
-    cacheName?: string;
-    systemInstruction?: string;
-    model: string;
-  }> {
-    const langDirective = getLanguageDirective();
-    const systemContext = constructSystemContext(projectContext);
-
-    // If no context, just use standard call
-    if (!projectContext) {
-      return { systemInstruction: systemContext, model: fallbackModel };
-    }
-
-    const hashKey = `${localStorage.getItem('vult_language') || 'es'}_${this.hashProjectData(projectContext)}`;
-    const now = Date.now();
-
-    // Check local memory map first
-    if (this.cacheMap.has(hashKey)) {
-      const entry = this.cacheMap.get(hashKey)!;
-      // If we have at least 15 mins left on the cache
-      if (entry.expiresAt > now + 15 * 60 * 1000) {
-        console.log(`[ContextCacher] HIT - Reusing context ${entry.cacheName}`);
-        return { cacheName: entry.cacheName, model: fallbackModel };
-      }
-    }
-
-    try {
-      console.log(`[ContextCacher] MISS - Generating new cache...`);
-
-      // TTL required by Gemini SDK format
-      const ttlSeconds = 3600; // 1 hour
-
-      const newCache = await ai.caches.create({
-        model: fallbackModel,
-        config: {
-          contents: [
-            { role: 'user', parts: [{ text: "This is the initial system context for the project. Please acknowledge." }] }
-          ],
-          systemInstruction: systemContext,
-          ttl: `${ttlSeconds}s`,
-        }
-      });
-
-      if (newCache.name) {
-        const expiresAt = now + (ttlSeconds * 1000);
-        this.cacheMap.set(hashKey, { cacheName: newCache.name, expiresAt });
-        console.log(`[ContextCacher] Created new cache: ${newCache.name}`);
-        return { cacheName: newCache.name, model: fallbackModel };
-      }
-    } catch (err) {
-      console.warn(`[ContextCacher] Failed to create cache, falling back to standard prompt:`, err);
-    }
-
-    // Fallback if cache fails
-    return { systemInstruction: systemContext, model: fallbackModel };
-  }
-}
+// AIRouter and ContextCacher removed as they relied on direct SDK calls and were unused.
 
 // ── Project Context Types ───────────────────────────────────────────────────
 
@@ -217,139 +138,210 @@ export function validateQuota(tokensAvailable: number, email?: string | null): v
 
 /**
  * PROXY WRAPPER (Recommended for production)
- * This should eventually replace direct client-side calls to ai.models.generateContent
+ * This centralizes all AI requests to our authenticated backend.
  */
-async function callSecureAIProxy(model: string, contents: any, config?: any) {
-  // In a real production environment, this would be:
-  // const response = await fetch('/api/generate', { method: 'POST', body: JSON.stringify({ model, contents, config }) });
-  // return response.json();
-  
-  // For now, we remain on the client-side but mark it for migration
-  return ai.models.generateContent({ model, contents, config });
+async function callSecureAIProxy(model: string, contents: any, config?: any, tools?: any, projectId?: string) {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required");
+    
+    const idToken = await user.getIdToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    };
+
+    if (projectId) {
+      headers['x-project-id'] = projectId;
+    }
+    
+    const response = await fetch('/api/outreach/generate-generic', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, contents, config, tools })
+    });
+    
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.error || `Proxy request failed with status ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("[callSecureAIProxy] Error:", error);
+    throw error;
+  }
 }
 
-export async function generateImage(prompt: string, uid?: string | null): Promise<string> {
+export async function generateImage(prompt: string, uid?: string | null, projectId?: string): Promise<string> {
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: prompt }],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-        }
-      }
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required");
+    const idToken = await user.getIdToken();
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    };
+
+    if (projectId) {
+      headers['x-project-id'] = projectId;
+    }
+
+    const response = await fetch('/api/ai/generate-image', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ prompt, aspectRatio: "1:1" })
     });
 
-    const candidate = response.candidates?.[0];
-    if (!candidate || !candidate.content?.parts) {
-      throw new Error("No image data returned from AI");
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.error || "Failed to generate image via proxy");
     }
 
-    for (const part of candidate.content.parts) {
-      if (part.inlineData) {
-        // Record usage in background securely
-        incrementUsage(uid, 'imagesGenerated', 1).catch(console.error);
-        if (uid) trackImageGeneration(uid);
+    const data = await response.json();
+    if (!data.imageUrl) throw new Error("No image URL returned from proxy");
 
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
-    }
-    throw new Error("No image generated");
+    // Analytics (Token tracking is now handled by the backend)
+    if (uid) trackImageGeneration(uid);
+
+    return data.imageUrl;
   } catch (error) {
     console.error("Error generating image:", error);
     throw error;
   }
 }
 
-export async function generateVideo(prompt: string, imageBase64?: string, uid?: string | null): Promise<string> {
-  // Use VITE_GEMINI_API_KEY as primary key, fallback to process.env.API_KEY if available
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.API_KEY : null);
+/**
+ * Polls for a Veo Studio job status until it's finished or times out.
+ */
+async function pollVeoJob(jobId: string, idToken: string, projectId: string, timeoutMs: number = 180000): Promise<string> {
+  const startTime = Date.now();
+  const pollInterval = 5000; // 5 seconds
 
-  if (!apiKey) {
-    throw new Error("Gemini API Key not found. Please check your configuration.");
-  }
-
-  const userAi = new GoogleGenAI({ apiKey });
-
-  try {
-    let operation;
-
-    if (imageBase64) {
-      // Remove data URL prefix if present
-      const base64Data = imageBase64.split(',')[1] || imageBase64;
-
-      operation = await userAi.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: prompt,
-        image: {
-          imageBytes: base64Data,
-          mimeType: 'image/png',
-        },
-        config: {
-          numberOfVideos: 1,
-          resolution: '720p',
-          aspectRatio: '16:9'
-        }
-      });
-    } else {
-      operation = await userAi.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: prompt,
-        config: {
-          numberOfVideos: 1,
-          resolution: '720p',
-          aspectRatio: '16:9'
-        }
-      });
-    }
-
-    // Poll for completion (timeout after 2 minutes)
-    const startTime = Date.now();
-    const timeout = 120000;
-
-    while (!operation.done) {
-      if (Date.now() - startTime > timeout) {
-        throw new Error("Video generation timed out. Please try again later.");
-      }
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      operation = await userAi.operations.getVideosOperation({ operation: operation });
-    }
-
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) throw new Error("No video generated in the response");
-
-    // Fetch the video content
-    const response = await fetch(downloadLink, {
-      method: 'GET',
+  while (Date.now() - startTime < timeoutMs) {
+    const response = await fetch(`/api/veo-studio/job-status/${jobId}`, {
       headers: {
-        'x-goog-api-key': apiKey,
-      },
+        'Authorization': `Bearer ${idToken}`,
+        'x-project-id': projectId
+      }
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to download video: ${response.statusText}`);
+      throw new Error(`Failed to check job status: ${response.statusText}`);
     }
 
-    const blob = await response.blob();
+    const job = await response.json();
 
-    // Record usage in background
-    incrementUsage(uid, 'videosGenerated', 1).catch(console.error);
+    if (job.status === 'completed' && job.outputUrl) {
+      return job.outputUrl;
+    }
 
+    if (job.status === 'failed') {
+      throw new Error(job.error || 'Video generation job failed on server');
+    }
+
+    // Wait before polling again
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error('Video generation timed out. It might still be processing; check your library in a moment.');
+}
+
+export async function generateVideo(
+  prompt: string, 
+  imageBase64?: string, 
+  uid?: string | null,
+  projectId?: string
+): Promise<string> {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required");
+    
+    // We try to get the project ID from arguments, then from headers if we had a way, 
+    // but here we should probably require it or find a way to get it.
+    // In this app, we usually have an active project.
+    if (!projectId) {
+      // Fallback or error - for now we'll throw to ensure security and tracking
+      throw new Error("Project ID is required for secure video generation");
+    }
+
+    const idToken = await user.getIdToken();
+    const isAnimation = !!imageBase64;
+    const endpoint = isAnimation ? '/api/veo-studio/animate-image' : '/api/veo-studio/generate-video';
+    
+    const body: any = { 
+      prompt,
+      aspectRatio: '16:9',
+      applyBrandKit: true // Always apply brand kit by default for premium feel
+    };
+    
+    if (isAnimation) {
+      body.imageBase64 = imageBase64;
+      
+      // If it's a URL, convert to base64 for the backend
+      if (imageBase64 && imageBase64.startsWith('http')) {
+        try {
+          const imgRes = await fetch(imageBase64);
+          const blob = await imgRes.blob();
+          body.imageBase64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+        } catch (err) {
+          console.warn('[VEO] URL conversion failed, proxying original:', err);
+        }
+      }
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        'x-project-id': projectId
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.error || `Video generation failed: ${response.statusText}`);
+    }
+
+    const { jobId } = await response.json();
+    if (!jobId) throw new Error("No job ID returned from server");
+
+    // Start polling
+    const outputUrl = await pollVeoJob(jobId, idToken, projectId);
+    
+    // For video generation, we often want to return a blob URL to avoid 
+    // cross-origin issues or just for consistent local handling if needed,
+    // but the backend returns a signed URL or public URL usually.
+    // Let's just return the URL for now as the previous implementation did (after fetching it).
+    
+    // The previous implementation fetched the video and created a blob URL.
+    // Let's keep that behavior for compatibility with components that might use URL.revokeObjectURL
+    const videoResponse = await fetch(outputUrl);
+    if (!videoResponse.ok) return outputUrl; // Fallback to direct URL if fetch fails
+    
+    const blob = await videoResponse.blob();
     return URL.createObjectURL(blob);
+
   } catch (error) {
     console.error("Error generating video:", error);
     throw error;
   }
 }
 
-export async function deepScan(query: string, uid?: string | null): Promise<string> {
+export async function deepScan(query: string, uid?: string | null, projectId?: string): Promise<string> {
   try {
     const projectInfo = constructSystemContext(null); // Just for language/global rules
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: `Perform a deep market analysis for: ${query}. 
+    const model = 'gemini-3.1-pro-preview';
+    const contents = [{ 
+      role: 'user', 
+      parts: [{ text: `Perform a deep market analysis for: ${query}. 
 ${projectInfo}
       Include:
       1. Brand Identity Analysis
@@ -359,13 +351,16 @@ ${projectInfo}
       5. Actionable Recommendations
       
       Format the output as Markdown.
-      ${getLanguageDirective()}`,
-      config: {
-        tools: [{ googleSearch: {} }],
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
-      }
-    });
+      ${getLanguageDirective()}` }] 
+    }];
+    
+    const config = {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+    };
 
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
+    
     if (uid) trackDeepScanGeneration(uid);
     return response.text || "No analysis generated.";
   } catch (error) {
@@ -383,23 +378,15 @@ export async function generateChatResponse(
   messages: ChatMessage[],
   uid?: string | null,
   projectContext?: ActiveProjectData | null,
-  language?: string
+  language?: string,
+  projectId?: string
 ): Promise<string> {
   try {
     const systemContext = constructSystemContext(projectContext, language);
+    const model = 'gemini-2.5-flash';
+    const config = { systemInstruction: systemContext };
 
-    // Combine system context with messages
-    // Gemini 2.5-flash supports system instruction
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: messages,
-      config: {
-        systemInstruction: systemContext,
-      },
-    });
-
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, messages, config, undefined, projectId);
     return response.text || "No response generated.";
   } catch (error) {
     console.error("Error generating chat response:", error);
@@ -410,16 +397,15 @@ export async function generateChatResponse(
 export async function generateText(
   prompt: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<string> {
   try {
     const fullPrompt = prompt + constructSystemContext(projectContext);
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: fullPrompt,
-    });
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: fullPrompt }] }];
+
+    const response = await callSecureAIProxy(model, contents, undefined, undefined, projectId);
     return response.text || "No content generated.";
   } catch (error) {
     console.error("Error generating text:", error);
@@ -427,27 +413,36 @@ export async function generateText(
   }
 }
 
-export async function generateSpeech(text: string): Promise<string> {
+export async function generateSpeech(text: string, voice: string = 'Kore', projectId?: string): Promise<string> {
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
-      contents: {
-        parts: [{ text }],
-      },
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
-          },
-        },
-      },
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required");
+    const idToken = await user.getIdToken();
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    };
+
+    if (projectId) {
+      headers['x-project-id'] = projectId;
+    }
+
+    const response = await fetch('/api/ai/generate-speech', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text, voice })
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("No audio generated");
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.error || "Failed to generate speech via proxy");
+    }
 
-    return `data:audio/mp3;base64,${base64Audio}`;
+    const data = await response.json();
+    if (!data.audioUrl) throw new Error("No audio URL returned from proxy");
+
+    return data.audioUrl;
   } catch (error) {
     console.error("Error generating speech:", error);
     throw error;
@@ -476,7 +471,8 @@ export async function generateKeywordResearch(
   intent: string,
   country: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<KeywordResearchData> {
   try {
     const projectInfo = constructSystemContext(projectContext);
@@ -504,16 +500,11 @@ Generate a comprehensive JSON response containing:
 ${getLanguageDirective()}
 OUTPUT STRICTLY VALID JSON. DO NOT wrap with \`\`\`json.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      }
-    });
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: "application/json" };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const text = response.text;
     if (!text) throw new Error("No content generated");
@@ -571,7 +562,8 @@ export async function generateSeoAudit(
   focusPages: string,
   goal: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<SeoAuditData> {
   if (!canonicalUrl) {
     throw new Error("Canonical URL is required for SEO Audit.");
@@ -640,16 +632,11 @@ Respond ONLY with a valid JSON file matching this TypeScript interface exactly:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      }
-    });
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: "application/json" };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const textResponse = response.text;
     if (!textResponse) {
@@ -702,20 +689,10 @@ export interface BlueprintData {
 export async function generateLandingBlueprint(
   params: BlueprintInputs,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<BlueprintData> {
   try {
-    const aiParams: any = {
-      model: 'gemini-2.5-flash',
-      config: {
-        responseMimeType: "application/json",
-      }
-    };
-
-    if (params.toneOfVoice.allowInternetSearch) {
-      aiParams.tools = [{ googleSearchRetrieval: {} }];
-    }
-
     let toneInstructions = "";
     if (params.toneOfVoice.fileContent || params.toneOfVoice.urlContext) {
       toneInstructions = `\n\n--- BRAND VOICE & TONE CONSTANTS ---\n`;
@@ -785,12 +762,12 @@ Respond strictly in the following JSON format:
 }
 `;
 
-    aiParams.contents = prompt;
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: "application/json" };
+    const tools = params.toneOfVoice.allowInternetSearch ? [{ googleSearchRetrieval: {} }] : undefined;
 
-    const response = await ai.models.generateContent(aiParams);
-
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, tools, projectId);
 
     const textResponse = response.text;
     if (!textResponse) {
@@ -826,7 +803,8 @@ export async function analyzeResearchSources(
   sources: { label: string; content: string }[],
   projectNiche: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<ResearchAnalysis> {
   try {
     const combinedContent = sources
@@ -898,16 +876,11 @@ CRITICAL RULES:
 2. Return ONLY valid JSON — no markdown, no backticks, no commentary.
 3. All content must be directly grounded in the provided sources, not generic filler.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-      },
-    });
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: 'application/json' };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const text = response.text;
     if (!text) throw new Error('Empty response from AI');
@@ -930,7 +903,8 @@ export interface SocialIdeaResult {
 export async function generateSocialIdeas(
   topic: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<SocialIdeaResult[]> {
   try {
     const projectInfo = constructSystemContext(projectContext);
@@ -954,14 +928,11 @@ Rules:
 - Include 3 to 5 relevant hashtags per post.
 - No tone or persona instructions — focus purely on the topic.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' },
-    });
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: 'application/json' };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const text = response.text;
     if (!text) throw new Error('Empty response from AI');
@@ -982,7 +953,8 @@ export interface GeneratedWorkflow {
 export async function generateWorkflow(
   prompt: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<GeneratedWorkflow> {
   try {
     const projectInfo = constructSystemContext(projectContext);
@@ -1016,16 +988,11 @@ Make sure "fields" represents the core sequential flow (4-7 steps usually).
 Make sure "customFields" represents the global settings/metrics for this workflow (3-6 fields usually).
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: systemPrompt,
-      config: {
-        responseMimeType: "application/json",
-      }
-    });
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: systemPrompt }] }];
+    const config = { responseMimeType: "application/json" };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const textResponse = response.text;
     if (!textResponse) {
@@ -1043,7 +1010,8 @@ Make sure "customFields" represents the global settings/metrics for this workflo
 export async function generateBrainstorming(
   promptText: string,
   uid?: string | null,
-  projectContext?: ActiveProjectData | null
+  projectContext?: ActiveProjectData | null,
+  projectId?: string
 ): Promise<ResearchIdea[]> {
   try {
     const projectInfo = constructSystemContext(projectContext);
@@ -1068,14 +1036,11 @@ Return the result EXACTLY as a JSON array of objects with the following keys, an
   }
 ]`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: { responseMimeType: 'application/json' },
-    });
+    const model = 'gemini-2.5-flash';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: 'application/json' };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    await incrementTokens(uid, tokens);
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const text = response.text;
     if (!text) throw new Error('Empty response from AI');
@@ -1117,19 +1082,14 @@ Deep Scan Data:
 ${scanDataString}
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        temperature: 0.1,
-        responseMimeType: "application/json",
-      }
-    });
+    const model = "gemini-2.5-flash";
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+    };
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    if (uid) {
-      await incrementTokens(uid, tokens);
-    }
+    const response = await callSecureAIProxy(model, contents, config, undefined, projectId);
 
     const text = response.text;
     if (!text) return;
@@ -1154,7 +1114,8 @@ export async function generateGrowthMastermindStrategy(
   brandStrategyContext: string,
   personaContext: string,
   uid?: string | null,
-  customInstructions?: string
+  customInstructions?: string,
+  projectId?: string
 ): Promise<string> {
   try {
     const customBlock = customInstructions?.trim()
@@ -1219,15 +1180,10 @@ A concise (3-5 sentence) paragraph synthesizing the campaign approach, the core 
 ## 30-60-90 Day Execution Roadmap
 Use bullet points extensively under each section and subsection. Be TACTICAL and SPECIFIC — reference the personas, brand voice, and scan insights directly. Avoid generic filler. Write in the language inferred from the context.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro',
-      contents: prompt,
-    });
+    const model = 'gemini-2.5-pro';
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    if (uid) {
-      await incrementTokens(uid, tokens);
-    }
+    const response = await callSecureAIProxy(model, contents, undefined, undefined, projectId);
 
     const text = response.text;
     if (!text) throw new Error('Empty response from AI for Growth Strategy');
@@ -1240,60 +1196,30 @@ Use bullet points extensively under each section and subsection. Be TACTICAL and
 }
 
 
-export async function generatePersonaFromReport(fullScanText: string, uid?: string | null): Promise<Partial<BuyerPersona>> {
+export async function generatePersonaFromReport(fullScanText: string, projectId: string, uid?: string | null): Promise<Partial<BuyerPersona>> {
   try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required.");
+
+    const idToken = await user.getIdToken();
     const sysLang = localStorage.getItem('vult_language') || 'es';
-    const langDirective = sysLang === 'en'
-      ? "CRITICAL RULE: You MUST output the entire JSON content in English, translating the keys' values but keeping the JSON keys exactly as requested."
-      : "CRITICAL RULE: You MUST output the entire JSON content in Spanish, translating the keys' values but keeping the JSON keys exactly as requested.";
 
-    const prompt = `Actúa como un Estratega de Marca Experto y Psicólogo de Consumidor.
-Tu tarea es leer un reporte de mercado (Full Scan Report) de un negocio y deducir con precisión quirúrgica quién es su Cliente Ideal (Buyer Persona) de mayor conversión.
-
-REPORTE DE REFERENCIA:
-${fullScanText}
-
-INSTRUCCIONES CRÍTICAS:
-1. Analiza profundamente las secciones de Brand Identity, Competitors y Actionable Recommendations del reporte.
-2. Identifica a la persona que tiene el "dolor" exacto que este negocio resuelve.
-3. No des explicaciones, saludos ni introducciones.
-4. Devuelve ÚNICAMENTE un objeto JSON válido (sin etiquetas markdown, no uses \`\`\`json) con las siguientes claves exactas. Esto se usará para autocompletar una base de datos.
-5. ${langDirective}
-
-ESTRUCTURA JSON REQUERIDA:
-{
-  "name": "Nombre descriptivo y creativo (ej. El Fundador Atrapado)",
-  "ageRange": "Rango de edad lógico (ej. 30-45)",
-  "gender": "Género (ej. Femenino, Masculino, o Cualquiera)",
-  "location": "Ubicación ideal (ej. Urbano, LATAM, Global)",
-  "jobTitle": "Puesto de trabajo o rol",
-  "income": "Nivel de ingresos estimado (ej. $80k-$120k)",
-  "goals": "Su meta principal de negocio o vida relacionada al reporte",
-  "painPoints": "El problema agudo que el negocio analizado le resuelve",
-  "objections": "La razón principal por la que dudaría en comprar",
-  "mediaHabits": "Redes sociales o plataformas donde pasa su tiempo",
-  "preferredTone": "El tono de comunicación que mejor lo persuade (ej. Directo y basado en datos)",
-  "triggerWords": "3 a 5 palabras clave separadas por comas que captan su atención al instante"
-}`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Use flash for speed
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        temperature: 0.2, // Keeps extraction somewhat creative but grounded
-        responseMimeType: "application/json",
-      }
+    const response = await fetch('/api/outreach/brand-strategy/persona', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        'x-project-id': projectId
+      },
+      body: JSON.stringify({ fullScanText, sysLang })
     });
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    if (uid) {
-      await incrementTokens(uid, tokens);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to generate persona: ${response.status}`);
     }
 
-    const text = response.text;
-    if (!text) throw new Error("Empty response from AI");
-
-    return JSON.parse(text) as Partial<BuyerPersona>;
+    return await response.json();
   } catch (error) {
     console.error("Error generating persona from report:", error);
     throw error;
@@ -1301,68 +1227,29 @@ ESTRUCTURA JSON REQUERIDA:
 }
 
 
-export async function generateBrandStrategyFromReport(fullScanText: string, sysLang: string, uid?: string | null): Promise<any> {
+export async function generateBrandStrategyFromReport(fullScanText: string, sysLang: string, projectId: string, uid?: string | null): Promise<any> {
   try {
-    const prompt = `Actúa como un Director Creativo y Estratega de Contenido Senior. Tu tarea es leer el reporte de mercado de un negocio y desarrollar su Identidad de Voz (Brand Voice) y 4 Pilares de Contenido (Content Pillars).
+    const user = auth.currentUser;
+    if (!user) throw new Error("Authentication required.");
 
-REPORTE DE REFERENCIA:
-${fullScanText}
+    const idToken = await user.getIdToken();
 
-REGLA CRÍTICA DE IDIOMA:
-Debes generar TODO el contenido de los valores del JSON en el siguiente idioma: ${sysLang}. Sin embargo, las CLAVES (keys) del JSON deben permanecer exactamente como se definen abajo en inglés.
-
-INSTRUCCIONES PARA BRAND VOICE:
-
-'archetype': DEBE ser EXACTAMENTE uno de estos valores en inglés: 'The Hero', 'The Outlaw', 'The Explorer', 'The Creator', 'The Ruler', 'The Magician', 'The Lover', 'The Caregiver', 'The Jester', 'The Sage', 'The Innocent', 'The Everyman'.
-
-Los valores de tono (formalityCasual, etc.) deben ser números del 0 al 100 donde 50 es neutral.
-
-INSTRUCCIONES PARA CONTENT PILLARS:
-
-Crea exactamente 4 pilares de contenido altamente relevantes.
-
-'aiDirective' debe ser una instrucción clara para que futuras IAs sepan cómo escribir sobre este pilar.
-
-FORMATO DE SALIDA (ESTRICTO JSON, sin etiquetas markdown):
-{
-"brandVoice": {
-"valueProposition": "Propuesta de valor única y persuasiva en 1-2 oraciones",
-"archetype": "Debe ser uno de los 12 arquetipos en inglés de la lista",
-"formalityCasual": 50,
-"authoritativeEmpathetic": 50,
-"seriousPlayful": 50,
-"vocabularyAllowlist": ["palabra1", "palabra2", "palabra3"],
-"vocabularyBanlist": ["cliché1", "cliché2"]
-},
-"contentPillars": [
-{
-"name": "Nombre corto y pegadizo del pilar",
-"coreTheme": "Descripción de 1 oración de lo que trata",
-"keywords": ["keyword1", "keyword2"],
-"aiDirective": "Instrucción de IA: 'Al escribir sobre este pilar, enfócate en...'",
-"visualStyle": "Sugerencia de estilo visual"
-}
-]
-}`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        temperature: 0.2,
-        responseMimeType: "application/json",
-      }
+    const response = await fetch('/api/outreach/brand-strategy/strategy', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        'x-project-id': projectId
+      },
+      body: JSON.stringify({ fullScanText, sysLang })
     });
 
-    const tokens = response.usageMetadata?.totalTokenCount ?? 0;
-    if (uid) {
-      await incrementTokens(uid, tokens);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to generate strategy: ${response.status}`);
     }
 
-    const text = response.text;
-    if (!text) throw new Error("Empty response from AI for Brand Strategy");
-
-    return JSON.parse(text);
+    return await response.json();
   } catch (error) {
     console.error("AI strategy generation error:", error);
     throw error;

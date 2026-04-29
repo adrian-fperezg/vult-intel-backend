@@ -3,19 +3,13 @@ import { Search, Plus, Image as ImageIcon, Download, Loader, BarChart3, Type, Ar
 import { generateImage, generateVideo } from '@/services/ai';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/TranslationContext';
+import { useProject } from '@/contexts/ProjectContext';
 
-// Add type definition for window.aistudio
-declare global {
-  interface Window {
-    aistudio: {
-      hasSelectedApiKey: () => Promise<boolean>;
-      openSelectKey: () => Promise<void>;
-    };
-  }
-}
+// window.aistudio definition removed as it is no longer used
 
 export default function DesignLab() {
   const { t } = useTranslation();
+  const { activeProjectId } = useProject();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<{ url: string, prompt: string, type: 'image' | 'video' }[]>([]);
   const [prompt, setPrompt] = useState('');
@@ -27,7 +21,7 @@ export default function DesignLab() {
     if (!prompt) return;
     setIsGenerating(true);
     try {
-      const url = await generateImage(prompt);
+      const url = await generateImage(prompt, undefined, activeProjectId || undefined);
       setGeneratedImages(prev => [{ url, prompt, type: 'image' }, ...prev]);
       setPrompt('');
       setShowGenerator(false);
@@ -41,20 +35,12 @@ export default function DesignLab() {
 
   const handleAnimate = async (imageUrl: string) => {
     try {
-      // Check for API key
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        await window.aistudio.openSelectKey();
-        // Assume success and continue, or return and ask user to click again
-        // The guidelines say "assume the key selection was successful... Do not add delay"
-      }
-
       setIsAnimating(true);
-      const videoUrl = await generateVideo("Animate this image cinematically", imageUrl);
+      const videoUrl = await generateVideo("Animate this image cinematically", imageUrl, undefined, activeProjectId || undefined);
       setGeneratedImages(prev => [{ url: videoUrl, prompt: "Animated version", type: 'video' }, ...prev]);
     } catch (error) {
       console.error(error);
-      alert("Failed to animate image. Please ensure you have selected a paid API key.");
+      alert("Failed to animate image. Please check your connection and try again.");
     } finally {
       setIsAnimating(false);
       setSelectedImage(null);

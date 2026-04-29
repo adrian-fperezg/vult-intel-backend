@@ -64,8 +64,9 @@ export default function Sidebar() {
   const totalTokensUsed = metrics.tokensUsed || 0;
   const tokenPct = isUnlimited ? 0 : (TOKEN_MAX > 0 ? Math.min((totalTokensUsed / TOKEN_MAX) * 100, 100) : 0);
   const isNearing = !isUnlimited && tokenPct >= 80;
-  const barColor = isUnlimited ? 'bg-gradient-to-r from-amber-400 to-orange-500' : (isNearing ? 'bg-amber-400' : 'bg-blue-500');
-  const textColor = isUnlimited ? 'text-amber-400' : (isNearing ? 'text-amber-400' : 'text-slate-400');
+  const isCritical = !isUnlimited && tokenPct >= 90;
+  const barColor = isUnlimited ? 'bg-gradient-to-r from-amber-400 to-orange-500' : (isCritical ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]' : isNearing ? 'bg-amber-400' : 'bg-blue-500');
+  const textColor = isUnlimited ? 'text-amber-400' : (isCritical ? 'text-red-400 font-bold' : isNearing ? 'text-amber-400 font-bold' : 'text-slate-400');
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -194,6 +195,11 @@ export default function Sidebar() {
                 className={cn('h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.5)]', barColor)}
               />
             </div>
+            {isCritical && (
+              <p className="text-[10px] text-red-400/90 font-medium leading-tight animate-pulse px-0.5">
+                {t('AITOKEN_LOW')}
+              </p>
+            )}
           </div>
         )}
         {currentUser ? (

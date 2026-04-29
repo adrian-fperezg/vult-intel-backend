@@ -16,12 +16,14 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from '@/contexts/TranslationContext';
 import { useIntelRadarApi, RadarSource, RadarArticle } from '@/services/intelRadarService';
+import { useProject } from '@/contexts/ProjectContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
 
 export default function IntelRadar() {
   const { t } = useTranslation();
   const api = useIntelRadarApi();
+  const { isLoading: isProjectLoading } = useProject();
   
   const [isRunning, setIsRunning] = useState(false);
   const [sources, setSources] = useState<RadarSource[]>([]);
@@ -36,12 +38,12 @@ export default function IntelRadar() {
   const [selectedTone, setSelectedTone] = useState('Professional');
 
   useEffect(() => {
-    if (api.activeProjectId) {
+    if (api.activeProjectId && !isProjectLoading) {
       loadData();
-    } else {
+    } else if (!isProjectLoading) {
       setLoading(false);
     }
-  }, [api.activeProjectId]);
+  }, [api.activeProjectId, isProjectLoading]);
 
   const loadData = async () => {
     if (!api.activeProjectId) {

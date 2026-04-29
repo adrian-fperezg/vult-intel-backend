@@ -279,33 +279,7 @@
         "signIn": "Sign In to Vult Intel",
         "marketingPlatform": "Marketing Platform"
     },
-    "radar": {
-        "title": "Intel Radar",
-        "subtitle": "Autonomous industry intelligence and trend discovery.",
-        "runNow": "Run Radar Now",
-        "running": "Radar Active...",
-        "schedule": {
-            "title": "Scheduling",
-            "frequency": "Frequency",
-            "daily": "Daily",
-            "weekly": "Weekly",
-            "biweekly": "Bi-weekly",
-            "monthly": "Monthly"
-        },
-        "sources": {
-            "title": "Trusted Sources",
-            "add": "Add Domain",
-            "placeholder": "https://example.com",
-            "reputation": "Reputation"
-        },
-        "articles": {
-            "title": "Latest Intelligence",
-            "summary": "Summary",
-            "draftPost": "Draft Social Post",
-            "generateThumbnail": "Generate Thumbnail",
-            "noArticles": "No articles found yet. Run the radar to start discovery."
-        }
-    },
+
     "outreach": {
         "inbox": {
             "title": "Unified Inbox",
@@ -1296,5 +1270,7 @@
         }
     },
     "signOut": "Sign Out",
-    "AITOKENSUSEDTHISMONTH": "AI Tokens Used This Month"
+    "AITOKENSUSEDTHISMONTH": "AI Tokens Used This Month",
+    "AITOKEN_LOW": "Your AI tokens are running low. Upgrade to continue generating without limits.",
+    "AITOKEN_USED_LABEL": "AI Tokens Used"
 }

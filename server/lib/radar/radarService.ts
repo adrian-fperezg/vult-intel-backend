@@ -26,7 +26,7 @@ export async function processRadarRun(uid: string, projectId: string) {
 
     // 3. Trigger Gemini with Search Tools
     // We use fetch directly to match the stable pattern in scanService.ts
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
 
     const systemInstruction = `
 Actúa como un Analista de Inteligencia de Mercado y Estratega de Contenido Senior.

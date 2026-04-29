@@ -65,17 +65,14 @@ import { safeJsonParse } from '@/utils/jsonUtils';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getProjectById, getProjects, Project } from '@/services/scanService';
-import { GoogleGenAI } from "@google/genai";
 import { logContentGenerated } from '@/services/analytics';
 import {
   analyzeResearchSources,
   generateBrainstorming,
   ResearchAnalysis,
   ResearchIdea,
-  incrementTokens,
-  constructSystemContext,
-  generateImage,
   generateVideo,
+  generateImage,
   validateQuota
 } from '@/services/ai';
 import {
@@ -84,6 +81,7 @@ import {
   deleteWorkbenchIdea,
   WorkbenchIdea
 } from '@/services/researchHubService';
+import { useContentForgeApi } from '@/services/contentForgeService';
 import {
   saveCalendarEvent,
   getCalendarEvents,
@@ -111,7 +109,7 @@ import { savePersonaPreset, getPersonaPresets, deletePersonaPreset, BrandPersona
 import toast from 'react-hot-toast';
 
 // Initialize Gemini (Insecure: Migrate to backend proxy)
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+// AI instance removed - now using backend proxy for security
 
 // --- Data Models ---
 
@@ -568,7 +566,8 @@ export default function ContentGenerator() {
   const [project, setProject] = useState<Project | null>(null);
   const { currentUser } = useAuth();
   const { totalLimits, metrics } = useUserMetrics();
-  const { activeProject } = useProject();
+  const { activeProject, activeProjectId } = useProject();
+  const { generateContent, generateSocialVariations: generateSocialVars, generateImage: genImage } = useContentForgeApi();
 
   // Cloud save indicator
   const [savedToCloud, setSavedToCloud] = useState(false);
@@ -722,7 +721,7 @@ export default function ContentGenerator() {
       const purposeContext = generationPurpose ? `\nObjective: ${generationPurpose}` : '';
       const fullPrompt = `${imagePrompt} style: ${imageStyle}${projectContext}${personaContext}${purposeContext}`;
 
-      const url = await generateImage(fullPrompt, currentUser?.uid);
+      const url = await generateImage(fullPrompt, currentUser?.uid, activeProjectId || undefined);
       setGeneratedMediaUrl(url);
       logContentGenerated('image', 'design_lab');
     } catch (err) {
@@ -747,7 +746,7 @@ export default function ContentGenerator() {
       const purposeContext = generationPurpose ? `\nObjective: ${generationPurpose}` : '';
       const fullPrompt = `Generate a video with aspect ratio ${videoAspectRatio} and duration ${videoDuration}s. Prompt: ${videoPrompt}${projectContext}${purposeContext}`;
 
-      const url = await generateVideo(fullPrompt, undefined, currentUser?.uid);
+      const url = await generateVideo(fullPrompt, undefined, currentUser?.uid, activeProjectId || undefined);
       setGeneratedMediaUrl(url);
       logContentGenerated('video', 'design_lab');
     } catch (err) {
@@ -1359,7 +1358,7 @@ export default function ContentGenerator() {
     setVariants([]);
     setSocialVariations(null);
     setSocialVariationsOpen(false);
-    // Start cover image loading indicator if opted-in
+    
     if (includeCoverImage) {
       setIsGeneratingCover(true);
       setGeneratedCoverUrl(null);
@@ -1370,7 +1369,7 @@ export default function ContentGenerator() {
 
     try {
       validateQuota(tokensRemaining, currentUser?.email);
-      logContentGenerated(contentType.label, 'gemini-1.5-flash');
+      logContentGenerated(contentType.label, 'gemini-2.5-flash');
 
       let contextContent = "";
       if (contextFiles.length > 0) {
@@ -1380,152 +1379,88 @@ export default function ContentGenerator() {
         `;
       }
 
-      const projectSystemContext = constructSystemContext(activeProject || undefined);
-      const prompt = `
-        Act as a world-class marketing strategist and copywriter for the brand "${project?.name || 'Vult Intel Client'}".
-        
-        ${projectSystemContext}
-
-        CONTEXT:
-        - Niche: ${project?.niche || 'General'}
-        - Description: ${project?.description || 'No description provided'}
-        - Target Audience: ${selectedBrandPersona?.name || selectedAudience} 
-        - Persona Details: ${selectedBrandPersona ? `Job: ${selectedBrandPersona.jobTitle}. Goals: ${selectedBrandPersona.goals}. Pain Points: ${selectedBrandPersona.painPoints}` : 'N/A'}
-        - Generation Purpose/Goal: ${generationPurpose}
-        - Campaign Title: ${campaignTitle}
-        
-        BRAND PERSONA & STYLE SETTINGS:
-        - Playful/Witty: ${voicePlayful}% (0% = Strict Context Adherence, 100% = Max Playful)
-        - Casual/Friendly: ${voiceCasual}% (0% = Strict Context Adherence, 100% = Max Casual)
-        - Innovative/Bold: ${voiceConservative}% (0% = Strict Context Adherence, 100% = Max Innovative)
-        
-        STRICT RULES:
-        - Formatting Rules: ${formattingRules || "None specified"}
-        - Prohibited Terms: ${prohibitedTerms || "None specified"}
-        
-        ${contextContent}
-
-        USER INSTRUCTION: "${userInstruction}"
-        
-        If the user instruction is empty, default to creating a ${contentType.label} for ${platform.label} with objective ${objective.label}.
-        
-        TASK:
-        1. Analyze the request and categorize it into one of these sections: 'create' (content assets), 'planning' (calendars/schedules), or 'research' (keywords/topics).
-        2. ${generateSocialVariations && contentType.id === 'social_caption' ? 'Generate exactly 1 overarching variant divided internally into 4 completely distinct adaptations for LinkedIn, Twitter/X, Instagram, and Facebook respectively. Format them clearly with headers inside the SAME variant.' : 'Generate exactly 3 distinct variants/drafts based on the instruction and constraints.'}
-        3. Use the BEST marketing strategies specifically for the "${selectedAudience}" audience in the "${project.niche}" industry.
-        
-        IMPORTANT RESTRICTIONS:
-        ${useExternalSources
-          ? "- You MAY use external knowledge from Google Search to enrich the content."
-          : "- You MUST STRICTLY use ONLY the information provided in the 'UPLOADED CONTEXT FILES' and the Project Context above. Do NOT hallucinate or use outside knowledge if it contradicts or is not found in the provided context."}
-
-        STYLE ADAPTATION INSTRUCTIONS:
-        - If a style slider is at 0%, you MUST mimic the tone and style of the UPLOADED CONTEXT FILES exactly.
-        - If a style slider is > 0%, blend that trait into the base style proportionally.
-        - STRICTLY AVOID any terms listed in 'Prohibited Terms'.
-        - STRICTLY FOLLOW any rules listed in 'Formatting Rules'.
-
-        CONSTRAINTS (Apply if relevant to the category):
-        - Content Pillar: ${contentPillars.find(p => p.id === selectedPillar)?.label || "None"} (Ensure content aligns with this pillar)
-        - Max Length: ${platform.maxLength ? `${platform.maxLength} characters` : 'Appropriate for medium'}
-        - Target Length: ${targetWordCount ? `Approx ${targetWordCount} words` : 'Best practice for platform'}
-        - Detail Level: ${detailLevel}/100
-        - Persuasion Level: ${persuasionLevel}/100
-        - Emojis: ${includeEmojis ? 'Yes (use sparingly)' : 'No'}
-        - Hashtags: ${includeHashtags ? 'Yes (relevant ones)' : 'No'}
-        - CTA: ${includeCTA ? 'Yes (clear and compelling)' : 'No'}
-        - Hook: ${includeHook ? 'Yes (strong attention grabber)' : 'No'}
-        - Bullet Points: ${includeBulletPoints ? 'Yes (for readability)' : 'No'}
-        - Questions: ${includeQuestions ? 'Yes (to drive engagement)' : 'No'}
-        
-        OUTPUT FORMAT (JSON):
-        {
-          "category": "create" | "planning" | "research",
-          "variants": ["Draft 1 content...", "Draft 2 content...", "Draft 3 content..."],
-          "insight": "Brief explanation of the strategy behind these drafts and why they fit the user's request."
-        }
-        
-        ${getLanguageDirective()}
-      `;
-
-      const model = "gemini-1.5-flash";
-      const tools = useExternalSources ? [{ googleSearch: {} }] : [];
-
-      // Auto-derive cover image prompt from context
+      // Auto-derive cover image prompt
       const autoCoverPrompt = `Marketing cover image for "${project?.name || 'Brand'}" (${project?.niche || 'business'}). ${userInstruction}. Style: modern, professional, ${imageStyle || 'Photorealistic'}. No text overlays.`;
 
-      // Fire text generation and (optional) image generation in parallel
-      const [textResult, imageResult] = await Promise.allSettled([
-        ai.models.generateContent({
-          model,
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          config: { responseMimeType: "application/json", tools }
-        }),
-        includeCoverImage
-          ? generateImage(autoCoverPrompt, currentUser?.uid)
-          : Promise.resolve(null),
+      const payload = {
+        userInstruction,
+        contentType,
+        platform,
+        objective,
+        selectedAudience,
+        selectedBrandPersona,
+        generationPurpose,
+        campaignTitle,
+        voicePlayful,
+        voiceCasual,
+        voiceConservative,
+        formattingRules,
+        prohibitedTerms,
+        contextContent,
+        useExternalSources,
+        selectedPillarLabel: contentPillars.find(p => p.id === selectedPillar)?.label || "None",
+        targetWordCount,
+        detailLevel,
+        persuasionLevel,
+        includeEmojis,
+        includeHashtags,
+        includeCTA,
+        includeHook,
+        includeBulletPoints,
+        includeQuestions,
+        generateSocialVariations,
+        activeProject,
+        language: localStorage.getItem('vult_language') || 'es'
+      };
+
+      const [textData, imageData] = await Promise.allSettled([
+        generateContent(payload),
+        includeCoverImage ? genImage(autoCoverPrompt) : Promise.resolve(null)
       ]);
 
-      // --- Handle text result ---
-      if (textResult.status === 'fulfilled') {
-        const result = textResult.value;
-        const responseText = result.text;
-        const tokens = result.usageMetadata?.totalTokenCount ?? 0;
-        await incrementTokens(currentUser?.uid, tokens);
+      if (textData.status === 'fulfilled') {
+        const data = textData.value;
+        if (data.category && ['create', 'planning', 'research'].includes(data.category)) {
+          setActiveTab(data.category as any);
+        }
+        setVariants(data.variants || []);
+        setGeneratedContent(data.variants?.[0] || '');
+        setAiInsight(data.insight);
+        setActiveVariant(0);
 
-        if (responseText) {
-          let data;
+        if (targetDate && data.variants?.length > 0) {
           try {
-            data = safeJsonParse(responseText);
+            await saveCalendarEvent(effectiveProjectId, {
+              projectId: effectiveProjectId,
+              title: `${contentType.label} for ${platform.label}`,
+              date: targetDate,
+              eventType: 'social_post',
+              colorKey: 'bg-blue-500/15',
+              description: data.variants[0],
+            });
+            toast.success('Contenido guardado automáticamente en el Calendario');
           } catch (e) {
-            console.warn("Could not parse JSON, using raw text as content", e);
-            data = { category: 'create', variants: [responseText], insight: "Generated content (Raw format)" };
-          }
-
-          if (data.category && ['create', 'planning', 'research'].includes(data.category)) {
-            setActiveTab(data.category);
-          }
-          setVariants(data.variants || []);
-          setGeneratedContent(data.variants?.[0] || '');
-          setAiInsight(data.insight);
-          setActiveVariant(0);
-
-          // Auto-save to Calendar if targetDate is set
-          if (targetDate && data.variants?.length > 0) {
-            try {
-              await saveCalendarEvent(effectiveProjectId, {
-                projectId: effectiveProjectId,
-                title: `${contentType.label} for ${platform.label}`,
-                date: targetDate,
-                eventType: 'social_post',
-                colorKey: 'bg-blue-500/15',
-                description: data.variants[0],
-              });
-              toast.success('Contenido guardado automáticamente en el Calendario');
-            } catch (e) {
-              console.error('Failed to auto-save to calendar', e);
-            }
+            console.error('Failed to auto-save to calendar', e);
           }
         }
       } else {
-        console.error("Text generation failed:", textResult.reason);
+        console.error("Text generation failed:", textData.reason);
         toast.error("Copy generation failed. Please try again.");
       }
 
-      // --- Handle image result ---
       if (includeCoverImage) {
-        if (imageResult.status === 'fulfilled' && imageResult.value) {
-          setGeneratedCoverUrl(imageResult.value as string);
+        if (imageData.status === 'fulfilled' && imageData.value) {
+          setGeneratedCoverUrl(imageData.value.imageUrl);
         } else {
-          console.warn("Cover image generation failed:", imageResult.status === 'rejected' ? imageResult.reason : 'No URL returned');
-          toast.error("Cover image generation failed. Copy was saved successfully.", { duration: 4000 });
+          console.warn("Cover image generation failed");
+          toast.error("Cover image generation failed.");
         }
         setIsGeneratingCover(false);
       }
 
     } catch (error) {
       console.error("Generation failed", error);
-      toast.error("Failed to generate content. Error: " + (error instanceof Error ? error.message : String(error)));
+      toast.error("Failed to generate content.");
     } finally {
       setIsGenerating(false);
     }
@@ -1546,44 +1481,8 @@ export default function ContentGenerator() {
     setSocialVariationsOpen(true);
 
     try {
-      const variationPrompt = `
-        You are a social media copy expert. Your ONLY task is to rewrite and adapt the following original copy for 4 different platforms.
-        
-        ORIGINAL COPY:
-        "${generatedContent}"
-        
-        RULES (STRICT — DO NOT deviate):
-        - Keep the SAME central theme, message, and objective as the original.
-        - Only adapt the length, tone, format and style per platform.
-        - Do NOT add new information that is not in the original.
-        - Do NOT change the core CTA or brand positioning.
-        
-        PLATFORM REQUIREMENTS:
-        ${SOCIAL_PLATFORMS_CONFIG.map(p => `- ${p.label}: ${p.tone}`).join('\n')}
-        
-        OUTPUT FORMAT (JSON only, no markdown):
-        {
-          "variations": [
-            { "platform": "LinkedIn",  "copy": "..." },
-            { "platform": "Twitter/X", "copy": "..." },
-            { "platform": "Facebook",  "copy": "..." },
-            { "platform": "Instagram", "copy": "..." }
-          ]
-        }
-        
-        ${getLanguageDirective()}
-      `;
-
-      const result = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [{ role: 'user', parts: [{ text: variationPrompt }] }],
-        config: { responseMimeType: "application/json" }
-      });
-
-      const tokens = result.usageMetadata?.totalTokenCount ?? 0;
-      await incrementTokens(currentUser?.uid, tokens);
-
-      const data = safeJsonParse(result.text || '{}');
+      const data = await generateSocialVars(generatedContent, localStorage.getItem('vult_language') || 'es');
+      
       if (data.variations?.length) {
         const mapped = data.variations.map((v: { platform: string; copy: string }) => ({
           platform: v.platform,
