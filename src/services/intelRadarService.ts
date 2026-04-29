@@ -14,6 +14,8 @@ export interface RadarArticle {
   url: string;
   source: string;
   date: string;
+  publishDate?: string;
+  keywords?: string[];
   socialPostDraft?: string;
 }
 
@@ -50,12 +52,18 @@ export const useIntelRadarApi = () => {
     return get<RadarArticle[]>('/radar/articles') || [];
   };
 
-  const generateThumbnail = async (articleId: string, prompt: string) => {
+  const generateThumbnail = async (articleId: string, prompt: string, options?: { aspectRatio?: string, width?: number, height?: number }) => {
     return post<any>('/veo-studio/generate-image', { 
-      prompt: `Thumbnail for article: ${prompt}`,
-      aspectRatio: '16:9',
+      prompt,
+      aspectRatio: options?.aspectRatio || '16:9',
+      width: options?.width,
+      height: options?.height,
       applyBrandKit: true 
-    }, true); // true flag for useRootUrl
+    }, true);
+  };
+
+  const enhanceImagePrompt = async (prompt: string) => {
+    return post<any>('/veo-studio/enhance-prompt', { prompt }, true);
   };
 
   const generateSocialPost = async (articleId: string, platform: string, tone: string) => {
@@ -76,6 +84,7 @@ export const useIntelRadarApi = () => {
     getArticles,
     generateSocialPost,
     generateThumbnail,
+    enhanceImagePrompt,
   };
 };
 

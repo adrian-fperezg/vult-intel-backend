@@ -11,7 +11,10 @@ import {
   ChevronRight,
   AlertCircle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  X,
+  Sparkles,
+  Maximize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from '@/contexts/TranslationContext';
@@ -137,6 +140,18 @@ export default function IntelRadar() {
   const [configPostId, setConfigPostId] = useState<string | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState('LinkedIn');
   const [selectedTone, setSelectedTone] = useState('Professional');
+  
+  // New States
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [isThumbnailModalOpen, setIsThumbnailModalOpen] = useState(false);
+  const [thumbnailArticle, setThumbnailArticle] = useState<RadarArticle | null>(null);
+  const [imageIdea, setImageIdea] = useState('');
+  const [enhancedPrompt, setEnhancedPrompt] = useState('');
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState('16:9');
+  const [customWidth, setCustomWidth] = useState(1280);
+  const [customHeight, setCustomHeight] = useState(720);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     if (api.activeProjectId && !isProjectLoading) {
@@ -233,22 +248,54 @@ export default function IntelRadar() {
     }
   };
 
-  const handleGenerateThumbnail = async (articleId: string, title: string) => {
-    setGeneratingThumbnailId(articleId);
+  const handleOpenThumbnailStudio = (article: RadarArticle) => {
+    setThumbnailArticle(article);
+    setImageIdea(article.title);
+    setEnhancedPrompt('');
+    setIsThumbnailModalOpen(true);
+  };
+
+  const handleEnhancePrompt = async () => {
+    if (!imageIdea) return;
+    setIsEnhancing(true);
     try {
-      const data = await api.generateThumbnail(articleId, title);
-      if (data.imageUrl) {
-        toast.success('Thumbnail generated! Check Veo Studio library.');
-        // Optionally refresh if we had article thumbnails in state
-      } else {
-        throw new Error('No image URL returned');
-      }
+      const { enhanced } = await api.enhanceImagePrompt(imageIdea);
+      setEnhancedPrompt(enhanced);
+      toast.success('Prompt enhanced with AI');
     } catch (error) {
-      toast.error('Failed to generate thumbnail');
+      toast.error('Failed to enhance prompt');
     } finally {
-      setGeneratingThumbnailId(null);
+      setIsEnhancing(false);
     }
   };
+
+  const handleFinalGenerate = async () => {
+    const promptToUse = enhancedPrompt || imageIdea;
+    if (!promptToUse || !thumbnailArticle) return;
+    
+    setIsGenerating(true);
+    try {
+      const data = await api.generateThumbnail(thumbnailArticle.id, promptToUse, {
+        aspectRatio,
+        width: customWidth,
+        height: customHeight
+      });
+      if (data.imageUrl || data.jobId) {
+        toast.success('Generation started! Check your library in a moment.');
+        setIsThumbnailModalOpen(false);
+      }
+    } catch (error) {
+      toast.error('Failed to start generation');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const filteredArticles = articles.filter(article => {
+    if (!selectedDate) return true;
+    // Assuming article.date is YYYY-MM-DD or similar
+    return article.date.includes(selectedDate);
+  });
 
   if (loading) {
     return <RadarLoading t={t} />;
@@ -328,6 +375,26 @@ export default function IntelRadar() {
                 </button>
               ))}
             </div>
+
+            <div className="space-y-2 pt-4 border-t border-white/5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Historical View (by date)</label>
+              <div className="relative">
+                <input 
+                  type="date"
+                  value={selectedDate || ''}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-primary/50 transition-colors"
+                />
+                {selectedDate && (
+                  <button 
+                    onClick={() => setSelectedDate(null)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+            </div>
           </motion.section>
 
           {/* Sources Card */}
@@ -392,8 +459,8 @@ export default function IntelRadar() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <AnimatePresence mode="popLayout">
-              {articles.length > 0 ? (
-                articles.map((article, idx) => (
+              {filteredArticles.length > 0 ? (
+                filteredArticles.map((article, idx) => (
                   <motion.article
                     key={article.id}
                     layout
@@ -422,6 +489,19 @@ export default function IntelRadar() {
                         {article.title}
                       </h3>
                       
+                      <div className="flex flex-wrap gap-2">
+                        {article.publishDate && (
+                          <span className="text-[10px] text-slate-500 font-medium bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
+                            {new Date(article.publishDate).toLocaleDateString()}
+                          </span>
+                        )}
+                        {article.keywords?.map((keyword, kidx) => (
+                          <span key={kidx} className="text-[10px] text-slate-400 bg-primary/5 px-2 py-0.5 rounded-md border border-primary/10">
+                            #{keyword}
+                          </span>
+                        ))}
+                      </div>
+
                       <p className="text-sm text-slate-400 line-clamp-3">
                         {article.summary}
                       </p>
@@ -489,16 +569,11 @@ export default function IntelRadar() {
                           {configPostId === article.id ? 'Confirm & Generate' : t('radar.articles.draftPost')}
                         </button>
                         <button 
-                          onClick={() => handleGenerateThumbnail(article.id, article.title)}
-                          disabled={generatingThumbnailId === article.id}
-                          className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 disabled:opacity-50"
-                          title="Generate Thumbnail with Veo Studio"
+                          onClick={() => handleOpenThumbnailStudio(article)}
+                          className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20"
+                          title="Open Thumbnail Studio"
                         >
-                          {generatingThumbnailId === article.id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <ImageIcon className="size-4" />
-                          )}
+                          <ImageIcon className="size-4" />
                         </button>
                       </div>
                     </div>
@@ -519,6 +594,139 @@ export default function IntelRadar() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {isThumbnailModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsThumbnailModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl bg-surface-dark border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 space-y-8">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                      <ImageIcon className="size-6 text-primary" />
+                      Thumbnail Studio
+                    </h2>
+                    <p className="text-slate-400 text-sm">Create high-impact visuals with Veo Gen-3</p>
+                  </div>
+                  <button 
+                    onClick={() => setIsThumbnailModalOpen(false)}
+                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                  >
+                    <X className="size-6 text-slate-500" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Idea Input */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Base Image Idea</label>
+                    <div className="relative group">
+                      <textarea 
+                        value={imageIdea}
+                        onChange={(e) => setImageIdea(e.target.value)}
+                        placeholder="What should the image show?"
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-primary/50 transition-all min-h-[100px] resize-none"
+                      />
+                      <button 
+                        onClick={handleEnhancePrompt}
+                        disabled={isEnhancing || !imageIdea}
+                        className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary border border-primary/30 rounded-xl text-xs font-bold hover:bg-primary/30 transition-all disabled:opacity-50"
+                      >
+                        {isEnhancing ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                        Enhance with AI
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Enhanced Prompt */}
+                  <AnimatePresence>
+                    {enhancedPrompt && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-3"
+                      >
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-primary px-1 flex items-center gap-2">
+                          <Sparkles className="size-3" /> Enhanced AI Prompt
+                        </label>
+                        <textarea 
+                          value={enhancedPrompt}
+                          onChange={(e) => setEnhancedPrompt(e.target.value)}
+                          className="w-full bg-primary/5 border border-primary/20 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-primary/50 transition-all min-h-[120px] resize-none"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Settings */}
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Aspect Ratio</label>
+                      <div className="flex gap-2">
+                        {['16:9', '1:1', '9:16'].map((ratio) => (
+                          <button
+                            key={ratio}
+                            onClick={() => setAspectRatio(ratio)}
+                            className={cn(
+                              "flex-1 py-2.5 rounded-xl border text-xs font-bold transition-all",
+                              aspectRatio === ratio 
+                                ? "bg-primary/10 border-primary/40 text-primary" 
+                                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
+                            )}
+                          >
+                            {ratio}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Dimensions</label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="number"
+                          value={customWidth}
+                          onChange={(e) => setCustomWidth(parseInt(e.target.value))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white text-center"
+                        />
+                        <span className="text-slate-600 text-xs">x</span>
+                        <input 
+                          type="number"
+                          value={customHeight}
+                          onChange={(e) => setCustomHeight(parseInt(e.target.value))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button 
+                    onClick={handleFinalGenerate}
+                    disabled={isGenerating || (!imageIdea && !enhancedPrompt)}
+                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg shadow-xl shadow-primary/30 hover:shadow-primary/50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                    {isGenerating ? <Loader2 className="size-6 animate-spin" /> : <ImageIcon className="size-6" />}
+                    {isGenerating ? 'Engaging Veo Studio...' : 'Generate with Veo'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
