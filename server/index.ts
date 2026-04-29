@@ -1740,6 +1740,22 @@ app.patch("/api/outreach/radar/social-posts/:id", async (req: AuthRequest, res) 
 
 
 // ─── DEEP SCAN & BRAND STRATEGY PROXY ──────────────────────────────────────
+function parseAIGeminiJSON(text: string) {
+  try {
+    const cleaned = text.replace(/```json\n?|```/g, "").trim();
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("[Gemini JSON Parse Error]:", e, "\nOriginal Text:", text);
+    try {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start !== -1 && end !== -1) {
+        return JSON.parse(text.substring(start, end + 1));
+      }
+    } catch (e2) {}
+    throw new Error("Failed to parse AI response as JSON");
+  }
+}
 
 const SYSTEM_INSTRUCTION_DEEP_SCAN = `
 Actúa como un Director de Crecimiento (Head of Growth) y Analista de Mercado Senior.
@@ -1804,6 +1820,9 @@ Estructura JSON Requerida:
 }
 `;
 
+// IMPORTANT: Add this to prompts that need to return JSON manually
+const JSON_ENFORCEMENT_DIRECTIVE = "\n\nCRITICAL: Your entire response MUST be a single, valid JSON object. Do not include any introductory text, markdown code blocks (like ```json), or follow-up commentary. Only raw JSON.";
+
 app.post("/api/outreach/radar/deep-scan", async (req: AuthRequest, res) => {
   const projectId = req.projectId;
   const { url, language } = req.body;
@@ -1823,16 +1842,22 @@ app.post("/api/outreach/radar/deep-scan", async (req: AuthRequest, res) => {
 
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-pro',
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_DEEP_SCAN }] },
+      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_DEEP_SCAN + JSON_ENFORCEMENT_DIRECTIVE }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: { 
-        responseMimeType: "application/json",
         tools: [{ googleSearch: {} }]
       }
     });
 
     const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!responseText) throw new Error("AI failed to generate content");
+
+    let parsedData;
+    try {
+      parsedData = parseAIGeminiJSON(responseText);
+    } catch (e) {
+      throw new Error("AI returned invalid JSON format. Please try again.");
+    }
 
     const tokens = result.usageMetadata?.totalTokenCount ?? 0;
     if (req.user?.uid) {
@@ -1842,7 +1867,7 @@ app.post("/api/outreach/radar/deep-scan", async (req: AuthRequest, res) => {
       }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
     }
 
-    res.json(JSON.parse(responseText));
+    res.json(parsedData);
   } catch (err: any) {
     console.error("[Radar Deep Scan Error]:", err);
     res.status(500).json({ error: err.message });
@@ -2152,15 +2177,21 @@ app.post("/api/outreach/content-forge/generate", async (req: AuthRequest, res) =
     const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents: [{ role: 'user', parts: [{ text: prompt + JSON_ENFORCEMENT_DIRECTIVE }] }],
       config: { 
-        responseMimeType: "application/json",
         tools: useExternalSources ? [{ googleSearch: {} }] : []
       }
     });
 
     const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!responseText) throw new Error("AI failed to generate content");
+
+    let parsedData;
+    try {
+      parsedData = parseAIGeminiJSON(responseText);
+    } catch (e) {
+      throw new Error("AI returned invalid JSON format. Please try again.");
+    }
 
     // Track usage securely
     const tokens = result.usageMetadata?.totalTokenCount ?? 0;
@@ -2171,7 +2202,7 @@ app.post("/api/outreach/content-forge/generate", async (req: AuthRequest, res) =
       }, { merge: true }).catch(err => console.error("[Backend Token Tracking Error]:", err));
     }
 
-    res.json(JSON.parse(responseText));
+    res.json(parsedData);
   } catch (err: any) {
     console.error("[Content Forge Gen Error]:", err);
     res.status(500).json({ error: err.message });

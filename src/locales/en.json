@@ -1262,11 +1262,15 @@
         },
         "runNow": "Run Radar Now",
         "schedule": {
-            "title": "Automated Search Schedule",
+            "title": "Automated Search",
             "daily": "Daily",
             "weekly": "Weekly",
             "biweekly": "Bi-weekly",
             "monthly": "Monthly"
+        },
+        "loading": {
+            "title": "Scanning the web...",
+            "subtitle": "Analyzing deep context to find highly relevant articles."
         }
     },
     "signOut": "Sign Out",

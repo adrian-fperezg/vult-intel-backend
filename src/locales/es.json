@@ -1069,6 +1069,10 @@
             "weekly": "Semanalmente",
             "biweekly": "Quincenalmente",
             "monthly": "Mensualmente"
+        },
+        "loading": {
+            "title": "Escaneando la red...",
+            "subtitle": "Analizando el contexto profundo para encontrar artículos altamente relevantes."
         }
     },
     "signOut": "Cerrar Sesión",

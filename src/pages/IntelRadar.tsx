@@ -20,6 +20,107 @@ import { useProject } from '@/contexts/ProjectContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
 
+const RadarLoading = ({ t }: { t: (key: string) => string }) => {
+  return (
+    <div className="flex flex-col items-center justify-center h-[70vh] space-y-12">
+      <div className="relative size-64">
+        {/* Outer Glow */}
+        <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl animate-pulse" />
+        
+        {/* Concentric Circles */}
+        {[1, 0.7, 0.4].map((scale, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ 
+              opacity: [0, 0.15, 0],
+              scale: [0.5, 1.5],
+            }}
+            transition={{
+              duration: 4,
+              repeat: Infinity,
+              delay: i * 1.3,
+              ease: "easeOut"
+            }}
+            className="absolute inset-0 border border-primary/30 rounded-full"
+          />
+        ))}
+
+        {/* Radar Base */}
+        <div className="absolute inset-0 border border-white/10 rounded-full bg-surface-dark/40 backdrop-blur-sm overflow-hidden">
+          {/* Grid Lines */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-px h-full bg-white/5" />
+            <div className="h-px w-full bg-white/5" />
+          </div>
+          <div className="absolute inset-0 border border-white/5 rounded-full scale-75" />
+          <div className="absolute inset-0 border border-white/5 rounded-full scale-50" />
+          
+          {/* Rotating Scanner */}
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{
+              duration: 4,
+              repeat: Infinity,
+              ease: "linear"
+            }}
+            className="absolute inset-0 origin-center"
+          >
+            <div className="absolute top-1/2 left-1/2 w-1/2 h-40 -mt-40 bg-gradient-to-t from-primary/40 to-transparent origin-bottom -rotate-12 blur-sm" 
+                 style={{ clipPath: 'polygon(0% 100%, 100% 100%, 100% 0%)' }} />
+          </motion.div>
+
+          {/* Random Pings */}
+          {[...Array(5)].map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: [0, 1, 0],
+                scale: [0.8, 1.2],
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                delay: i * 0.8,
+                repeatDelay: Math.random() * 2
+              }}
+              className="absolute size-2 bg-primary rounded-full shadow-[0_0_8px_#3b82f6]"
+              style={{
+                top: `${20 + Math.random() * 60}%`,
+                left: `${20 + Math.random() * 60}%`,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Central Hub */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-4 bg-primary rounded-full shadow-[0_0_15px_#3b82f6] z-10">
+          <div className="absolute inset-0 bg-white rounded-full animate-ping opacity-20" />
+        </div>
+      </div>
+
+      <div className="text-center space-y-3 relative z-10 max-w-sm">
+        <motion.h2 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-2xl font-bold text-white tracking-tight"
+        >
+          {t('radar.loading.title')}
+        </motion.h2>
+        <motion.p 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-slate-400 text-sm leading-relaxed"
+        >
+          {t('radar.loading.subtitle')}
+        </motion.p>
+      </div>
+    </div>
+  );
+};
+
 export default function IntelRadar() {
   const { t } = useTranslation();
   const api = useIntelRadarApi();
@@ -150,11 +251,7 @@ export default function IntelRadar() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="size-8 text-primary animate-spin" />
-      </div>
-    );
+    return <RadarLoading t={t} />;
   }
 
   return (
