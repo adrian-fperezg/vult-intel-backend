@@ -1075,8 +1075,50 @@
             "subtitle": "Analizando el contexto profundo para encontrar artículos altamente relevantes."
         }
     },
+    "commandCenter": {
+        "initializing": "Inicializando Centro de Comando...",
+        "title": "Centro de Comando",
+        "desc": "Gestiona las métricas de tu ecosistema, suscripciones y salud del sistema.",
+        "telemetryHub": "Hub de Telemetría",
+        "aiPower": "Potencia de IA",
+        "tokensGenerated": "Tokens Generados",
+        "deepScans": "Deep Scans",
+        "imagesGenerated": "Imágenes Generadas",
+        "activeCache": "Caché Activa",
+        "purgeCache": "Purgar Caché",
+        "storageManager": "Gestor de Almacenamiento",
+        "activeProjects": "Proyectos Activos",
+        "campaignAssets": "Activos de Campaña",
+        "clearOldAssets": "Limpiar Activos Antiguos",
+        "notificationCenter": "Centro de Notificaciones",
+        "usageQuotas": "Cuotas de Uso",
+        "alertAt": "Alertar al",
+        "utilization": "de utilización",
+        "systemOperations": "Operaciones del Sistema",
+        "deepScanFinished": "Deep Scan Finalizado",
+        "urlReadFailure": "Error de Lectura de URL",
+        "docsExportReady": "Exportación de Docs Lista",
+        "subscriptionStudio": "Subscription Studio",
+        "activeTier": "Nivel Activo",
+        "projectsIncluded": "Proyectos Incluidos",
+        "advancedPersonas": "Personas Avanzadas",
+        "upgradeToAgency": "Mejorar a Agencia",
+        "veoStudio": "Veo Studio",
+        "veoPrice": "$49/mes Add-on",
+        "veoDesc": "Genera videos cinematográficos profesionales y visuales de alta fidelidad utilizando el motor generativo Veo de Google.",
+        "lockedFeature": "Función Bloqueada",
+        "buyAddon": "Desbloquear Veo Studio",
+        "videos": "Videos",
+        "plan": "Plan"
+    },
     "signOut": "Cerrar Sesión",
     "AITOKENSUSEDTHISMONTH": "Tokens de IA Usados Este Mes",
     "AITOKEN_LOW": "Tus tokens de IA se están agotando. Mejora tu plan para seguir generando sin límites.",
-    "AITOKEN_USED_LABEL": "Tokens de IA Usados"
+    "AITOKEN_USED_LABEL": "Tokens de IA Usados",
+    "support": {
+        "title": "Ayuda y Soporte",
+        "needAssistance": "¿Necesitas Ayuda?",
+        "desc": "Si tienes alguna pregunta, encuentras problemas o quieres compartir tus comentarios, estamos aquí para ayudarte. Contacta con nuestro equipo de soporte dedicado y responderemos lo antes posible.",
+        "emailLabel": "Email support@vultintel.com"
+    }
 }

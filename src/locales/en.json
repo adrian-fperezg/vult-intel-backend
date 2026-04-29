@@ -1108,10 +1108,12 @@
         "advancedPersonas": "Advanced Persona Brains",
         "upgradeToAgency": "Upgrade to Agency",
         "veoStudio": "Veo Studio Pack",
-        "veoPrice": "+49 USD / MO",
-        "veoDesc": "Unlock high fidelity video generation for all campaign assets.",
-        "lockedFeature": "Locked Feature",
-        "buyAddon": "Buy Add-on",
+        "veoPrice": "$49/mo Add-on",
+        "veoDesc": "Generate professional cinematic videos and high-fidelity visuals using Google's Veo generative engine.",
+        "lockedFeature": "Feature Locked",
+        "buyAddon": "Unlock Veo Studio",
+        "videos": "Videos",
+        "plan": "Plan",
         "redirecting": "Redirecting to Stripe..."
     },
     "chat": {
@@ -1276,5 +1278,11 @@
     "signOut": "Sign Out",
     "AITOKENSUSEDTHISMONTH": "AI Tokens Used This Month",
     "AITOKEN_LOW": "Your AI tokens are running low. Upgrade to continue generating without limits.",
-    "AITOKEN_USED_LABEL": "AI Tokens Used"
+    "AITOKEN_USED_LABEL": "AI Tokens Used",
+    "support": {
+        "title": "Help & Support",
+        "needAssistance": "Need Assistance?",
+        "desc": "If you have any questions, encounter issues, or want to share feedback, we're here to help. Reach out to our dedicated support team, and we'll respond as quickly as possible.",
+        "emailLabel": "Email support@vultintel.com"
+    }
 }
