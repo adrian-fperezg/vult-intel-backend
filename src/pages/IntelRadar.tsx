@@ -36,10 +36,19 @@ export default function IntelRadar() {
   const [selectedTone, setSelectedTone] = useState('Professional');
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (api.activeProjectId) {
+      loadData();
+    } else {
+      setLoading(false);
+    }
+  }, [api.activeProjectId]);
 
   const loadData = async () => {
+    if (!api.activeProjectId) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const [sourcesData, articlesData] = await Promise.all([
