@@ -1738,12 +1738,6 @@ app.patch("/api/outreach/radar/social-posts/:id", async (req: AuthRequest, res) 
   }
 });
 
-    res.json({ id: postId, content: generatedContent });
-  } catch (err: any) {
-    console.error("[Radar Social Post Gen Error]:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ─── DEEP SCAN & BRAND STRATEGY PROXY ──────────────────────────────────────
 
