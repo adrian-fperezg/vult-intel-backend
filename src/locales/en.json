@@ -1219,7 +1219,7 @@
     },
     "radar": {
         "title": "Intel Radar",
-        "subtitle": "Track competitors, scan URLs, and generate marketing intelligence.",
+        "subtitle": "Automatically scan the web for highly relevant niche articles and seamlessly repurpose them into optimized content.",
         "sources": {
             "title": "Sources & URL Feeds",
             "description": "Manage the URLs that Vult tracks for your project. When a new article is published on one of these sites, Vult will automatically scan it within 24 hours.",

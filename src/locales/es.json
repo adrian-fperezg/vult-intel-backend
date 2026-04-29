@@ -1021,7 +1021,7 @@
     },
     "radar": {
         "title": "Intel Radar",
-        "subtitle": "Rastrea competidores, escanea URLs y genera inteligencia de marketing.",
+        "subtitle": "Escanea la red automáticamente en busca de artículos altamente relevantes para tu nicho y conviértelos en contenido optimizado.",
         "sources": {
             "title": "Fuentes y Feeds de URL",
             "description": "Administra las URLs que Vult rastrea para tu proyecto. Cuando se publique un nuevo artículo en uno de estos sitios, Vult lo escaneará automáticamente en 24 horas.",
