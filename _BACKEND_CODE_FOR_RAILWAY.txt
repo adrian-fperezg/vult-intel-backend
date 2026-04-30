@@ -1,0 +1,1001 @@
+# BACKEND CODE FOR RAILWAY MIGRATION
+
+This file contains all the backend code (Express routes, Postgres integrations, Gemini logic) that was previously mixed into this repository. Please paste this into your separate Railway backend repository.
+
+--- FULL FILE: server/lib/radar/articleDiscovery.ts ---
+
+import { GoogleGenAI } from "@google/genai";
+import type { ProjectSearchContext } from './projectContext.js';
+
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+const GOOGLE_SEARCH_KEY = process.env.GOOGLE_SEARCH_API_KEY;
+const GOOGLE_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID;
+
+// Domains that get a 'high' reputation badge
+const HIGH_REPUTATION_DOMAINS = new Set([
+  'techcrunch.com', 'wired.com', 'theverge.com', 'mit.edu', 'hbr.org',
+  'mckinsey.com', 'gartner.com', 'forrester.com', 'wsj.com', 'ft.com',
+  'bloomberg.com', 'reuters.com', 'apnews.com', 'bbc.com', 'nytimes.com',
+  'forbes.com', 'inc.com', 'entrepreneur.com', 'harvard.edu', 'stanford.edu',
+  'nature.com', 'science.org', 'thenextweb.com', 'venturebeat.com',
+  'zdnet.com', 'arstechnica.com', 'infoq.com', 'smashingmagazine.com',
+]);
+
+// Domains that get a 'low' reputation badge
+const LOW_REPUTATION_DOMAINS = new Set([
+  'reddit.com', 'quora.com', 'medium.com', 'substack.com',
+]);
+
+export interface DiscoveredArticle {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  aiSummary: string;
+  keywords: string[];
+  relevanceScore: number;
+  sourceReputation: 'high' | 'medium' | 'low';
+  publishDate: string | null;
+}
+
+export interface DiscoveryInput {
+  searchQueries: string[];
+  manualSources: { domain_url: string }[];
+  projectId: string;
+  projectContext: ProjectSearchContext;
+}
+
+/**
+ * Main discovery engine. Uses Google Custom Search when env vars are present,
+ * falls back to Gemini + Google Search tool otherwise.
+ */
+export async function discoverArticles(input: DiscoveryInput): Promise<DiscoveredArticle[]> {
+  const hasGoogleSearch = !!(GOOGLE_SEARCH_KEY && GOOGLE_SEARCH_ENGINE_ID);
+
+  if (hasGoogleSearch) {
+    console.log('[DISCOVERY] Using Google Custom Search API');
+    return discoverWithCustomSearch(input);
+  } else {
+    console.log('[DISCOVERY] GOOGLE_SEARCH_API_KEY not set — falling back to Gemini Search Grounding');
+    return discoverWithGeminiGrounding(input);
+  }
+}
+
+// ─── PATH A: Google Custom Search ──────────────────────────────────────────
+
+async function discoverWithCustomSearch(input: DiscoveryInput): Promise<DiscoveredArticle[]> {
+  const { searchQueries, manualSources, projectContext } = input;
+  const seenUrls = new Set<string>();
+  const rawResults: { title: string; url: string; domain: string; snippet: string; publishDate: string | null }[] = [];
+
+  // Run searches for AI-generated queries (up to 6)
+  const queriesToRun = searchQueries.slice(0, 6);
+  for (const query of queriesToRun) {
+    try {
+      const results = await googleCustomSearch(query, 5);
+      for (const r of results) {
+        if (!seenUrls.has(r.url)) {
+          seenUrls.add(r.url);
+          rawResults.push(r);
+        }
+      }
+    } catch (err) {
+      console.warn(`[DISCOVERY] Search failed for query "${query}":`, err);
+    }
+  }
+
+  // Run searches for manual domains
+  for (const source of manualSources.slice(0, 4)) {
+    const domain = source.domain_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const domainQuery = `site:${domain} ${projectContext.niche} ${new Date().getFullYear()}`;
+    try {
+      const results = await googleCustomSearch(domainQuery, 3);
+      for (const r of results) {
+        if (!seenUrls.has(r.url)) {
+          seenUrls.add(r.url);
+          rawResults.push(r);
+        }
+      }
+    } catch (err) {
+      console.warn(`[DISCOVERY] Domain search failed for ${domain}:`, err);
+    }
+  }
+
+  if (rawResults.length === 0) {
+    console.warn('[DISCOVERY] No results from Google Custom Search, falling back to Gemini');
+    return discoverWithGeminiGrounding(input);
+  }
+
+  // Batch enrich with Gemini
+  const enriched = await enrichArticlesWithGemini(rawResults, projectContext);
+  return enriched.sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, 20);
+}
+
+async function googleCustomSearch(
+  query: string,
+  num: number = 5
+): Promise<{ title: string; url: string; domain: string; snippet: string; publishDate: string | null }[]> {
+  const params = new URLSearchParams({
+    key: GOOGLE_SEARCH_KEY!,
+    cx: GOOGLE_SEARCH_ENGINE_ID!,
+    q: query,
+    num: String(Math.min(num, 10)),
+    dateRestrict: 'm3', // last 3 months
+    safe: 'active',
+  });
+
+  const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Google Custom Search error ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const items = data.items || [];
+
+  return items.map((item: any) => {
+    const url: string = item.link || '';
+    const domain = extractDomain(url);
+    return {
+      title: item.title || '',
+      url,
+      domain,
+      snippet: item.snippet || '',
+      publishDate: item.pagemap?.metatags?.[0]?.['article:published_time'] || null,
+    };
+  });
+}
+
+// ─── PATH B: Gemini Search Grounding (fallback) ─────────────────────────────
+
+async function discoverWithGeminiGrounding(input: DiscoveryInput): Promise<DiscoveredArticle[]> {
+  const { projectContext, manualSources } = input;
+
+  if (!GEMINI_KEY) {
+    console.error('[DISCOVERY] No GEMINI_KEY available — cannot discover articles');
+    return [];
+  }
+
+  const sourceUrls = manualSources.map(s => s.domain_url).join(', ');
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+
+  const systemInstruction = `You are a Senior Market Intelligence Analyst. Find the 10 most relevant and recent articles
+for the given business. Focus on content published in the last 60 days.
+Return ONLY valid JSON — no markdown, no explanation.`;
+
+  const userPrompt = `Find the 10 most relevant articles for this business:
+
+Project: ${projectContext.projectName}
+Niche: ${projectContext.niche}
+Description: ${projectContext.description}
+Key Topics: ${projectContext.topics.join(', ') || 'General'}
+Target Audience Pain Points: ${projectContext.painPoints.slice(0, 2).join('; ') || 'Not specified'}
+Manual Sources to Check: ${sourceUrls || 'None — use general search'}
+
+Return a JSON array:
+[
+  {
+    "title": "Article title",
+    "url": "https://...",
+    "domain": "example.com",
+    "snippet": "2-3 sentence executive summary",
+    "aiSummary": "2-sentence actionable insight for a business owner",
+    "keywords": ["keyword1", "keyword2", "keyword3"],
+    "relevanceScore": 85,
+    "publishDate": "2025-04-15"
+  }
+]`;
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      tools: [{ googleSearch: {} }],
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini Grounding API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+  const cleanText = rawText.replace(/```json\n?|```/g, '').trim();
+  const articles = JSON.parse(cleanText) as any[];
+
+  return articles.map((a: any) => ({
+    title: a.title || '',
+    url: a.url || '',
+    domain: a.domain || extractDomain(a.url || ''),
+    snippet: a.snippet || '',
+    aiSummary: a.aiSummary || a.snippet || '',
+    keywords: Array.isArray(a.keywords) ? a.keywords.slice(0, 5) : [],
+    relevanceScore: typeof a.relevanceScore === 'number' ? Math.min(100, Math.max(0, a.relevanceScore)) : 70,
+    sourceReputation: getReputation(a.domain || extractDomain(a.url || '')),
+    publishDate: a.publishDate || null,
+  }));
+}
+
+// ─── Gemini Batch Enrichment ────────────────────────────────────────────────
+
+async function enrichArticlesWithGemini(
+  rawArticles: { title: string; url: string; domain: string; snippet: string; publishDate: string | null }[],
+  projectContext: ProjectSearchContext
+): Promise<DiscoveredArticle[]> {
+  if (!GEMINI_KEY || rawArticles.length === 0) {
+    return rawArticles.map(a => ({
+      ...a,
+      aiSummary: a.snippet,
+      keywords: [],
+      relevanceScore: 50,
+      sourceReputation: getReputation(a.domain),
+    }));
+  }
+
+  const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
+  const results: DiscoveredArticle[] = [];
+  const BATCH_SIZE = 5;
+
+  for (let i = 0; i < rawArticles.length; i += BATCH_SIZE) {
+    const batch = rawArticles.slice(i, i + BATCH_SIZE);
+
+    try {
+      const prompt = `You are an expert content analyst. Evaluate each article's relevance for a business in the "${projectContext.niche}" space.
+
+Business context: ${projectContext.description}
+Target audience: ${projectContext.targetAudience || 'Business professionals'}
+
+For each article, provide:
+- aiSummary: 2-sentence actionable insight for this business owner
+- keywords: 3-5 relevant hashtags (without #)
+- relevanceScore: 0-100 score based on relevance to the business's niche and audience
+
+Articles to analyze:
+${batch.map((a, idx) => `${idx + 1}. Title: "${a.title}"\n   URL: ${a.url}\n   Snippet: "${a.snippet}"`).join('\n\n')}
+
+Return JSON array (same order as input):
+[{"aiSummary": "...", "keywords": [...], "relevanceScore": 85}, ...]`;
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          systemInstruction: 'Return ONLY a JSON array. No markdown. No explanation.',
+        },
+      });
+
+      const raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+      const cleaned = raw.replace(/```json\n?|```/g, '').trim();
+      const enrichments = JSON.parse(cleaned) as { aiSummary: string; keywords: string[]; relevanceScore: number }[];
+
+      batch.forEach((article, idx) => {
+        const enrichment: { aiSummary?: string; keywords?: string[]; relevanceScore?: number } = enrichments[idx] || {};
+        results.push({
+          ...article,
+          aiSummary: enrichment.aiSummary || article.snippet,
+          keywords: Array.isArray(enrichment.keywords) ? enrichment.keywords.slice(0, 5) : [],
+          relevanceScore: typeof enrichment.relevanceScore === 'number'
+          ? Math.min(100, Math.max(0, enrichment.relevanceScore!))
+            : 50,
+          sourceReputation: getReputation(article.domain),
+        });
+      });
+    } catch (err) {
+      console.warn(`[DISCOVERY] Enrichment batch ${i}–${i + BATCH_SIZE} failed:`, err);
+      // Push with defaults so articles are not lost
+      batch.forEach(article => {
+        results.push({
+          ...article,
+          aiSummary: article.snippet,
+          keywords: [],
+          relevanceScore: 50,
+          sourceReputation: getReputation(article.domain),
+        });
+      });
+    }
+  }
+
+  return results;
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url.replace(/^https?:\/\//, '').split('/')[0];
+  }
+}
+
+function getReputation(domain: string): 'high' | 'medium' | 'low' {
+  const d = domain.replace(/^www\./, '');
+  if (HIGH_REPUTATION_DOMAINS.has(d)) return 'high';
+  if (LOW_REPUTATION_DOMAINS.has(d)) return 'low';
+  return 'medium';
+}
+
+
+--- FULL FILE: server/lib/radar/projectContext.ts ---
+
+import { GoogleGenAI } from "@google/genai";
+import admin from '../firebase.js';
+
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
+export interface ProjectSearchContext {
+  projectName: string;
+  niche: string;
+  description: string;
+  primaryKeywords: string[];
+  topics: string[];
+  painPoints: string[];
+  competitors: string[];
+  targetAudience: string;
+  searchQueries: string[];
+}
+
+/**
+ * Reads all available project intelligence from Firestore and generates
+ * highly targeted search queries for the article discovery engine.
+ */
+export async function buildProjectSearchContext(
+  uid: string,
+  projectId: string
+): Promise<ProjectSearchContext> {
+  const firestore = admin.firestore();
+
+  // 1. Load core project document
+  const projectDoc = await firestore.doc(`customers/${uid}/projects/${projectId}`).get();
+  if (!projectDoc.exists) {
+    throw new Error(`[PROJECT CONTEXT] Project ${projectId} not found in Firestore`);
+  }
+  const project = projectDoc.data() || {};
+
+  // 2. Load buyer personas
+  let personaContext = '';
+  try {
+    const personasSnap = await firestore
+      .collection(`customers/${uid}/projects/${projectId}/buyerPersonas`)
+      .get();
+
+    if (!personasSnap.empty) {
+      const personas = personasSnap.docs.map(d => d.data());
+      const topPersonas = personas.slice(0, 3);
+      personaContext = topPersonas
+        .map(p => `Persona: ${p.name || 'Unknown'}, Goals: ${p.goals || ''}, Pain Points: ${p.painPoints || ''}`)
+        .join('\n');
+    }
+  } catch (err) {
+    console.warn('[PROJECT CONTEXT] Could not load personas:', err);
+  }
+
+  // 3. Load content pillars
+  const pillarsArr: string[] = [];
+  try {
+    const pillarsSnap = await firestore
+      .collection(`customers/${uid}/projects/${projectId}/contentPillars`)
+      .get();
+    pillarsSnap.docs.forEach(d => {
+      const data = d.data();
+      if (data.name) pillarsArr.push(data.name);
+    });
+  } catch (err) {
+    console.warn('[PROJECT CONTEXT] Could not load content pillars:', err);
+  }
+
+  // 4. Load brand voice (take first document)
+  let voiceTone = '';
+  try {
+    const voiceSnap = await firestore
+      .collection(`customers/${uid}/projects/${projectId}/brandVoice`)
+      .limit(1)
+      .get();
+    if (!voiceSnap.empty) {
+      const voice = voiceSnap.docs[0].data();
+      voiceTone = voice.tone || voice.name || '';
+    }
+  } catch (err) {
+    console.warn('[PROJECT CONTEXT] Could not load brand voice:', err);
+  }
+
+  // 5. Assemble context object
+  const competitors: string[] = Array.isArray(project.competitors) ? project.competitors : [];
+  const painPoints: string[] = personaContext
+    ? personaContext.split('\n').map(l => l.replace(/^.*Pain Points: /, '').trim()).filter(Boolean)
+    : [];
+
+  // 6. Generate targeted search queries with Gemini
+  const searchQueries = await generateSearchQueries({
+    projectName: project.name || '',
+    niche: project.niche || '',
+    description: project.description || '',
+    personaContext,
+    pillars: pillarsArr,
+    competitors,
+    voiceTone,
+  });
+
+  return {
+    projectName: project.name || '',
+    niche: project.niche || '',
+    description: project.description || '',
+    primaryKeywords: [],
+    topics: pillarsArr,
+    painPoints,
+    competitors,
+    targetAudience: personaContext,
+    searchQueries,
+  };
+}
+
+async function generateSearchQueries(ctx: {
+  projectName: string;
+  niche: string;
+  description: string;
+  personaContext: string;
+  pillars: string[];
+  competitors: string[];
+  voiceTone: string;
+}): Promise<string[]> {
+  if (!GEMINI_KEY) {
+    // Fallback: generate basic queries without AI
+    return buildFallbackQueries(ctx.niche, ctx.description, ctx.competitors);
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
+
+    const systemInstruction = `You are a market intelligence strategist expert at crafting Google search queries 
+    to find the most relevant, timely, and authoritative content for a specific business niche. 
+    Return ONLY a JSON array of strings. No markdown, no explanation.`;
+
+    const prompt = `Generate 8 highly specific Google search queries to find relevant industry news and articles 
+    published in the last 30-60 days for this business:
+
+Project: ${ctx.projectName}
+Industry/Niche: ${ctx.niche}
+Description: ${ctx.description}
+Target Audience Context: ${ctx.personaContext || 'Not specified'}
+Content Pillars/Topics: ${ctx.pillars.join(', ') || 'Not specified'}
+Competitor Brands: ${ctx.competitors.join(', ') || 'Not specified'}
+Brand Voice: ${ctx.voiceTone || 'Professional'}
+
+Rules:
+- Each query should be 3-8 words long
+- Mix: trend queries, problem/solution queries, competitor-aware queries, audience pain-point queries
+- Use advanced operators where useful (e.g., site:, "phrase", intitle:)
+- Focus on RECENT news and developments, not evergreen content
+- NO generic queries — every query must be hyper-specific to this niche
+
+Return: ["query1", "query2", ..., "query8"]`;
+
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { systemInstruction },
+    });
+
+    const raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+    const cleaned = raw.replace(/```json\n?|```/g, '').trim();
+    const queries = JSON.parse(cleaned) as string[];
+
+    if (Array.isArray(queries) && queries.length > 0) {
+      return queries.slice(0, 8);
+    }
+  } catch (err) {
+    console.warn('[PROJECT CONTEXT] Gemini query generation failed, using fallback:', err);
+  }
+
+  return buildFallbackQueries(ctx.niche, ctx.description, ctx.competitors);
+}
+
+function buildFallbackQueries(niche: string, description: string, competitors: string[]): string[] {
+  const queries = [
+    `${niche} latest trends 2025`,
+    `${niche} industry news this month`,
+    `${niche} best practices tips`,
+    `${description.split(' ').slice(0, 4).join(' ')} insights`,
+  ];
+  if (competitors.length > 0) {
+    queries.push(`${competitors[0]} news announcements`);
+  }
+  return queries.slice(0, 6);
+}
+
+
+--- FULL FILE: server/lib/radar/radarService.ts ---
+
+import { v4 as uuidv4 } from 'uuid';
+import { db } from '../../db.js';
+import { buildProjectSearchContext } from './projectContext.js';
+import { discoverArticles } from './articleDiscovery.js';
+
+/**
+ * Core radar processing function — called by BullMQ worker.
+ * Builds project context from Firestore, discovers articles via
+ * Google Custom Search (with Gemini fallback), enriches them with AI,
+ * and persists to database.
+ */
+export async function processRadarRun(
+  uid: string,
+  projectId: string,
+  scanRunId?: string
+): Promise<{ articlesFound: number; scanRunId: string }> {
+  const runId = scanRunId || uuidv4();
+
+  // Ensure a scan_run record exists (may have been created by the route before queuing)
+  try {
+    await db.run(
+      `INSERT INTO radar_scan_runs (id, project_id, status, started_at)
+       VALUES (?, ?, 'running', CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET status = 'running', started_at = CURRENT_TIMESTAMP`,
+      [runId, projectId]
+    );
+  } catch (err) {
+    // Table may not exist yet on first boot — non-fatal
+    console.warn('[RADAR SERVICE] Could not upsert scan_run:', err);
+  }
+
+  try {
+    console.log(`[RADAR SERVICE] Starting run ${runId} for project ${projectId} (uid: ${uid})`);
+
+    // 1. Build rich project context from Firestore (personas, pillars, brand voice)
+    const projectContext = await buildProjectSearchContext(uid, projectId);
+    console.log(`[RADAR SERVICE] Generated ${projectContext.searchQueries.length} search queries`);
+
+    // 2. Load manual sources from Postgres
+    const manualSources = await db.all<{ domain_url: string }>(
+      'SELECT domain_url FROM radar_sources WHERE project_id = ?',
+      [projectId]
+    );
+
+    // 3. Discover and enrich articles
+    const articles = await discoverArticles({
+      searchQueries: projectContext.searchQueries,
+      manualSources,
+      projectId,
+      projectContext,
+    });
+
+    console.log(`[RADAR SERVICE] Discovered ${articles.length} articles for project ${projectId}`);
+
+    // 4. Persist articles to database
+    let savedCount = 0;
+    for (const art of articles) {
+      try {
+        const articleId = uuidv4();
+        const keywordsJson = JSON.stringify(art.keywords || []);
+
+        await db.run(
+          `INSERT INTO radar_articles
+            (id, project_id, title, url, summary, ai_summary, keywords, relevance_score,
+             source_domain, source_reputation, published_at, scan_run_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (project_id, url) DO UPDATE SET
+             summary = EXCLUDED.summary,
+             ai_summary = EXCLUDED.ai_summary,
+             keywords = EXCLUDED.keywords,
+             relevance_score = EXCLUDED.relevance_score,
+             source_reputation = EXCLUDED.source_reputation,
+             scan_run_id = EXCLUDED.scan_run_id`,
+          [
+            articleId,
+            projectId,
+            art.title,
+            art.url,
+            art.snippet,
+            art.aiSummary,
+            keywordsJson,
+            art.relevanceScore,
+            art.domain,
+            art.sourceReputation,
+            art.publishDate,
+            runId,
+          ]
+        );
+        savedCount++;
+      } catch (saveErr) {
+        console.error(`[RADAR SERVICE] Failed to save article "${art.title}":`, saveErr);
+      }
+    }
+
+    // 5. Mark scan run as complete
+    try {
+      await db.run(
+        `UPDATE radar_scan_runs
+         SET status = 'complete', completed_at = CURRENT_TIMESTAMP,
+             articles_found = ?, search_queries = ?
+         WHERE id = ?`,
+        [savedCount, JSON.stringify(projectContext.searchQueries), runId]
+      );
+    } catch (err) {
+      console.warn('[RADAR SERVICE] Could not update scan_run status:', err);
+    }
+
+    // 6. Update schedule metadata
+    try {
+      await db.run(
+        `UPDATE radar_schedules
+         SET last_run_at = CURRENT_TIMESTAMP,
+             next_run_at = (
+               CASE
+                 WHEN frequency = 'daily'    THEN CURRENT_TIMESTAMP + INTERVAL '1 day'
+                 WHEN frequency = 'bi-weekly' THEN CURRENT_TIMESTAMP + INTERVAL '2 weeks'
+                 WHEN frequency = 'monthly'  THEN CURRENT_TIMESTAMP + INTERVAL '1 month'
+                 ELSE CURRENT_TIMESTAMP + INTERVAL '1 week'
+               END
+             )
+         WHERE project_id = ?`,
+        [projectId]
+      );
+    } catch (err) {
+      console.warn('[RADAR SERVICE] Could not update radar schedule:', err);
+    }
+
+    console.log(`[RADAR SERVICE] Run ${runId} complete — ${savedCount} articles saved`);
+    return { articlesFound: savedCount, scanRunId: runId };
+  } catch (err: any) {
+    console.error('[RADAR SERVICE] Critical error in run', runId, ':', err);
+
+    // Mark scan run as failed
+    try {
+      await db.run(
+        `UPDATE radar_scan_runs
+         SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
+         WHERE id = ?`,
+        [err.message || 'Unknown error', runId]
+      );
+    } catch (updateErr) {
+      console.warn('[RADAR SERVICE] Could not mark scan_run as failed:', updateErr);
+    }
+
+    throw err;
+  }
+}
+
+
+--- GIT DIFF FOR THE REST OF THE SERVER MODIFICATIONS ---
+
+diff --git a/server/db.ts b/server/db.ts
+index 67fb5ae..fee0dff 100644
+--- a/server/db.ts
++++ b/server/db.ts
+@@ -1098,6 +1098,51 @@ export const initDb = async () => {
+       console.warn(`[DB] PG Migration for radar_social_posts.tone failed:`, (err as Error).message);
+     }
+ 
++    // 24. Radar Scan Runs — tracks each individual scan run for status polling
++    await db.run(`
++      CREATE TABLE IF NOT EXISTS radar_scan_runs (
++        id TEXT PRIMARY KEY,
++        project_id TEXT NOT NULL,
++        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
++        completed_at TIMESTAMP,
++        articles_found INTEGER DEFAULT 0,
++        search_queries TEXT DEFAULT '[]',
++        status TEXT DEFAULT 'running',
++        error TEXT
++      )
++    `);
++
++    // Migrate radar_articles — add enrichment columns from new discovery engine
++    const newRadarArticleCols = [
++      { name: 'ai_summary', type: 'TEXT' },
++      { name: 'keywords', type: "TEXT DEFAULT '[]'" },
++      { name: 'source_reputation', type: "TEXT DEFAULT 'medium'" },
++      { name: 'scan_run_id', type: 'TEXT' },
++    ];
++    for (const col of newRadarArticleCols) {
++      try {
++        await db.run(`ALTER TABLE radar_articles ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
++      } catch (err) {
++        console.warn(`[DB] PG Migration for radar_articles.${col.name} failed:`, (err as Error).message);
++      }
++    }
++
++    // Migrate radar_schedules — ensure user_id and is_enabled columns exist
++    const newRadarScheduleCols = [
++      { name: 'user_id', type: 'TEXT' },
++      { name: 'is_enabled', type: 'BOOLEAN DEFAULT FALSE' },
++    ];
++    for (const col of newRadarScheduleCols) {
++      try {
++        await db.run(`ALTER TABLE radar_schedules ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
++      } catch (err) {
++        console.warn(`[DB] PG Migration for radar_schedules.${col.name} failed:`, (err as Error).message);
++      }
++    }
++
++    // Create index on scan runs for efficient polling
++    await db.run(`CREATE INDEX IF NOT EXISTS idx_radar_scan_runs_project_status ON radar_scan_runs (project_id, status)`);
++
+     await applyTrigger('radar_schedules');
+     await applyTrigger('radar_social_posts');
+ 
+diff --git a/server/index.ts b/server/index.ts
+index 5eb2b02..6b1b196 100644
+--- a/server/index.ts
++++ b/server/index.ts
+@@ -1669,22 +1669,56 @@ app.get("/api/outreach/radar/articles", async (req: AuthRequest, res) => {
+   if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+ 
+   try {
++    const { date, minRelevance } = req.query as Record<string, string>;
++
++    let whereClause = 'WHERE a.project_id = ?';
++    const params: any[] = [projectId];
++
++    if (date) {
++      whereClause += ' AND DATE(a.created_at) = ?';
++      params.push(date);
++    }
++    if (minRelevance) {
++      whereClause += ' AND a.relevance_score >= ?';
++      params.push(Number(minRelevance));
++    }
++
+     const articles = await db.all(`
+-      SELECT a.*, p.content as socialPostDraft 
++      SELECT a.*,
++             p.content as social_post_draft,
++             p.platform as social_post_platform,
++             p.id as social_post_id
+       FROM radar_articles a
+       LEFT JOIN radar_social_posts p ON p.id = (
+-        SELECT id FROM radar_social_posts 
+-        WHERE article_id = a.id 
+-        ORDER BY created_at DESC 
++        SELECT id FROM radar_social_posts
++        WHERE article_id = a.id
++        ORDER BY created_at DESC
+         LIMIT 1
+       )
+-      WHERE a.project_id = ? 
+-      ORDER BY a.created_at DESC 
++      ${whereClause}
++      ORDER BY a.relevance_score DESC, a.created_at DESC
+       LIMIT 50`,
++      params
++    );
++
++    // Build calendar data: distinct dates with article counts
++    const calendarRows = await db.all<{ date: string; count: number }>(
++      `SELECT DATE(created_at) as date, COUNT(*) as count
++       FROM radar_articles
++       WHERE project_id = ?
++       GROUP BY DATE(created_at)
++       ORDER BY date DESC
++       LIMIT 30`,
+       [projectId]
+     );
+ 
+-    res.json(articles);
++    // Parse keywords from JSON string where applicable
++    const enriched = articles.map((a: any) => ({
++      ...a,
++      keywords: (() => { try { return JSON.parse(a.keywords || '[]'); } catch { return []; } })()
++    }));
++
++    res.json({ articles: enriched, datesWithArticles: calendarRows });
+   } catch (err: any) {
+     res.status(500).json({ error: err.message });
+   }
+@@ -1713,11 +1747,45 @@ app.post("/api/outreach/radar/run", async (req: AuthRequest, res) => {
+   if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+ 
+   try {
++    // Pre-create the scan_run record so polling works immediately
++    const scanRunId = uuidv4();
++    try {
++      await db.run(
++        `INSERT INTO radar_scan_runs (id, project_id, status, started_at)
++         VALUES (?, ?, 'running', CURRENT_TIMESTAMP)`,
++        [scanRunId, projectId]
++      );
++    } catch (dbErr) {
++      console.warn('[RADAR RUN] Could not pre-create scan_run:', dbErr);
++    }
++
+     const job = await radarQueue.add(`manual-${projectId}-${Date.now()}`, {
+       uid: req.user?.uid!,
+-      projectId
+-    });
+-    res.json({ success: true, jobId: job.id });
++      projectId,
++      scanRunId,
++    } as any);
++
++    res.json({ success: true, jobId: job.id, scanRunId });
++  } catch (err: any) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++// Scan status polling — called by frontend every 5s until complete/failed
++app.get("/api/outreach/radar/scan-status/:scanRunId", async (req: AuthRequest, res) => {
++  const { scanRunId } = req.params;
++  const projectId = req.projectId;
++  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
++
++  try {
++    const run = await db.get<any>(
++      `SELECT status, articles_found, error, started_at, completed_at
++       FROM radar_scan_runs
++       WHERE id = ? AND project_id = ?`,
++      [scanRunId, projectId]
++    );
++    if (!run) return res.status(404).json({ error: 'Scan run not found' });
++    res.json(run);
+   } catch (err: any) {
+     res.status(500).json({ error: err.message });
+   }
+@@ -1747,48 +1815,30 @@ app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, r
+   if (!articleId) return res.status(400).json({ error: "Article ID is required" });
+ 
+   try {
+-    // 1. Fetch article context
+     const article = await db.get<any>("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]);
+     if (!article) return res.status(404).json({ error: "Article not found" });
+ 
+-    // 2. Setup Gemini
+     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+     const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+ 
+-    const langDirective = language === 'en' 
++    const langDirective = language === 'en'
+       ? "IMPORTANT: You MUST respond ENTIRELY in ENGLISH."
+       : "IMPORTANTE: DEBES responder TOTALMENTE en ESPAÑOL.";
+ 
+-    const prompt = `
+-Platform: ${platform}
+-Tone: ${tone}
+-Article Title: ${article.title}
+-Article Summary: ${article.summary}
+-URL: ${article.url}
+-
+-${langDirective}
+-
+-Generate a high-converting social media post based on this information. 
+-Focus on a strong hook and a clear call to action. 
+-Respond ONLY with the raw post content.
+-`;
++    const prompt = `Platform: ${platform}\nTone: ${tone}\nArticle Title: ${article.title}\nArticle Summary: ${article.summary || article.ai_summary}\nURL: ${article.url}\n\n${langDirective}\n\nGenerate a high-converting social media post. Focus on a strong hook and a clear call to action. Respond ONLY with the raw post content.`;
+ 
+     const result = await ai.models.generateContent({
+       model: 'gemini-2.5-flash',
+       contents: [{ role: "user", parts: [{ text: prompt }] }],
+-      config: {
+-        systemInstruction: SYSTEM_INSTRUCTION_SOCIAL_POST
+-      }
++      config: { systemInstruction: SYSTEM_INSTRUCTION_SOCIAL_POST }
+     });
+ 
+     const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+     if (!generatedText) throw new Error("AI failed to generate post content");
+ 
+-    // 3. Save to radar_social_posts
+     const postId = uuidv4();
+     await db.run(
+-      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status) 
+-       VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
++      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status) VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+       [postId, projectId, articleId, platform, tone, generatedText]
+     );
+ 
+@@ -1799,6 +1849,88 @@ Respond ONLY with the raw post content.
+   }
+ });
+ 
++// ─── Multi-Platform Content Generation (Content Studio) ───────────────────
++app.post("/api/outreach/radar/generate-content", async (req: AuthRequest, res) => {
++  const projectId = req.projectId;
++  const { articleId, platform, tone, voice, language, cta, hashtags, blogTitle, blogWordCount } = req.body;
++
++  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
++  if (!articleId || !platform) return res.status(400).json({ error: "articleId and platform are required" });
++
++  try {
++    const article = await db.get<any>(
++      "SELECT * FROM radar_articles WHERE id = ? AND project_id = ?",
++      [articleId, projectId]
++    );
++    if (!article) return res.status(404).json({ error: "Article not found" });
++
++    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
++    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
++
++    const langLine = (language || 'en') === 'en'
++      ? 'Write in English.'
++      : 'Escribe en Español.';
++
++    const articleContext = [
++      `Article Title: "${article.title}"`,
++      `Article Summary: ${article.ai_summary || article.summary}`,
++      `Source URL: ${article.url}`,
++      article.keywords ? `Keywords: ${(() => { try { return JSON.parse(article.keywords).join(', '); } catch { return ''; } })()}` : '',
++    ].filter(Boolean).join('\n');
++
++    const toneVoice = [tone, voice].filter(Boolean).join(', ');
++
++    const platformInstructions: Record<string, string> = {
++      linkedin: `Write a professional LinkedIn post (150-300 words). Include: a thought-provoking opening hook, 2-3 key insights from the article, your perspective/commentary, and a question to drive engagement. Use line breaks for readability. ${cta ? `CTA: ${cta}` : 'End with a CTA to read the article.'} ${hashtags ? 'Add 3-5 relevant hashtags at the end.' : ''}`,
++      twitter: `Write a Twitter/X thread (5-7 tweets). Format: start with "🧵 Thread:" then number each tweet (1/, 2/, etc.). First tweet is the hook. Last tweet links to the article. Each tweet max 280 chars. ${cta ? `CTA in last tweet: ${cta}` : ''} ${hashtags ? 'Add 2-3 hashtags to the last tweet.' : ''}`,
++      instagram: `Write an Instagram caption (100-200 words). Use a strong emotional hook, storytelling, and emojis throughout. End with a CTA to visit the link in bio. ${hashtags ? 'Add 10-15 relevant hashtags after a line break.' : ''}`,
++      threads: `Write a Threads post (80-150 words). Conversational, slightly informal, with a strong first line. Include a question or hot take to drive replies. ${hashtags ? 'Add 3-5 hashtags.' : ''}`,
++      facebook: `Write a Facebook post (100-200 words). Engaging, community-focused, tells a story. Include a question at the end to encourage comments. ${cta ? `CTA: ${cta}` : ''} ${hashtags ? 'Add 3-5 hashtags.' : ''}`,
++      blog: `Write a full blog article outline and introduction (${blogWordCount || 800} words). Structure: SEO-optimized title, meta description (155 chars), H2/H3 outline, then write the full introduction section (300 words). ${blogTitle ? `Suggested title: "${blogTitle}"` : 'Suggest an SEO-optimized title.'} End with a conclusion paragraph and CTA.`,
++    };
++
++    const instruction = platformInstructions[platform] || platformInstructions['linkedin'];
++
++    const prompt = `You are a world-class social media content strategist.
++
++Create platform-native content for ${platform.toUpperCase()} based on this article:
++
++${articleContext}
++
++Content Requirements:
++- Tone: ${toneVoice || 'Professional and engaging'}
++- ${langLine}
++- ${instruction}
++
++Respond ONLY with the finished content. No meta-commentary, no "Here is the post:", just the content itself.`;
++
++    const result = await ai.models.generateContent({
++      model: 'gemini-2.5-flash',
++      contents: [{ role: 'user', parts: [{ text: prompt }] }],
++      config: {
++        systemInstruction: 'You are an expert social media content strategist. Return only the requested content with no preamble or explanation.',
++      },
++    });
++
++    const content = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
++    if (!content) throw new Error('AI failed to generate content');
++
++    // Save as draft
++    const postId = uuidv4();
++    await db.run(
++      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status)
++       VALUES (?, ?, ?, ?, ?, ?, 'draft')
++       ON CONFLICT DO NOTHING`,
++      [postId, projectId, articleId, platform, toneVoice, content]
++    );
++
++    res.json({ content, postId });
++  } catch (err: any) {
++    console.error('[Content Generation Error]:', err);
++    res.status(500).json({ error: err.message });
++  }
++});
++
+ 
+ // ─── DEEP SCAN & BRAND STRATEGY PROXY ──────────────────────────────────────
+ function parseAIGeminiJSON(text: string) {
+diff --git a/server/queues/radarQueue.ts b/server/queues/radarQueue.ts
+index ded75d0..b4ee82e 100644
+--- a/server/queues/radarQueue.ts
++++ b/server/queues/radarQueue.ts
+@@ -8,6 +8,7 @@ export interface RadarJobData {
+   uid: string;
+   projectId: string;
+   isScheduled?: boolean;
++  scanRunId?: string;
+ }
+ 
+ export const radarQueue = new Queue<RadarJobData>('radar-scraping', {
+@@ -26,9 +27,9 @@ export const radarQueue = new Queue<RadarJobData>('radar-scraping', {
+ export const radarWorker = new Worker<RadarJobData>(
+   'radar-scraping',
+   async (job: Job<RadarJobData>) => {
+-    const { uid, projectId } = job.data;
+-    console.log(`[RADAR WORKER] Processing job for project ${projectId}`);
+-    await processRadarRun(uid, projectId);
++    const { uid, projectId, scanRunId } = job.data;
++    console.log(`[RADAR WORKER] Processing job for project ${projectId} (scanRunId: ${scanRunId || 'none'})`);
++    await processRadarRun(uid, projectId, scanRunId);
+   },
+   { 
+     connection: redis, 

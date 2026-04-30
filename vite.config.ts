@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
       'process.env.NEXT_PUBLIC_APP_URL': JSON.stringify(env.FRONTEND_URL || env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
     },
     build: {
+      outDir: 'dist',
       rollupOptions: {
         output: {
           manualChunks: {

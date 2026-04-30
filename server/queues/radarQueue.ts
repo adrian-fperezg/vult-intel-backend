@@ -8,7 +8,6 @@ export interface RadarJobData {
   uid: string;
   projectId: string;
   isScheduled?: boolean;
-  scanRunId?: string;
 }
 
 export const radarQueue = new Queue<RadarJobData>('radar-scraping', {
@@ -27,9 +26,9 @@ export const radarQueue = new Queue<RadarJobData>('radar-scraping', {
 export const radarWorker = new Worker<RadarJobData>(
   'radar-scraping',
   async (job: Job<RadarJobData>) => {
-    const { uid, projectId, scanRunId } = job.data;
-    console.log(`[RADAR WORKER] Processing job for project ${projectId} (scanRunId: ${scanRunId || 'none'})`);
-    await processRadarRun(uid, projectId, scanRunId);
+    const { uid, projectId } = job.data;
+    console.log(`[RADAR WORKER] Processing job for project ${projectId}`);
+    await processRadarRun(uid, projectId);
   },
   { 
     connection: redis, 
