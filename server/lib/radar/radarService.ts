@@ -1,146 +1,147 @@
-import { GoogleGenAI } from "@google/genai";
-import admin from '../firebase.js';
-import { db } from '../../db.js';
 import { v4 as uuidv4 } from 'uuid';
+import { db } from '../../db.js';
+import { buildProjectSearchContext } from './projectContext.js';
+import { discoverArticles } from './articleDiscovery.js';
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+/**
+ * Core radar processing function — called by BullMQ worker.
+ * Builds project context from Firestore, discovers articles via
+ * Google Custom Search (with Gemini fallback), enriches them with AI,
+ * and persists to database.
+ */
+export async function processRadarRun(
+  uid: string,
+  projectId: string,
+  scanRunId?: string
+): Promise<{ articlesFound: number; scanRunId: string }> {
+  const runId = scanRunId || uuidv4();
 
-export async function processRadarRun(uid: string, projectId: string) {
+  // Ensure a scan_run record exists (may have been created by the route before queuing)
   try {
-    console.log(`[RADAR SERVICE] Starting run for project ${projectId} (User: ${uid})`);
+    await db.run(
+      `INSERT INTO radar_scan_runs (id, project_id, status, started_at)
+       VALUES (?, ?, 'running', CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET status = 'running', started_at = CURRENT_TIMESTAMP`,
+      [runId, projectId]
+    );
+  } catch (err) {
+    // Table may not exist yet on first boot — non-fatal
+    console.warn('[RADAR SERVICE] Could not upsert scan_run:', err);
+  }
 
-    // 1. Fetch Project Context from Firebase
-    const projectDoc = await admin.firestore().doc(`customers/${uid}/projects/${projectId}`).get();
-    if (!projectDoc.exists) {
-      console.error(`[RADAR SERVICE] Project ${projectId} not found in Firebase`);
-      throw new Error("Project not found");
-    }
-    const project = projectDoc.data();
+  try {
+    console.log(`[RADAR SERVICE] Starting run ${runId} for project ${projectId} (uid: ${uid})`);
 
-    // 2. Fetch Forced Sources from Postgres
-    const sources = await db.all<{ domain_url: string }>(
+    // 1. Build rich project context from Firestore (personas, pillars, brand voice)
+    const projectContext = await buildProjectSearchContext(uid, projectId);
+    console.log(`[RADAR SERVICE] Generated ${projectContext.searchQueries.length} search queries`);
+
+    // 2. Load manual sources from Postgres
+    const manualSources = await db.all<{ domain_url: string }>(
       'SELECT domain_url FROM radar_sources WHERE project_id = ?',
       [projectId]
     );
-    const sourceUrls = sources.map(s => s.domain_url).join(', ');
 
-    // 3. Trigger Gemini with Search Tools
-    // We use fetch directly to match the stable pattern in scanService.ts
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
-
-    const systemInstruction = `
-Actúa como un Analista de Inteligencia de Mercado y Estratega de Contenido Senior.
-Tu objetivo es encontrar las 5 noticias, artículos o publicaciones de blog más relevantes y recientes para el proyecto proporcionado.
-
-INSTRUCCIONES CRÍTICAS:
-1. Usa Google Search para encontrar contenido real publicado en los últimos 30 días.
-2. Si se proporcionan "Fuentes Forzadas", búscale contenido reciente a esos dominios primero.
-3. El contenido debe ser altamente relevante para el nicho y la audiencia del proyecto.
-4. Para cada artículo, genera:
-   - Un resumen de 2-3 frases que aporte valor.
-   - Una puntuación de relevancia (0.0 a 1.0).
-   - Un borrador para Twitter/X (gancho fuerte, emojis, hashtags relevantes).
-   - Un borrador para LinkedIn (profesional, analítico, enfocado en insights).
-
-FORMATO DE SALIDA (JSON ESTRICTO):
-Debes responder ÚNICAMENTE con JSON crudo y válido. No incluyas texto conversacional ni formato markdown fuera del JSON.
-Array JSON de objetos con esta estructura:
-[
-  {
-    "title": "Título del artículo",
-    "url": "https://...",
-    "summary": "Resumen ejecutivo...",
-    "relevanceScore": 0.9,
-    "sourceDomain": "ejemplo.com",
-    "socialPosts": [
-      { "platform": "twitter", "content": "..." },
-      { "platform": "linkedin", "content": "..." }
-    ]
-  }
-]
-    `;
-
-    const userPrompt = `
-PROYECTO: ${project?.name}
-NICHO: ${project?.niche}
-DESCRIPCIÓN: ${project?.description}
-FUENTES ESPECÍFICAS A MONITOREAR: ${sourceUrls || 'Ninguna (usa búsqueda general)'}
-
-Encuentra y procesa las 5 noticias más impactantes. Respond with valid JSON.
-    `;
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        tools: [{ googleSearch: {} }],
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }]
-      })
+    // 3. Discover and enrich articles
+    const articles = await discoverArticles({
+      searchQueries: projectContext.searchQueries,
+      manualSources,
+      projectId,
+      projectContext,
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini API Error: ${response.status} - ${errText}`);
-    }
+    console.log(`[RADAR SERVICE] Discovered ${articles.length} articles for project ${projectId}`);
 
-    const responseData = await response.json();
-    const rawText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) throw new Error("No response content from Gemini");
-
-    // Manual cleanup for JSON parsing as tools + responseMimeType is unsupported
-    const cleanText = rawText.replace(/```json\n?|```/g, '').trim();
-    const articles = JSON.parse(cleanText);
-
-    // 4. Save to Database
+    // 4. Persist articles to database
+    let savedCount = 0;
     for (const art of articles) {
-      const articleId = uuidv4();
       try {
-        // Insert or update article
-        await db.run(`
-          INSERT INTO radar_articles (id, project_id, title, url, summary, relevance_score, source_domain)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (project_id, url) DO UPDATE SET
-            summary = EXCLUDED.summary,
-            relevance_score = EXCLUDED.relevance_score
-        `, [articleId, projectId, art.title, art.url, art.summary, art.relevanceScore, art.sourceDomain]);
+        const articleId = uuidv4();
+        const keywordsJson = JSON.stringify(art.keywords || []);
 
-        // Get the final ID for foreign key
-        const existing = await db.get<{ id: string }>('SELECT id FROM radar_articles WHERE project_id = ? AND url = ?', [projectId, art.url]);
-        const finalArtId = existing?.id || articleId;
-
-        // Save social posts as drafts
-        for (const post of art.socialPosts) {
-          await db.run(`
-            INSERT INTO radar_social_posts (id, article_id, project_id, platform, content, status)
-            VALUES (?, ?, ?, ?, ?, 'draft')
-          `, [uuidv4(), finalArtId, projectId, post.platform, post.content]);
-        }
+        await db.run(
+          `INSERT INTO radar_articles
+            (id, project_id, title, url, summary, ai_summary, keywords, relevance_score,
+             source_domain, source_reputation, published_at, scan_run_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (project_id, url) DO UPDATE SET
+             summary = EXCLUDED.summary,
+             ai_summary = EXCLUDED.ai_summary,
+             keywords = EXCLUDED.keywords,
+             relevance_score = EXCLUDED.relevance_score,
+             source_reputation = EXCLUDED.source_reputation,
+             scan_run_id = EXCLUDED.scan_run_id`,
+          [
+            articleId,
+            projectId,
+            art.title,
+            art.url,
+            art.snippet,
+            art.aiSummary,
+            keywordsJson,
+            art.relevanceScore,
+            art.domain,
+            art.sourceReputation,
+            art.publishDate,
+            runId,
+          ]
+        );
+        savedCount++;
       } catch (saveErr) {
-        console.error(`[RADAR SERVICE] Failed to save article ${art.url}:`, saveErr);
+        console.error(`[RADAR SERVICE] Failed to save article "${art.title}":`, saveErr);
       }
     }
 
-    // 5. Update Schedule metadata
-    await db.run(`
-      UPDATE radar_schedules 
-      SET last_run_at = CURRENT_TIMESTAMP, 
-          next_run_at = (
-            CASE 
-              WHEN frequency = 'daily' THEN CURRENT_TIMESTAMP + INTERVAL '1 day'
-              WHEN frequency = 'weekly' THEN CURRENT_TIMESTAMP + INTERVAL '1 week'
-              WHEN frequency = 'bi-weekly' THEN CURRENT_TIMESTAMP + INTERVAL '2 weeks'
-              WHEN frequency = 'monthly' THEN CURRENT_TIMESTAMP + INTERVAL '1 month'
-              ELSE CURRENT_TIMESTAMP + INTERVAL '1 week'
-            END
-          )
-      WHERE project_id = ?
-    `, [projectId]);
+    // 5. Mark scan run as complete
+    try {
+      await db.run(
+        `UPDATE radar_scan_runs
+         SET status = 'complete', completed_at = CURRENT_TIMESTAMP,
+             articles_found = ?, search_queries = ?
+         WHERE id = ?`,
+        [savedCount, JSON.stringify(projectContext.searchQueries), runId]
+      );
+    } catch (err) {
+      console.warn('[RADAR SERVICE] Could not update scan_run status:', err);
+    }
 
-    console.log(`[RADAR SERVICE] Completed run for project ${projectId}. Found ${articles.length} articles.`);
-    return articles;
+    // 6. Update schedule metadata
+    try {
+      await db.run(
+        `UPDATE radar_schedules
+         SET last_run_at = CURRENT_TIMESTAMP,
+             next_run_at = (
+               CASE
+                 WHEN frequency = 'daily'    THEN CURRENT_TIMESTAMP + INTERVAL '1 day'
+                 WHEN frequency = 'bi-weekly' THEN CURRENT_TIMESTAMP + INTERVAL '2 weeks'
+                 WHEN frequency = 'monthly'  THEN CURRENT_TIMESTAMP + INTERVAL '1 month'
+                 ELSE CURRENT_TIMESTAMP + INTERVAL '1 week'
+               END
+             )
+         WHERE project_id = ?`,
+        [projectId]
+      );
+    } catch (err) {
+      console.warn('[RADAR SERVICE] Could not update radar schedule:', err);
+    }
+
+    console.log(`[RADAR SERVICE] Run ${runId} complete — ${savedCount} articles saved`);
+    return { articlesFound: savedCount, scanRunId: runId };
   } catch (err: any) {
-    console.error("[RADAR SERVICE] Critical Error:", err);
+    console.error('[RADAR SERVICE] Critical error in run', runId, ':', err);
+
+    // Mark scan run as failed
+    try {
+      await db.run(
+        `UPDATE radar_scan_runs
+         SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
+         WHERE id = ?`,
+        [err.message || 'Unknown error', runId]
+      );
+    } catch (updateErr) {
+      console.warn('[RADAR SERVICE] Could not mark scan_run as failed:', updateErr);
+    }
+
     throw err;
   }
 }

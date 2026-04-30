@@ -1098,6 +1098,51 @@ export const initDb = async () => {
       console.warn(`[DB] PG Migration for radar_social_posts.tone failed:`, (err as Error).message);
     }
 
+    // 24. Radar Scan Runs — tracks each individual scan run for status polling
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS radar_scan_runs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        articles_found INTEGER DEFAULT 0,
+        search_queries TEXT DEFAULT '[]',
+        status TEXT DEFAULT 'running',
+        error TEXT
+      )
+    `);
+
+    // Migrate radar_articles — add enrichment columns from new discovery engine
+    const newRadarArticleCols = [
+      { name: 'ai_summary', type: 'TEXT' },
+      { name: 'keywords', type: "TEXT DEFAULT '[]'" },
+      { name: 'source_reputation', type: "TEXT DEFAULT 'medium'" },
+      { name: 'scan_run_id', type: 'TEXT' },
+    ];
+    for (const col of newRadarArticleCols) {
+      try {
+        await db.run(`ALTER TABLE radar_articles ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for radar_articles.${col.name} failed:`, (err as Error).message);
+      }
+    }
+
+    // Migrate radar_schedules — ensure user_id and is_enabled columns exist
+    const newRadarScheduleCols = [
+      { name: 'user_id', type: 'TEXT' },
+      { name: 'is_enabled', type: 'BOOLEAN DEFAULT FALSE' },
+    ];
+    for (const col of newRadarScheduleCols) {
+      try {
+        await db.run(`ALTER TABLE radar_schedules ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+      } catch (err) {
+        console.warn(`[DB] PG Migration for radar_schedules.${col.name} failed:`, (err as Error).message);
+      }
+    }
+
+    // Create index on scan runs for efficient polling
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_radar_scan_runs_project_status ON radar_scan_runs (project_id, status)`);
+
     await applyTrigger('radar_schedules');
     await applyTrigger('radar_social_posts');
 

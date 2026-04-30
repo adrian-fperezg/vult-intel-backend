@@ -1669,22 +1669,56 @@ app.get("/api/outreach/radar/articles", async (req: AuthRequest, res) => {
   if (!projectId) return res.status(400).json({ error: "Project ID is required" });
 
   try {
+    const { date, minRelevance } = req.query as Record<string, string>;
+
+    let whereClause = 'WHERE a.project_id = ?';
+    const params: any[] = [projectId];
+
+    if (date) {
+      whereClause += ' AND DATE(a.created_at) = ?';
+      params.push(date);
+    }
+    if (minRelevance) {
+      whereClause += ' AND a.relevance_score >= ?';
+      params.push(Number(minRelevance));
+    }
+
     const articles = await db.all(`
-      SELECT a.*, p.content as socialPostDraft 
+      SELECT a.*,
+             p.content as social_post_draft,
+             p.platform as social_post_platform,
+             p.id as social_post_id
       FROM radar_articles a
       LEFT JOIN radar_social_posts p ON p.id = (
-        SELECT id FROM radar_social_posts 
-        WHERE article_id = a.id 
-        ORDER BY created_at DESC 
+        SELECT id FROM radar_social_posts
+        WHERE article_id = a.id
+        ORDER BY created_at DESC
         LIMIT 1
       )
-      WHERE a.project_id = ? 
-      ORDER BY a.created_at DESC 
+      ${whereClause}
+      ORDER BY a.relevance_score DESC, a.created_at DESC
       LIMIT 50`,
+      params
+    );
+
+    // Build calendar data: distinct dates with article counts
+    const calendarRows = await db.all<{ date: string; count: number }>(
+      `SELECT DATE(created_at) as date, COUNT(*) as count
+       FROM radar_articles
+       WHERE project_id = ?
+       GROUP BY DATE(created_at)
+       ORDER BY date DESC
+       LIMIT 30`,
       [projectId]
     );
 
-    res.json(articles);
+    // Parse keywords from JSON string where applicable
+    const enriched = articles.map((a: any) => ({
+      ...a,
+      keywords: (() => { try { return JSON.parse(a.keywords || '[]'); } catch { return []; } })()
+    }));
+
+    res.json({ articles: enriched, datesWithArticles: calendarRows });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1713,11 +1747,45 @@ app.post("/api/outreach/radar/run", async (req: AuthRequest, res) => {
   if (!projectId) return res.status(400).json({ error: "Project ID is required" });
 
   try {
+    // Pre-create the scan_run record so polling works immediately
+    const scanRunId = uuidv4();
+    try {
+      await db.run(
+        `INSERT INTO radar_scan_runs (id, project_id, status, started_at)
+         VALUES (?, ?, 'running', CURRENT_TIMESTAMP)`,
+        [scanRunId, projectId]
+      );
+    } catch (dbErr) {
+      console.warn('[RADAR RUN] Could not pre-create scan_run:', dbErr);
+    }
+
     const job = await radarQueue.add(`manual-${projectId}-${Date.now()}`, {
       uid: req.user?.uid!,
-      projectId
-    });
-    res.json({ success: true, jobId: job.id });
+      projectId,
+      scanRunId,
+    } as any);
+
+    res.json({ success: true, jobId: job.id, scanRunId });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Scan status polling — called by frontend every 5s until complete/failed
+app.get("/api/outreach/radar/scan-status/:scanRunId", async (req: AuthRequest, res) => {
+  const { scanRunId } = req.params;
+  const projectId = req.projectId;
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+
+  try {
+    const run = await db.get<any>(
+      `SELECT status, articles_found, error, started_at, completed_at
+       FROM radar_scan_runs
+       WHERE id = ? AND project_id = ?`,
+      [scanRunId, projectId]
+    );
+    if (!run) return res.status(404).json({ error: 'Scan run not found' });
+    res.json(run);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1747,54 +1815,118 @@ app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, r
   if (!articleId) return res.status(400).json({ error: "Article ID is required" });
 
   try {
-    // 1. Fetch article context
     const article = await db.get<any>("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]);
     if (!article) return res.status(404).json({ error: "Article not found" });
 
-    // 2. Setup Gemini
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
 
-    const langDirective = language === 'en' 
+    const langDirective = language === 'en'
       ? "IMPORTANT: You MUST respond ENTIRELY in ENGLISH."
       : "IMPORTANTE: DEBES responder TOTALMENTE en ESPAÑOL.";
 
-    const prompt = `
-Platform: ${platform}
-Tone: ${tone}
-Article Title: ${article.title}
-Article Summary: ${article.summary}
-URL: ${article.url}
-
-${langDirective}
-
-Generate a high-converting social media post based on this information. 
-Focus on a strong hook and a clear call to action. 
-Respond ONLY with the raw post content.
-`;
+    const prompt = `Platform: ${platform}\nTone: ${tone}\nArticle Title: ${article.title}\nArticle Summary: ${article.summary || article.ai_summary}\nURL: ${article.url}\n\n${langDirective}\n\nGenerate a high-converting social media post. Focus on a strong hook and a clear call to action. Respond ONLY with the raw post content.`;
 
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION_SOCIAL_POST
-      }
+      config: { systemInstruction: SYSTEM_INSTRUCTION_SOCIAL_POST }
     });
 
     const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!generatedText) throw new Error("AI failed to generate post content");
 
-    // 3. Save to radar_social_posts
     const postId = uuidv4();
     await db.run(
-      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status) 
-       VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status) VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
       [postId, projectId, articleId, platform, tone, generatedText]
     );
 
     res.json({ draft: generatedText, postId });
   } catch (err: any) {
     console.error("[Social Post Generation Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Multi-Platform Content Generation (Content Studio) ───────────────────
+app.post("/api/outreach/radar/generate-content", async (req: AuthRequest, res) => {
+  const projectId = req.projectId;
+  const { articleId, platform, tone, voice, language, cta, hashtags, blogTitle, blogWordCount } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: "Project ID is required" });
+  if (!articleId || !platform) return res.status(400).json({ error: "articleId and platform are required" });
+
+  try {
+    const article = await db.get<any>(
+      "SELECT * FROM radar_articles WHERE id = ? AND project_id = ?",
+      [articleId, projectId]
+    );
+    if (!article) return res.status(404).json({ error: "Article not found" });
+
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
+
+    const langLine = (language || 'en') === 'en'
+      ? 'Write in English.'
+      : 'Escribe en Español.';
+
+    const articleContext = [
+      `Article Title: "${article.title}"`,
+      `Article Summary: ${article.ai_summary || article.summary}`,
+      `Source URL: ${article.url}`,
+      article.keywords ? `Keywords: ${(() => { try { return JSON.parse(article.keywords).join(', '); } catch { return ''; } })()}` : '',
+    ].filter(Boolean).join('\n');
+
+    const toneVoice = [tone, voice].filter(Boolean).join(', ');
+
+    const platformInstructions: Record<string, string> = {
+      linkedin: `Write a professional LinkedIn post (150-300 words). Include: a thought-provoking opening hook, 2-3 key insights from the article, your perspective/commentary, and a question to drive engagement. Use line breaks for readability. ${cta ? `CTA: ${cta}` : 'End with a CTA to read the article.'} ${hashtags ? 'Add 3-5 relevant hashtags at the end.' : ''}`,
+      twitter: `Write a Twitter/X thread (5-7 tweets). Format: start with "🧵 Thread:" then number each tweet (1/, 2/, etc.). First tweet is the hook. Last tweet links to the article. Each tweet max 280 chars. ${cta ? `CTA in last tweet: ${cta}` : ''} ${hashtags ? 'Add 2-3 hashtags to the last tweet.' : ''}`,
+      instagram: `Write an Instagram caption (100-200 words). Use a strong emotional hook, storytelling, and emojis throughout. End with a CTA to visit the link in bio. ${hashtags ? 'Add 10-15 relevant hashtags after a line break.' : ''}`,
+      threads: `Write a Threads post (80-150 words). Conversational, slightly informal, with a strong first line. Include a question or hot take to drive replies. ${hashtags ? 'Add 3-5 hashtags.' : ''}`,
+      facebook: `Write a Facebook post (100-200 words). Engaging, community-focused, tells a story. Include a question at the end to encourage comments. ${cta ? `CTA: ${cta}` : ''} ${hashtags ? 'Add 3-5 hashtags.' : ''}`,
+      blog: `Write a full blog article outline and introduction (${blogWordCount || 800} words). Structure: SEO-optimized title, meta description (155 chars), H2/H3 outline, then write the full introduction section (300 words). ${blogTitle ? `Suggested title: "${blogTitle}"` : 'Suggest an SEO-optimized title.'} End with a conclusion paragraph and CTA.`,
+    };
+
+    const instruction = platformInstructions[platform] || platformInstructions['linkedin'];
+
+    const prompt = `You are a world-class social media content strategist.
+
+Create platform-native content for ${platform.toUpperCase()} based on this article:
+
+${articleContext}
+
+Content Requirements:
+- Tone: ${toneVoice || 'Professional and engaging'}
+- ${langLine}
+- ${instruction}
+
+Respond ONLY with the finished content. No meta-commentary, no "Here is the post:", just the content itself.`;
+
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: 'You are an expert social media content strategist. Return only the requested content with no preamble or explanation.',
+      },
+    });
+
+    const content = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!content) throw new Error('AI failed to generate content');
+
+    // Save as draft
+    const postId = uuidv4();
+    await db.run(
+      `INSERT INTO radar_social_posts (id, project_id, article_id, platform, tone, content, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft')
+       ON CONFLICT DO NOTHING`,
+      [postId, projectId, articleId, platform, toneVoice, content]
+    );
+
+    res.json({ content, postId });
+  } catch (err: any) {
+    console.error('[Content Generation Error]:', err);
     res.status(500).json({ error: err.message });
   }
 });

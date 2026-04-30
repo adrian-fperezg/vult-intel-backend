@@ -1,732 +1,379 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Radio, 
-  Calendar, 
-  Globe, 
-  Plus, 
-  Trash2, 
-  ExternalLink, 
-  Share2, 
-  Image as ImageIcon,
-  ChevronRight,
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  X,
-  Sparkles,
-  Maximize2
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Radar, Play, Plus, Trash2, CalendarDays, RefreshCw,
+  ChevronDown, Loader2, Zap, Clock, Globe
+} from 'lucide-react';
 import { useTranslation } from '@/contexts/TranslationContext';
-import { useIntelRadarApi, RadarSource, RadarArticle } from '@/services/intelRadarService';
 import { useProject } from '@/contexts/ProjectContext';
+import { useIntelRadarApi, RadarArticle, RadarSource, RadarSchedule } from '@/services/intelRadarService';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
+import ArticleCard from '@/components/radar/ArticleCard';
+import ContentStudio from '@/components/radar/ContentStudio';
 
-const RadarLoading = ({ t }: { t: (key: string) => string }) => {
-  return (
-    <div className="flex flex-col items-center justify-center h-[70vh] space-y-12">
-      <div className="relative size-64">
-        {/* Outer Glow */}
-        <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl animate-pulse" />
-        
-        {/* Concentric Circles */}
-        {[1, 0.7, 0.4].map((scale, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ 
-              opacity: [0, 0.15, 0],
-              scale: [0.5, 1.5],
-            }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              delay: i * 1.3,
-              ease: "easeOut"
-            }}
-            className="absolute inset-0 border border-primary/30 rounded-full"
-          />
-        ))}
-
-        {/* Radar Base */}
-        <div className="absolute inset-0 border border-white/10 rounded-full bg-surface-dark/40 backdrop-blur-sm overflow-hidden">
-          {/* Grid Lines */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-px h-full bg-white/5" />
-            <div className="h-px w-full bg-white/5" />
-          </div>
-          <div className="absolute inset-0 border border-white/5 rounded-full scale-75" />
-          <div className="absolute inset-0 border border-white/5 rounded-full scale-50" />
-          
-          {/* Rotating Scanner */}
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              ease: "linear"
-            }}
-            className="absolute inset-0 origin-center"
-          >
-            <div className="absolute top-1/2 left-1/2 w-1/2 h-40 -mt-40 bg-gradient-to-t from-primary/40 to-transparent origin-bottom -rotate-12 blur-sm" 
-                 style={{ clipPath: 'polygon(0% 100%, 100% 100%, 100% 0%)' }} />
-          </motion.div>
-
-          {/* Random Pings */}
-          {[...Array(5)].map((_, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0 }}
-              animate={{
-                opacity: [0, 1, 0],
-                scale: [0.8, 1.2],
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                delay: i * 0.8,
-                repeatDelay: Math.random() * 2
-              }}
-              className="absolute size-2 bg-primary rounded-full shadow-[0_0_8px_#3b82f6]"
-              style={{
-                top: `${20 + Math.random() * 60}%`,
-                left: `${20 + Math.random() * 60}%`,
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Central Hub */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-4 bg-primary rounded-full shadow-[0_0_15px_#3b82f6] z-10">
-          <div className="absolute inset-0 bg-white rounded-full animate-ping opacity-20" />
-        </div>
-      </div>
-
-      <div className="text-center space-y-3 relative z-10 max-w-sm">
-        <motion.h2 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-2xl font-bold text-white tracking-tight"
-        >
-          {t('radar.loading.title')}
-        </motion.h2>
-        <motion.p 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="text-slate-400 text-sm leading-relaxed"
-        >
-          {t('radar.loading.subtitle')}
-        </motion.p>
-      </div>
-    </div>
-  );
-};
+const FREQUENCIES = ['daily', 'weekly', 'bi-weekly', 'monthly'] as const;
 
 export default function IntelRadar() {
   const { t, language } = useTranslation();
+  const { activeProjectId } = useProject();
   const api = useIntelRadarApi();
-  const { isLoading: isProjectLoading } = useProject();
-  
-  const [isRunning, setIsRunning] = useState(false);
-  const [sources, setSources] = useState<RadarSource[]>([]);
+
+  // Data state
   const [articles, setArticles] = useState<RadarArticle[]>([]);
-  const [frequency, setFrequency] = useState('weekly');
-  const [newUrl, setNewUrl] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [generatingPostId, setGeneratingPostId] = useState<string | null>(null);
-  const [generatingThumbnailId, setGeneratingThumbnailId] = useState<string | null>(null);
-  const [configPostId, setConfigPostId] = useState<string | null>(null);
-  const [selectedPlatform, setSelectedPlatform] = useState('LinkedIn');
-  const [selectedTone, setSelectedTone] = useState('Professional');
-  
-  // New States
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [isThumbnailModalOpen, setIsThumbnailModalOpen] = useState(false);
-  const [thumbnailArticle, setThumbnailArticle] = useState<RadarArticle | null>(null);
-  const [imageIdea, setImageIdea] = useState('');
-  const [enhancedPrompt, setEnhancedPrompt] = useState('');
-  const [isEnhancing, setIsEnhancing] = useState(false);
-  const [aspectRatio, setAspectRatio] = useState('16:9');
-  const [customWidth, setCustomWidth] = useState(1280);
-  const [customHeight, setCustomHeight] = useState(720);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [sources, setSources] = useState<RadarSource[]>([]);
+  const [schedule, setSchedule] = useState<RadarSchedule | null>(null);
+  const [datesWithArticles, setDatesWithArticles] = useState<{ date: string; count: number }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (api.activeProjectId && !isProjectLoading) {
-      loadData();
-    } else if (!isProjectLoading) {
-      setLoading(false);
-    }
-  }, [api.activeProjectId, isProjectLoading]);
+  // Scan state
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanStatusMsg, setScanStatusMsg] = useState('');
+  const activeScanIdRef = useRef<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadData = async () => {
-    if (!api.activeProjectId) {
-      setLoading(false);
-      return;
-    }
+  // Filters
+  const [activeDate, setActiveDate] = useState<string | null>(null);
 
+  // Studio
+  const [studioArticle, setStudioArticle] = useState<RadarArticle | null>(null);
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
+
+  // Sources form
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [isAddingSource, setIsAddingSource] = useState(false);
+
+  // ── Load Data ─────────────────────────────────────────────────────────────
+
+  const loadData = useCallback(async () => {
+    if (!activeProjectId) return;
     try {
-      setLoading(true);
-      const [sourcesData, articlesData] = await Promise.all([
+      const [artData, srcData, schedData] = await Promise.all([
+        api.getArticles(activeDate ? { date: activeDate } : undefined),
         api.getSources(),
-        api.getArticles()
+        api.getSchedule(),
       ]);
-      setSources(sourcesData || []);
-      setArticles(articlesData || []);
-    } catch (error) {
-      console.error('Failed to load radar data:', error);
+      setArticles(artData.articles);
+      setDatesWithArticles(artData.datesWithArticles);
+      setSources(srcData);
+      setSchedule(schedData);
+    } catch {
       toast.error('Failed to load radar data');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  };
+  }, [activeProjectId, api, activeDate]);
 
-  const handleRunRadar = async () => {
-    setIsRunning(true);
-    try {
-      await api.runRadar();
-      toast.success('Radar execution started successfully');
-      // Refresh articles after a delay or poll
-      setTimeout(loadData, 5000);
-    } catch (error) {
-      toast.error('Failed to execute radar');
-    } finally {
-      setIsRunning(false);
+  useEffect(() => {
+    setIsLoading(true);
+    loadData();
+  }, [activeProjectId, activeDate]);
+
+  // ── Scan Polling ──────────────────────────────────────────────────────────
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
     }
-  };
+    activeScanIdRef.current = null;
+  }, []);
 
-  const handleAddSource = async () => {
-    if (!newUrl) return;
+  const startPolling = useCallback((scanRunId: string) => {
+    activeScanIdRef.current = scanRunId;
+    setScanStatusMsg('Scanning industry sources…');
+
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const status = await api.getScanStatus(scanRunId);
+        if (status.status === 'complete') {
+          stopPolling();
+          setIsScanning(false);
+          setScanStatusMsg('');
+          toast.success(`✓ Scan complete — ${status.articles_found} new articles found`);
+          loadData();
+        } else if (status.status === 'failed') {
+          stopPolling();
+          setIsScanning(false);
+          setScanStatusMsg('');
+          toast.error('Scan failed: ' + (status.error || 'Unknown error'));
+        }
+      } catch { /* ignore transient errors */ }
+    }, 5000);
+  }, [api, stopPolling, loadData]);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
+  // ── Run Now ───────────────────────────────────────────────────────────────
+
+  const handleRunNow = useCallback(async () => {
+    if (isScanning) return;
+    setIsScanning(true);
     try {
-      await api.addSource(newUrl);
-      setNewUrl('');
-      loadData();
-      toast.success('Source added successfully');
-    } catch (error) {
+      const result = await api.triggerScan();
+      startPolling(result.scanRunId);
+    } catch {
+      setIsScanning(false);
+      toast.error('Failed to start scan');
+    }
+  }, [api, isScanning, startPolling]);
+
+  // ── Sources ───────────────────────────────────────────────────────────────
+
+  const handleAddSource = useCallback(async () => {
+    if (!newSourceUrl.trim()) return;
+    setIsAddingSource(true);
+    try {
+      await api.addSource(newSourceUrl.trim());
+      setNewSourceUrl('');
+      toast.success('Source added');
+      const updated = await api.getSources();
+      setSources(updated);
+    } catch {
       toast.error('Failed to add source');
+    } finally {
+      setIsAddingSource(false);
     }
-  };
+  }, [api, newSourceUrl]);
 
-  const handleDeleteSource = async (id: string) => {
+  const handleDeleteSource = useCallback(async (id: string) => {
     try {
       await api.deleteSource(id);
-      loadData();
+      setSources(prev => prev.filter(s => s.id !== id));
       toast.success('Source removed');
-    } catch (error) {
+    } catch {
       toast.error('Failed to remove source');
     }
-  };
+  }, [api]);
 
-  const handleUpdateSchedule = async (freq: string) => {
+  // ── Schedule ──────────────────────────────────────────────────────────────
+
+  const handleScheduleChange = useCallback(async (freq: string, enabled: boolean) => {
     try {
-      await api.updateSchedule(freq);
-      setFrequency(freq);
-      toast.success(`Schedule updated to ${freq}`);
-    } catch (error) {
+      await api.saveSchedule(freq, enabled);
+      const updated = await api.getSchedule();
+      setSchedule(updated);
+    } catch {
       toast.error('Failed to update schedule');
     }
-  };
+  }, [api]);
 
-  const handleGeneratePost = async (articleId: string) => {
-    if (configPostId !== articleId) {
-      setConfigPostId(articleId);
-      return;
-    }
+  // ── Studio ────────────────────────────────────────────────────────────────
 
-    setGeneratingPostId(articleId);
-    try {
-      await api.generateSocialPost(articleId, selectedPlatform, selectedTone, language);
-      loadData();
-      toast.success('Social post drafted');
-      setConfigPostId(null);
-    } catch (error) {
-      toast.error('Failed to generate post');
-    } finally {
-      setGeneratingPostId(null);
-    }
-  };
+  const handleSendToStudio = useCallback((article: RadarArticle) => {
+    setStudioArticle(article);
+    setIsStudioOpen(true);
+  }, []);
 
-  const handleOpenThumbnailStudio = (article: RadarArticle) => {
-    setThumbnailArticle(article);
-    setImageIdea(article.title);
-    setEnhancedPrompt('');
-    setIsThumbnailModalOpen(true);
-  };
+  // ── Render ────────────────────────────────────────────────────────────────
 
-  const handleEnhancePrompt = async () => {
-    if (!imageIdea) return;
-    setIsEnhancing(true);
-    try {
-      const { enhanced } = await api.enhanceImagePrompt(imageIdea);
-      setEnhancedPrompt(enhanced);
-      toast.success('Prompt enhanced with AI');
-    } catch (error) {
-      toast.error('Failed to enhance prompt');
-    } finally {
-      setIsEnhancing(false);
-    }
-  };
-
-  const handleFinalGenerate = async () => {
-    const promptToUse = enhancedPrompt || imageIdea;
-    if (!promptToUse || !thumbnailArticle) return;
-    
-    setIsGenerating(true);
-    try {
-      const data = await api.generateThumbnail(thumbnailArticle.id, promptToUse, {
-        aspectRatio,
-        width: customWidth,
-        height: customHeight
-      });
-      if (data.imageUrl || data.jobId) {
-        toast.success('Generation started! Check your library in a moment.');
-        setIsThumbnailModalOpen(false);
-      }
-    } catch (error) {
-      toast.error('Failed to start generation');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const filteredArticles = articles.filter(article => {
-    if (!selectedDate) return true;
-    // Assuming article.date is YYYY-MM-DD or similar
-    return article.date.includes(selectedDate);
-  });
-
-  if (loading) {
-    return <RadarLoading t={t} />;
+  if (!activeProjectId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-4 text-center">
+        <Globe className="w-12 h-12 text-zinc-600" />
+        <p className="text-zinc-500 text-sm">Select a project to use Intel Radar</p>
+      </div>
+    );
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8 pb-20">
-      {/* Header section */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 bg-surface-dark/40 border border-white/5 p-8 rounded-3xl backdrop-blur-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 size-64 bg-primary/20 rounded-full blur-[100px]" />
-        <div className="absolute bottom-0 left-0 -mb-20 -ml-20 size-64 bg-purple-500/10 rounded-full blur-[100px]" />
-        
-        <div className="space-y-2 relative z-10">
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl md:text-5xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60"
+    <>
+      <div className="flex flex-col gap-8 p-6 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+              <Radar className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white">Intel Radar</h1>
+              <p className="text-sm text-zinc-500">AI-powered industry intelligence</p>
+            </div>
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={handleRunNow}
+            disabled={isScanning}
+            className={cn(
+              'flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all',
+              isScanning
+                ? 'bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+            )}
           >
-            {t('radar.title')}
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-slate-400 text-lg"
-          >
-            {t('radar.subtitle')}
-          </motion.p>
+            {isScanning ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{scanStatusMsg || 'Scanning…'}</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4" />
+                Run Now
+              </>
+            )}
+          </motion.button>
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleRunRadar}
-          disabled={isRunning}
-          className={cn(
-            "relative z-10 flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all duration-300",
-            isRunning 
-              ? "bg-primary/20 text-primary cursor-not-allowed border border-primary/30" 
-              : "bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)]"
-          )}
-        >
-          {isRunning ? <Loader2 className="size-5 animate-spin" /> : <Radio className="size-5" />}
-          {isRunning ? t('radar.running') : t('radar.runNow')}
-        </motion.button>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Configuration Column */}
-        <div className="space-y-8">
-          {/* Scheduling Card */}
-          <motion.section 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="bg-surface-dark/40 border border-white/5 rounded-3xl p-6 backdrop-blur-xl space-y-6"
-          >
-            <div className="flex items-center gap-3 text-white">
-              <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                <Calendar className="size-5 text-blue-400" />
-              </div>
-              <h2 className="text-xl font-bold">{t('radar.schedule.title')}</h2>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {['daily', 'weekly', 'biweekly', 'monthly'].map((freq) => (
+        {/* Schedule + Sources row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Schedule Card */}
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-zinc-400" />
+              <span className="text-sm font-medium text-white">Auto-Scan Schedule</span>
+              {/* Enable toggle */}
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-zinc-500">{schedule?.is_enabled ? 'Enabled' : 'Disabled'}</span>
                 <button
-                  key={freq}
-                  onClick={() => handleUpdateSchedule(freq)}
+                  onClick={() => schedule && handleScheduleChange(schedule.frequency, !schedule.is_enabled)}
                   className={cn(
-                    "px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-200",
-                    frequency === freq 
-                      ? "bg-primary/10 border-primary/40 text-white" 
-                      : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
+                    'relative w-9 h-5 rounded-full transition-colors',
+                    schedule?.is_enabled ? 'bg-indigo-600' : 'bg-zinc-700'
                   )}
                 >
-                  {t(`radar.schedule.${freq}`)}
+                  <span className={cn(
+                    'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                    schedule?.is_enabled ? 'translate-x-4' : 'translate-x-0.5'
+                  )} />
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {FREQUENCIES.map(freq => (
+                <button
+                  key={freq}
+                  onClick={() => handleScheduleChange(freq, schedule?.is_enabled ?? false)}
+                  className={cn(
+                    'flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize',
+                    schedule?.frequency === freq
+                      ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                      : 'bg-white/[0.02] border-white/[0.06] text-zinc-500 hover:text-white'
+                  )}
+                >
+                  {freq}
                 </button>
               ))}
             </div>
-
-            <div className="space-y-2 pt-4 border-t border-white/5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Historical View (by date)</label>
-              <div className="relative">
-                <input 
-                  type="date"
-                  value={selectedDate || ''}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-primary/50 transition-colors"
-                />
-                {selectedDate && (
-                  <button 
-                    onClick={() => setSelectedDate(null)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-                  >
-                    <X className="size-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </motion.section>
+            {schedule?.last_run_at && (
+              <p className="text-[11px] text-zinc-600">
+                Last run: {new Date(schedule.last_run_at).toLocaleString()}
+              </p>
+            )}
+          </div>
 
           {/* Sources Card */}
-          <motion.section 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-surface-dark/40 border border-white/5 rounded-3xl p-6 backdrop-blur-xl space-y-6"
-          >
-            <div className="flex items-center gap-3 text-white">
-              <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                <Globe className="size-5 text-emerald-400" />
-              </div>
-              <h2 className="text-xl font-bold">{t('radar.sources.title')}</h2>
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-zinc-400" />
+              <span className="text-sm font-medium text-white">Monitored Sources</span>
             </div>
-
             <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={newUrl}
-                onChange={(e) => setNewUrl(e.target.value)}
-                placeholder={t('radar.sources.placeholder')}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+              <input
+                type="url"
+                value={newSourceUrl}
+                onChange={e => setNewSourceUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddSource()}
+                placeholder="https://example.com"
+                className="flex-1 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/80 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50"
               />
-              <button 
+              <button
                 onClick={handleAddSource}
-                className="p-3 bg-primary rounded-xl text-white hover:opacity-90 transition-opacity"
+                disabled={isAddingSource || !newSourceUrl.trim()}
+                className="p-2 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 disabled:opacity-40 transition-all"
               >
-                <Plus className="size-5" />
+                {isAddingSource ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               </button>
             </div>
-
-            <div className="space-y-3">
-              {sources.map((source) => (
-                <div key={source.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 group">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-medium text-white truncate">{source.domain}</span>
-                    <span className={cn(
-                      "text-[10px] uppercase font-bold tracking-wider",
-                      source.reputation === 'high' ? 'text-emerald-400' : 'text-amber-400'
-                    )}>
-                      {source.reputation} {t('radar.sources.reputation')}
-                    </span>
-                  </div>
-                  <button 
-                    onClick={() => handleDeleteSource(source.id)}
-                    className="p-2 text-slate-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 className="size-4" />
+            <div className="space-y-1.5 max-h-28 overflow-y-auto">
+              {sources.map(src => (
+                <div key={src.id} className="flex items-center justify-between gap-2 text-xs text-zinc-400 bg-white/[0.02] rounded-lg px-3 py-1.5">
+                  <span className="truncate">{src.domain_url}</span>
+                  <button onClick={() => handleDeleteSource(src.id)} className="text-zinc-600 hover:text-red-400 transition-colors flex-shrink-0">
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))}
-            </div>
-          </motion.section>
-        </div>
-
-        {/* Intelligence Grid */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white px-2">{t('radar.articles.title')}</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <AnimatePresence mode="popLayout">
-              {filteredArticles.length > 0 ? (
-                filteredArticles.map((article, idx) => (
-                  <motion.article
-                    key={article.id}
-                    layout
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="group relative bg-surface-dark/40 border border-white/5 rounded-3xl overflow-hidden hover:border-primary/30 transition-all duration-300 flex flex-col"
-                  >
-                    <div className="p-6 space-y-4 flex-1">
-                      <div className="flex items-start justify-between gap-4">
-                        <span className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          {article.source}
-                        </span>
-                        <a 
-                          href={article.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-slate-500 hover:text-white transition-colors"
-                        >
-                          <ExternalLink className="size-4" />
-                        </a>
-                      </div>
-                      
-                      <h3 className="text-lg font-bold text-white leading-tight group-hover:text-primary transition-colors">
-                        {article.title}
-                      </h3>
-                      
-                      <div className="flex flex-wrap gap-2">
-                        {article.publishDate && (
-                          <span className="text-[10px] text-slate-500 font-medium bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
-                            {new Date(article.publishDate).toLocaleDateString()}
-                          </span>
-                        )}
-                        {article.keywords?.map((keyword, kidx) => (
-                          <span key={kidx} className="text-[10px] text-slate-400 bg-primary/5 px-2 py-0.5 rounded-md border border-primary/10">
-                            #{keyword}
-                          </span>
-                        ))}
-                      </div>
-
-                      <p className="text-sm text-slate-400 line-clamp-3">
-                        {article.summary}
-                      </p>
-
-                      {article.socialPostDraft && (
-                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-                          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
-                            <Share2 className="size-3" /> Social Draft
-                          </p>
-                          <p className="text-sm text-slate-300 italic">"{article.socialPostDraft}"</p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-4 border-t border-white/5 bg-white/[0.02] flex flex-col gap-4">
-                      {configPostId === article.id && (
-                        <motion.div 
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          className="space-y-4 p-4 rounded-2xl bg-primary/5 border border-primary/20"
-                        >
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Platform</label>
-                              <select 
-                                value={selectedPlatform}
-                                onChange={(e) => setSelectedPlatform(e.target.value)}
-                                className="w-full bg-surface-dark border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary/50"
-                              >
-                                <option value="LinkedIn">LinkedIn</option>
-                                <option value="Twitter">Twitter / X</option>
-                                <option value="Instagram">Instagram</option>
-                                <option value="Threads">Threads</option>
-                              </select>
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Tone</label>
-                              <select 
-                                value={selectedTone}
-                                onChange={(e) => setSelectedTone(e.target.value)}
-                                className="w-full bg-surface-dark border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary/50"
-                              >
-                                <option value="Professional">Professional</option>
-                                <option value="Witty">Witty</option>
-                                <option value="Educational">Educational</option>
-                                <option value="Controversial">Controversial</option>
-                              </select>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleGeneratePost(article.id)}
-                          disabled={generatingPostId === article.id}
-                          className={cn(
-                            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all",
-                            configPostId === article.id 
-                              ? "bg-primary text-white shadow-lg shadow-primary/20"
-                              : "bg-white/5 hover:bg-white/10 text-white"
-                          )}
-                        >
-                          {generatingPostId === article.id ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />}
-                          {configPostId === article.id ? 'Confirm & Generate' : t('radar.articles.draftPost')}
-                        </button>
-                        <button 
-                          onClick={() => handleOpenThumbnailStudio(article)}
-                          className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20"
-                          title="Open Thumbnail Studio"
-                        >
-                          <ImageIcon className="size-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                  </motion.article>
-                ))
-              ) : (
-                <div className="col-span-full py-20 text-center space-y-4">
-                  <div className="size-16 bg-white/5 rounded-full flex items-center justify-center mx-auto border border-white/10">
-                    <Radio className="size-8 text-slate-600" />
-                  </div>
-                  <p className="text-slate-500 max-w-xs mx-auto">
-                    {t('radar.articles.noArticles')}
-                  </p>
-                </div>
+              {sources.length === 0 && (
+                <p className="text-xs text-zinc-600 text-center py-2">No sources added. AI will search broadly.</p>
               )}
-            </AnimatePresence>
+            </div>
           </div>
         </div>
-      </div>
 
-      <AnimatePresence>
-        {isThumbnailModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsThumbnailModalOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl bg-surface-dark border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden"
+        {/* Calendar date pills */}
+        {datesWithArticles.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <CalendarDays className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+            <button
+              onClick={() => setActiveDate(null)}
+              className={cn(
+                'flex-shrink-0 text-xs px-3 py-1 rounded-full border transition-all',
+                !activeDate
+                  ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                  : 'bg-white/[0.02] border-white/[0.06] text-zinc-500 hover:text-white'
+              )}
             >
-              <div className="p-8 space-y-8">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                      <ImageIcon className="size-6 text-primary" />
-                      Thumbnail Studio
-                    </h2>
-                    <p className="text-slate-400 text-sm">Create high-impact visuals with Veo Gen-3</p>
-                  </div>
-                  <button 
-                    onClick={() => setIsThumbnailModalOpen(false)}
-                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                  >
-                    <X className="size-6 text-slate-500" />
-                  </button>
-                </div>
-
-                <div className="space-y-6">
-                  {/* Idea Input */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Base Image Idea</label>
-                    <div className="relative group">
-                      <textarea 
-                        value={imageIdea}
-                        onChange={(e) => setImageIdea(e.target.value)}
-                        placeholder="What should the image show?"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-primary/50 transition-all min-h-[100px] resize-none"
-                      />
-                      <button 
-                        onClick={handleEnhancePrompt}
-                        disabled={isEnhancing || !imageIdea}
-                        className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 bg-primary/20 text-primary border border-primary/30 rounded-xl text-xs font-bold hover:bg-primary/30 transition-all disabled:opacity-50"
-                      >
-                        {isEnhancing ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                        Enhance with AI
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Enhanced Prompt */}
-                  <AnimatePresence>
-                    {enhancedPrompt && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="space-y-3"
-                      >
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-primary px-1 flex items-center gap-2">
-                          <Sparkles className="size-3" /> Enhanced AI Prompt
-                        </label>
-                        <textarea 
-                          value={enhancedPrompt}
-                          onChange={(e) => setEnhancedPrompt(e.target.value)}
-                          className="w-full bg-primary/5 border border-primary/20 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-primary/50 transition-all min-h-[120px] resize-none"
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Settings */}
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Aspect Ratio</label>
-                      <div className="flex gap-2">
-                        {['16:9', '1:1', '9:16'].map((ratio) => (
-                          <button
-                            key={ratio}
-                            onClick={() => setAspectRatio(ratio)}
-                            className={cn(
-                              "flex-1 py-2.5 rounded-xl border text-xs font-bold transition-all",
-                              aspectRatio === ratio 
-                                ? "bg-primary/10 border-primary/40 text-primary" 
-                                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
-                            )}
-                          >
-                            {ratio}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1">Dimensions</label>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="number"
-                          value={customWidth}
-                          onChange={(e) => setCustomWidth(parseInt(e.target.value))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white text-center"
-                        />
-                        <span className="text-slate-600 text-xs">x</span>
-                        <input 
-                          type="number"
-                          value={customHeight}
-                          onChange={(e) => setCustomHeight(parseInt(e.target.value))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white text-center"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4">
-                  <button 
-                    onClick={handleFinalGenerate}
-                    disabled={isGenerating || (!imageIdea && !enhancedPrompt)}
-                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg shadow-xl shadow-primary/30 hover:shadow-primary/50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-                  >
-                    {isGenerating ? <Loader2 className="size-6 animate-spin" /> : <ImageIcon className="size-6" />}
-                    {isGenerating ? 'Engaging Veo Studio...' : 'Generate with Veo'}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
+              All
+            </button>
+            {datesWithArticles.map(d => (
+              <button
+                key={d.date}
+                onClick={() => setActiveDate(d.date === activeDate ? null : d.date)}
+                className={cn(
+                  'flex-shrink-0 text-xs px-3 py-1 rounded-full border transition-all whitespace-nowrap',
+                  activeDate === d.date
+                    ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-500 hover:text-white'
+                )}
+              >
+                {new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                <span className="ml-1.5 opacity-60">{d.count}</span>
+              </button>
+            ))}
           </div>
         )}
-      </AnimatePresence>
-    </div>
+
+        {/* Articles grid */}
+        {isLoading ? (
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
+          </div>
+        ) : articles.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center h-48 gap-3"
+          >
+            <Radar className="w-8 h-8 text-zinc-600" />
+            <p className="text-zinc-500 text-sm">No articles yet. Click "Run Now" to scan for content.</p>
+          </motion.div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <AnimatePresence mode="popLayout">
+              {articles.map((article, i) => (
+                <motion.div
+                  key={article.id}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.97 }}
+                  transition={{ delay: i * 0.04 }}
+                >
+                  <ArticleCard article={article} onSendToStudio={handleSendToStudio} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+
+      {/* Content Studio panel */}
+      <ContentStudio
+        article={studioArticle}
+        isOpen={isStudioOpen}
+        onClose={() => setIsStudioOpen(false)}
+        language={language}
+      />
+    </>
   );
 }
