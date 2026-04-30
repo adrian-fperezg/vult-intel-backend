@@ -137,16 +137,16 @@ export async function runFullScan(url: string, uid?: string | null, projectId?: 
       };
     });
 
-    const projectId = uuidv4();
+    const finalProjectId = projectId || uuidv4();
 
     if (data.buyerPersonas && Array.isArray(data.buyerPersonas) && uid) {
       data.buyerPersonas.forEach((p: any) => {
-        saveBuyerPersona(projectId, { ...p, projectId }).catch(console.error);
+        saveBuyerPersona(finalProjectId, { ...p, projectId: finalProjectId }).catch(console.error);
       });
     }
 
     const project: Project = {
-      id: projectId,
+      id: finalProjectId,
       url: url,
       lastScan: new Date().toISOString(),
       name: data.project?.name || "Unknown project",

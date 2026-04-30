@@ -4,7 +4,7 @@ import {
   Search, Plus, Upload, Download, Filter, MoreHorizontal,
   Building2, Mail, Phone, Linkedin, ChevronDown, ChevronUp,
   User, Tag, Trash2, CheckCircle2, XCircle, Globe, UserCheck, FolderOpen, Settings2, Edit2,
-  Check, X, Loader2, Menu
+  Check, X, Loader2, Menu, Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachBadge, TealButton, OutreachEmptyState, OutreachConfirmDialog } from './OutreachCommon';
@@ -1417,7 +1417,6 @@ export default function OutreachContacts() {
               loadLists();
               loadContacts();
             }}
-            language={language as 'en' | 'es'}
           />
         )}
       </div>

@@ -99,7 +99,7 @@ export default function OutreachLayout() {
       try {
         const [draftData, unreadCount] = await Promise.all([
           fetchIndividualEmails('draft'),
-          fetchInboxUnreadCount(activeProjectId)
+          fetchInboxUnreadCount()
         ]);
         if (isMounted) {
           if (draftData) setDraftCount(draftData.length);

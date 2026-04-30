@@ -65,7 +65,7 @@ export default function OutreachInbox() {
     if (!activeProjectId) return;
     setIsLoading(true);
     try {
-      const data = await fetchUnifiedInbox(activeProjectId);
+      const data = await fetchUnifiedInbox();
       console.log("Inbox JSON Payload:", data);
       if (data) setMessages(data as any);
     } catch (error) {

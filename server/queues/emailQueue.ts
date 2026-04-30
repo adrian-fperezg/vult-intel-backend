@@ -16,6 +16,7 @@ import { sendAlert } from '../lib/notifier.js';
 import { encryptToken } from '../lib/outreach/encrypt.js';
 import { DateTime } from 'luxon';
 import { parseSpintax } from '../utils/spintax.js';
+import { parseSnippets } from '../../shared/utils/snippetParser.js';
 
 
 dotenv.config();
@@ -383,13 +384,8 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             ...customFields
           };
 
-          Object.entries(variables).forEach(([key, value]) => {
-            // Support both {{key}} and {{field_name}}
-            const regex = new RegExp(`{{${key}}}`, 'gi');
-            const valStr = String(value || "");
-            subject = subject.replace(regex, valStr);
-            bodyHtml = bodyHtml.replace(regex, valStr);
-          });
+          subject = parseSnippets(subject, { variables });
+          bodyHtml = parseSnippets(bodyHtml, { variables });
 
           // Apply Spintax
           subject = parseSpintax(subject);
@@ -683,9 +679,10 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
   const sigMatches = [...bodyWithSignature.matchAll(dynamicSigRegex)];
   
   if (sigMatches.length > 0) {
-    const uniqueTagNames = [...new Set(sigMatches.map(m => m[1]))]; // Preserve original case for more reliable mapping if needed, though lookup is case-insensitive for 'signature'
+    const uniqueTagNames = [...new Set(sigMatches.map(m => m[1]))];
     console.log(`[processEmail] Detected signature tags:`, uniqueTagNames);
 
+    const snippetsObj: Record<string, string> = {};
     for (const tagName of uniqueTagNames) {
       let snippet: any = null;
       if (tagName.toLowerCase() === 'signature') {
@@ -697,33 +694,14 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
         console.log(`[processEmail] Resolving specific signature snippet: ${tagName} for project ${email.project_id}`);
         snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND name = ? LIMIT 1").get(email.project_id, tagName) as any;
       }
-
-      const escapedTagName = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const replacementRegex = new RegExp(`\\{\\{${escapedTagName}\\}\\}`, 'gi');
-
       if (snippet) {
-         let sanitizedSig = snippet.body || "";
-         
-         // 1. Replace <p> tags with styled <div> tags to remove default vertical margins
-         sanitizedSig = sanitizedSig.replace(/<p>/gi, '<div style="margin: 0; padding: 0;">');
-         sanitizedSig = sanitizedSig.replace(/<\/p>/gi, '</div>');
-
-         // 2. Convert raw newlines to single <br> tags
-         sanitizedSig = sanitizedSig.replace(/\r?\n/g, '<br>');
-
-         // 3. Collapse multiple consecutive <br> tags into a single <br> to prevent extra vertical gaps
-         sanitizedSig = sanitizedSig.replace(/(<br\s*\/?>){2,}/gi, '<br>');
-
-         // 4. Wrap the entire signature in a <div> with forced zero margins and tight line-height
-         const finalSignatureHtml = `<div style="margin: 0; padding: 0; line-height: 1.2;">${sanitizedSig}</div>`;
-
-         bodyWithSignature = bodyWithSignature.replace(replacementRegex, finalSignatureHtml);
-         console.log(`[processEmail] Successfully replaced {{${tagName}}} with sanitized snippet.`);
+         snippetsObj[tagName] = snippet.body;
       } else {
          console.warn(`[processEmail] Signature tag {{${tagName}}} found but no matching snippet found for project ${email.project_id}`);
-         bodyWithSignature = bodyWithSignature.replace(replacementRegex, "");
       }
     }
+
+    bodyWithSignature = parseSnippets(bodyWithSignature, { snippets: snippetsObj });
   }
 
   // ─── TRACKING & LINK WRAPPING ─────────────────────────────────────────────
@@ -1042,11 +1020,8 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           email: enrollment.contact_email || ""
         };
 
-        Object.entries(variables).forEach(([key, value]) => {
-          const regex = new RegExp(`{{${key}}}`, 'g');
-          subject = subject.replace(regex, value);
-          bodyHtml = bodyHtml.replace(regex, value);
-        });
+        subject = parseSnippets(subject, { variables });
+        bodyHtml = parseSnippets(bodyHtml, { variables });
 
         // Apply Spintax
         subject = parseSpintax(subject);

@@ -125,7 +125,7 @@ const RadarLoading = ({ t }: { t: (key: string) => string }) => {
 };
 
 export default function IntelRadar() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const api = useIntelRadarApi();
   const { isLoading: isProjectLoading } = useProject();
   

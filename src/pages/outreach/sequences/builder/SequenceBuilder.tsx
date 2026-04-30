@@ -719,7 +719,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         };
       });
 
-      await api.updateSequenceSteps(sequenceId, stepsToSave, activeProjectId);
+      await api.updateSequenceSteps(sequenceId, stepsToSave);
 
       setHasUnsavedChanges(false);
     } catch (err: any) {
@@ -835,7 +835,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     }
     setIsSaving(true);
     try {
-      await api.activateSequence(sequenceId, activeProjectId!);
+      await api.activateSequence(sequenceId);
       loadData();
     } catch (error) {
       toast.error(t('outreach.sequences.toasts.activationError'));

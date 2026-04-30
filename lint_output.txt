@@ -1,0 +1,13 @@
+
+> react-example@0.0.0 lint
+> tsc --noEmit
+
+src/pages/outreach/OutreachLeadFinder.tsx(264,68): error TS2554: Expected 2 arguments, but got 3.
+src/pages/outreach/OutreachLeadFinder.tsx(267,60): error TS2554: Expected 1 arguments, but got 2.
+src/pages/outreach/sequences/builder/SequenceBuilder.tsx(722,62): error TS2554: Expected 2 arguments, but got 3.
+src/pages/outreach/sequences/builder/SequenceBuilder.tsx(838,46): error TS2554: Expected 1 arguments, but got 2.
+src/pages/OutreachLayout.tsx(102,33): error TS2554: Expected 0 arguments, but got 1.
+src/services/scanService.ts(85,9): error TS2448: Block-scoped variable 'projectId' used before its declaration.
+src/services/scanService.ts(86,33): error TS2448: Block-scoped variable 'projectId' used before its declaration.
+test_ai_router.ts(19,10): error TS2305: Module '"./src/services/ai"' has no exported member 'AIRouter'.
+test_ai_router.ts(19,20): error TS2305: Module '"./src/services/ai"' has no exported member 'ContextCacher'.

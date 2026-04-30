@@ -11,6 +11,7 @@ import Papa from 'papaparse';
 import { getMailerHealth } from "./lib/outreach/mailer.js";
 import { getImapHealth } from "./lib/outreach/imapHealth.js";
 import { cleanName, cleanCompany } from "./lib/outreach/dataSanitizer.js";
+import { parseSnippets } from "../shared/utils/snippetParser.js";
 
 // ─── GLOBAL ERROR CATCHERS ────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -122,7 +123,7 @@ import { getPDLUsage } from "./lib/outreach/pdl.js";
 import { verifyEmailWaterfall } from "./lib/outreach/verifier.js";
 import { extractDomain, generateVerificationToken, verifyDomainDns } from "./lib/outreach/domainVerification.js";
 import { stripe, verifyStripeSignature } from "./lib/stripe.js";
-import admin from 'firebase-admin';
+
 import { gmailWebhookHandler } from "./api/webhooks/gmailWebhook.js";
 import { AnalyticsData, AiReportResponse } from "../shared/types/outreach";
 import { sendAlert } from "./lib/notifier.js";
@@ -1747,7 +1748,7 @@ app.post("/api/outreach/radar/social-posts/generate", async (req: AuthRequest, r
 
   try {
     // 1. Fetch article context
-    const article = await db.get("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]);
+    const article = await db.get<any>("SELECT * FROM radar_articles WHERE id = ? AND project_id = ?", [articleId, projectId]);
     if (!article) return res.status(404).json({ error: "Article not found" });
 
     // 2. Setup Gemini
@@ -1774,8 +1775,10 @@ Respond ONLY with the raw post content.
 
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_SOCIAL_POST }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION_SOCIAL_POST
+      }
     });
 
     const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -1923,9 +1926,9 @@ app.post("/api/outreach/radar/deep-scan", async (req: AuthRequest, res) => {
 
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-pro',
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_DEEP_SCAN + JSON_ENFORCEMENT_DIRECTIVE }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: { 
+        systemInstruction: SYSTEM_INSTRUCTION_DEEP_SCAN + JSON_ENFORCEMENT_DIRECTIVE,
         tools: [{ googleSearch: {} }]
       }
     });
@@ -2524,11 +2527,13 @@ app.post("/api/outreach/generate-generic", verifyFirebaseToken, async (req: Auth
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey: geminiKey || "" });
     
+    const finalConfig = { ...(config || {}) };
+    if (tools) finalConfig.tools = tools;
+
     const response = await ai.models.generateContent({
       model: model || 'gemini-2.5-flash',
       contents,
-      config: config || {},
-      tools: tools || undefined,
+      config: finalConfig,
     });
 
     const tokens = response.usageMetadata?.totalTokenCount ?? 0;
@@ -5946,22 +5951,19 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
     if (inboxMsg.contact_id) {
       const contact = await db.get("SELECT * FROM outreach_contacts WHERE id = ?", [inboxMsg.contact_id]) as any;
       if (contact) {
-        parsedBodyHtml = parsedBodyHtml.replace(/{{(.*?)}}/g, (match: string, p1: string) => {
-          const key = p1.trim().toLowerCase();
-          if (key === 'first_name') return contact.first_name || ' ';
-          if (key === 'last_name') return contact.last_name || ' ';
-          if (key === 'company') return contact.company || ' ';
-          if (key === 'email') return contact.email || ' ';
-          
-          if (contact.custom_fields) {
-            try {
-              const customFields = typeof contact.custom_fields === 'string' ? JSON.parse(contact.custom_fields) : contact.custom_fields;
-              if (customFields[key]) return customFields[key];
-            } catch (e) {}
-          }
-          
-          return contact[key] || ' ';
-        });
+        let customFields = {};
+        if (contact.custom_fields) {
+          try {
+            customFields = typeof contact.custom_fields === 'string' ? JSON.parse(contact.custom_fields) : contact.custom_fields;
+          } catch (e) {}
+        }
+        
+        const variables = {
+          ...contact,
+          ...customFields
+        };
+        
+        parsedBodyHtml = parseSnippets(parsedBodyHtml, { variables, fallbackMode: 'space' });
       }
     }
 

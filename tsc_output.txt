@@ -1,0 +1,36 @@
+server/index.ts(4,8): error TS2300: Duplicate identifier 'admin'.
+server/index.ts(125,8): error TS2300: Duplicate identifier 'admin'.
+server/index.ts(1764,26): error TS2339: Property 'title' does not exist on type 'unknown'.
+server/index.ts(1765,28): error TS2339: Property 'summary' does not exist on type 'unknown'.
+server/index.ts(1766,16): error TS2339: Property 'url' does not exist on type 'unknown'.
+server/index.ts(1777,7): error TS2353: Object literal may only specify known properties, and 'systemInstruction' does not exist in type 'GenerateContentParameters'.
+server/index.ts(1926,7): error TS2353: Object literal may only specify known properties, and 'systemInstruction' does not exist in type 'GenerateContentParameters'.
+server/index.ts(2531,7): error TS2353: Object literal may only specify known properties, and 'tools' does not exist in type 'GenerateContentParameters'.
+src/pages/IntelRadar.tsx(240,79): error TS2304: Cannot find name 'language'.
+src/pages/outreach/OutreachCampaigns.tsx(61,37): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(62,37): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(63,35): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(64,35): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(65,43): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(66,45): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(67,43): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(68,51): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(69,41): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(70,41): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(73,45): error TS2304: Cannot find name 'useState'.
+src/pages/outreach/OutreachCampaigns.tsx(75,27): error TS2304: Cannot find name 'useCallback'.
+src/pages/outreach/OutreachCampaigns.tsx(84,25): error TS2304: Cannot find name 'useCallback'.
+src/pages/outreach/OutreachCampaigns.tsx(117,3): error TS2304: Cannot find name 'useEffect'.
+src/pages/outreach/OutreachContacts.tsx(746,22): error TS2304: Cannot find name 'Zap'.
+src/pages/outreach/OutreachContacts.tsx(1420,13): error TS2322: Type '{ isOpen: true; onClose: () => void; onSuccess: () => void; language: "en" | "es"; }' is not assignable to type 'IntrinsicAttributes & UploadListModalProps'.
+  Property 'language' does not exist on type 'IntrinsicAttributes & UploadListModalProps'.
+src/pages/outreach/OutreachInbox.tsx(68,44): error TS2554: Expected 0 arguments, but got 1.
+src/pages/outreach/OutreachLeadFinder.tsx(264,68): error TS2554: Expected 2 arguments, but got 3.
+src/pages/outreach/OutreachLeadFinder.tsx(267,60): error TS2554: Expected 1 arguments, but got 2.
+src/pages/outreach/sequences/builder/SequenceBuilder.tsx(722,62): error TS2554: Expected 2 arguments, but got 3.
+src/pages/outreach/sequences/builder/SequenceBuilder.tsx(838,46): error TS2554: Expected 1 arguments, but got 2.
+src/pages/OutreachLayout.tsx(102,33): error TS2554: Expected 0 arguments, but got 1.
+src/services/scanService.ts(85,9): error TS2448: Block-scoped variable 'projectId' used before its declaration.
+src/services/scanService.ts(86,33): error TS2448: Block-scoped variable 'projectId' used before its declaration.
+test_ai_router.ts(19,10): error TS2305: Module '"./src/services/ai"' has no exported member 'AIRouter'.
+test_ai_router.ts(19,20): error TS2305: Module '"./src/services/ai"' has no exported member 'ContextCacher'.

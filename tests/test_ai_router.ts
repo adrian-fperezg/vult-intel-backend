@@ -16,12 +16,10 @@ import 'dotenv/config';
   }
 };
 
-import { AIRouter, ContextCacher, generateText } from './src/services/ai';
+import { generateText } from '../src/services/ai';
 
 async function run() {
-  console.log('Testing AIRouter model selection...');
-  console.log('Simple task model:', AIRouter.getModel('simple'));
-  console.log('Complex task model:', AIRouter.getModel('complex'));
+  console.log('Testing text generation...');
 
   console.log('\nTesting caching text generation...');
   try {

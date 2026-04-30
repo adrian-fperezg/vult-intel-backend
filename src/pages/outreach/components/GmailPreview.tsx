@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Star, Reply, MoreVertical, ChevronDown } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { parseSnippets } from '../../../../shared/utils/snippetParser';
 
 export interface GmailPreviewProps {
   subject: string;
@@ -126,25 +127,11 @@ function parseWithChips(content: string, data?: Record<string, any>) {
        </div>`
    };
 
-   return content.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, tag) => {
-     const key = tag.trim().toLowerCase();
-     
-     // Special override: always render the rich signature mock for previews
-     if (key === 'signature' && mockData['signature']) {
-       return mockData['signature'];
-     }
-     
-     // 1. Real data
-     if (norm[key] !== undefined && norm[key] !== null && norm[key] !== "") {
-       return String(norm[key]);
-     }
-     
-     // 2. Realistic Mock Data fallback
-     if (mockData[key]) {
-       return mockData[key];
-     }
-     
-     // 3. Fallback to generic mock
-     return `[${key}]`;
+   const mergedVariables = { ...mockData, ...norm };
+   
+   return parseSnippets(content, {
+     variables: mergedVariables,
+     snippets: { signature: mockData.signature },
+     fallbackMode: 'mock'
    });
 }

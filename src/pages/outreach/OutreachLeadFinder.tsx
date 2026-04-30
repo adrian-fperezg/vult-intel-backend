@@ -261,10 +261,10 @@ export default function OutreachLeadFinder() {
     setIsSavingSelected(true);
     try {
       if (listId) {
-        await api.saveContactsToList(api.activeProjectId!, listId, toSave);
+        await api.saveContactsToList(listId, toSave);
         toast.success(`Saved ${toSave.length} leads to list`);
       } else {
-        await api.createContactsBulk(api.activeProjectId!, toSave);
+        await api.createContactsBulk(toSave);
         toast.success(`Saved ${toSave.length} leads to CRM`);
       }
       setSelectedIds(new Set());
