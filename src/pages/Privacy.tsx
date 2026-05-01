@@ -70,7 +70,16 @@ const Privacy = () => {
             },
             {
                 id: 5,
-                title: isSpanish ? "5. Seguridad y Retención" : "5. Security & Retention",
+                title: isSpanish ? "5. Análisis de Uso (PostHog)" : "5. Usage Analytics (PostHog)",
+                icon: Zap,
+                color: "text-blue-500",
+                body: isSpanish
+                    ? "Utilizamos PostHog para analizar cómo los usuarios interactúan con nuestra plataforma. Esto nos ayuda a mejorar la experiencia del usuario y el rendimiento del producto. Los datos recopilados son anónimos o seudónimos y se procesan de acuerdo con los estándares del GDPR."
+                    : "We use PostHog to analyze how users interact with our platform. This helps us improve user experience and product performance. Data collected is anonymous or pseudonymous and is processed in accordance with GDPR standards."
+            },
+            {
+                id: 6,
+                title: isSpanish ? "6. Seguridad y Retención" : "6. Security & Retention",
                 icon: Lock,
                 color: "text-orange-600",
                 body: isSpanish
@@ -78,8 +87,8 @@ const Privacy = () => {
                     : "We implement server-side security rules in Firestore to ensure only you can access your data. Data persists until you explicitly request its deletion."
             },
             {
-                id: 6,
-                title: isSpanish ? "6. Sus Derechos" : "6. Your Rights",
+                id: 7,
+                title: isSpanish ? "7. Sus Derechos" : "7. Your Rights",
                 icon: Eye,
                 color: "text-rose-600",
                 body: isSpanish
