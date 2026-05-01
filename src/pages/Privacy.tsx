@@ -60,7 +60,16 @@ const Privacy = () => {
             },
             {
                 id: 4,
-                title: isSpanish ? "4. Seguridad y Retención" : "4. Security & Retention",
+                title: isSpanish ? "4. Seguimiento B2B (Leadfeeder)" : "4. B2B Website Tracking (Leadfeeder)",
+                icon: Eye,
+                color: "text-indigo-600",
+                body: isSpanish
+                    ? "Utilizamos Leadfeeder para identificar las empresas que visitan nuestro sitio web. Leadfeeder utiliza las direcciones IP de los visitantes para relacionarlas con perfiles de empresas. Este proceso es exclusivamente para fines B2B y cumple plenamente con el GDPR. Leadfeeder no identifica a los individuos, solo a las organizaciones."
+                    : "We use Leadfeeder to identify companies visiting our website. Leadfeeder uses visitors' IP addresses to match them with company profiles. This processing is strictly for B2B purposes and is fully GDPR compliant. Leadfeeder does not identify individual visitors, only the organizations they represent."
+            },
+            {
+                id: 5,
+                title: isSpanish ? "5. Seguridad y Retención" : "5. Security & Retention",
                 icon: Lock,
                 color: "text-orange-600",
                 body: isSpanish
@@ -68,8 +77,8 @@ const Privacy = () => {
                     : "We implement server-side security rules in Firestore to ensure only you can access your data. Data persists until you explicitly request its deletion."
             },
             {
-                id: 5,
-                title: isSpanish ? "5. Sus Derechos" : "5. Your Rights",
+                id: 6,
+                title: isSpanish ? "6. Sus Derechos" : "6. Your Rights",
                 icon: Eye,
                 color: "text-rose-600",
                 body: isSpanish
