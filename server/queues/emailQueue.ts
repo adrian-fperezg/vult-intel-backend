@@ -391,8 +391,10 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             ...customFields
           };
 
-          subject = parseSnippets(subject, { variables });
-          bodyHtml = parseSnippets(bodyHtml, { variables });
+          // NOTE: fallbackMode:'leave' preserves {{signature}} and other snippet tags
+          // so they are not wiped here. processEmail() resolves them in its own pass.
+          subject = parseSnippets(subject, { variables, fallbackMode: 'leave' });
+          bodyHtml = parseSnippets(bodyHtml, { variables, fallbackMode: 'leave' });
 
           // Apply Spintax
           subject = parseSpintax(subject);
@@ -1027,8 +1029,10 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           email: enrollment.contact_email || ""
         };
 
-        subject = parseSnippets(subject, { variables });
-        bodyHtml = parseSnippets(bodyHtml, { variables });
+        // NOTE: fallbackMode:'leave' preserves {{signature}} and other snippet tags
+        // so they are not wiped here. processEmail() resolves them in its own pass.
+        subject = parseSnippets(subject, { variables, fallbackMode: 'leave' });
+        bodyHtml = parseSnippets(bodyHtml, { variables, fallbackMode: 'leave' });
 
         // Apply Spintax
         subject = parseSpintax(subject);
