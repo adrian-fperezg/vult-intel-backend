@@ -699,14 +699,20 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
         console.log(`[processEmail] Resolving default signature for project ${email.project_id}`);
         snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND type = 'signature' LIMIT 1").get(email.project_id) as any;
       } else {
-        // Specific named signature snippet
+        // Specific named signature snippet — match on snippet_key first, fall back to name.
+        // NOTE: The POST endpoint historically did not persist snippet_key on insert,
+        // so some rows only have the slug stored in `name`. Querying both columns is
+        // the same defensive pattern used in the custom_field upsert (server/index.ts).
         console.log(`[processEmail] Resolving specific signature snippet: ${tagName} for project ${email.project_id}`);
-        snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND name = ? LIMIT 1").get(email.project_id, tagName) as any;
+        snippet = await db.prepare(
+          "SELECT body FROM outreach_snippets WHERE project_id = ? AND (snippet_key = ? OR name = ?) AND type = 'signature' LIMIT 1"
+        ).get(email.project_id, tagName, tagName) as any;
       }
       if (snippet) {
-         snippetsObj[tagName] = snippet.body;
+        snippetsObj[tagName] = snippet.body;
+        console.log(`[Mailer] Signature tag {{${tagName}}} found and replaced successfully.`);
       } else {
-         console.warn(`[processEmail] Signature tag {{${tagName}}} found but no matching snippet found for project ${email.project_id}`);
+        console.warn(`[processEmail] Signature tag {{${tagName}}} found but no matching snippet found for project ${email.project_id}`);
       }
     }
 

@@ -7918,11 +7918,15 @@ app.post("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest,
   if (!name || !body) return res.status(400).json({ error: "Name and body are required" });
 
   const id = uuidv4();
+  // snippet_key is the stable, machine-readable lookup key used by processEmail.
+  // It mirrors `name` at creation time. Storing it explicitly avoids relying on
+  // the one-time backfill migration which only ran for pre-existing rows.
+  const snippetKey = name;
   try {
     await db.prepare(`
-      INSERT INTO outreach_snippets (id, user_id, project_id, name, body, vars, type)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, userId, projectId, name, body, JSON.stringify(vars || []), type || 'standard');
+      INSERT INTO outreach_snippets (id, user_id, project_id, name, snippet_key, body, vars, type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, projectId, name, snippetKey, body, JSON.stringify(vars || []), type || 'standard');
 
     const newSnippet = await db.get("SELECT * FROM outreach_snippets WHERE id = ?", id);
     res.status(201).json(newSnippet);
