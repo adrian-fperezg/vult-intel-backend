@@ -2,6 +2,8 @@ import db, { DbWrapper } from '../../db.js';
 import { emailQueue } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
 import { DateTime } from 'luxon';
+import { parseAllowedDays, calculateSendingDelay, getNextBusinessSlot } from './sequenceUtils.js';
+export { parseAllowedDays, calculateSendingDelay, getNextBusinessSlot };
 
 export interface SequenceStep {
   id: string;
@@ -267,7 +269,7 @@ export async function calculateNextAvailableSlot(
   d: DbWrapper
 ): Promise<DateTime> {
   // 1. Enforce business hours & weekdays
-  let executeAt = getNextBusinessSlot(baseTime, sequence);
+  let executeAt = getNextBusinessSlot(baseTime, sequence, targetTz);
 
   // 2. Per-Mailbox Staggering
   if (mailboxId && intervalMinutes > 0) {
@@ -284,7 +286,7 @@ export async function calculateNextAvailableSlot(
         executeAt = minStaggeredTime;
         
         // Re-enforce window in case staggering pushed it past the end hour
-        executeAt = getNextBusinessSlot(executeAt, sequence);
+        executeAt = getNextBusinessSlot(executeAt, sequence, targetTz);
       }
     }
   }
@@ -356,78 +358,7 @@ export async function getTrueNextStep(projectId: string, sequenceId: string, con
   return { stepId: null, stepNumber: null, isCompleted: true };
 }
 
-/**
- * Calculates the next available sending slot based on sequence windows and weekdays.
- */
-export function getNextBusinessSlot(baseTime: DateTime, sequence: any): DateTime {
-  if (!sequence.restrict_sending_hours) {
-    return baseTime;
-  }
-
-  const windowStart = sequence.send_window_start || '09:00';
-  const windowEnd = sequence.send_window_end || '17:00';
-  const [startHour, startMin] = windowStart.split(':').map(Number);
-  const [endHour, endMin] = windowEnd.split(':').map(Number);
-  
-  // Parse weekdays safely
-  let allowedDays: boolean[] = [true, true, true, true, true, false, false];
-  try {
-    if (sequence.send_on_weekdays) {
-      const raw = sequence.send_on_weekdays;
-      if (typeof raw === 'string' && raw.startsWith('{') && raw.endsWith('}')) {
-        allowedDays = raw.slice(1, -1).split(',').map((v: string) => v.replace(/"/g, '').trim().toLowerCase() === 'true');
-      } else if (typeof raw === 'string') {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          allowedDays = parsed.map(v => String(v).toLowerCase() === 'true');
-        }
-      } else if (Array.isArray(raw)) {
-        allowedDays = raw.map(v => String(v).toLowerCase() === 'true');
-      }
-    }
-  } catch (e) {
-    console.warn("[SequenceEngine] Error parsing send_on_weekdays:", e);
-  }
-
-  let current = baseTime;
-  
-  // Max check: 14 days to prevent infinite loops
-  for (let i = 0; i < 14; i++) {
-    const dayIndex = current.weekday - 1; // Luxon: Mon=1 -> 0, Sun=7 -> 6
-    const isAllowedDay = allowedDays[dayIndex];
-    
-    const startOfWindow = current.set({ hour: startHour, minute: startMin, second: 0, millisecond: 0 });
-    const endOfWindow = current.set({ hour: endHour, minute: endMin, second: 0, millisecond: 0 });
-
-    if (isAllowedDay) {
-      if (current < startOfWindow) {
-        // Shift to window start while preserving relative minute offsets if possible.
-        // We also preserve seconds and milliseconds for high-precision staggering.
-        const shifted = current.set({ 
-          hour: startHour, 
-          minute: Math.max(startMin, current.minute),
-          second: current.second,
-          millisecond: current.millisecond
-        });
-        return shifted < startOfWindow ? startOfWindow : shifted;
-      }
-      if (current <= endOfWindow) {
-        return current;
-      }
-    }
-    
-    // Jump to next day - PRESERVE minutes and seconds from the original baseTime 
-    // to maintain staggering relative offsets across day boundaries.
-    current = current.plus({ days: 1 }).set({ 
-      hour: startHour, 
-      minute: Math.max(startMin, baseTime.minute), 
-      second: baseTime.second, 
-      millisecond: baseTime.millisecond 
-    });
-  }
-  
-  return current;
-}
+// Utilities moved to sequenceUtils.ts
 
 /**
  * Ensures a contact has a valid, active mailbox assigned from the sequence pool.

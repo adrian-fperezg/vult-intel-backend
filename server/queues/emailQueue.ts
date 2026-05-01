@@ -10,7 +10,8 @@ import { resolveAttachments } from '../lib/outreach/sequenceMailer.js';
 // @ts-ignore
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 
-import { scheduleNextStep, enrollContactInSequence, calculateNextAvailableSlot, getTrueNextStep, getNextBusinessSlot } from '../lib/outreach/sequenceEngine.js';
+import { scheduleNextStep, enrollContactInSequence, calculateNextAvailableSlot, getTrueNextStep } from '../lib/outreach/sequenceEngine.js';
+import { getNextBusinessSlot, calculateSendingDelay, parseAllowedDays } from '../lib/outreach/sequenceUtils.js';
 import { recordOutreachEvent } from '../lib/outreach/utils.js';
 import { sendAlert } from '../lib/notifier.js';
 import { encryptToken } from '../lib/outreach/encrypt.js';
@@ -269,24 +270,30 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
       // 1c. Sending Window Restriction Check
       if (sequence.restrict_sending_hours && !bypassRestrictions) {
-        const contact = await db.prepare('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?').get(contactId) as any;
+        const contact = await db.get<any>('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?', [contactId]);
         const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
         const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'America/Mexico_City');
 
         const now = DateTime.now().setZone(targetTz);
-        const nextSlot = getNextBusinessSlot(now, sequence);
+        const allowedDays = parseAllowedDays(sequence.send_on_weekdays);
+        const windowStart = sequence.send_window_start || '09:00';
+        const windowEnd = sequence.send_window_end || '17:00';
+        
+        const windowDelayMs = calculateSendingDelay(now, windowStart, windowEnd, targetTz, allowedDays);
 
-        console.log(`[Sending Window Check] Sequence: ${sequenceId}, Contact: ${contactId}, Time: ${now.toFormat('HH:mm:ss')}, Next Slot: ${nextSlot.toFormat('HH:mm:ss')}, Restriction: ${sequence.restrict_sending_hours}`);
+        if (windowDelayMs > 0) {
+           console.log(`[Sending Window Check] Sequence: ${sequenceId}, Contact: ${contactId}, Time: ${now.toFormat('HH:mm:ss')}, Outside Window. Delaying by ${Math.round(windowDelayMs/1000)}s`);
 
-        // If the next valid slot is more than 1 minute away, we are outside the window.
-        if (nextSlot.diff(now, 'minutes').minutes > 1) {
-           // --- ENHANCED DEFERRAL (STAGGERED) ---
+           // --- STAGGERED DEFERRAL ---
+           // We don't just wait until the window opens; we also apply mailbox-level staggering
+           // to prevent a burst of emails as soon as the window starts.
            const settings = await db.get<any>('SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?', [projectId]);
            const intervalMinutes = settings?.sending_interval_minutes ?? 20;
            const mailboxId = enrollment.assigned_mailbox_id;
 
+           const windowOpenTime = now.plus({ milliseconds: windowDelayMs });
            const staggeredSlot = await calculateNextAvailableSlot(
-             nextSlot, // Start from the window opening time
+             windowOpenTime, 
              sequence,
              mailboxId,
              intervalMinutes,
@@ -295,7 +302,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
            );
 
            const deferMs = Math.max(0, staggeredSlot.diffNow().as('milliseconds'));
-           console.log(`[Sending Window] Deferring email for contact ${contactId} until ${staggeredSlot.toFormat('yyyy-MM-dd HH:mm:ss')} (Staggered deferral).`);
+           console.log(`[Sending Window] Deferring job for contact ${contactId} until ${staggeredSlot.toFormat('yyyy-MM-dd HH:mm:ss')} (${targetTz})`);
            
            const newScheduledAt = new Date(Date.now() + deferMs);
            await db.run(
