@@ -379,6 +379,11 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
           let subject = config.subject || "";
           let bodyHtml = config.body_html || "";
           
+          // 1. Resolve Signatures first (so they don't get stripped by variables-only pass)
+          const resolved = await resolveSignaturesForEmail(projectId, bodyHtml, subject);
+          subject = resolved.subject;
+          bodyHtml = resolved.bodyHtml;
+
           const customFields = typeof contact.custom_fields === 'string' 
             ? JSON.parse(contact.custom_fields || "{}") 
             : (contact.custom_fields || {});
@@ -391,8 +396,7 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             ...customFields
           };
 
-          // NOTE: fallbackMode:'leave' preserves {{signature}} and other snippet tags
-          // so they are not wiped here. processEmail() resolves them in its own pass.
+          // NOTE: fallbackMode:'leave' preserves other snippet tags
           subject = parseSnippets(subject, { variables, fallbackMode: 'leave' });
           bodyHtml = parseSnippets(bodyHtml, { variables, fallbackMode: 'leave' });
 
@@ -624,6 +628,45 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
   }
 }, { connection: redis as any });
 
+/**
+ * Shared logic to resolve signature snippets for a given content.
+ */
+export async function resolveSignaturesForEmail(projectId: string, bodyHtml: string, subject?: string): Promise<{ bodyHtml: string, subject: string }> {
+  let finalBody = bodyHtml || "";
+  let finalSubject = subject || "";
+
+  const dynamicSigRegex = /\{\{(sig_[A-Za-z0-9_]+|signature)\}\}/gi;
+  const bodyMatches = [...finalBody.matchAll(dynamicSigRegex)];
+  const subjectMatches = finalSubject ? [...finalSubject.matchAll(dynamicSigRegex)] : [];
+  
+  if (bodyMatches.length > 0 || subjectMatches.length > 0) {
+    const uniqueTagNames = [...new Set([...bodyMatches, ...subjectMatches].map(m => m[1]))];
+    const snippetsObj: Record<string, string> = {};
+    
+    for (const tagNameRaw of uniqueTagNames) {
+      const tagName = tagNameRaw.toLowerCase();
+      let snippet: any = null;
+      if (tagName === 'signature') {
+        snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND type = 'signature' LIMIT 1").get(projectId) as any;
+      } else {
+        snippet = await db.prepare(
+          "SELECT body FROM outreach_snippets WHERE project_id = ? AND (LOWER(snippet_key) = LOWER(?) OR LOWER(name) = LOWER(?)) AND type = 'signature' LIMIT 1"
+        ).get(projectId, tagName, tagName) as any;
+      }
+      if (snippet) {
+        snippetsObj[tagName] = snippet.body;
+      }
+    }
+
+    finalBody = parseSnippets(finalBody, { snippets: snippetsObj, fallbackMode: 'leave' });
+    if (finalSubject) {
+      finalSubject = parseSnippets(finalSubject, { snippets: snippetsObj, fallbackMode: 'leave' });
+    }
+  }
+
+  return { bodyHtml: finalBody, subject: finalSubject };
+}
+
 export async function processEmail(emailId: string, signal?: AbortSignal) {
   console.log(`[processEmail] Starting for emailId: ${emailId}`);
   const email = await db.prepare("SELECT * FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
@@ -682,41 +725,10 @@ export async function processEmail(emailId: string, signal?: AbortSignal) {
     }
   }
 
-  // INJECT SIGNATURES (Enhanced for dynamic sig_... tags)
-  let bodyWithSignature = email.body_html || "";
-  const dynamicSigRegex = /\{\{(sig_[A-Za-z0-9_]+|signature)\}\}/gi;
-  const sigMatches = [...bodyWithSignature.matchAll(dynamicSigRegex)];
-  
-  if (sigMatches.length > 0) {
-    const uniqueTagNames = [...new Set(sigMatches.map(m => m[1]))];
-    console.log(`[processEmail] Detected signature tags:`, uniqueTagNames);
-
-    const snippetsObj: Record<string, string> = {};
-    for (const tagNameRaw of uniqueTagNames) {
-      const tagName = tagNameRaw.toLowerCase();
-      let snippet: any = null;
-      if (tagName === 'signature') {
-        // Default project-wide signature
-        console.log(`[processEmail] Resolving default signature for project ${email.project_id}`);
-        snippet = await db.prepare("SELECT body FROM outreach_snippets WHERE project_id = ? AND type = 'signature' LIMIT 1").get(email.project_id) as any;
-      } else {
-        // Specific named signature snippet — match on snippet_key first, fall back to name.
-        // We use LOWER() for maximum robustness against case inconsistencies.
-        console.log(`[processEmail] Resolving specific signature snippet: ${tagName} for project ${email.project_id}`);
-        snippet = await db.prepare(
-          "SELECT body FROM outreach_snippets WHERE project_id = ? AND (LOWER(snippet_key) = LOWER(?) OR LOWER(name) = LOWER(?)) AND type = 'signature' LIMIT 1"
-        ).get(email.project_id, tagName, tagName) as any;
-      }
-      if (snippet) {
-        snippetsObj[tagName] = snippet.body;
-        console.log(`[Mailer] Signature tag {{${tagNameRaw}}} found and replaced successfully.`);
-      } else {
-        console.warn(`[processEmail] Signature tag {{${tagNameRaw}}} found but no matching snippet found for project ${email.project_id}`);
-      }
-    }
-
-    bodyWithSignature = parseSnippets(bodyWithSignature, { snippets: snippetsObj });
-  }
+  // INJECT SIGNATURES (Using shared helper)
+  const resolved = await resolveSignaturesForEmail(email.project_id, email.body_html, email.subject);
+  let bodyWithSignature = resolved.bodyHtml;
+  // (Subject is already in the record, but we use it here if needed. processEmail uses body_html mostly)
 
   // ─── TRACKING & LINK WRAPPING ─────────────────────────────────────────────
   let backendUrl = process.env.APP_URL || "http://localhost:3000";

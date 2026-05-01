@@ -60,7 +60,7 @@ export function parseSnippets(content: string, context: SnippetParserContext): s
         return `<div style="margin: 0; padding: 0; line-height: 1.2;">${sanitized}</div>`;
       }
       
-      // Unresolved signature returns empty string to avoid showing raw tags
+      if (fallbackMode === 'leave') return match;
       return '';
     }
 
