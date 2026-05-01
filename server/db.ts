@@ -984,7 +984,12 @@ export const initDb = async () => {
     if (!snippetColNames.includes('snippet_key')) {
       console.log("[DB] Adding 'snippet_key' column to outreach_snippets");
       await db.run(`ALTER TABLE outreach_snippets ADD COLUMN snippet_key TEXT`);
-      await db.run(`UPDATE outreach_snippets SET snippet_key = name WHERE snippet_key IS NULL`);
+      await db.run(`UPDATE outreach_snippets SET snippet_key = LOWER(name) WHERE snippet_key IS NULL`);
+    } else {
+      // Ensure all existing keys are lowercased for consistency
+      await db.run(`UPDATE outreach_snippets SET snippet_key = LOWER(snippet_key) WHERE snippet_key IS NOT NULL`);
+      // Also backfill any remaining NULLs (just in case)
+      await db.run(`UPDATE outreach_snippets SET snippet_key = LOWER(name) WHERE snippet_key IS NULL`);
     }
 
     // Backfill current_step_id for enrollments

@@ -7921,7 +7921,7 @@ app.post("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest,
   // snippet_key is the stable, machine-readable lookup key used by processEmail.
   // It mirrors `name` at creation time. Storing it explicitly avoids relying on
   // the one-time backfill migration which only ran for pre-existing rows.
-  const snippetKey = name;
+  const snippetKey = name.toLowerCase();
   try {
     await db.prepare(`
       INSERT INTO outreach_snippets (id, user_id, project_id, name, snippet_key, body, vars, type)
@@ -7951,6 +7951,9 @@ app.patch("/api/outreach/snippets/:id", verifyFirebaseToken, async (req: AuthReq
   if (name !== undefined) {
     fields.push("name = ?");
     values.push(name);
+    // Also update snippet_key to stay in sync and lowercase
+    fields.push("snippet_key = ?");
+    values.push(name.toLowerCase());
   }
   if (body !== undefined) {
     fields.push("body = ?");
