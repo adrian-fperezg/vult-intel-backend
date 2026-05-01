@@ -100,6 +100,7 @@ import redis from "./redis";
 import db, { initDb } from "./db";
 import { google } from "googleapis";
 import { verifyFirebaseToken, AuthRequest, verifyToken } from "./middleware";
+import { adminOnly } from "./middleware/adminOnly.js";
 import { enrollContactInSequence, getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment, getNextBusinessSlot } from "./lib/outreach/sequenceEngine.js";
 import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
 import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
@@ -117,6 +118,7 @@ import { recordOutreachEvent } from "./lib/outreach/utils.js";
 import { encryptToken, decryptToken } from "./lib/outreach/encrypt.js";
 import { syncMailbox, setupGmailWatch, syncMailboxHistory } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
+import roadmapRoutes from "./routes/admin/roadmap.js";
 import { getAccountInformation } from "./lib/outreach/hunter.js";
 import { getZeroBounceCredits } from "./lib/outreach/zerobounce.js";
 import { getPDLUsage } from "./lib/outreach/pdl.js";
@@ -405,7 +407,7 @@ app.get("/api/outreach/health", (_req, res) => {
   res.json({ status: "ok", service: "outreach-api" });
 });
 
-app.get("/api/admin/flush-email-queue", async (_req, res) => {
+app.get("/api/admin/flush-email-queue", verifyFirebaseToken, adminOnly, async (_req: AuthRequest, res) => {
   try {
     console.log("[Admin Flush Queue] Scanning BullMQ for delayed and waiting jobs...");
     const delayedJobs = await emailQueue.getDelayed();
@@ -445,7 +447,7 @@ const REBALANCE_LOCK_KEY = 'queue:rebalance:lock';
  * Administrative endpoint to rebalance and stagger the current BullMQ delayed queue.
  * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
  */
-app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequest, res) => {
+app.post("/api/admin/queue/rebalance", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   // Use Redis-based lock to prevent concurrent rebalance operations across multiple instances
   const lock = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'EX', 300, 'NX'); // 5 minute TTL
   if (!lock) {
@@ -613,7 +615,7 @@ app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequ
  * Removes jobs from BullMQ and records from outreach_sequence_enrollments
  * if their associated sequence no longer exists in outreach_sequences.
  */
-app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: AuthRequest, res) => {
+app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   try {
     const projectId = req.headers['x-project-id'] as string;
     if (!projectId) {
@@ -750,7 +752,7 @@ app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: Auth
  * Administrative endpoint to manually clear all jobs for a specific sequence.
  * This is used to resolve issues with "ghost" sequences.
  */
-app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: AuthRequest, res) => {
+app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   try {
     const projectId = req.headers['x-project-id'] as string;
     // Check multiple possible keys for robustness
@@ -842,7 +844,7 @@ app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: Aut
 
 
 // Diagnostic endpoint to monitor upcoming scheduled sequence steps
-app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthRequest, res) => {
+app.get("/api/admin/queue/scheduled", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   const projectId = (req.query.project_id || req.query.projectId) as string;
   
   try {
@@ -952,7 +954,7 @@ app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthReque
 });
 
 // Endpoint to retry a single failed job
-app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, async (req: AuthRequest, res) => {
+app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   const { jobId } = req.params;
   
   try {
@@ -975,7 +977,7 @@ app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, async (req: AuthR
 });
 
 // Endpoint to retry all failed jobs for a project
-app.post("/api/admin/queue/retry-all", verifyFirebaseToken, async (req: AuthRequest, res) => {
+app.post("/api/admin/queue/retry-all", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   const projectId = req.body.project_id || req.body.projectId;
   
   if (!projectId) {
@@ -1005,7 +1007,7 @@ app.post("/api/admin/queue/retry-all", verifyFirebaseToken, async (req: AuthRequ
   }
 });
 
-app.get("/api/admin/force-reset-queue", async (_req, res) => {
+app.get("/api/admin/force-reset-queue", verifyFirebaseToken, adminOnly, async (_req: AuthRequest, res) => {
   const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
   const today = DateTime.now().setZone("UTC").toISODate();
 
@@ -1071,7 +1073,7 @@ app.get("/api/admin/force-reset-queue", async (_req, res) => {
     });
   }
 });
-app.get("/api/admin/sequence/force-recovery", async (req, res) => {
+app.get("/api/admin/sequence/force-recovery", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
   const { sequence_id } = req.query as { sequence_id: string };
   if (!sequence_id) return res.status(400).json({ error: "sequence_id query param is required" });
 
@@ -7376,6 +7378,9 @@ app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
 
 // ─── HUNTER.IO INTEGRATION ────────────────────────────────────────────────────
 app.use("/api/outreach/hunter", hunterRoutes);
+
+// ─── ADMIN ROADMAP ────────────────────────────────────────────────────────────
+app.use("/api/admin/roadmap", roadmapRoutes);
 
 app.post("/api/outreach/export/google-sheets", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;

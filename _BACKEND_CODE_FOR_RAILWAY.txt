@@ -1,6 +1,11 @@
-# BACKEND CODE FOR RAILWAY MIGRATION
-
 This file contains all the backend code (Express routes, Postgres integrations, Gemini logic) that was previously mixed into this repository. Please paste this into your separate Railway backend repository.
+
+IMPORTANT: Ensure the following environment variables are set in Railway:
+- ADMIN_EMAIL (e.g., adrianfperezg@gmail.com)
+- GEMINI_API_KEY
+- DATABASE_URL
+- REDIS_URL
+
 
 --- FULL FILE: server/lib/radar/articleDiscovery.ts ---
 
@@ -657,7 +662,156 @@ export async function processRadarRun(
 }
 
 
+--- FULL FILE: server/middleware/adminOnly.ts ---
+
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../middleware';
+
+/**
+ * Middleware to restrict access to administrative routes.
+ * Strictly verifies that the authenticated user's email matches the whitelist.
+ */
+export const adminOnly = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+
+  if (!ADMIN_EMAIL) {
+    console.error('[ADMIN AUTH ERROR] ADMIN_EMAIL environment variable is not set');
+    return res.status(500).json({ error: 'Internal Server Error: Admin configuration missing' });
+  }
+
+  if (!req.user) {
+    console.error('[ADMIN AUTH ERROR] No user found in request');
+    return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+  }
+
+  if (req.user.email !== ADMIN_EMAIL) {
+    console.error(`[ADMIN AUTH ERROR] Unauthorized access attempt by ${req.user.email}`);
+    return res.status(403).json({ 
+      error: 'Forbidden: You do not have permission to access this resource',
+      message: 'This portal is restricted to the primary system administrator.'
+    });
+  }
+
+  console.log(`[ADMIN AUTH] Admin access granted to ${req.user.email}`);
+  next();
+};
+
+--- FULL FILE: server/routes/admin/roadmap.ts ---
+
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { verifyFirebaseToken } from '../../middleware';
+import { adminOnly } from '../../middleware/adminOnly';
+
+const router = express.Router();
+
+interface RoadmapItem {
+  id: string;
+  title: string;
+  urgency: 'RED' | 'ORANGE' | 'BLUE';
+  dueDate: string;
+  summary: string;
+  fullContext: string;
+  action: string[];
+}
+
+function parseRoadmap(content: string): RoadmapItem[] {
+  const items: RoadmapItem[] = [];
+  const sections = content.split('### ').slice(1);
+
+  for (const section of sections) {
+    const lines = section.split('\n');
+    const titleLine = lines[0].trim();
+    
+    const urgencyMatch = titleLine.match(/\[URGENCY: (RED|ORANGE|BLUE)\]/);
+    const urgency = (urgencyMatch ? urgencyMatch[1] : 'BLUE') as 'RED' | 'ORANGE' | 'BLUE';
+    const title = titleLine.replace(/\[URGENCY: (RED|ORANGE|BLUE)\]/, '').trim();
+
+    const dueDateLine = lines.find(l => l.toLowerCase().includes('due date:'));
+    const dueDate = dueDateLine ? dueDateLine.split(':')[1].trim() : 'TBD';
+
+    const summaryLine = lines.find(l => l.toLowerCase().includes('summary:'));
+    const summary = summaryLine ? summaryLine.split(':')[1].trim() : '';
+
+    const contextIndex = lines.findIndex(l => l.toLowerCase().includes('full context:'));
+    const actionIndex = lines.findIndex(l => l.toLowerCase().includes('action:'));
+
+    let fullContext = '';
+    if (contextIndex !== -1) {
+      const endIdx = actionIndex !== -1 ? actionIndex : lines.length;
+      fullContext = lines.slice(contextIndex + 1, endIdx).map(l => l.trim()).filter(l => l && !l.startsWith('-')).join(' ');
+    }
+
+    let action: string[] = [];
+    if (actionIndex !== -1) {
+      action = lines.slice(actionIndex + 1)
+        .map(l => l.trim())
+        .filter(l => l.startsWith('1.') || l.startsWith('2.') || l.startsWith('3.') || l.startsWith('4.') || l.startsWith('-'))
+        .map(l => l.replace(/^\d+\.\s+/, '').replace(/^-\s+/, ''));
+    }
+
+    items.push({
+      id: title.toLowerCase().replace(/\s+/g, '-'),
+      title,
+      urgency,
+      dueDate,
+      summary,
+      fullContext,
+      action
+    });
+  }
+
+  return items;
+}
+
+router.get('/', verifyFirebaseToken, adminOnly, async (req, res) => {
+  try {
+    const roadmapPath = path.join(process.cwd(), 'ROADMAP.md');
+    let roadmapItems: RoadmapItem[] = [];
+    if (fs.existsSync(roadmapPath)) {
+      const content = fs.readFileSync(roadmapPath, 'utf-8');
+      roadmapItems = parseRoadmap(content);
+    }
+    res.json({
+      success: true,
+      data: roadmapItems,
+      metadata: {
+        lastUpdated: new Date().toISOString(),
+        totalTasks: roadmapItems.length,
+        criticalTasks: roadmapItems.filter(i => i.urgency === 'RED').length
+      }
+    });
+  } catch (error: any) {
+    console.error('[ROADMAP ROUTE ERROR]', error);
+    res.status(500).json({ error: 'Failed to retrieve roadmap data' });
+  }
+});
+
+router.get('/raw/:file', verifyFirebaseToken, adminOnly, async (req, res) => {
+  try {
+    const { file } = req.params;
+    let fileName = '';
+    if (file === 'roadmap') fileName = 'ROADMAP.md';
+    else if (file === 'security') fileName = 'SECURITY_PROTOCOL.md';
+    else return res.status(400).json({ error: 'Invalid file requested' });
+
+    const filePath = path.join(process.cwd(), fileName);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.setHeader('Content-Type', 'text/markdown');
+    res.send(content);
+  } catch (error: any) {
+    console.error('[RAW_FILE_FETCH_ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch raw file' });
+  }
+});
+
+export default router;
+
 --- GIT DIFF FOR THE REST OF THE SERVER MODIFICATIONS ---
+
 
 diff --git a/server/db.ts b/server/db.ts
 index 67fb5ae..fee0dff 100644
@@ -716,10 +870,65 @@ index 67fb5ae..fee0dff 100644
      await applyTrigger('radar_social_posts');
  
 diff --git a/server/index.ts b/server/index.ts
-index 5eb2b02..6b1b196 100644
 --- a/server/index.ts
 +++ b/server/index.ts
+@@ -100,2 +100,3 @@
+ import redis from "./redis";
+ import db, { initDb } from "./db";
+ import { google } from "googleapis";
+ import { verifyFirebaseToken, AuthRequest, verifyToken } from "./middleware";
++import { adminOnly } from "./middleware/adminOnly.js";
+ import { enrollContactInSequence, getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment, getNextBusinessSlot } from "./lib/outreach/sequenceEngine.js";
+
+@@ -408,2 +409,2 @@
+ app.get("/api/outreach/health", (_req, res) => {
+   res.json({ status: "ok", service: "outreach-api" });
+ });
+ 
+-app.get("/api/admin/flush-email-queue", verifyFirebaseToken, async (_req: AuthRequest, res) => {
++app.get("/api/admin/flush-email-queue", verifyFirebaseToken, adminOnly, async (_req: AuthRequest, res) => {
+   try {
+@@ -448,2 +449,2 @@
+  * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
+  */
+-app.post("/api/admin/queue/rebalance", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.post("/api/admin/queue/rebalance", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   // Use Redis-based lock to prevent concurrent rebalance operations across multiple instances
+@@ -616,2 +617,2 @@
+  * if their associated sequence no longer exists in outreach_sequences.
+  */
+-app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   try {
+@@ -753,2 +754,2 @@
+  * This is used to resolve issues with "ghost" sequences.
+  */
+-app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   try {
+@@ -844,2 +845,2 @@
+-app.get("/api/admin/queue/scheduled", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.get("/api/admin/queue/scheduled", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   try {
+@@ -954,2 +955,2 @@
+-app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   const { jobId } = req.params;
+@@ -977,2 +978,2 @@
+-app.post("/api/admin/queue/retry-all", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.post("/api/admin/queue/retry-all", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   try {
+@@ -1007,2 +1008,2 @@
+-app.get("/api/admin/force-reset-queue", verifyFirebaseToken, async (_req: AuthRequest, res) => {
++app.get("/api/admin/force-reset-queue", verifyFirebaseToken, adminOnly, async (_req: AuthRequest, res) => {
+   try {
+@@ -1073,2 +1074,2 @@
+-app.get("/api/admin/sequence/force-recovery", verifyFirebaseToken, async (req: AuthRequest, res) => {
++app.get("/api/admin/sequence/force-recovery", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+   try {
+
 @@ -1669,22 +1669,56 @@ app.get("/api/outreach/radar/articles", async (req: AuthRequest, res) => {
+
    if (!projectId) return res.status(400).json({ error: "Project ID is required" });
  
    try {
@@ -999,3 +1208,863 @@ index ded75d0..b4ee82e 100644
    },
    { 
      connection: redis, 
+
+
+
+--- ADMIN SECURITY INFRASTRUCTURE ---
+
+--- FULL FILE: server/middleware/adminOnly.ts ---
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../middleware';
+
+/**
+ * Middleware to restrict access to administrative routes.
+ * Strictly verifies that the authenticated user's email matches the whitelist.
+ */
+export const adminOnly = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+
+  if (!ADMIN_EMAIL) {
+    console.error('[ADMIN AUTH ERROR] ADMIN_EMAIL environment variable is not set');
+    return res.status(500).json({ error: 'Internal Server Error: Admin configuration missing' });
+  }
+
+  if (!req.user) {
+    console.error('[ADMIN AUTH ERROR] No user found in request');
+    return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+  }
+
+  if (req.user.email !== ADMIN_EMAIL) {
+    console.error(`[ADMIN AUTH ERROR] Unauthorized access attempt by ${req.user.email}`);
+    return res.status(403).json({ 
+      error: 'Forbidden: You do not have permission to access this resource',
+      message: 'This portal is restricted to the primary system administrator.'
+    });
+  }
+
+  console.log(`[ADMIN AUTH] Admin access granted to ${req.user.email}`);
+  next();
+};
+
+
+--- FULL FILE: server/routes/admin/roadmap.ts ---
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { verifyFirebaseToken } from '../../middleware';
+import { adminOnly } from '../../middleware/adminOnly';
+
+const router = express.Router();
+
+interface RoadmapItem {
+  id: string;
+  title: string;
+  urgency: 'RED' | 'ORANGE' | 'BLUE';
+  dueDate: string;
+  summary: string;
+  fullContext: string;
+  action: string[];
+}
+
+/**
+ * Simple parser for ROADMAP.md
+ */
+function parseRoadmap(content: string): RoadmapItem[] {
+  const items: RoadmapItem[] = [];
+  const sections = content.split('### ').slice(1);
+
+  for (const section of sections) {
+    const lines = section.split('\n');
+    const titleLine = lines[0].trim();
+    
+    const urgencyMatch = titleLine.match(/\[URGENCY: (RED|ORANGE|BLUE)\]/);
+    const urgency = (urgencyMatch ? urgencyMatch[1] : 'BLUE') as 'RED' | 'ORANGE' | 'BLUE';
+    const title = titleLine.replace(/\[URGENCY: (RED|ORANGE|BLUE)\]/, '').trim();
+
+    const dueDateLine = lines.find(l => l.toLowerCase().includes('due date:'));
+    const dueDate = dueDateLine ? dueDateLine.split(':')[1].trim() : 'TBD';
+
+    const summaryLine = lines.find(l => l.toLowerCase().includes('summary:'));
+    const summary = summaryLine ? summaryLine.split(':')[1].trim() : '';
+
+    const contextIndex = lines.findIndex(l => l.toLowerCase().includes('full context:'));
+    const actionIndex = lines.findIndex(l => l.toLowerCase().includes('action:'));
+
+    let fullContext = '';
+    if (contextIndex !== -1) {
+      const endIdx = actionIndex !== -1 ? actionIndex : lines.length;
+      fullContext = lines.slice(contextIndex + 1, endIdx).map(l => l.trim()).filter(l => l && !l.startsWith('-')).join(' ');
+    }
+
+    let action: string[] = [];
+    if (actionIndex !== -1) {
+      action = lines.slice(actionIndex + 1)
+        .map(l => l.trim())
+        .filter(l => l.startsWith('1.') || l.startsWith('2.') || l.startsWith('3.') || l.startsWith('4.') || l.startsWith('-'))
+        .map(l => l.replace(/^\d+\.\s+/, '').replace(/^-\s+/, ''));
+    }
+
+    items.push({
+      id: title.toLowerCase().replace(/\s+/g, '-'),
+      title,
+      urgency,
+      dueDate,
+      summary,
+      fullContext,
+      action
+    });
+  }
+
+  return items;
+}
+
+router.get('/', verifyFirebaseToken, adminOnly, async (req, res) => {
+  try {
+    const roadmapPath = path.join(process.cwd(), 'ROADMAP.md');
+    const protocolPath = path.join(process.cwd(), 'SECURITY_PROTOCOL.md');
+
+    let roadmapItems: RoadmapItem[] = [];
+    if (fs.existsSync(roadmapPath)) {
+      const content = fs.readFileSync(roadmapPath, 'utf-8');
+      roadmapItems = parseRoadmap(content);
+    }
+
+    // You could also parse SECURITY_PROTOCOL.md for specific "Security Notices" if needed
+    // For now, we return the roadmap items which include security tasks
+
+    res.json({
+      success: true,
+      data: roadmapItems,
+      metadata: {
+        lastUpdated: new Date().toISOString(),
+        totalTasks: roadmapItems.length,
+        criticalTasks: roadmapItems.filter(i => i.urgency === 'RED').length
+      }
+    });
+  } catch (error: any) {
+    console.error('[ROADMAP ROUTE ERROR]', error);
+    res.status(500).json({ error: 'Failed to retrieve roadmap data' });
+  }
+});
+
+router.get('/raw/:file', verifyFirebaseToken, adminOnly, async (req, res) => {
+  try {
+    const { file } = req.params;
+    let fileName = '';
+    
+    if (file === 'roadmap') fileName = 'ROADMAP.md';
+    else if (file === 'security') fileName = 'SECURITY_PROTOCOL.md';
+    else return res.status(400).json({ error: 'Invalid file requested' });
+
+    const filePath = path.join(process.cwd(), fileName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.setHeader('Content-Type', 'text/markdown');
+    res.send(content);
+  } catch (error: any) {
+    console.error('[RAW_FILE_FETCH_ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch raw file' });
+  }
+});
+
+export default router;
+
+
+--- ADMINISTRATIVE ENDPOINTS (to be integrated into server/index.ts) ---
+// Note: Ensure you import { adminOnly } from './middleware/adminOnly.js' in index.ts
+
+app.get("/api/admin/flush-email-queue", verifyFirebaseToken, adminOnly, async (_req: AuthRequest, res) => {
+  try {
+    console.log("[Admin Flush Queue] Scanning BullMQ for delayed and waiting jobs...");
+    const delayedJobs = await emailQueue.getDelayed();
+    const waitingJobs = await emailQueue.getWaiting();
+
+    let promotedCount = 0;
+
+    // Waiting jobs are already ready to be processed.
+    for (const job of delayedJobs) {
+      if (job) {
+        await job.promote();
+        promotedCount++;
+      }
+    }
+
+    console.log(`[Admin Flush Queue] Found ${delayedJobs.length} delayed jobs, promoted ${promotedCount}. Found ${waitingJobs.length} waiting jobs.`);
+
+    res.json({
+      success: true,
+      message: "Queue flushed successfully by promoting delayed jobs.",
+      delayedJobsFound: delayedJobs.length,
+      waitingJobsFound: waitingJobs.length,
+      jobsPromoted: promotedCount
+    });
+  } catch (err: any) {
+    console.error("[Admin Flush Queue] FATAL ERROR:", err);
+    res.status(500).json({
+      error: "Internal server error during queue flush",
+      details: err.message
+    });
+  }
+});
+
+const REBALANCE_LOCK_KEY = 'queue:rebalance:lock';
+
+/**
+ * Administrative endpoint to rebalance and stagger the current BullMQ delayed queue.
+ * This retroactively fixes legacy jobs with no mailbox assigned or clumped schedules.
+ */
+app.post("/api/admin/queue/rebalance", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  // Use Redis-based lock to prevent concurrent rebalance operations across multiple instances
+  const lock = await redis.set(REBALANCE_LOCK_KEY, 'locked', 'EX', 300, 'NX'); // 5 minute TTL
+  if (!lock) {
+    return res.status(429).json({ 
+      error: "A queue rebalance operation is already in progress. Please wait for it to complete." 
+    });
+  }
+
+  try {
+    const { snapToBusinessHours, targetStartHour = 9 } = req.body;
+    console.log(`[Queue Rebalance] Starting retroactive queue staggering... (Snap: ${snapToBusinessHours}, Target: ${targetStartHour}:00)`);
+    
+    const delayedJobs = await emailQueue.getDelayed();
+    const sequenceJobs = delayedJobs.filter(j => j.name === 'execute-sequence-step');
+
+    if (sequenceJobs.length === 0) {
+      return res.json({ success: true, message: "No sequence jobs found in delayed queue to rebalance." });
+    }
+
+    // Grouping by mailbox index
+    const mailboxGroups: Record<string, typeof sequenceJobs> = {};
+    const sequenceCache: Record<string, any> = {};
+    const contactTzCache: Record<string, string> = {};
+    const now = Date.now();
+
+    for (const job of sequenceJobs) {
+      const { projectId, sequenceId, contactId } = job.data;
+      if (!projectId || !sequenceId || !contactId) continue;
+
+      // 1. Fetch current enrollment assignment
+      const enrollment = await db.get<any>(
+        "SELECT assigned_mailbox_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND contact_id = ?",
+        [sequenceId, contactId]
+      );
+
+      // 2. Ensure assignment is valid (Triggers fallback reassignment if needed)
+      try {
+        const mailboxId = await ensureValidMailboxAssignment(
+          sequenceId, 
+          contactId, 
+          enrollment?.assigned_mailbox_id || null,
+          projectId
+        );
+
+        if (!mailboxId) {
+          console.warn(`[Queue Rebalance] Skipping job for contact ${contactId} due to mailbox assignment failure.`);
+          continue;
+        }
+
+        if (!mailboxGroups[mailboxId]) mailboxGroups[mailboxId] = [];
+        mailboxGroups[mailboxId].push(job);
+      } catch (innerErr: any) {
+        console.error(`[Queue Rebalance] [Critical Error] Failed to process contact ${contactId}:`, innerErr.message);
+        continue;
+      }
+    }
+
+    let rebalancedCount = 0;
+    const projectIntervals: Record<string, number> = {};
+
+    // 3. For each mailbox group, re-stagger strictly
+    for (const [mailboxId, jobs] of Object.entries(mailboxGroups)) {
+      // Sort jobs by their current intended execution time to preserve relative order
+      const sortedJobs = jobs.sort((a, b) => {
+        const timeA = a.timestamp + (a.opts.delay || 0);
+        const timeB = b.timestamp + (b.opts.delay || 0);
+        return timeA - timeB;
+      });
+
+      // Keep track of the next available slot for this mailbox
+      // Initial buffer of 5 minutes from now to allow for immediate processing if desired
+      let nextAvailableSlotMs = now + (5 * 60 * 1000);
+
+      for (const job of sortedJobs) {
+        const { projectId, sequenceId, contactId } = job.data;
+
+        // Fetch interval setting for this project (cached per request)
+        if (projectIntervals[projectId] === undefined) {
+          const settings = await db.get<any>("SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?", [projectId]);
+          projectIntervals[projectId] = settings?.sending_interval_minutes ?? 20;
+        }
+
+        const intervalMs = projectIntervals[projectId] * 60 * 1000;
+        
+        // Fetch sequence settings (cached)
+        if (!sequenceCache[sequenceId]) {
+          sequenceCache[sequenceId] = await db.get<any>("SELECT * FROM outreach_sequences WHERE id = ?", [sequenceId]);
+        }
+        const sequence = { ...sequenceCache[sequenceId] };
+        if (!sequence.id) continue; // Sequence might have been deleted
+
+        // Determine target timezone
+        let targetTz = sequence.send_timezone || 'America/Mexico_City';
+        if (sequence.use_recipient_timezone) {
+          if (!contactTzCache[contactId]) {
+            const contact = await db.get<any>("SELECT inferred_timezone FROM outreach_contacts WHERE id = ?", [contactId]);
+            contactTzCache[contactId] = contact?.inferred_timezone || targetTz;
+          }
+          targetTz = contactTzCache[contactId];
+        }
+
+        const originalTimeMs = job.timestamp + (job.opts.delay || 0);
+        let targetTime = DateTime.fromMillis(originalTimeMs).setZone(targetTz);
+
+        // A. Apply sequence business hours / weekdays / global rebalance override
+        if (snapToBusinessHours) {
+          sequence.restrict_sending_hours = true;
+          if (!sequence.send_window_start) sequence.send_window_start = `${String(targetStartHour).padStart(2, '0')}:00`;
+          if (!sequence.send_window_end) sequence.send_window_end = '17:00';
+        }
+
+        let executeAt = getNextBusinessSlot(targetTime, sequence);
+
+        // B. Apply Staggering relative to the previous job in this mailbox
+        // Convert nextAvailableSlotMs to the target timezone for comparison
+        let nextSlot = DateTime.fromMillis(nextAvailableSlotMs).setZone(targetTz);
+        
+        if (nextSlot > executeAt) {
+          executeAt = nextSlot;
+          // Re-enforce business hours after staggering shift
+          executeAt = getNextBusinessSlot(executeAt, sequence);
+        }
+
+        const finalTimeMs = executeAt.toMillis();
+        const newDelay = Math.max(0, finalTimeMs - Date.now());
+        const scheduledAt = new Date(finalTimeMs);
+
+        // C. Update BullMQ Job
+        await job.changeDelay(newDelay);
+        console.log(`[Queue Rebalance] Job ${job.id} (Mailbox: ${mailboxId}) moved to ${scheduledAt.toISOString()} (Delay: ${Math.round(newDelay/60000)}m)`);
+
+        // D. Update Database Enrollment to match
+        await db.run(
+          "UPDATE outreach_sequence_enrollments SET scheduled_at = ? WHERE sequence_id = ? AND contact_id = ?",
+          [scheduledAt.toISOString(), sequenceId, contactId]
+        );
+
+        nextAvailableSlotMs = finalTimeMs + intervalMs;
+        rebalancedCount++;
+        if (rebalancedCount % 50 === 0) {
+          console.log(`[Queue Rebalance] Progress: ${rebalancedCount} jobs processed...`);
+        }
+      }
+    }
+
+    console.log(`[Queue Rebalance] Successfully rebalanced ${rebalancedCount} jobs across ${Object.keys(mailboxGroups).length} mailboxes.`);
+
+    res.json({
+      success: true,
+      message: `Rebalanced ${rebalancedCount} jobs across ${Object.keys(mailboxGroups).length} sender accounts.`,
+      rebalancedCount,
+      mailboxesAffected: Object.keys(mailboxGroups).length
+    });
+
+  } catch (err: any) {
+    console.error("[Queue Rebalance] FATAL ERROR:", err);
+    res.status(500).json({ error: "Failed to rebalance queue", details: err.message });
+  } finally {
+    await redis.del(REBALANCE_LOCK_KEY);
+  }
+});
+
+/**
+ * Administrative endpoint to purge orphaned jobs and enrollments.
+ * Removes jobs from BullMQ and records from outreach_sequence_enrollments
+ * if their associated sequence no longer exists in outreach_sequences.
+ */
+app.post("/api/admin/queue/purge-orphans", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  try {
+    const projectId = req.headers['x-project-id'] as string;
+    if (!projectId) {
+      return res.status(400).json({ error: "Missing x-project-id header" });
+    }
+
+    console.log(`[Queue Purge] Starting orphan cleanup for project: ${projectId}...`);
+    
+    // 1. Fetch all sequence-related jobs from BullMQ
+    // We fetch delayed, waiting, and paused jobs to ensure full coverage
+    let allJobs: any[] = [];
+    try {
+      allJobs = await emailQueue.getJobs(['delayed', 'waiting', 'paused']);
+    } catch (queueErr: any) {
+      console.error("[Queue Purge] Failed to fetch jobs from BullMQ:", queueErr.message);
+      throw new Error(`Queue connection error: ${queueErr.message}`);
+    }
+
+    const sequenceJobs = allJobs.filter(j => j.name === 'execute-sequence-step');
+    console.log(`[Queue Purge] Scanning ${sequenceJobs.length} sequence jobs for project ${projectId}`);
+
+    // 2. Fetch all existing sequence IDs for THIS project from DB (Batch Check)
+    // We include status so we can check for 'deleted' sequences as well
+    const sequences = await db.all("SELECT id, status FROM outreach_sequences WHERE project_id = ?", projectId);
+    
+    // Map for debug logging
+    const sequenceStatusMap = new Map(sequences.map((s: any) => [s.id, s.status]));
+    
+    // Set of IDs that are ACTIVE (not deleted)
+    const activeSequenceIds = new Set(
+      sequences
+        .filter((s: any) => s.status !== 'deleted')
+        .map((s: any) => s.id)
+    );
+
+    // Fetch active contact IDs for THIS project to check for deleted contacts
+    const jobContactIds = [...new Set(sequenceJobs.map(j => j.data?.contactId).filter(Boolean))];
+    const activeContactIds = new Set();
+    if (jobContactIds.length > 0) {
+      const existingContacts = await db.all(
+        `SELECT id FROM outreach_contacts WHERE id = ANY($1::text[])`, 
+        [jobContactIds]
+      );
+      existingContacts.forEach((c: any) => activeContactIds.add(c.id));
+    }
+
+    // 3. Remove orphaned or corrupt jobs from BullMQ
+    let removedJobsCount = 0;
+    let scanCount = 0;
+
+    for (const job of sequenceJobs) {
+      try {
+        // Verify job.data and sequenceId
+        const sId = job.data?.sequenceId;
+        const cId = job.data?.contactId;
+
+        // Debug logging for the first 5 jobs
+        if (scanCount < 5 && sId) {
+          const exists = sequenceStatusMap.has(sId);
+          const status = exists ? sequenceStatusMap.get(sId) : 'N/A';
+
+          scanCount++;
+        }
+        
+        // If the job data is missing or malformed, it's considered "corrupt" 
+        if (!sId) {
+          console.warn(`[Queue Purge] Found corrupt job ${job.id} (no sequenceId). Removing...`);
+          await job.remove().catch(e => console.error(`[Queue Purge] Failed to remove job ${job.id}:`, e.message));
+          removedJobsCount++;
+          continue;
+        }
+
+        // Orphan check 1: Sequence missing from DB OR marked as deleted
+        if (!activeSequenceIds.has(sId)) {
+          const status = sequenceStatusMap.get(sId);
+          const reason = status === 'deleted' ? "Sequence is deleted" : "Sequence no longer exists";
+          console.log(`[Queue Purge] Removing orphaned job ${job.id} for sequence ${sId} (${reason})`);
+          await job.remove().catch(e => console.error(`[Queue Purge] Failed to remove job ${job.id}:`, e.message));
+          removedJobsCount++;
+          continue;
+        }
+
+        // Orphan check 2: Contact no longer exists in the DB
+        if (cId && !activeContactIds.has(cId)) {
+          console.log(`[Queue Purge] Removing orphaned job ${job.id} for deleted contact ${cId}`);
+          await job.remove().catch(e => console.error(`[Queue Purge] Failed to remove job ${job.id}:`, e.message));
+          removedJobsCount++;
+          continue;
+        }
+      } catch (jobErr: any) {
+        console.error(`[Queue Purge] Error processing job ${job.id}:`, jobErr.message);
+        // Continue to the next job rather than crashing the whole process
+      }
+    }
+
+    // 4. Cleanup orphaned enrollments in DB
+    // We delete any enrollment belonging to this project that doesn't have a matching sequence
+    // OR whose sequence is marked as 'deleted', OR whose contact no longer exists.
+    const enrollmentCleanupResult = await db.run(`
+      DELETE FROM outreach_sequence_enrollments 
+      WHERE project_id = ? 
+      AND (
+        sequence_id NOT IN (
+          SELECT id FROM outreach_sequences 
+          WHERE project_id = ? AND status != 'deleted'
+        )
+        OR contact_id NOT IN (
+          SELECT id FROM outreach_contacts 
+          WHERE project_id = ?
+        )
+      )
+    `, projectId, projectId, projectId);
+
+    console.log(`[Queue Purge] Completed. Project: ${projectId}. Removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} orphaned enrollments.`);
+
+    res.json({
+      success: true,
+      removedJobsCount,
+      removedEnrollmentsCount: enrollmentCleanupResult.changes,
+      message: `Successfully purged ${removedJobsCount} orphaned jobs and ${enrollmentCleanupResult.changes} enrollment records.`
+    });
+
+  } catch (err: any) {
+    console.error("[Queue Purge] FATAL ERROR:", err);
+    res.status(500).json({ 
+      error: "Failed to purge orphans", 
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+    });
+  }
+});
+
+/**
+ * Administrative endpoint to manually clear all jobs for a specific sequence.
+ * This is used to resolve issues with "ghost" sequences.
+ */
+app.post("/api/admin/queue/clear-sequence", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  try {
+    const projectId = req.headers['x-project-id'] as string;
+    // Check multiple possible keys for robustness
+    const sequenceId = req.body.sequenceId || req.body.sequence_id || req.body.id;
+    const jobId = req.body.jobId;
+
+    if (!projectId) {
+      return res.status(400).json({ success: false, error: "Missing x-project-id header" });
+    }
+
+    // New logic: If sequenceId is missing but jobId is provided, remove that specific job
+    if (!sequenceId && jobId) {
+      console.log(`[Queue Clear] Removing single ghost job ${jobId} in project ${projectId}...`);
+      try {
+        const job = await emailQueue.getJob(jobId);
+        if (job) {
+          await job.remove();
+          return res.json({
+            success: true,
+            message: "Ghost record removed successfully",
+            removedJobsCount: 1,
+            removedEnrollmentsCount: 0
+          });
+        } else {
+          return res.status(404).json({ success: false, error: "Job not found in queue" });
+        }
+      } catch (jobErr: any) {
+        console.error(`[Queue Clear] Failed to fetch/remove job ${jobId}:`, jobErr.message);
+        return res.status(500).json({ success: false, error: `Failed to remove job: ${jobErr.message}` });
+      }
+    }
+
+    if (!sequenceId) {
+      console.error("[Queue Clear] Missing sequenceId and jobId. Body:", JSON.stringify(req.body));
+      return res.status(400).json({ success: false, error: "Missing sequenceId or jobId in request body" });
+    }
+
+    console.log(`[Queue Clear] Manually clearing jobs for sequence ${sequenceId} in project ${projectId}...`);
+
+    let allJobs: any[] = [];
+    try {
+      allJobs = await emailQueue.getJobs(['delayed', 'waiting', 'paused']);
+    } catch (queueErr: any) {
+      console.error("[Queue Clear] Failed to fetch jobs from BullMQ:", queueErr.message);
+      return res.status(503).json({ success: false, error: `Queue connection error: ${queueErr.message}` });
+    }
+
+    const matchingJobs = allJobs.filter(j => 
+      j.data?.sequenceId === sequenceId
+    );
+
+    console.log(`[Queue Clear] Found ${matchingJobs.length} matching jobs to remove.`);
+
+    let removedJobsCount = 0;
+    for (const job of matchingJobs) {
+      try {
+        await job.remove();
+        removedJobsCount++;
+      } catch (removeErr: any) {
+        console.error(`[Queue Clear] Failed to remove job ${job.id}:`, removeErr.message);
+      }
+    }
+
+    // 2. Enrollment Cleanup in DB
+    console.log(`[Queue Clear] Cleaning up enrollments for sequence ${sequenceId} in project ${projectId}...`);
+    const enrollmentCleanupResult = await db.run(`
+      DELETE FROM outreach_sequence_enrollments 
+      WHERE project_id = ? 
+      AND sequence_id = ?
+    `, projectId, sequenceId);
+
+    console.log(`[Queue Clear] Successfully removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} enrollment records.`);
+
+    res.json({
+      success: true,
+      message: `Successfully removed ${removedJobsCount} jobs and ${enrollmentCleanupResult.changes} enrollment records.`,
+      removedJobsCount,
+      removedEnrollmentsCount: enrollmentCleanupResult.changes
+    });
+  } catch (err: any) {
+    console.error("[Queue Clear] Fatal Error:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Failed to clear sequence queue" 
+    });
+  }
+});
+
+
+
+// Diagnostic endpoint to monitor upcoming scheduled sequence steps
+app.get("/api/admin/queue/scheduled", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  const projectId = (req.query.project_id || req.query.projectId) as string;
+  
+  try {
+    const [delayedJobs, failedJobs] = await Promise.all([
+      emailQueue.getDelayed(),
+      emailQueue.getFailed()
+    ]);
+    
+    const allJobs = [...delayedJobs, ...failedJobs];
+
+    // Extract unique IDs for batch lookup
+    const contactIds = [...new Set(allJobs.map(j => j.data?.contactId))].filter(Boolean);
+    const sequenceIds = [...new Set(allJobs.map(j => j.data?.sequenceId))].filter(Boolean);
+
+    // Hydrate contacts, sequences, and assigned mailboxes (triangulation)
+    const [contacts, sequences, enrollments] = await Promise.all([
+      contactIds.length > 0 
+        ? db.all("SELECT id, first_name, last_name, email, project_id FROM outreach_contacts WHERE id = ANY($1::text[])", [contactIds])
+        : Promise.resolve([]),
+      sequenceIds.length > 0
+        ? db.all("SELECT id, name, project_id FROM outreach_sequences WHERE id = ANY($1::text[])", [sequenceIds])
+        : Promise.resolve([]),
+      contactIds.length > 0 && sequenceIds.length > 0
+        ? db.all(`
+            SELECT e.contact_id, e.sequence_id, e.scheduled_at, m.email as sender_email, e.project_id
+            FROM outreach_sequence_enrollments e
+            LEFT JOIN outreach_mailboxes m ON e.assigned_mailbox_id = m.id
+            WHERE e.contact_id = ANY($1::text[]) AND e.sequence_id = ANY($2::text[])
+          `, [contactIds, sequenceIds])
+        : Promise.resolve([])
+    ]);
+
+    // Create lookup maps
+    const contactMap = new Map(contacts.map((c: any) => [c.id, { name: `${c.first_name || ''} ${c.last_name || ''}`.trim(), email: c.email, projectId: c.project_id }]));
+    const sequenceMap = new Map(sequences.map((s: any) => [s.id, { name: s.name, projectId: s.project_id }]));
+    const enrollmentMap = new Map(enrollments.map((e: any) => [`${e.contact_id}:${e.sequence_id}`, e]));
+
+    const mappedJobs = [];
+    
+    for (const job of allJobs) {
+      if (!job) continue;
+
+      const cId = job.data?.contactId;
+      const sId = job.data?.sequenceId;
+      const enrollmentKey = `${cId}:${sId}`;
+      const enrollment = enrollmentMap.get(enrollmentKey);
+      
+      const contactData = contactMap.get(cId) || { name: "Unknown Contact", email: "", projectId: null };
+      const sequenceData = sequenceMap.get(sId) || { name: "Unknown Sequence", projectId: null };
+
+      const jobProjectId = contactData.projectId || sequenceData.projectId || enrollment?.project_id || job.data?.projectId || job.data?.activeProjectId;
+
+      // Filter by project if requested
+      if (projectId && jobProjectId !== projectId) continue;
+
+      // Calculate target execution time
+      const scheduledTimestamp = (job.timestamp || Date.now()) + (job.opts.delay || 0);
+      const scheduledTime = DateTime.fromMillis(scheduledTimestamp);
+      
+      // Determine status
+      let status = 'Scheduled';
+      const isFailed = await job.isFailed();
+      if (isFailed) {
+        status = 'Failed';
+      } else if (job.attemptsMade > 0) {
+        status = 'Retrying';
+      }
+
+      // Use enrollment scheduled_at as primary source of truth for the "intended" time
+      const finalScheduledTime = (enrollment?.scheduled_at) 
+        ? enrollment.scheduled_at 
+        : scheduledTime.toISO();
+
+      mappedJobs.push({
+        jobId: job.id,
+        contactId: cId,
+        contactName: contactData.name,
+        contactEmail: contactData.email,
+        sequenceId: sId,
+        sequenceName: sequenceData.name,
+        senderEmail: enrollment?.sender_email || "Waiting for email assignment",
+        action: `Send Step ${job.data?.stepNumber || 1}`,
+        stepId: job.data?.stepId,
+        stepNumber: job.data?.stepNumber,
+        scheduledTime: finalScheduledTime,
+        priority: job.opts.priority,
+        attempts: job.attemptsMade,
+        status,
+        projectId: jobProjectId
+      });
+    }
+
+    mappedJobs.sort((a, b) => {
+      // Sort so closest emails appear first
+      return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+    });
+
+    res.json({
+      success: true,
+      count: mappedJobs.length,
+      jobs: mappedJobs
+    });
+  } catch (err: any) {
+    console.error("[Admin Queue Monitor] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint to retry a single failed job
+app.post("/api/admin/queue/retry/:jobId", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  const { jobId } = req.params;
+  
+  try {
+    const job = await emailQueue.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, error: "Job not found" });
+    }
+
+    const isFailed = await job.isFailed();
+    if (isFailed) {
+      await job.retry();
+      res.json({ success: true, message: "Job re-queued successfully" });
+    } else {
+      res.status(400).json({ success: false, error: "Only failed jobs can be retried" });
+    }
+  } catch (err: any) {
+    console.error("[Queue Retry] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint to retry all failed jobs for a project
+app.post("/api/admin/queue/retry-all", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  const projectId = req.body.project_id || req.body.projectId;
+  
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: "Project ID is required" });
+  }
+
+  try {
+    const failedJobs = await emailQueue.getFailed();
+    let retriedCount = 0;
+
+    for (const job of failedJobs) {
+      const jobProjectId = job.data?.projectId || job.data?.activeProjectId;
+      if (jobProjectId === projectId) {
+        await job.retry();
+        retriedCount++;
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully re-queued ${retriedCount} jobs.`,
+      retriedCount 
+    });
+  } catch (err: any) {
+    console.error("[Queue Retry All] Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/admin/force-reset-queue", verifyFirebaseToken, adminOnly, async (_req: AuthRequest, res) => {
+  const TARGET_PROJECT_ID = "48b83458-b4c7-4a38-a7af-9c5b5f70c9df";
+  const today = DateTime.now().setZone("UTC").toISODate();
+
+  console.log(`[Admin Reset] Triggered for project ${TARGET_PROJECT_ID}`);
+
+  try {
+    // 1. Reset Global Send Counter (Persistent UI Counter)
+    await db.run(
+      `DELETE FROM outreach_global_send_counters WHERE project_id = ? AND date = ?`,
+      [TARGET_PROJECT_ID, today]
+    );
+    console.log(`[Admin Reset] Deleted global send counters for today (${today})`);
+
+    // 2. Reset "Real" Count by shifting sent_at for today's emails
+    const dayStart = DateTime.now().setZone("UTC").startOf('day').toJSDate().toISOString();
+    const shiftedTime = DateTime.now().setZone("UTC").minus({ days: 1 }).toJSDate().toISOString();
+
+    const emailReset = await db.run(
+      `UPDATE outreach_individual_emails 
+       SET sent_at = ? 
+       WHERE project_id = ? AND status = 'sent' AND sent_at >= ?`,
+      [shiftedTime, TARGET_PROJECT_ID, dayStart]
+    );
+    console.log(`[Admin Reset] Shifted ${emailReset.changes} emails sent today to yesterday.`);
+
+    // 3. Reschedule Enrollments (Scheduled_at update)
+    const enrollResult = await db.run(
+      `UPDATE outreach_sequence_enrollments 
+       SET scheduled_at = CURRENT_TIMESTAMP, 
+           last_error = NULL 
+       WHERE project_id = ? AND status = 'active'`,
+      [TARGET_PROJECT_ID]
+    );
+    console.log(`[Admin Reset] Rescheduled ${enrollResult.changes} active enrollments.`);
+
+    // 4. Promote BullMQ Delayed Jobs
+    console.log("[Admin Reset] Scanning BullMQ for delayed jobs to promote...");
+    const delayedJobs = await emailQueue.getDelayed();
+    let promotedCount = 0;
+
+    for (const job of delayedJobs) {
+      if (job.data && job.data.projectId === TARGET_PROJECT_ID) {
+        await job.promote();
+        promotedCount++;
+      }
+    }
+    console.log(`[Admin Reset] Promoted ${promotedCount} delayed jobs in BullMQ.`);
+
+    res.json({
+      success: true,
+      message: "Queue and counters reset successfully",
+      project: TARGET_PROJECT_ID,
+      promotedJobs: promotedCount,
+      rescheduledEnrollments: enrollResult.changes,
+      emailsShifted: emailReset.changes,
+      counterReset: true
+    });
+  } catch (err: any) {
+    console.error("[Admin Reset] FATAL ERROR:", err);
+    res.status(500).json({
+      error: "Internal server error during reset",
+      details: err.message
+    });
+  }
+});
+app.get("/api/admin/sequence/force-recovery", verifyFirebaseToken, adminOnly, async (req: AuthRequest, res) => {
+  const { sequence_id } = req.query as { sequence_id: string };
+  if (!sequence_id) return res.status(400).json({ error: "sequence_id query param is required" });
+
+  try {
+    const sequence = await db.get("SELECT project_id FROM outreach_sequences WHERE id = ?", [sequence_id]) as any;
+    if (!sequence) return res.status(404).json({ error: "Sequence not found" });
+
+    const projectId = sequence.project_id;
+    const enrollments = await db.all(
+      "SELECT contact_id FROM outreach_sequence_enrollments WHERE sequence_id = ? AND status = 'active'",
+      [sequence_id]
+    ) as any[];
+
+    console.log(`[Admin Recovery] Found ${enrollments.length} active enrollments. Starting recovery...`);
+
+    let retriggeredCount = 0;
+    const results = [];
+
+    for (const e of enrollments) {
+      try {
+        const { stepId, isCompleted } = await getTrueNextStep(projectId, sequence_id, e.contact_id);
+        if (!isCompleted && stepId) {
+          const step = await db.get("SELECT parent_step_id FROM outreach_sequence_steps WHERE id = ?", [stepId]) as any;
+          await scheduleNextStep(projectId, sequence_id, e.contact_id, step?.parent_step_id || null);
+          retriggeredCount++;

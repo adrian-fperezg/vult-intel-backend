@@ -18,7 +18,8 @@ import {
   UserCircle,
   Target,
   Clapperboard,
-  Radio
+  Radio,
+  Shield
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -167,6 +168,33 @@ export default function Sidebar() {
               </Link>
             );
           })}
+          {isFounder && (
+            <Link
+              to="/admin"
+              className={cn(
+                "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group mt-4",
+                location.pathname.startsWith('/admin')
+                  ? "bg-red-500/10 border border-red-500/20 text-white"
+                  : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+              )}
+            >
+              <Shield
+                className={cn(
+                  "size-4 md:size-5 transition-colors shrink-0",
+                  location.pathname.startsWith('/admin') ? "text-red-400" : "text-slate-500 group-hover:text-red-400"
+                )}
+              />
+              <span className={cn(
+                "text-sm md:text-base font-medium truncate",
+                location.pathname.startsWith('/admin') && "font-semibold"
+              )}>
+                {t('navigation.adminDashboard')}
+              </span>
+              {location.pathname.startsWith('/admin') && (
+                <ChevronRight className="size-3 ml-auto shrink-0 text-red-400/60" />
+              )}
+            </Link>
+          )}
         </nav>
       </div>
 

@@ -8,7 +8,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.NEXT_PUBLIC_API_URL': JSON.stringify(env.VITE_OUTREACH_API_URL || env.NEXT_PUBLIC_API_URL || ''),
       'process.env.NEXT_PUBLIC_APP_URL': JSON.stringify(env.FRONTEND_URL || env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
     },
