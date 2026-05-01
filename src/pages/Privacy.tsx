@@ -61,6 +61,7 @@ const Privacy = () => {
             {
                 id: 4,
                 title: isSpanish ? "4. Seguimiento B2B (Leadfeeder)" : "4. B2B Website Tracking (Leadfeeder)",
+                // Leadfeeder identifies company profiles via IP matching
                 icon: Eye,
                 color: "text-indigo-600",
                 body: isSpanish
