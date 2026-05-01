@@ -21,6 +21,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@google/genai": "^1.51.0",
+    "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/vite": "^4.1.14",
     "@tiptap/extension-bubble-menu": "^3.21.0",
     "@tiptap/extension-floating-menu": "^3.21.0",
