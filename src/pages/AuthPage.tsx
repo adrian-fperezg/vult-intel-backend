@@ -31,8 +31,10 @@ export default function AuthPage() {
         try {
             if (isLogin) {
                 await login(email, password);
+                if (window.posthog) window.posthog.capture('user_signed_in', { method: 'email' });
             } else {
                 await register(email, password);
+                if (window.posthog) window.posthog.capture('user_signed_up', { method: 'email' });
             }
             navigate('/projects-hub');
         } catch (err: any) {
@@ -47,6 +49,7 @@ export default function AuthPage() {
             setLoading(true);
             setError('');
             await loginWithGoogle();
+            if (window.posthog) window.posthog.capture('user_logged_in', { method: 'google' });
             navigate('/projects-hub');
         } catch (err: any) {
             setError('Failed to log in with Google');

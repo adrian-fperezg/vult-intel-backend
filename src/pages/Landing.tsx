@@ -149,7 +149,10 @@ const Landing = () => {
                         className="flex flex-col sm:flex-row items-center justify-center gap-4"
                     >
                         <button
-                            onClick={() => currentUser ? navigate('/deep-scan') : navigate('/auth')}
+                            onClick={() => {
+                                if (window.posthog) window.posthog.capture('user_clicked_signup', { location: 'hero' });
+                                currentUser ? navigate('/deep-scan') : navigate('/auth');
+                            }}
                             className="w-full sm:w-auto px-10 py-5 bg-blue-600 text-white rounded-2xl font-black text-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-3 shadow-2xl shadow-blue-500/30 active:scale-95"
                         >
                             {t.heroCtaPrimary}

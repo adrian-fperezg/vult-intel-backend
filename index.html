@@ -14,8 +14,16 @@
       !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([i].concat(Array.prototype.slice.call(arguments,0)))}}var n=t;for(void 0!==a?n=t[a]=[]:a="posthog",n.people=n.people||[],n.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},n.people.toString=function(){return n.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys getNextSurveyStep onSessionId".split(" "),p=0;p<o.length;p++)g(n,o[p]);e._i.push([i,s,a])},e.__SV=1.6)}(document,window.posthog||[]);
       posthog.init('phc_c8jH7aQfEAoDLY4WCM4he3aFwocNZTfCeX4tboZSz4N7', {
           api_host: 'https://us.i.posthog.com',
-          person_profiles: 'identified_only'
-      })
+          person_profiles: 'identified_only',
+          session_recording: {
+              maskAllInputs: false,
+              maskTextSelector: ".sensitive"
+          }
+      });
+      // Internal traffic filter
+      if (window.location.hostname === 'localhost') {
+          posthog.opt_out_capturing();
+      }
     </script>
     <style>
       body { background-color: #020617; margin: 0; display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }

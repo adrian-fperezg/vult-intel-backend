@@ -37,6 +37,14 @@ export default function PricingSection({ id = "pricing", showAddon = true }: Pri
             console.log("Founder is active, cannot initiate checkout.");
             return;
         }
+
+        if (window.posthog) {
+            window.posthog.capture('plan_selection_clicked', { 
+                plan: productId,
+                user_authenticated: !!currentUser 
+            });
+        }
+
         if (!currentUser) {
             localStorage.setItem('landingPendingCheckout', productId);
             navigate('/auth');
