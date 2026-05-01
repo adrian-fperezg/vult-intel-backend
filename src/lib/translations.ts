@@ -157,6 +157,12 @@ export const landingTranslations = {
         outreachAddonPrice: "+$49/mo",
         outreachAddonDesc: "Turn your Vult Intel plan into a full outreach machine. Automate email sequences, manage contacts, track opens & clicks, and let AI craft personalized messages—all from a unified inbox. Available to any active plan subscriber.",
         outreachAddonBadge: "Outreach Power",
+        outreachActiveOnly: "Active subscribers only",
+        outreachActivateBtn: "Activate Outreach",
+        outreachFeatureInbox: "Unified Inbox",
+        outreachFeatureContacts: "Contact Management",
+        outreachFeatureTracking: "Open & Click Tracking",
+        activeForFounder: "Active for Founder",
 
         // FAQ
         faqTitle: "Frequently Asked Questions",
@@ -339,6 +345,12 @@ export const landingTranslations = {
         outreachAddonPrice: "+$49/mes",
         outreachAddonDesc: "Convierte tu plan Vult Intel en una máquina de outreach completa. Automatiza secuencias de correos, gestiona contactos, rastrea aperturas y clics, y deja que la IA redacte mensajes personalizados—todo desde una bandeja de entrada unificada. Disponible para cualquier suscriptor activo.",
         outreachAddonBadge: "Potencia de Outreach",
+        outreachActiveOnly: "Solo para suscriptores activos",
+        outreachActivateBtn: "Activar Outreach",
+        outreachFeatureInbox: "Bandeja Unificada",
+        outreachFeatureContacts: "Gestión de Contactos",
+        outreachFeatureTracking: "Seguimiento de Apertura y Clics",
+        activeForFounder: "Activo para Fundador",
 
         // FAQ
         faqTitle: "Preguntas Frecuentes",

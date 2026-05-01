@@ -215,7 +215,7 @@ export default function PricingSection({ id = "pricing", showAddon = true }: Pri
                                     {isVeoActive ? (
                                         <>
                                             <CheckCircle2 className="size-5 text-emerald-600" />
-                                            {isFounder ? "Active for Founder" : t.addonBadge}
+                                            {isFounder ? t.activeForFounder : t.addonBadge}
                                         </>
                                     ) : (
                                         <>
@@ -241,64 +241,81 @@ export default function PricingSection({ id = "pricing", showAddon = true }: Pri
                         initial={{ opacity: 0, y: 30 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
-                        transition={{ duration: 0.5, delay: 0.1 }}
-                        className={`mt-8 rounded-[3.5rem] border relative overflow-hidden group ${
+                        transition={{ duration: 0.6, ease: "easeOut" }}
+                        className={`mt-12 rounded-[4rem] border relative overflow-hidden group transition-all duration-500 hover:shadow-2xl ${
                             theme === 'dark'
                                 ? 'bg-slate-950 border-teal-500/30 shadow-2xl shadow-teal-500/5'
-                                : 'bg-teal-50 border-teal-200'
+                                : 'bg-white border-teal-100 shadow-xl shadow-teal-500/5'
                         }`}
                     >
-                        {/* Animated background shimmer */}
-                        <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 via-cyan-500/5 to-emerald-500/5 animate-shimmer pointer-events-none" />
-
+                        {/* Animated background mesh/shimmer */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-teal-500/[0.03] via-transparent to-emerald-500/[0.03] pointer-events-none" />
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 bg-[radial-gradient(circle_at_50%_0%,rgba(20,184,166,0.1),transparent_70%)] pointer-events-none" />
+                        
                         {/* Corner badge */}
-                        <div className="absolute top-0 right-0 p-3 bg-teal-500 text-white rounded-bl-3xl shadow-xl">
-                            <Mail size={24} fill="white" />
-                        </div>
+                        <motion.div 
+                            animate={{ y: [0, -10, 0] }}
+                            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                            className="absolute top-0 right-0 p-5 bg-teal-500 text-white rounded-bl-[3rem] shadow-2xl z-20 transition-transform group-hover:scale-110 duration-500"
+                        >
+                            <Mail size={32} fill="white" className="drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]" />
+                        </motion.div>
 
-                        <div className="p-10 md:p-16">
+                        <div className="p-10 md:p-20">
                             {/* Top section: title + description + price + CTA */}
-                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-10 relative z-10 mb-10">
-                                <div className="text-left">
-                                    <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em] mb-4 ${
-                                        theme === 'dark' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : 'bg-teal-100 text-teal-700 border border-teal-200'
+                            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-12 relative z-10 mb-16">
+                                <div className="text-left flex-grow">
+                                    <motion.div 
+                                        initial={{ opacity: 0, x: -20 }}
+                                        whileInView={{ opacity: 1, x: 0 }}
+                                        viewport={{ once: true }}
+                                        className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-xs font-black uppercase tracking-[0.25em] mb-6 ${
+                                        theme === 'dark' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : 'bg-teal-50 text-teal-700 border border-teal-100'
                                     }`}>
-                                        <Zap size={12} fill="currentColor" />
+                                        <Zap size={14} fill="currentColor" className="animate-pulse" />
                                         {t.outreachAddonBadge}
-                                    </div>
-                                    <h4 className="text-4xl md:text-5xl font-black text-teal-500 tracking-tighter leading-none mb-4">{t.outreachAddonTitle}</h4>
-                                    <p className={`text-xl font-medium max-w-xl ${
-                                        theme === 'dark' ? 'text-slate-400' : 'text-slate-700'
+                                    </motion.div>
+                                    <h4 className="text-5xl md:text-7xl font-black text-teal-500 tracking-tighter leading-[0.9] mb-6">{t.outreachAddonTitle}</h4>
+                                    <p className={`text-xl md:text-2xl font-medium max-w-2xl leading-relaxed ${
+                                        theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
                                     }`}>{t.outreachAddonDesc}</p>
                                 </div>
-                                <div className="flex flex-col items-start md:items-end gap-6 shrink-0">
-                                    <div className="text-left md:text-right">
-                                        <span className="text-5xl md:text-7xl font-black text-teal-600 tracking-tighter leading-none">{t.outreachAddonPrice}</span>
-                                        <div className="text-sm font-black uppercase tracking-widest text-teal-500 mt-2">
-                                            {language === 'es' ? 'Solo para suscriptores activos' : 'Active subscribers only'}
+
+                                <div className="flex flex-col items-start xl:items-end gap-8 shrink-0 w-full xl:w-auto">
+                                    <div className="text-left xl:text-right">
+                                        <div className="flex items-baseline gap-2 xl:justify-end">
+                                            <span className="text-6xl md:text-8xl font-black text-teal-600 tracking-tighter leading-none">{t.outreachAddonPrice}</span>
+                                            <span className="text-2xl font-bold opacity-30">/mo</span>
+                                        </div>
+                                        <div className="text-sm font-black uppercase tracking-[0.15em] text-teal-500/60 mt-3">
+                                            {t.outreachActiveOnly}
                                         </div>
                                     </div>
                                     <button
                                         onClick={() => !isOutreachActive && handleChoosePlan(ADDON_OUTREACH)}
                                         disabled={isCheckoutLoading || isOutreachActive}
-                                        className="w-full md:w-auto px-12 py-5 bg-teal-500 text-white rounded-2xl font-black text-xl hover:bg-teal-600 transition-all shadow-2xl shadow-teal-500/40 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                        className={`w-full xl:w-auto px-12 py-6 rounded-[2rem] font-black text-2xl transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-3 disabled:opacity-80 disabled:cursor-not-allowed group/btn ${
+                                            isOutreachActive 
+                                                ? 'bg-emerald-500/10 text-emerald-500 border-2 border-emerald-500/20 cursor-default'
+                                                : 'bg-teal-500 text-white hover:bg-teal-600 shadow-teal-500/30'
+                                        }`}
                                     >
                                         {isOutreachActive ? (
                                             <>
-                                                <CheckCircle2 className="size-6 text-white" />
-                                                {isFounder ? "Active for Founder" : t.outreachAddonBadge}
+                                                <CheckCircle2 className="size-8" />
+                                                <span>{isFounder ? t.activeForFounder : t.outreachAddonBadge}</span>
                                             </>
                                         ) : (
                                             <>
                                                 {isCheckoutLoading && selectedPlan === ADDON_OUTREACH ? (
                                                     <>
-                                                        <Loader2 className="animate-spin" size={24} />
-                                                        {language === 'es' ? 'Procesando...' : 'Processing...'}
+                                                        <Loader2 className="animate-spin" size={28} />
+                                                        <span>{language === 'es' ? 'Procesando...' : 'Processing...'}</span>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        {language === 'es' ? 'Activar Outreach' : 'Activate Outreach'}
-                                                        <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                                                        <span>{t.outreachActivateBtn}</span>
+                                                        <ArrowRight size={24} className="group-hover/btn:translate-x-2 transition-transform duration-300" />
                                                     </>
                                                 )}
                                             </>
@@ -307,24 +324,32 @@ export default function PricingSection({ id = "pricing", showAddon = true }: Pri
                                 </div>
                             </div>
 
-                            {/* Feature pills */}
-                            <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {/* Feature grid with staggered animation */}
+                            <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-6">
                                 {[
-                                    { icon: <Inbox size={18} />, label: language === 'es' ? 'Bandeja Unificada' : 'Unified Inbox' },
-                                    { icon: <Users size={18} />, label: language === 'es' ? 'Gestión de Contactos' : 'Contact Management' },
-                                    { icon: <BarChart2 size={18} />, label: language === 'es' ? 'Seguimiento de Apertura y Clics' : 'Open & Click Tracking' },
+                                    { icon: <Inbox size={22} />, label: t.outreachFeatureInbox, delay: 0.1 },
+                                    { icon: <Users size={22} />, label: t.outreachFeatureContacts, delay: 0.2 },
+                                    { icon: <BarChart2 size={22} />, label: t.outreachFeatureTracking, delay: 0.3 },
                                 ].map((feat, i) => (
-                                    <div
+                                    <motion.div
                                         key={i}
-                                        className={`flex items-center gap-3 px-5 py-4 rounded-2xl font-bold text-sm border ${
+                                        initial={{ opacity: 0, y: 20 }}
+                                        whileInView={{ opacity: 1, y: 0 }}
+                                        viewport={{ once: true }}
+                                        transition={{ delay: feat.delay, duration: 0.5 }}
+                                        className={`flex items-center gap-4 px-8 py-6 rounded-3xl font-bold text-lg border transition-all duration-300 hover:scale-[1.02] ${
                                             theme === 'dark'
-                                                ? 'bg-teal-500/5 border-teal-500/15 text-teal-300'
-                                                : 'bg-white border-teal-200 text-teal-700'
+                                                ? 'bg-teal-500/5 border-teal-500/10 text-teal-300 hover:border-teal-500/30 hover:bg-teal-500/10 shadow-lg shadow-teal-500/5'
+                                                : 'bg-white border-teal-100 text-teal-800 hover:border-teal-200 hover:shadow-xl shadow-teal-500/5'
                                         }`}
                                     >
-                                        <span className="text-teal-500">{feat.icon}</span>
+                                        <div className={`p-3 rounded-2xl ${
+                                            theme === 'dark' ? 'bg-teal-500/10' : 'bg-teal-50'
+                                        }`}>
+                                            <span className="text-teal-500">{feat.icon}</span>
+                                        </div>
                                         {feat.label}
-                                    </div>
+                                    </motion.div>
                                 ))}
                             </div>
                         </div>
