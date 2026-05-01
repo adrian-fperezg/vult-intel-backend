@@ -145,7 +145,7 @@ app.use(cors({
   credentials: true
 }));
 
-app.options('*', cors());
+app.options(/(.*)/, cors());
 
 // Stripe Webhook handler (Must be BEFORE express.json() to get raw body)
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
