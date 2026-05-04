@@ -2,6 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '@/contexts/SettingsContext';
+import { Clock } from 'lucide-react';
 
 // ─── TEAL COLOR TOKENS ───────────────────────────────────────────────────────
 export const TEAL = {
