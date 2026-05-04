@@ -16,7 +16,8 @@
     "test:smart-intent": "node --import tsx --test server/lib/outreach/smartIntent.test.ts",
     "test:alert": "tsx scripts/test-alert.ts",
     "queue:status": "tsx scripts/queue-status.ts",
-    "backfill:inbox": "tsx server/scripts/runBackfill.ts"
+    "backfill:inbox": "tsx server/scripts/runBackfill.ts",
+    "i18n:sync": "python3 scripts/i18n_sync.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
