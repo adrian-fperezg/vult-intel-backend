@@ -103,7 +103,8 @@ import { verifyFirebaseToken, AuthRequest, verifyToken } from "./middleware";
 import { adminOnly } from "./middleware/adminOnly.js";
 import { enrollContactInSequence, getTrueNextStep, scheduleNextStep, ensureValidMailboxAssignment, getNextBusinessSlot } from "./lib/outreach/sequenceEngine.js";
 import { getGlobalLimitStatus } from './lib/outreach/sendLimits.js';
-import { emailQueue, campaignQueue, processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
+import { emailQueue, campaignQueue } from "./queues/queueInstance.js";
+import { processEmail, cancelMailboxJobs, pollMailboxes, resetRepeatableJobs, sequenceWatchdog, cancelScheduledSequenceStart } from "./queues/emailQueue.js";
 import {
   buildGoogleAuthUrl,
   exchangeCodeForTokens,

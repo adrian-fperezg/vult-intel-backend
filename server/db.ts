@@ -609,13 +609,16 @@ export const initDb = async () => {
       { name: 'hunter_api_key', type: 'TEXT' },
       { name: 'zerobounce_api_key', type: 'TEXT' },
       { name: 'pdl_api_key', type: 'TEXT' },
-      { name: 'global_daily_limit', type: 'INTEGER DEFAULT 50' },
+      { name: 'global_daily_limit', type: 'INTEGER DEFAULT 999999' },
       { name: 'business_address', type: 'TEXT' },
       { name: 'sending_interval_minutes', type: 'INTEGER DEFAULT 20' },
-      { name: 'stagger_delay', type: 'INTEGER DEFAULT 2' },
+      { name: 'stagger_delay', type: 'INTEGER DEFAULT 15' },
       { name: 'restrict_sending_hours', type: 'BOOLEAN DEFAULT FALSE' },
       { name: 'sending_start_time', type: "TEXT DEFAULT '09:00'" },
-      { name: 'sending_end_time', type: "TEXT DEFAULT '17:00'" }
+      { name: 'sending_end_time', type: "TEXT DEFAULT '17:00'" },
+      { name: 'send_timezone', type: "TEXT DEFAULT 'America/Mexico_City'" },
+      { name: 'send_on_weekdays', type: "TEXT DEFAULT '{\"true\",\"true\",\"true\",\"true\",\"true\",\"false\",\"false\"}'" },
+      { name: 'smart_send_max_jitter_seconds', type: 'INTEGER DEFAULT 0' }
     ];
 
     for (const col of newSettingsCols) {

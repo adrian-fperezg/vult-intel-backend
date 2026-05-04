@@ -39,7 +39,7 @@ async function resetLimit() {
     try {
       console.log("Attempting to connect to BullMQ to promote delayed jobs...");
       // Dynamic import to prevent top-level Redis connection crash
-      const { emailQueue } = await import("../server/queues/emailQueue.js");
+      const { emailQueue } = await import("../server/queues/queueInstance.js");
       
       const delayedJobs = await emailQueue.getDelayed();
       let promotedCount = 0;

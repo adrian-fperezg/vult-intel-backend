@@ -1,8 +1,10 @@
 import db, { DbWrapper } from '../../db.js';
-import { emailQueue } from '../../queues/emailQueue.js';
 import { v4 as uuidv4 } from 'uuid';
 import { DateTime } from 'luxon';
 import { parseAllowedDays, calculateSendingDelay, getNextBusinessSlot } from './sequenceUtils.js';
+import { getMergedOutreachConfig, getEffectiveSequenceConfig } from './configUtils.js';
+import { OUTREACH_CONFIG } from '../../config/outreach.js';
+import { emailQueue } from '../../queues/queueInstance.js';
 export { parseAllowedDays, calculateSendingDelay, getNextBusinessSlot };
 
 export interface SequenceStep {
@@ -37,14 +39,14 @@ export async function enrollContactInSequence(
   const d = tx || db;
 
   try {
-    const [sequence, settings] = await Promise.all([
+    const [sequence, config] = await Promise.all([
       d.get<any>('SELECT name, status, mailbox_id, mailbox_ids FROM outreach_sequences WHERE id = ?', [sequenceId]),
-      d.get<any>('SELECT stagger_delay FROM outreach_settings WHERE project_id = ?', [projectId])
+      getMergedOutreachConfig(projectId)
     ]);
 
     if (!sequence) throw new Error('Sequence not found');
 
-    const staggerMinutes = settings?.stagger_delay ?? 15;
+    const staggerMinutes = config.stagger_delay;
     const staggerDelayMs = staggerIndex * staggerMinutes * 60 * 1000;
 
     // 1. Assign a mailbox from the pool if not already assigned
@@ -128,16 +130,14 @@ export async function scheduleNextStep(
   // 1. Limpiamos cualquier trabajo pendiente para evitar duplicados
   await cancelPendingSequenceJobs(sequenceId, contactId, d);
 
-  const [sequence, settings] = await Promise.all([
-    d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]),
-    d.get<any>('SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?', [projectId])
-  ]);
-  
+  const sequence = await d.get<any>('SELECT * FROM outreach_sequences WHERE id = ?', [sequenceId]);
   if (!sequence) throw new Error('Sequence not found');
 
-  // Timezone Context
+  const config = await getEffectiveSequenceConfig(projectId, sequence);
+
+  // Use the merged config for all scheduling decisions
   const useRecipientTz = sequence.use_recipient_timezone === true || sequence.use_recipient_timezone === 1;
-  let targetTz = sequence.send_timezone || 'America/Mexico_City';
+  let targetTz = config.send_timezone;
 
   if (useRecipientTz) {
     const contact = await d.get<any>(
@@ -149,7 +149,7 @@ export async function scheduleNextStep(
     }
   }
 
-  const intervalMinutes = settings?.sending_interval_minutes ?? 20;
+  const intervalMinutes = config.sending_interval_minutes;
   const mailboxId = enrollment.assigned_mailbox_id;
 
   // 2. Buscamos el siguiente paso (Ignoramos branch_path para forzar flujo lineal)
@@ -220,7 +220,7 @@ export async function scheduleNextStep(
   // 4. ENFORCE BUSINESS HOURS, STAGGERING & JITTER
   const executeAt = await calculateNextAvailableSlot(
     targetTime,
-    sequence,
+    config,
     mailboxId,
     intervalMinutes,
     targetTz,
@@ -262,14 +262,14 @@ export async function scheduleNextStep(
  */
 export async function calculateNextAvailableSlot(
   baseTime: DateTime,
-  sequence: any,
+  config: any, // Expecting merged config or sequence with scheduling fields
   mailboxId: string | null,
   intervalMinutes: number,
   targetTz: string,
   d: DbWrapper
 ): Promise<DateTime> {
   // 1. Enforce business hours & weekdays
-  let executeAt = getNextBusinessSlot(baseTime, sequence, targetTz);
+  let executeAt = getNextBusinessSlot(baseTime, config, targetTz);
 
   // 2. Per-Mailbox Staggering
   if (mailboxId && intervalMinutes > 0) {
@@ -286,13 +286,13 @@ export async function calculateNextAvailableSlot(
         executeAt = minStaggeredTime;
         
         // Re-enforce window in case staggering pushed it past the end hour
-        executeAt = getNextBusinessSlot(executeAt, sequence, targetTz);
+        executeAt = getNextBusinessSlot(executeAt, config, targetTz);
       }
     }
   }
 
   // 3. Smart Jitter (Human-like variation)
-  const smartJitterDelaySeconds = Math.floor(Math.random() * (sequence.smart_send_max_delay || 0));
+  const smartJitterDelaySeconds = Math.floor(Math.random() * (config.smart_send_max_delay || 0));
   executeAt = executeAt.plus({ seconds: smartJitterDelaySeconds });
 
   return executeAt;

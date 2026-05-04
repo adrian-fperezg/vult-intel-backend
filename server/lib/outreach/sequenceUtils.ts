@@ -1,11 +1,12 @@
 
 import { DateTime } from 'luxon';
+import { OUTREACH_CONFIG } from '../../config/outreach.js';
 
 /**
  * Helper to parse allowed days from various formats (Postgres array, JSON string, or Array).
  */
 export function parseAllowedDays(raw: any): boolean[] {
-  const defaultDays = [true, true, true, true, true, false, false];
+  const defaultDays = OUTREACH_CONFIG.SCHEDULING.DEFAULT_ALLOWED_DAYS;
   if (!raw) return defaultDays;
 
   try {
@@ -36,14 +37,14 @@ export function calculateSendingDelay(
   startTime: string, // e.g. "09:00"
   endTime: string,   // e.g. "17:00"
   timezone: string,
-  allowedDays: boolean[] = [true, true, true, true, true, false, false]
+  allowedDays: boolean[] = OUTREACH_CONFIG.SCHEDULING.DEFAULT_ALLOWED_DAYS
 ): number {
   // 1. Normalize current time to target timezone
   const localNow = currentTime.setZone(timezone);
 
   // 2. Parse window bounds
-  const [startHour, startMin] = (startTime || "09:00").split(':').map(Number);
-  const [endHour, endMin] = (endTime || "17:00").split(':').map(Number);
+  const [startHour, startMin] = (startTime || OUTREACH_CONFIG.SCHEDULING.DEFAULT_WINDOW_START).split(':').map(Number);
+  const [endHour, endMin] = (endTime || OUTREACH_CONFIG.SCHEDULING.DEFAULT_WINDOW_END).split(':').map(Number);
 
   // 3. Safety: If no days are allowed, we can't find a window. 
   // Return a large delay (e.g., 24 hours) to avoid infinite loop.
@@ -54,8 +55,8 @@ export function calculateSendingDelay(
 
   let current = localNow;
   
-  // Look ahead up to 14 days to find the next valid window
-  for (let i = 0; i < 14; i++) {
+  // Look ahead up to the configured limit to find the next valid window
+  for (let i = 0; i < OUTREACH_CONFIG.LIMITS.MAX_SCHEDULE_LOOKAHEAD_DAYS; i++) {
     const dayIndex = current.weekday - 1; // Luxon weekday is 1-7 (Mon-Sun)
     const isAllowedDay = allowedDays[dayIndex];
     
@@ -99,9 +100,9 @@ export function getNextBusinessSlot(baseTime: DateTime, sequence: any, overrideT
     return baseTime;
   }
 
-  const windowStart = sequence.send_window_start || '09:00';
-  const windowEnd = sequence.send_window_end || '17:00';
-  const targetTz = overrideTz || sequence.send_timezone || 'America/Mexico_City';
+  const windowStart = sequence.send_window_start || OUTREACH_CONFIG.SCHEDULING.DEFAULT_WINDOW_START;
+  const windowEnd = sequence.send_window_end || OUTREACH_CONFIG.SCHEDULING.DEFAULT_WINDOW_END;
+  const targetTz = overrideTz || sequence.send_timezone || OUTREACH_CONFIG.SCHEDULING.DEFAULT_TIMEZONE;
   
   const allowedDays = parseAllowedDays(sequence.send_on_weekdays);
 

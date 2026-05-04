@@ -17,7 +17,7 @@ async function performFullReset() {
     console.log('🧹 [QUEUE] Attempting to purge queues...');
     try {
       // Dynamic import to avoid top-level connection errors
-      const { emailQueue, campaignQueue } = await import('../queues/emailQueue.js');
+      const { emailQueue, campaignQueue } = await import('../queues/queueInstance.js');
       
       await emailQueue.drain(true);
       await Promise.all([
@@ -51,7 +51,7 @@ async function performFullReset() {
     try { await db.close(); } catch {}
     // Dynamic import to close queues if they were opened
     try {
-      const { emailQueue, campaignQueue } = await import('../queues/emailQueue.js');
+      const { emailQueue, campaignQueue } = await import('../queues/queueInstance.js');
       await emailQueue.close();
       await campaignQueue.close();
     } catch {}

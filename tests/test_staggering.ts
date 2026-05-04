@@ -1,5 +1,5 @@
 import { scheduleNextStep } from '../server/lib/outreach/sequenceEngine.js';
-import { emailQueue } from '../server/queues/emailQueue.js';
+import { emailQueue } from '../server/queues/queueInstance.js';
 import { DateTime } from 'luxon';
 
 // Mock BullMQ

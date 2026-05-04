@@ -18,30 +18,15 @@ import { encryptToken } from '../lib/outreach/encrypt.js';
 import { DateTime } from 'luxon';
 import { parseSpintax } from '../utils/spintax.js';
 import { parseSnippets } from '../../shared/utils/snippetParser.js';
+import { OUTREACH_CONFIG } from '../config/outreach.js';
+import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
+import { getEffectiveSequenceConfig } from '../lib/outreach/configUtils.js';
 
 
 dotenv.config();
 
 // ─── QUEUES ──────────────────────────────────────────────────────────────────
-
-export const emailQueue = new Queue('email-queue', { 
-  connection: redis as any,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000,
-    },
-    removeOnComplete: true,
-  }
-});
-
-export const campaignQueue = new Queue('campaign-queue', { 
-  connection: redis as any,
-  defaultJobOptions: {
-    removeOnComplete: true,
-  }
-});
+import { emailQueue, campaignQueue } from './queueInstance.js';
 
 import { syncMailbox, syncMailboxHistory, setupGmailWatch } from '../lib/outreach/gmailSync.js';
 import { getValidAccessToken } from '../oauth.js';
@@ -132,7 +117,6 @@ export async function resetRepeatableJobs() {
   }
 }
 
-import { checkAndIncrementGlobalLimit } from '../lib/outreach/sendLimits.js';
 
 /**
  * Cancels a scheduled sequence start job.
@@ -255,12 +239,12 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
 
       // Check Parent Sequence Status (Handle Pause / Scheduled)
       const sequence = await db.prepare('SELECT * FROM outreach_sequences WHERE id = ?').get(sequenceId) as any;
-      const bypassRestrictions = job.data?.bypassRestrictions === true;
-
       if (!sequence) {
         console.log(`[Sequence] Skipping execution: Sequence ${sequenceId} missing. (Step ${stepId} for contact ${contactId})`);
         return;
       }
+
+      const bypassRestrictions = job.data?.bypassRestrictions === true;
 
       // If not bypassing, check if sequence is active
       if (sequence.status !== 'active' && !bypassRestrictions) {
@@ -268,16 +252,19 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         return;
       }
 
-      // 1c. Sending Window Restriction Check
-      if (sequence.restrict_sending_hours && !bypassRestrictions) {
+      // 1c. Fetch Effective Configuration (Project Overrides + Sequence Settings)
+      const config = await getEffectiveSequenceConfig(projectId, sequence);
+
+      // 1d. Sending Window Restriction Check
+      if (config.restrict_sending_hours && !bypassRestrictions) {
         const contact = await db.get<any>('SELECT inferred_timezone FROM outreach_contacts WHERE id = ?', [contactId]);
         const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
-        const targetTz = useRecipientTz ? contact.inferred_timezone : (sequence.send_timezone || 'America/Mexico_City');
+        const targetTz = useRecipientTz ? contact.inferred_timezone : config.send_timezone;
 
         const now = DateTime.now().setZone(targetTz);
-        const allowedDays = parseAllowedDays(sequence.send_on_weekdays);
-        const windowStart = sequence.send_window_start || '09:00';
-        const windowEnd = sequence.send_window_end || '17:00';
+        const allowedDays = parseAllowedDays(config.send_on_weekdays);
+        const windowStart = config.send_window_start;
+        const windowEnd = config.send_window_end;
         
         const windowDelayMs = calculateSendingDelay(now, windowStart, windowEnd, targetTz, allowedDays);
 
@@ -285,16 +272,13 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
            console.log(`[Sending Window Check] Sequence: ${sequenceId}, Contact: ${contactId}, Time: ${now.toFormat('HH:mm:ss')}, Outside Window. Delaying by ${Math.round(windowDelayMs/1000)}s`);
 
            // --- STAGGERED DEFERRAL ---
-           // We don't just wait until the window opens; we also apply mailbox-level staggering
-           // to prevent a burst of emails as soon as the window starts.
-           const settings = await db.get<any>('SELECT sending_interval_minutes FROM outreach_settings WHERE project_id = ?', [projectId]);
-           const intervalMinutes = settings?.sending_interval_minutes ?? 20;
+           const intervalMinutes = config.sending_interval_minutes;
            const mailboxId = enrollment.assigned_mailbox_id;
 
            const windowOpenTime = now.plus({ milliseconds: windowDelayMs });
            const staggeredSlot = await calculateNextAvailableSlot(
              windowOpenTime, 
-             sequence,
+             config, // Use merged config
              mailboxId,
              intervalMinutes,
              targetTz,
@@ -327,7 +311,46 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
       // Heartbeat: Log start of processing
       console.log(`[Sequence] [Heartbeat] Processing step ${stepId} (${stepNumber}) for contact ${contactId} in sequence ${sequenceId}`);
 
-      // 2. Global Send Limit check removed (Always proceed)
+      // 2. Global Send Limit Enforcement
+      const isWithinLimit = await checkAndIncrementGlobalLimit(projectId);
+      if (!isWithinLimit && !bypassRestrictions) {
+        const targetTz = config.send_timezone;
+        const now = DateTime.now().setZone(targetTz);
+        
+        // Reschedule for the start of the next business day
+        const tomorrow = now.plus({ days: 1 }).startOf('day');
+        const mailboxId = enrollment.assigned_mailbox_id;
+
+        const nextSlot = await calculateNextAvailableSlot(
+          tomorrow,
+          config,
+          mailboxId,
+          config.sending_interval_minutes,
+          targetTz,
+          db
+        );
+
+        const deferMs = Math.max(0, nextSlot.diffNow().as('milliseconds'));
+        console.warn(`[SendLimits] Project ${projectId} reached daily limit. Deferring job for contact ${contactId} until ${nextSlot.toFormat('yyyy-MM-dd HH:mm:ss')} (${targetTz})`);
+        
+        const newScheduledAt = new Date(Date.now() + deferMs);
+        await db.run(
+         `UPDATE outreach_sequence_enrollments 
+          SET scheduled_at = ?
+          WHERE sequence_id = ? AND contact_id = ?`,
+         [newScheduledAt.toISOString(), sequenceId, contactId]
+        );
+
+        await emailQueue.add('execute-sequence-step', {
+          projectId, sequenceId, contactId, stepId, stepNumber
+        }, {
+          delay: deferMs,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 },
+          jobId: `seq-${sequenceId}-${contactId}-step-${stepId}-limited-${Date.now()}`
+        });
+        return;
+      }
 
       // 3. Process the step
       const step = await db.prepare('SELECT * FROM outreach_sequence_steps WHERE id = ?').get(stepId) as any;

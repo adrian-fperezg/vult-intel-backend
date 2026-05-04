@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import db from '../../db.js';
-import { emailQueue } from '../../queues/emailQueue.js';
+import { emailQueue } from '../../queues/queueInstance.js';
 
 /**
  * Handles incoming Cloud Pub/Sub push notifications from Gmail.
