@@ -580,10 +580,12 @@
                 "30d": "Últimos 30 días",
                 "3d": "Últimos 3 días",
                 "7d": "Últimos 7 días",
+                "90d": "Últimos 90 días",
                 "Q1": "Q1 (Ene-Mar)",
                 "Q2": "Q2 (Abr-Jun)",
                 "Q3": "Q3 (Jul-Sep)",
-                "Q4": "Q4 (Oct-Dic)"
+                "Q4": "Q4 (Oct-Dic)",
+                "all": "Todo el tiempo"
             }
         },
         "contacts": {

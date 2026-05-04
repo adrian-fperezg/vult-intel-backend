@@ -12,9 +12,10 @@ import {
 import { cn } from '@/lib/utils';
 import { 
   OutreachMetricCard, OutreachBadge, TealButton,
-  OutreachSectionHeader
+  OutreachSectionHeader, TimeframeFilter
 } from '../OutreachCommon';
 import { useOutreachApi, AnalyticsData } from '@/hooks/useOutreachApi';
+import { useTranslation } from '@/contexts/TranslationContext';
 
 interface CampaignAnalyticsDashboardProps {
   campaignId: string;
@@ -23,10 +24,11 @@ interface CampaignAnalyticsDashboardProps {
 }
 
 export default function CampaignAnalyticsDashboard({ campaignId, campaignName, onBack }: CampaignAnalyticsDashboardProps) {
+  const { t } = useTranslation();
   const api = useOutreachApi();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState(30);
+  const [timeRange, setTimeRange] = useState('7d');
 
   useEffect(() => {
     loadAnalytics();
@@ -35,7 +37,7 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
   const loadAnalytics = async () => {
     setIsLoading(true);
     try {
-      const result = await api.fetchAnalytics(timeRange.toString(), campaignId);
+      const result = await api.fetchAnalytics(timeRange, campaignId);
       setData(result);
     } catch (error) {
       console.error('Error fetching campaign analytics:', error);
@@ -75,24 +77,15 @@ export default function CampaignAnalyticsDashboard({ campaignId, campaignName, o
               <h1 className="text-xl font-bold text-white tracking-tight">{campaignName}</h1>
               <OutreachBadge variant="green" dot>Live</OutreachBadge>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">Performance analytics for the last {timeRange} days</p>
+            <p className="text-xs text-slate-500 mt-0.5">{t('outreach.common.timeframe.' + timeRange)}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
-            {[7, 30, 90].map((range) => (
-              <button
-                key={range}
-                onClick={() => setTimeRange(range)}
-                className={cn(
-                  "px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all",
-                  timeRange === range ? "bg-teal-500/20 text-teal-400 border border-teal-500/20" : "text-slate-500 hover:text-slate-300"
-                )}
-              >
-                {range}D
-              </button>
-            ))}
-          </div>
+        <TimeframeFilter 
+          variant="buttons"
+          value={timeRange}
+          onChange={setTimeRange}
+        />
           <TealButton variant="outline" size="sm">
             <Download className="size-4" /> Export
           </TealButton>

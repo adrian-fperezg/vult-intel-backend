@@ -41,6 +41,7 @@ interface Step {
 interface Sequence {
   id: string;
   name: string;
+  description?: string;
   status: 'draft' | 'active' | 'paused' | 'archived';
   project_id: string;
   mailbox_id?: string;

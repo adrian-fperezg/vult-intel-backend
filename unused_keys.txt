@@ -1,4 +1,4 @@
-Potentially unused keys in en.json (497):
+Potentially unused keys in en.json (515):
 (Warning: Some might be used dynamically in code and missed by regex)
 
 AITOKENSUSEDTHISMONTH
@@ -170,9 +170,25 @@ navigation.visualWorkflows
 navigation.webGrowthPlan
 outreach.analytics.benchmarks.industryAvg
 outreach.analytics.benchmarks.safetyLimit
+outreach.analytics.timeRange.14d
+outreach.analytics.timeRange.1d
+outreach.analytics.timeRange.1m
+outreach.analytics.timeRange.1y
+outreach.analytics.timeRange.30d
+outreach.analytics.timeRange.3d
+outreach.analytics.timeRange.7d
+outreach.analytics.timeRange.Q1
+outreach.analytics.timeRange.Q2
+outreach.analytics.timeRange.Q3
+outreach.analytics.timeRange.Q4
 outreach.analytics.timeRangeShort.14d
+outreach.analytics.timeRangeShort.1d
 outreach.analytics.timeRangeShort.1m
+outreach.analytics.timeRangeShort.1y
+outreach.analytics.timeRangeShort.30d
 outreach.analytics.timeRangeShort.3d
+outreach.analytics.timeRangeShort.7d
+outreach.analytics.timeRangeShort.Q1
 outreach.campaigns.funnel.all
 outreach.campaigns.funnel.bofu
 outreach.campaigns.funnel.mofu
@@ -182,6 +198,8 @@ outreach.campaigns.status.completed
 outreach.campaigns.status.draft
 outreach.campaigns.status.paused
 outreach.campaigns.status.scheduled
+outreach.common.timeframe.90d
+outreach.common.timeframe.all
 outreach.contacts.actionsLabels.delete
 outreach.contacts.actionsLabels.edit
 outreach.contacts.actionsLabels.message

@@ -10,18 +10,22 @@ import { OutreachBadge } from '../../OutreachCommon';
 interface Sequence {
   id: string;
   name: string;
+  description?: string;
   status: 'active' | 'draft' | 'paused' | 'archived';
   step_count: number;
   contact_count: number;
   active_contact_count?: number;
+  completed_contact_count?: number;
   total_sent: number;
   sent_in_period: number;
   total_opened: number;
   opened_in_period: number;
   total_replies: number;
   replied_in_period: number;
+  clicked_in_period: number;
   open_rate: number;
   reply_rate: number;
+  click_rate: number;
   bounce_rate: number;
   created_at: string;
 }
@@ -34,7 +38,7 @@ interface SequenceCardProps {
   onPromote: (id: string, name: string) => void;
   isDuplicating: boolean;
   isPromoting: boolean;
-  onRename?: (id: string, newName: string) => Promise<void>;
+  onUpdateMetadata?: (id: string, updates: { name: string; description: string }) => Promise<void>;
 }
 
 export default function SequenceCard({ 
@@ -45,38 +49,54 @@ export default function SequenceCard({
   onPromote,
   isDuplicating,
   isPromoting,
-  onRename
+  onUpdateMetadata
 }: SequenceCardProps) {
   const {
-    id, name, status, step_count, contact_count,
-    open_rate, reply_rate, bounce_rate
+    id, name, description, status, step_count, contact_count,
+    open_rate, reply_rate, click_rate, bounce_rate,
+    active_contact_count = 0,
+    completed_contact_count = 0
   } = sequence;
 
-  const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(name);
+  const [tempDescription, setTempDescription] = useState(description || '');
   const [isSaving, setIsSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Calculate funnel completion
+  const totalEnrolled = contact_count || 0;
+  const completionPercent = totalEnrolled > 0 
+    ? Math.round((completed_contact_count / totalEnrolled) * 100) 
+    : 0;
 
   useEffect(() => {
-    if (isEditingName && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
+    if (isEditing && nameInputRef.current) {
+      nameInputRef.current.focus();
     }
-  }, [isEditingName]);
+  }, [isEditing]);
 
-  const handleRename = async () => {
-    if (!onRename || tempName.trim() === name || tempName.trim() === '') {
-      setIsEditingName(false);
+  const handleSaveMetadata = async () => {
+    if (!onUpdateMetadata) return;
+    
+    const hasChanges = tempName.trim() !== name || tempDescription.trim() !== (description || '');
+    if (!hasChanges || tempName.trim() === '') {
+      setIsEditing(false);
       setTempName(name);
+      setTempDescription(description || '');
       return;
     }
 
     setIsSaving(true);
     try {
-      await onRename(id, tempName.trim());
-      setIsEditingName(false);
+      await onUpdateMetadata(id, { 
+        name: tempName.trim(), 
+        description: tempDescription.trim() 
+      });
+      setIsEditing(false);
     } catch (error) {
       setTempName(name);
+      setTempDescription(description || '');
     } finally {
       setIsSaving(false);
     }
@@ -85,161 +105,258 @@ export default function SequenceCard({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      className="group bg-[#0d1117]/80 border border-white/5 rounded-[2rem] p-8 hover:border-teal-500/30 hover:bg-[#161b22] transition-all cursor-pointer relative overflow-hidden ring-1 ring-white/5"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      whileHover={{ y: -4 }}
+      className="group relative flex flex-col h-full bg-[#0d1117]/40 backdrop-blur-xl border border-white/5 rounded-[2.5rem] p-8 hover:border-teal-500/40 hover:bg-[#161b22]/60 transition-all duration-500 cursor-pointer overflow-hidden ring-1 ring-white/5 shadow-2xl"
       onClick={() => onClick(id)}
     >
-      {/* Subtle Background Glow */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/5 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-teal-500/10 transition-all duration-700" />
+      {/* Decorative Gradients */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500/5 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-teal-500/10 transition-all duration-1000" />
+      <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 blur-[80px] rounded-full translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-1000" />
       
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex flex-col gap-2">
-          <OutreachBadge 
-            variant={status === 'active' ? 'green' : 'gray'} 
-            dot={status === 'active'}
-            className="w-fit px-3 py-1 text-[9px] font-black uppercase tracking-[0.15em]"
-          >
-            {status}
-          </OutreachBadge>
+      <div className="relative flex items-start justify-between mb-8">
+        <div className="flex flex-col gap-4 flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            <OutreachBadge 
+              variant={status === 'active' ? 'green' : 'gray'} 
+              dot={status === 'active'}
+              className="w-fit px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] bg-white/5 border-white/10"
+            >
+              {status}
+            </OutreachBadge>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <Users className="size-3 text-teal-400" />
+              {step_count} Steps
+            </div>
+          </div>
           
-          {isEditingName ? (
-            <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
-              <input
-                ref={inputRef}
-                type="text"
-                value={tempName}
-                onChange={e => setTempName(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleRename();
-                  if (e.key === 'Escape') {
-                    setIsEditingName(false);
+          {isEditing ? (
+            <div className="flex flex-col gap-4 mt-2" onClick={e => e.stopPropagation()}>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">Sequence Name</label>
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={tempName}
+                  onChange={e => setTempName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) handleSaveMetadata();
+                    if (e.key === 'Escape') {
+                      setIsEditing(false);
+                      setTempName(name);
+                      setTempDescription(description || '');
+                    }
+                  }}
+                  className="bg-white/5 border border-teal-500/30 focus:border-teal-500 rounded-2xl px-4 py-3 text-sm text-white outline-none w-full transition-all shadow-inner"
+                  disabled={isSaving}
+                  placeholder="Sequence Name"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">Description</label>
+                <textarea
+                  value={tempDescription}
+                  onChange={e => setTempDescription(e.target.value)}
+                  className="bg-white/5 border border-white/10 focus:border-teal-500/50 rounded-2xl px-4 py-3 text-sm text-slate-300 outline-none w-full h-24 resize-none transition-all shadow-inner"
+                  disabled={isSaving}
+                  placeholder="What is the goal of this sequence?"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveMetadata}
+                  disabled={isSaving}
+                  className="flex-1 bg-teal-500 text-[#0d1117] hover:bg-teal-400 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95"
+                >
+                  {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                  SAVE CHANGES
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditing(false);
                     setTempName(name);
-                  }
-                }}
-                className="bg-white/5 border border-teal-500/50 rounded-lg px-2 py-1 text-sm text-white outline-none w-full max-w-[180px]"
-                disabled={isSaving}
-              />
-              <button
-                onClick={handleRename}
-                disabled={isSaving}
-                className="p-1 text-teal-400 hover:text-teal-300 transition-colors"
-              >
-                {isSaving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-4" />}
-              </button>
-              <button
-                onClick={() => {
-                  setIsEditingName(false);
-                  setTempName(name);
-                }}
-                disabled={isSaving}
-                className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                <X className="size-4" />
-              </button>
+                    setTempDescription(description || '');
+                  }}
+                  disabled={isSaving}
+                  className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2 group/title">
-              <h3 className="text-xl font-bold text-white group-hover:text-teal-400 transition-colors truncate max-w-[200px]">
-                {name}
-              </h3>
-              {onRename && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsEditingName(true);
-                    setTempName(name);
-                  }}
-                  className="p-1 opacity-0 group-hover/title:opacity-100 text-slate-500 hover:text-teal-400 transition-all"
-                >
-                  <Pencil className="size-3.5" />
-                </button>
+            <div className="flex flex-col gap-3 min-w-0">
+              <div className="flex items-start gap-3 group/title min-w-0">
+                <h3 className="text-2xl font-black text-white leading-tight tracking-tight group-hover:text-teal-400 transition-colors break-words">
+                  {name}
+                </h3>
+                {onUpdateMetadata && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEditing(true);
+                      setTempName(name);
+                      setTempDescription(description || '');
+                    }}
+                    className="mt-1.5 p-2 opacity-0 group-hover/title:opacity-100 bg-white/5 hover:bg-teal-500/20 text-slate-500 hover:text-teal-400 rounded-xl transition-all flex-shrink-0"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                )}
+              </div>
+              {description ? (
+                <p className="text-sm text-slate-400 line-clamp-2 leading-relaxed font-medium">
+                  {description}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-600 italic font-medium">Add a description to keep things organized...</p>
               )}
             </div>
           )}
         </div>
         
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-6">
           <button
             onClick={(e) => { e.stopPropagation(); onPromote(id, name); }}
             disabled={isPromoting}
-            className="p-2 rounded-xl bg-white/5 text-slate-500 hover:bg-teal-500/10 hover:text-teal-400 transition-all active:scale-90"
-            title="Force Send Now (Promote)"
+            className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:bg-teal-500/10 hover:text-teal-400 transition-all active:scale-90 border border-white/5"
+            title="Force Send Now"
           >
-            {isPromoting ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+            {isPromoting ? <Loader2 className="size-5 animate-spin" /> : <Zap className="size-5" />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDuplicate(id); }}
             disabled={isDuplicating}
-            className="p-2 rounded-xl bg-white/5 text-slate-500 hover:bg-blue-500/10 hover:text-blue-400 transition-all active:scale-90"
-            title="Duplicate Sequence"
+            className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:bg-blue-500/10 hover:text-blue-400 transition-all active:scale-90 border border-white/5"
+            title="Duplicate"
           >
-            {isDuplicating ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
+            {isDuplicating ? <Loader2 className="size-5 animate-spin" /> : <Copy className="size-5" />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(id); }}
-            className="p-2 rounded-xl bg-white/5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-90"
+            className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-90 border border-white/5"
           >
-            <Trash2 className="size-4" />
+            <Trash2 className="size-5" />
           </button>
         </div>
       </div>
 
-      {/* Core Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 group-hover:bg-white/[0.05] transition-all">
-          <p className="text-[9px] uppercase tracking-widest font-black text-slate-600 mb-1">Total Enrolled</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold text-white">{contact_count || 0}</span>
-            <span className="text-[10px] text-slate-500 font-medium">leads</span>
+      <div className="flex-1 space-y-6">
+        {/* Core Metrics Grid */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">Enrolled</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-white leading-none">{totalEnrolled}</span>
+              <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Leads</span>
+            </div>
+          </div>
+          <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">Performance</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-teal-400 leading-none">{active_contact_count}</span>
+              <span className="text-sm text-slate-600">/</span>
+              <span className="text-lg font-black text-slate-400 leading-none">{completed_contact_count}</span>
+            </div>
           </div>
         </div>
-        <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 group-hover:bg-white/[0.05] transition-all">
-          <p className="text-[9px] uppercase tracking-widest font-black text-slate-600 mb-1">Active</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold text-teal-400">{sequence.active_contact_count || 0}</span>
-            <span className="text-[10px] text-teal-900/50 font-bold uppercase">Ready</span>
+
+        {/* Funnel Completion Progress */}
+        <div className="px-1">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="size-2 rounded-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Funnel Completion</span>
+            </div>
+            <span className="text-xs font-black text-white">{completionPercent}%</span>
+          </div>
+          <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${completionPercent}%` }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="h-full bg-gradient-to-r from-teal-500 to-blue-500 rounded-full shadow-[0_0_15px_rgba(20,184,166,0.3)]"
+            />
           </div>
         </div>
       </div>
 
       {/* Performance Ribbon */}
-      <div className="flex items-center justify-between px-2 pt-2 border-t border-white/5">
-        <div className="flex items-center gap-6">
-          <div className="flex flex-col">
-            <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Sent</span>
-            <span className="text-sm font-bold text-slate-300">{sequence.sent_in_period || 0}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Open</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{open_rate}%</span>
-              {sequence.opened_in_period > 0 && (
-                <span className="text-[9px] font-black text-teal-400">+{sequence.opened_in_period}</span>
-              )}
+      <div className="mt-10 pt-8 border-t border-white/5">
+        <div className="flex items-center justify-between">
+          <div className="grid grid-cols-4 gap-6 flex-1">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Sent</span>
+              <span className="text-base font-black text-slate-300 leading-none">{sequence.sent_in_period || 0}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Open</span>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-black text-white leading-none">{open_rate}%</span>
+                {sequence.opened_in_period > 0 && (
+                  <motion.span 
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-[10px] font-black text-teal-400 bg-teal-400/10 px-1.5 py-0.5 rounded-md"
+                  >
+                    +{sequence.opened_in_period}
+                  </motion.span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Click</span>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-black text-white leading-none">{click_rate || 0}%</span>
+                {sequence.clicked_in_period > 0 && (
+                  <motion.span 
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-[10px] font-black text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded-md"
+                  >
+                    +{sequence.clicked_in_period}
+                  </motion.span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Reply</span>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-black text-white leading-none">{reply_rate}%</span>
+                {sequence.replied_in_period > 0 && (
+                  <motion.span 
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-[10px] font-black text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-md"
+                  >
+                    +{sequence.replied_in_period}
+                  </motion.span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Reply</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{reply_rate}%</span>
-              {sequence.replied_in_period > 0 && (
-                <span className="text-[9px] font-black text-amber-400">+{sequence.replied_in_period}</span>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">Bounce</span>
-            <div className="flex items-center gap-1.5">
-              <span className={cn("text-sm font-bold", bounce_rate > 2.5 ? "text-red-400" : "text-slate-500")}>{bounce_rate}%</span>
-            </div>
-          </div>
-        </div>
 
-        <div className="p-3 rounded-full bg-white/5 group-hover:bg-teal-500 text-slate-500 group-hover:text-[#0d1117] transition-all duration-300">
-          <ArrowRight className="size-4" />
+          <div className="ml-6 p-4 rounded-full bg-white/5 group-hover:bg-teal-500 text-slate-500 group-hover:text-[#0d1117] transition-all duration-500 shadow-xl group-hover:shadow-teal-500/20 group-hover:scale-110">
+            <ArrowRight className="size-5" />
+          </div>
         </div>
+        
+        {/* Bounce rate small at the bottom */}
+        {bounce_rate > 0 && (
+          <div className="mt-6 flex items-center gap-3">
+            <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className={cn("h-full transition-all duration-1000", bounce_rate > 2.5 ? "bg-red-500" : "bg-slate-700")}
+                style={{ width: `${Math.min(bounce_rate * 10, 100)}%` }}
+              />
+            </div>
+            <span className={cn("text-[10px] font-black uppercase tracking-[0.1em]", bounce_rate > 2.5 ? "text-red-400" : "text-slate-600")}>
+              {bounce_rate}% Bounce
+            </span>
+          </div>
+        )}
       </div>
     </motion.div>
   );

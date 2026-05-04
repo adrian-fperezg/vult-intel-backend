@@ -9,7 +9,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell
 } from 'recharts';
-import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader, OutreachEmptyState } from './OutreachCommon';
+import { OutreachMetricCard, OutreachBadge, OutreachSectionHeader, OutreachEmptyState, TimeframeFilter } from './OutreachCommon';
 import { cn } from '@/lib/utils';
 import { useOutreachApi, AnalyticsData, FunnelStat } from '@/hooks/useOutreachApi';
 import { useTranslation } from '@/contexts/TranslationContext';
@@ -221,24 +221,15 @@ export default function OutreachAnalytics() {
         {/* Filter Bar - Consistent with Sequences */}
         <div className="flex items-center justify-between gap-4 py-2 border-b border-white/5">
           <div className="flex items-center gap-4">
-            <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
-              {['7d', '30d', '90d', 'all'].map((range) => (
-                <button
-                  key={range}
-                  onClick={() => {
-                    const params = new URLSearchParams(searchParams);
-                    params.set('timeframe', range);
-                    setSearchParams(params);
-                  }}
-                  className={cn(
-                    "px-4 py-1.5 text-xs font-bold rounded-lg transition-all uppercase",
-                    timeframe === range ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
-                  )}
-                >
-                  {range}
-                </button>
-              ))}
-            </div>
+            <TimeframeFilter 
+              variant="buttons"
+              value={timeframe}
+              onChange={(range) => {
+                const params = new URLSearchParams(searchParams);
+                params.set('timeframe', range);
+                setSearchParams(params);
+              }}
+            />
           </div>
         </div>
 

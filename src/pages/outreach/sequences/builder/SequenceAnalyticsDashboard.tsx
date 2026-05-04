@@ -9,7 +9,7 @@ import {
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
-import { OutreachMetricCard, OutreachSectionHeader, OutreachBadge } from '../../OutreachCommon';
+import { OutreachMetricCard, OutreachSectionHeader, OutreachBadge, TimeframeFilter } from '../../OutreachCommon';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/TranslationContext';
 
@@ -63,7 +63,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label, t }: any) => {
 export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
   const { t, language } = useTranslation();
   const [stats, setStats] = useState<SequenceStats | null>(null);
-  const [timeframe, setTimeframe] = useState<string>('30d');
+  const [timeframe, setTimeframe] = useState<string>('7d');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { fetchSequenceStats } = useOutreachApi();
@@ -128,44 +128,11 @@ export default function SequenceAnalyticsDashboard({ sequenceId }: Props) {
           <h2 className="text-xl font-bold text-white">{t('outreach.sequences.analyticsDashboard.performanceOverview')}</h2>
           <p className="text-sm text-slate-500">{t('outreach.sequences.analyticsDashboard.metricsSubtitle')}</p>
         </div>
-        <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
-          {[
-            { label: t('outreach.analytics.timeRangeShort.1d'), value: '1d' },
-            { label: t('outreach.analytics.timeRangeShort.7d'), value: '7d' },
-            { label: t('outreach.analytics.timeRangeShort.30d'), value: '30d' },
-            { label: t('outreach.analytics.timeRangeShort.Q1'), value: 'Q1' },
-            { label: t('outreach.analytics.timeRangeShort.1y'), value: '1y' }
-          ].map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setTimeframe(opt.value)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-bold rounded-lg transition-all",
-                timeframe === opt.value ? "bg-teal-500 text-white shadow-lg shadow-teal-500/20" : "text-slate-500 hover:text-slate-300"
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <div className="w-px h-4 bg-white/10 mx-1" />
-          <select
-             value={timeframe}
-             onChange={(e) => setTimeframe(e.target.value)}
-             className="bg-transparent text-xs font-bold text-slate-400 outline-none pr-2 cursor-pointer hover:text-white transition-colors"
-          >
-            <option value="1d" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.1d')}</option>
-            <option value="3d" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.3d')}</option>
-            <option value="7d" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.7d')}</option>
-            <option value="14d" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.14d')}</option>
-            <option value="30d" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.30d')}</option>
-            <option value="1m" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.1m')}</option>
-            <option value="Q1" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.Q1')}</option>
-            <option value="Q2" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.Q2')}</option>
-            <option value="Q3" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.Q3')}</option>
-            <option value="Q4" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.Q4')}</option>
-            <option value="1y" className="bg-[#1c2128]">{t('outreach.analytics.timeRange.1y')}</option>
-          </select>
-        </div>
+        <TimeframeFilter 
+          variant="buttons"
+          value={timeframe}
+          onChange={setTimeframe}
+        />
       </div>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -5,8 +5,9 @@ import {
   Plus, GitBranch, FolderOpen, Search, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { OutreachEmptyState, TealButton, OutreachConfirmDialog } from './OutreachCommon';
+import { OutreachEmptyState, TealButton, OutreachConfirmDialog, TimeframeFilter } from './OutreachCommon';
 import { useOutreachApi } from '@/hooks/useOutreachApi';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { toast } from 'react-hot-toast';
 import SequenceBuilder from './sequences/builder/SequenceBuilder';
 import SequenceCard from './sequences/components/SequenceCard';
@@ -14,10 +15,12 @@ import SequenceCard from './sequences/components/SequenceCard';
 interface Sequence {
   id: string;
   name: string;
+  description?: string;
   status: 'active' | 'draft' | 'paused' | 'archived';
   step_count: number;
   contact_count: number;
   active_contact_count?: number;
+  completed_contact_count?: number;
   total_sent: number;
   sent_in_period: number;
   total_opened: number;
@@ -29,11 +32,13 @@ interface Sequence {
   unsub_in_period: number;
   open_rate: number;
   reply_rate: number;
+  click_rate: number;
   bounce_rate: number;
   created_at: string;
 }
 
 export default function OutreachSequences() {
+  const { t } = useTranslation();
   const { 
     activeProjectId, 
     fetchSequences, 
@@ -158,16 +163,16 @@ export default function OutreachSequences() {
     }
   };
 
-  const handleRename = async (id: string, newName: string) => {
+  const handleUpdateMetadata = async (id: string, updates: { name: string; description: string }) => {
     const previousSequences = [...sequences];
-    setSequences(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
+    setSequences(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
 
     try {
-      await updateSequence(id, { name: newName });
-      toast.success('Sequence renamed');
+      await updateSequence(id, updates);
+      toast.success('Sequence updated');
     } catch (error) {
-      console.error('Error renaming sequence:', error);
-      toast.error('Failed to rename sequence');
+      console.error('Error updating sequence:', error);
+      toast.error('Failed to update sequence');
       setSequences(previousSequences);
       throw error;
     }
@@ -198,24 +203,15 @@ export default function OutreachSequences() {
       {/* Filters & Search */}
       <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
-            {['7d', '30d', '90d', 'all'].map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  const params = new URLSearchParams(searchParams);
-                  params.set('timeframe', t);
-                  setSearchParams(params);
-                }}
-                className={cn(
-                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all uppercase",
-                  timeframe === t ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          <TimeframeFilter 
+            variant="buttons"
+            value={timeframe}
+            onChange={(range) => {
+              const params = new URLSearchParams(searchParams);
+              params.set('timeframe', range);
+              setSearchParams(params);
+            }}
+          />
 
           <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
             {['all', 'active', 'draft'].map((s) => (
@@ -271,7 +267,7 @@ export default function OutreachSequences() {
                   onPromote={handlePromote}
                   isDuplicating={isDuplicating === seq.id}
                   isPromoting={isPromoting.has(seq.id)}
-                  onRename={handleRename}
+                  onUpdateMetadata={handleUpdateMetadata}
                 />
               ))}
             </AnimatePresence>

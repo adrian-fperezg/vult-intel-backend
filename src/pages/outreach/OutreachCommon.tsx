@@ -278,26 +278,51 @@ export function OutreachConfirmDialog({
 }
 
 // ─── TIMEFRAME FILTER ────────────────────────────────────────────────────────
+export const TIMEFRAME_OPTIONS = ['7d', '30d', '90d', 'all'] as const;
+export type TimeframeOption = typeof TIMEFRAME_OPTIONS[number];
+
 interface TimeframeFilterProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: TimeframeOption) => void;
   className?: string;
+  variant?: 'select' | 'buttons';
+  options?: TimeframeOption[]; // Optional subset of options
 }
 
-export function TimeframeFilter({ value, onChange, className }: TimeframeFilterProps) {
+export function TimeframeFilter({ value, onChange, className, variant = 'select', options }: TimeframeFilterProps) {
   const { t } = useTranslation();
+  const displayOptions = options || (TIMEFRAME_OPTIONS as unknown as TimeframeOption[]);
+
+  if (variant === 'buttons') {
+    return (
+      <div className={cn("flex items-center bg-white/5 rounded-xl border border-white/5 p-1", className)}>
+        {displayOptions.map((opt) => (
+          <button
+            key={opt}
+            onClick={() => onChange(opt)}
+            className={cn(
+              "px-4 py-1.5 text-sm font-semibold rounded-lg transition-all",
+              value === opt 
+                ? "bg-white/10 text-white shadow-sm ring-1 ring-white/10" 
+                : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+            )}
+          >
+            {t(`outreach.common.timeframe.${opt}`)}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <div className="p-2 bg-white/5 rounded-xl border border-white/5">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4 text-slate-500">
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
+      <div className="p-2 bg-white/5 rounded-xl border border-white/5 hidden sm:block">
+        <Clock className="size-4 text-slate-500" />
       </div>
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-white/5 border border-white/5 text-slate-300 text-xs font-bold rounded-xl px-4 py-2 outline-none hover:bg-white/10 transition-all cursor-pointer appearance-none pr-8 relative"
+        onChange={(e) => onChange(e.target.value as TimeframeOption)}
+        className="bg-white/5 border border-white/5 text-slate-300 text-sm font-semibold rounded-xl px-4 py-2 outline-none hover:bg-white/10 transition-all cursor-pointer appearance-none pr-8 relative"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
           backgroundRepeat: 'no-repeat',
@@ -305,17 +330,11 @@ export function TimeframeFilter({ value, onChange, className }: TimeframeFilterP
           backgroundSize: '1.25rem'
         }}
       >
-        <option value="1d">{t('outreach.common.timeframe.1d')}</option>
-        <option value="3d">{t('outreach.common.timeframe.3d')}</option>
-        <option value="7d">{t('outreach.common.timeframe.7d')}</option>
-        <option value="14d">{t('outreach.common.timeframe.14d')}</option>
-        <option value="30d">{t('outreach.common.timeframe.30d')}</option>
-        <option value="1m">{t('outreach.common.timeframe.1m')}</option>
-        <option value="Q1">{t('outreach.common.timeframe.Q1')}</option>
-        <option value="Q2">{t('outreach.common.timeframe.Q2')}</option>
-        <option value="Q3">{t('outreach.common.timeframe.Q3')}</option>
-        <option value="Q4">{t('outreach.common.timeframe.Q4')}</option>
-        <option value="1y">{t('outreach.common.timeframe.1y')}</option>
+        {displayOptions.map(opt => (
+          <option key={opt} value={opt} className="bg-[#1c2128]">
+            {t(`outreach.common.timeframe.${opt}`)}
+          </option>
+        ))}
       </select>
     </div>
   );
