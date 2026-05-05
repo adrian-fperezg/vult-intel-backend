@@ -1021,12 +1021,12 @@
                     "totalSentDesc": "Correos electrónicos enviados en todas las etapas",
                     "volumeEngagementDesc": "Volumen vs. Compromiso por etapa del embudo",
                     "zeroCampaigns": "Cero campañas descubiertas",
-                    "totalEnrolled": "Total Inscritos",
                     "tryAgain": "Intentar de Nuevo",
                     "unavailableDesc": "No hay datos suficientes para mostrar analíticas todavía.",
                     "unavailableTitle": "Analíticas no disponibles",
                     "weekPrefix": "Semana"
                 },
+                "totalEnrolled": "Total Inscritos",
                 "common": {
                     "cancel": "Cancelar",
                     "confirm": "Confirmar",
@@ -1144,6 +1144,7 @@
                 "draft": "Borrador",
                 "activeLaunched": "Activa (Lanzada)",
                 "activeScheduled": "Activa (Programada)",
+                "scheduled": "Programada",
                 "addFirstStep": "Añadir Primer Paso",
                 "addNextStep": "Añadir Siguiente Paso",
                 "allSaved": "Todos los cambios guardados",

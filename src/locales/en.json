@@ -1020,12 +1020,12 @@
                     "totalSentDesc": "Emails sent across all stages",
                     "volumeEngagementDesc": "Volume vs. Engagement by funnel stage",
                     "zeroCampaigns": "Zero Campaigns Discovered",
-                    "totalEnrolled": "Total Enrolled",
                     "tryAgain": "Try Again",
                     "unavailableDesc": "We couldn't retrieve the performance data for this sequence.",
                     "unavailableTitle": "Analytics Unavailable",
                     "weekPrefix": "Wk"
                 },
+                "totalEnrolled": "Total Enrolled",
                 "common": {
                     "cancel": "Cancel",
                     "confirm": "Confirm",
@@ -1143,6 +1143,7 @@
                 "draft": "Draft",
                 "activeLaunched": "Active: Launched",
                 "activeScheduled": "Active: Scheduled",
+                "scheduled": "Scheduled",
                 "addFirstStep": "Add First Step",
                 "addNextStep": "Add Next Step",
                 "allSaved": "All changes saved",

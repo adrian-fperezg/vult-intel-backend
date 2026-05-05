@@ -131,7 +131,7 @@ export default function SequenceCard({
       <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500/5 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-teal-500/10 transition-all duration-1000" />
       <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 blur-[80px] rounded-full translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-1000" />
       
-      <div className="relative flex items-start justify-between mb-8">
+      <div className="relative flex flex-col sm:flex-row items-start justify-between gap-6 mb-8">
         <div className="flex flex-col gap-5 flex-1 min-w-0">
           <div className="flex items-center gap-3">
             <OutreachBadge 
@@ -222,7 +222,7 @@ export default function SequenceCard({
                 )}
               </div>
               {description ? (
-                <p className="text-sm text-slate-400 line-clamp-2 leading-relaxed font-medium">
+                <p className="text-sm text-slate-400 leading-relaxed font-medium">
                   {description}
                 </p>
               ) : (
@@ -232,7 +232,7 @@ export default function SequenceCard({
           )}
         </div>
         
-        <div className="flex items-center gap-2 flex-shrink-0 ml-6">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={togglePin}
             className={cn(
@@ -274,15 +274,15 @@ export default function SequenceCard({
       <div className="flex-1 space-y-6">
         {/* Core Metrics Grid */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all">
-            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">{t('outreach.sequences.analyticsDashboard.totalEnrolled')}</p>
+          <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all overflow-hidden">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2 truncate" title={t('outreach.sequences.analyticsDashboard.totalEnrolled')}>{t('outreach.sequences.analyticsDashboard.totalEnrolled')}</p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-white leading-none">{totalEnrolled}</span>
               <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{t('outreach.sequences.campaigns.leads')}</span>
             </div>
           </div>
-          <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all">
-            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">{t('outreach.sequences.campaigns.performance')}</p>
+          <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all overflow-hidden">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2 truncate" title={t('outreach.sequences.campaigns.performance')}>{t('outreach.sequences.campaigns.performance')}</p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-teal-400 leading-none">{active_contact_count}</span>
               <span className="text-sm text-slate-600">/</span>
