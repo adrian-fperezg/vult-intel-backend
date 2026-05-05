@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Copy, ArrowRight, Loader2, Trash2, Edit2, Check, X,
-  Mail, Users, Zap, Pencil
+  Mail, Users, Zap, Pencil, Pin, PinOff
 } from 'lucide-react';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { cn } from '@/lib/utils';
 import { OutreachBadge } from '../../OutreachCommon';
 
@@ -27,6 +28,7 @@ interface Sequence {
   reply_rate: number;
   click_rate: number;
   bounce_rate: number;
+  is_pinned?: boolean;
   created_at: string;
 }
 
@@ -38,7 +40,7 @@ interface SequenceCardProps {
   onPromote: (id: string, name: string) => void;
   isDuplicating: boolean;
   isPromoting: boolean;
-  onUpdateMetadata?: (id: string, updates: { name: string; description: string }) => Promise<void>;
+  onUpdateMetadata?: (id: string, updates: { name: string; description?: string; is_pinned?: boolean }) => Promise<void>;
 }
 
 export default function SequenceCard({ 
@@ -55,8 +57,11 @@ export default function SequenceCard({
     id, name, description, status, step_count, contact_count,
     open_rate, reply_rate, click_rate, bounce_rate,
     active_contact_count = 0,
-    completed_contact_count = 0
+    completed_contact_count = 0,
+    is_pinned = false
   } = sequence;
+
+  const { t } = useTranslation();
 
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(name);
@@ -95,10 +100,20 @@ export default function SequenceCard({
       });
       setIsEditing(false);
     } catch (error) {
-      setTempName(name);
-      setTempDescription(description || '');
+      console.error('Error saving metadata:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const togglePin = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onUpdateMetadata) return;
+    
+    try {
+      await onUpdateMetadata(id, { name, description, is_pinned: !is_pinned });
+    } catch (error) {
+      console.error('Error toggling pin:', error);
     }
   };
 
@@ -117,25 +132,25 @@ export default function SequenceCard({
       <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 blur-[80px] rounded-full translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-1000" />
       
       <div className="relative flex items-start justify-between mb-8">
-        <div className="flex flex-col gap-4 flex-1 min-w-0">
+        <div className="flex flex-col gap-5 flex-1 min-w-0">
           <div className="flex items-center gap-3">
             <OutreachBadge 
               variant={status === 'active' ? 'green' : 'gray'} 
               dot={status === 'active'}
               className="w-fit px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] bg-white/5 border-white/10"
             >
-              {status}
+              {t(`outreach.sequences.builder.${status}`)}
             </OutreachBadge>
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               <Users className="size-3 text-teal-400" />
-              {step_count} Steps
+              {step_count} {t('outreach.sequences.builder.steps_label')}
             </div>
           </div>
           
           {isEditing ? (
             <div className="flex flex-col gap-4 mt-2" onClick={e => e.stopPropagation()}>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">Sequence Name</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">{t('outreach.sequences.builder.sequenceName')}</label>
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -151,17 +166,17 @@ export default function SequenceCard({
                   }}
                   className="bg-white/5 border border-teal-500/30 focus:border-teal-500 rounded-2xl px-4 py-3 text-sm text-white outline-none w-full transition-all shadow-inner"
                   disabled={isSaving}
-                  placeholder="Sequence Name"
+                  placeholder={t('outreach.sequences.builder.sequenceName')}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">Description</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">{t('outreach.sequences.builder.emailContentDescription')}</label>
                 <textarea
                   value={tempDescription}
                   onChange={e => setTempDescription(e.target.value)}
                   className="bg-white/5 border border-white/10 focus:border-teal-500/50 rounded-2xl px-4 py-3 text-sm text-slate-300 outline-none w-full h-24 resize-none transition-all shadow-inner"
                   disabled={isSaving}
-                  placeholder="What is the goal of this sequence?"
+                  placeholder={t('outreach.sequences.builder.playbookPlaceholder')}
                 />
               </div>
               <div className="flex items-center gap-3">
@@ -171,7 +186,7 @@ export default function SequenceCard({
                   className="flex-1 bg-teal-500 text-[#0d1117] hover:bg-teal-400 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95"
                 >
                   {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                  SAVE CHANGES
+                  {t('outreach.sequences.builder.saveSequence').toUpperCase()}
                 </button>
                 <button
                   onClick={() => {
@@ -187,7 +202,7 @@ export default function SequenceCard({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-3 min-w-0">
+            <div className="flex flex-col gap-4 min-w-0">
               <div className="flex items-start gap-3 group/title min-w-0">
                 <h3 className="text-2xl font-black text-white leading-tight tracking-tight group-hover:text-teal-400 transition-colors break-words">
                   {name}
@@ -211,7 +226,7 @@ export default function SequenceCard({
                   {description}
                 </p>
               ) : (
-                <p className="text-xs text-slate-600 italic font-medium">Add a description to keep things organized...</p>
+                <p className="text-xs text-slate-600 italic font-medium">{t('outreach.sequences.builder.playbookPlaceholder')}</p>
               )}
             </div>
           )}
@@ -219,10 +234,22 @@ export default function SequenceCard({
         
         <div className="flex items-center gap-2 flex-shrink-0 ml-6">
           <button
+            onClick={togglePin}
+            className={cn(
+              "p-3 rounded-2xl transition-all active:scale-90 border",
+              is_pinned 
+                ? "bg-teal-500/20 text-teal-400 border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]" 
+                : "bg-white/5 text-slate-500 border-white/5 hover:bg-white/10 hover:text-slate-300"
+            )}
+            title={is_pinned ? t('outreach.sequences.common.unpin') : t('outreach.sequences.common.pin')}
+          >
+            {is_pinned ? <PinOff className="size-5" /> : <Pin className="size-5" />}
+          </button>
+          <button
             onClick={(e) => { e.stopPropagation(); onPromote(id, name); }}
             disabled={isPromoting}
             className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:bg-teal-500/10 hover:text-teal-400 transition-all active:scale-90 border border-white/5"
-            title="Force Send Now"
+            title={t('outreach.sequences.builder.sendNow')}
           >
             {isPromoting ? <Loader2 className="size-5 animate-spin" /> : <Zap className="size-5" />}
           </button>
@@ -230,13 +257,14 @@ export default function SequenceCard({
             onClick={(e) => { e.stopPropagation(); onDuplicate(id); }}
             disabled={isDuplicating}
             className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:bg-blue-500/10 hover:text-blue-400 transition-all active:scale-90 border border-white/5"
-            title="Duplicate"
+            title={t('outreach.sequences.campaigns.duplicate')}
           >
             {isDuplicating ? <Loader2 className="size-5 animate-spin" /> : <Copy className="size-5" />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(id); }}
             className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-90 border border-white/5"
+            title={t('outreach.sequences.campaigns.delete')}
           >
             <Trash2 className="size-5" />
           </button>
@@ -247,14 +275,14 @@ export default function SequenceCard({
         {/* Core Metrics Grid */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all">
-            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">Enrolled</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">{t('outreach.sequences.analyticsDashboard.totalEnrolled')}</p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-white leading-none">{totalEnrolled}</span>
-              <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Leads</span>
+              <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{t('outreach.sequences.campaigns.leads')}</span>
             </div>
           </div>
           <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all">
-            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">Performance</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2">{t('outreach.sequences.campaigns.performance')}</p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-teal-400 leading-none">{active_contact_count}</span>
               <span className="text-sm text-slate-600">/</span>
@@ -268,7 +296,7 @@ export default function SequenceCard({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="size-2 rounded-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Funnel Completion</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('outreach.sequences.campaigns.funnelStage')}</span>
             </div>
             <span className="text-xs font-black text-white">{completionPercent}%</span>
           </div>
@@ -288,11 +316,11 @@ export default function SequenceCard({
         <div className="flex items-center justify-between">
           <div className="grid grid-cols-4 gap-6 flex-1">
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Sent</span>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.sent')}</span>
               <span className="text-base font-black text-slate-300 leading-none">{sequence.sent_in_period || 0}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Open</span>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.open')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-base font-black text-white leading-none">{open_rate}%</span>
                 {sequence.opened_in_period > 0 && (
@@ -307,7 +335,7 @@ export default function SequenceCard({
               </div>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Click</span>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.click')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-base font-black text-white leading-none">{click_rate || 0}%</span>
                 {sequence.clicked_in_period > 0 && (
@@ -322,7 +350,7 @@ export default function SequenceCard({
               </div>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Reply</span>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.reply')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-base font-black text-white leading-none">{reply_rate}%</span>
                 {sequence.replied_in_period > 0 && (
@@ -353,7 +381,7 @@ export default function SequenceCard({
               />
             </div>
             <span className={cn("text-[10px] font-black uppercase tracking-[0.1em]", bounce_rate > 2.5 ? "text-red-400" : "text-slate-600")}>
-              {bounce_rate}% Bounce
+              {bounce_rate}% {t('outreach.sequences.common.bounce')}
             </span>
           </div>
         )}

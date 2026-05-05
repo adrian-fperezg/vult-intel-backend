@@ -1019,7 +1019,12 @@
                     "totalFunnelVolume": "Total Funnel Volume",
                     "totalSentDesc": "Emails sent across all stages",
                     "volumeEngagementDesc": "Volume vs. Engagement by funnel stage",
-                    "zeroCampaigns": "Zero Campaigns Discovered"
+                    "zeroCampaigns": "Zero Campaigns Discovered",
+                    "totalEnrolled": "Total Enrolled",
+                    "tryAgain": "Try Again",
+                    "unavailableDesc": "We couldn't retrieve the performance data for this sequence.",
+                    "unavailableTitle": "Analytics Unavailable",
+                    "weekPrefix": "Wk"
                 },
                 "common": {
                     "cancel": "Cancel",
@@ -1039,7 +1044,6 @@
                 },
                 "completed": "Completed",
                 "completionRate": "{{percent}}% of sequence completions",
-                "crunching": "Crunching sequence data...",
                 "engagementTitle": "Engagement Over Time",
                 "enrollmentSubtitle": "Distribution of recipients",
                 "enrollmentTitle": "Enrollment Status",
@@ -1124,14 +1128,19 @@
                     "warmupSubtitle": "Gradually increase sending volume to establish sender reputation",
                     "zeroBounce": "ZeroBounce Integration"
                 },
-                "totalEnrolled": "Total Enrolled",
-                "tryAgain": "Try Again",
-                "unavailableDesc": "We couldn't retrieve the performance data for this sequence.",
-                "unavailableTitle": "Analytics Unavailable",
-                "weekPrefix": "Wk"
+
+            "campaigns": {
+                "duplicate": "Duplicate",
+                "delete": "Delete",
+                "leads": "Leads",
+                "performance": "Sequence Performance",
+                "funnelStage": "Funnel Stage"
             },
             "builder": {
                 "active": "Active",
+                "all": "All",
+                "createSequence": "Create Sequence",
+                "draft": "Draft",
                 "activeLaunched": "Active: Launched",
                 "activeScheduled": "Active: Scheduled",
                 "addFirstStep": "Add First Step",
@@ -1146,6 +1155,7 @@
                 "delay": "Delay",
                 "email": "email",
                 "emailContent": "Email Content",
+                "emailContentDescription": "Description",
                 "emailSequence": "Email Sequence",
                 "hours": "hours",
                 "initializing": "Initializing Builder...",
@@ -1164,9 +1174,11 @@
                 "resumeSequence": "Resume Sequence",
                 "saveSequence": "Save Sequence",
                 "scheduleSequence": "Schedule Sequence",
-                "scheduleWarning": "Immediate ignores the calendar. Schedule respects the exact time shown above.",
+                "sendNow": "Send Now",
+                "steps_label": "Steps",
                 "sent": "Sent",
                 "sequenceName": "Sequence Name",
+                "scheduleWarning": "Immediate ignores the calendar. Schedule respects the exact time shown above.",
                 "step": "Step {{number}}",
                 "subjectLine": "Subject Line",
                 "subjectPlaceholder": "Enter subject...",
@@ -1254,6 +1266,27 @@
                 "uploadError": "Failed to upload file",
                 "uploadSuccess": "File uploaded successfully",
                 "writeContentFirst": "Please write some content first."
+            },
+            "common": {
+                "bounce": "Bounce",
+                "clearFilters": "Clear filters",
+                "crunching": "Crunching sequence data...",
+                "deleteConfirm": "Delete Sequence",
+                "deleteDescription": "This will permanently remove the sequence and its analytics. This action cannot be undone.",
+                "deleteTitle": "Delete Sequence?",
+                "noProjectDescription": "Select a project from the top bar to view and manage its sequences.",
+                "noProjectSelected": "No project selected",
+                "noSequencesDescription": "Try adjusting your filters or search terms.",
+                "noSequencesFound": "No sequences found",
+                "pin": "Pin",
+                "processing": "Processing...",
+                "promoteError": "Failed to promote jobs",
+                "promoteSuccess": "Jobs promoted successfully!",
+                "searchPlaceholder": "Search sequences...",
+                "unexpectedError": "An unexpected error occurred",
+                "unpin": "Unpin",
+                "updateFailed": "Failed to update sequence",
+                "updated": "Sequence updated"
             }
         },
         "settings": {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, GitBranch, FolderOpen, Search, Loader2
+  Plus, GitBranch, FolderOpen, Search, Loader2, Calendar, ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachEmptyState, TealButton, OutreachConfirmDialog, TimeframeFilter } from './OutreachCommon';
@@ -34,6 +34,7 @@ interface Sequence {
   reply_rate: number;
   click_rate: number;
   bounce_rate: number;
+  is_pinned?: boolean;
   created_at: string;
 }
 
@@ -61,6 +62,7 @@ export default function OutreachSequences() {
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
   const [isPromoting, setIsPromoting] = useState<Set<string>>(new Set());
   const [deleteDialog, setDeleteDialog] = useState<string | null>(null);
+  const [showTimeframeDropdown, setShowTimeframeDropdown] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!activeProjectId) return;
@@ -140,20 +142,19 @@ export default function OutreachSequences() {
     }
   };
 
-  const handlePromote = async (id: string, name: string) => {
+  const handlePromote = async (id: string) => {
+    const toastId = toast.loading(t('outreach.sequences.common.crunching'));
     setIsPromoting(prev => new Set(prev).add(id));
-    const toastId = toast.loading(`Promoting ${name} jobs...`);
-
     try {
       const res = await promoteSequenceJobs(id);
       if (res?.success) {
-        toast.success(res.message || "Jobs promoted successfully!", { id: toastId });
+        toast.success(res.message || t('outreach.sequences.common.promoteSuccess'), { id: toastId });
       } else {
-        toast.error(res?.error || "Failed to promote jobs", { id: toastId });
+        toast.error(res?.error || t('outreach.sequences.common.promoteError'), { id: toastId });
       }
     } catch (error: any) {
       console.error('Error promoting sequence jobs:', error);
-      toast.error(error.message || "An unexpected error occurred", { id: toastId });
+      toast.error(error.message || t('outreach.sequences.common.unexpectedError'), { id: toastId });
     } finally {
       setIsPromoting(prev => {
         const next = new Set(prev);
@@ -163,16 +164,19 @@ export default function OutreachSequences() {
     }
   };
 
-  const handleUpdateMetadata = async (id: string, updates: { name: string; description: string }) => {
+  const handleUpdateMetadata = async (id: string, updates: { name?: string; description?: string; is_pinned?: boolean }) => {
     const previousSequences = [...sequences];
-    setSequences(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    setSequences(prev => prev.map(s => s.id === id ? { ...s, ...updates } as Sequence : s));
 
     try {
       await updateSequence(id, updates);
-      toast.success('Sequence updated');
+      // Only show success toast if it's not a background update like pinning
+      if (updates.name || updates.description) {
+        toast.success(t('outreach.sequences.common.updated'));
+      }
     } catch (error) {
       console.error('Error updating sequence:', error);
-      toast.error('Failed to update sequence');
+      toast.error(t('outreach.sequences.common.updateFailed'));
       setSequences(previousSequences);
       throw error;
     }
@@ -182,8 +186,8 @@ export default function OutreachSequences() {
     return (
       <OutreachEmptyState
         icon={<FolderOpen />}
-        title="No project selected"
-        description="Select a project from the top bar to view and manage its sequences."
+        title={t('outreach.sequences.common.noProjectSelected')}
+        description={t('outreach.sequences.common.noProjectDescription')}
       />
     );
   }
@@ -203,15 +207,45 @@ export default function OutreachSequences() {
       {/* Filters & Search */}
       <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <TimeframeFilter 
-            variant="buttons"
-            value={timeframe}
-            onChange={(range) => {
-              const params = new URLSearchParams(searchParams);
-              params.set('timeframe', range);
-              setSearchParams(params);
-            }}
-          />
+          <div className="relative">
+            <button
+              onClick={() => setShowTimeframeDropdown(!showTimeframeDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#151921] border border-[#232936] rounded-lg text-sm text-[#94a3b8] hover:text-white transition-colors"
+            >
+              <Calendar size={14} />
+              <span>{t(`outreach.common.timeframe.${timeframe}`)}</span>
+              <ChevronDown size={14} className={cn("transition-transform", showTimeframeDropdown && "rotate-180")} />
+            </button>
+
+            <AnimatePresence>
+              {showTimeframeDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute left-0 mt-2 w-48 bg-[#151921] border border-[#232936] rounded-xl shadow-2xl z-50 py-1 overflow-hidden"
+                >
+                  {['1d', '3d', '7d', '30d', 'all'].map((tf) => (
+                    <button
+                      key={tf}
+                      onClick={() => {
+                        const params = new URLSearchParams(searchParams);
+                        params.set('timeframe', tf);
+                        setSearchParams(params);
+                        setShowTimeframeDropdown(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-4 py-2 text-sm transition-colors",
+                        timeframe === tf ? "bg-teal-500/10 text-teal-400" : "text-[#94a3b8] hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      {t(`outreach.common.timeframe.${tf}`)}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
             {['all', 'active', 'draft'].map((s) => (
@@ -219,26 +253,35 @@ export default function OutreachSequences() {
                 key={s}
                 onClick={() => setFilterStatus(s as any)}
                 className={cn(
-                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize",
-                  filterStatus === s ? "bg-white/10 text-white shadow-sm" : "text-slate-500 hover:text-slate-300"
+                  "px-4 py-2 text-sm font-medium transition-all rounded-lg whitespace-nowrap",
+                  filterStatus === s
+                    ? "bg-white/10 text-white shadow-lg"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
                 )}
               >
-                {s}
+                {t(`outreach.sequences.builder.${s}`)}
               </button>
             ))}
           </div>
         </div>
 
         <div className="flex-1 max-w-md relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 group-focus-within:text-teal-400 transition-colors" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <input
             type="text"
-            placeholder="Search sequences..."
+            placeholder={t('outreach.sequences.common.searchPlaceholder')}
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full bg-white/5 border border-white/5 focus:border-teal-500/30 rounded-xl pl-10 pr-4 py-2 text-sm outline-none transition-all placeholder:text-slate-600"
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-slate-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
           />
         </div>
+        <button
+          onClick={handleCreate}
+          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+        >
+          <Plus className="size-4" />
+          <span>{t('outreach.sequences.builder.createSequence')}</span>
+        </button>
       </div>
 
       {/* Grid View */}
@@ -249,15 +292,32 @@ export default function OutreachSequences() {
           </div>
         ) : filtered.length === 0 ? (
           <OutreachEmptyState
-            icon={<GitBranch />}
-            title="No sequences found"
-            description="Create your first automated email sequence to start booking meetings on autopilot."
-            action={<TealButton onClick={handleCreate}><Plus className="size-4" /> New Sequence</TealButton>}
+            icon={<Search />}
+            title={t('outreach.sequences.common.noSequencesFound')}
+            description={t('outreach.sequences.common.noSequencesDescription')}
+            action={searchTerm || filterStatus !== 'all' ? (
+              <button
+                onClick={() => { setSearchTerm(''); setFilterStatus('all'); }}
+                className="text-indigo-400 hover:text-indigo-300 font-medium text-sm transition-colors"
+              >
+                {t('outreach.sequences.common.clearFilters')}
+              </button>
+            ) : (
+              <TealButton onClick={handleCreate}>
+                <Plus className="size-4" /> {t('outreach.sequences.builder.createSequence')}
+              </TealButton>
+            )}
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence mode="popLayout">
-              {filtered.map((seq) => (
+              {filtered
+                .sort((a, b) => {
+                    if (a.is_pinned && !b.is_pinned) return -1;
+                    if (!a.is_pinned && b.is_pinned) return 1;
+                    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+                })
+                .map((seq) => (
                 <SequenceCard
                   key={seq.id}
                   sequence={seq}
@@ -279,10 +339,10 @@ export default function OutreachSequences() {
         isOpen={!!deleteDialog}
         onClose={() => setDeleteDialog(null)}
         onConfirm={() => deleteDialog && handleDelete(deleteDialog)}
-        title="Delete Sequence"
-        description="Are you sure you want to delete this sequence? This will also stop all active enrollments. This action cannot be undone."
-        confirmLabel="Delete"
-        danger
+        title={t('outreach.sequences.common.deleteTitle')}
+        description={t('outreach.sequences.common.deleteDescription')}
+        confirmLabel={t('outreach.sequences.common.deleteConfirm')}
+        danger={true}
       />
     </div>
   );

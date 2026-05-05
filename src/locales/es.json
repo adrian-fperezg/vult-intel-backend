@@ -983,7 +983,6 @@
                     "actions": "Acciones",
                     "activeCampaigns": "Campañas activas actualmente",
                     "analysis": "Análisis",
-                    "avgOpenRate": "Avg. Open Rate",
                     "avgOpenRate": "Tasa promedio de apertura",
                     "avgReplyRate": "Tasa promedio de respuesta",
                     "campaignDetails": "Detalles de la campaña",
@@ -1021,7 +1020,12 @@
                     "totalFunnelVolume": "Volumen total del embudo",
                     "totalSentDesc": "Correos electrónicos enviados en todas las etapas",
                     "volumeEngagementDesc": "Volumen vs. Compromiso por etapa del embudo",
-                    "zeroCampaigns": "Cero campañas descubiertas"
+                    "zeroCampaigns": "Cero campañas descubiertas",
+                    "totalEnrolled": "Total Inscritos",
+                    "tryAgain": "Intentar de Nuevo",
+                    "unavailableDesc": "No hay datos suficientes para mostrar analíticas todavía.",
+                    "unavailableTitle": "Analíticas no disponibles",
+                    "weekPrefix": "Semana"
                 },
                 "common": {
                     "cancel": "Cancelar",
@@ -1041,7 +1045,6 @@
                 },
                 "completed": "Completado",
                 "completionRate": "Tasa de Finalización",
-                "crunching": "Procesando datos...",
                 "engagementTitle": "Interacción de la Secuencia",
                 "enrollmentSubtitle": "Nuevos prospectos añadidos a esta secuencia",
                 "enrollmentTitle": "Inscripciones",
@@ -1126,14 +1129,19 @@
                     "warmupSubtitle": "Aumenta gradualmente el volumen de envío para establecer la reputación del remitente",
                     "zeroBounce": "Integración con ZeroBounce"
                 },
-                "totalEnrolled": "Total Inscritos",
-                "tryAgain": "Intentar de Nuevo",
-                "unavailableDesc": "No hay datos suficientes para mostrar analíticas todavía.",
-                "unavailableTitle": "Analíticas no disponibles",
-                "weekPrefix": "Semana"
+
+            "campaigns": {
+                "duplicate": "Duplicar",
+                "delete": "Eliminar",
+                "leads": "Prospectos",
+                "performance": "Rendimiento de Secuencia",
+                "funnelStage": "Etapa del Embudo"
             },
             "builder": {
                 "active": "Activa",
+                "all": "Todo",
+                "createSequence": "Crear Secuencia",
+                "draft": "Borrador",
                 "activeLaunched": "Activa (Lanzada)",
                 "activeScheduled": "Activa (Programada)",
                 "addFirstStep": "Añadir Primer Paso",
@@ -1148,6 +1156,7 @@
                 "delay": "Retraso",
                 "email": "correo electrónico",
                 "emailContent": "Contenido del Email",
+                "emailContentDescription": "Descripción",
                 "emailSequence": "Secuencia de Email",
                 "hours": "horas",
                 "initializing": "Iniciando Constructor...",
@@ -1256,6 +1265,27 @@
                 "uploadError": "Error al subir el archivo",
                 "uploadSuccess": "Archivo subido con éxito",
                 "writeContentFirst": "Por favor, escribe algo de contenido primero."
+            },
+            "common": {
+                "bounce": "Rebotados",
+                "clearFilters": "Limpiar filtros",
+                "crunching": "Procesando datos...",
+                "deleteConfirm": "Eliminar Secuencia",
+                "deleteDescription": "Esto eliminará permanentemente la secuencia y sus analíticas. Esta acción no se puede deshacer.",
+                "deleteTitle": "¿Eliminar Secuencia?",
+                "noProjectDescription": "Selecciona un proyecto de la barra superior para ver y gestionar sus secuencias.",
+                "noProjectSelected": "Ningún proyecto seleccionado",
+                "noSequencesDescription": "Intenta ajustar tus filtros o términos de búsqueda.",
+                "noSequencesFound": "No se encontraron secuencias",
+                "pin": "Fijar",
+                "processing": "Procesando...",
+                "promoteError": "Error al promover las tareas",
+                "promoteSuccess": "¡Tareas promovidas con éxito!",
+                "searchPlaceholder": "Buscar secuencias...",
+                "unexpectedError": "Ocurrió un error inesperado",
+                "unpin": "Desfijar",
+                "updateFailed": "Error al actualizar la secuencia",
+                "updated": "Secuencia actualizada"
             }
         },
         "settings": {
