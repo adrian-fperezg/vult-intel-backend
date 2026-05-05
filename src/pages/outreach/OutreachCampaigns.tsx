@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -48,7 +48,7 @@ const STATUS_CONFIG: Record<CampaignStatus, { labelKey: string; variant: 'green'
 };
 
 export default function OutreachCampaigns() {
-  const { t } = useTranslation();
+  const { t, hasKey } = useTranslation();
   const { 
     activeProjectId, 
     fetchCampaigns, 
@@ -491,12 +491,18 @@ export default function OutreachCampaigns() {
                              "size-2 rounded-full",
                              campaign.status === 'active' ? "bg-green-500 animate-pulse" : "bg-slate-600"
                            )} />
-                           <span className={cn(
-                             "text-[10px] font-black uppercase tracking-widest",
-                             campaign.status === 'active' ? "text-green-500" : "text-slate-500"
-                           )}>
-                             {t(STATUS_CONFIG[campaign.status].labelKey)}
-                           </span>
+                             <span className={cn(
+                               "text-[10px] font-black uppercase tracking-widest",
+                               campaign.status === 'active' ? "text-green-500" : "text-slate-500"
+                             )}>
+                               {(() => {
+                                 const cfg = STATUS_CONFIG[campaign.status];
+                                 if (hasKey(cfg.labelKey)) {
+                                   return t(cfg.labelKey);
+                                 }
+                                 return campaign.status.toUpperCase();
+                               })()}
+                             </span>
                         </div>
                       </td>
                       <td className="px-8 py-6">

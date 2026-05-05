@@ -9,6 +9,7 @@ type Translations = Record<string, any>;
 interface TranslationContextType {
     language: Language;
     t: (key: string, options?: Record<string, any>) => any;
+    hasKey: (key: string) => boolean;
 }
 
 const translations: Record<Language, Translations> = {
@@ -60,7 +61,21 @@ export const TranslationProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return value;
     }, [language]);
 
-    const value = React.useMemo(() => ({ language, t }), [language, t]);
+    const hasKey = useCallback((key: string): boolean => {
+        const keys = key.split('.');
+        let value: any = translations[language];
+
+        for (const k of keys) {
+            if (value && typeof value === 'object' && k in value) {
+                value = value[k];
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }, [language]);
+
+    const value = React.useMemo(() => ({ language, t, hasKey }), [language, t, hasKey]);
 
     return (
         <TranslationContext.Provider value={value}>

@@ -16,7 +16,7 @@ import BulkAddToListModal from './contacts/BulkAddToListModal';
 import CSVImportModal from './contacts/CSVImportModal';
 import UploadListModal from './contacts/UploadListModal';
 
-type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'not_enrolled';
+type ContactStatus = 'active' | 'paused' | 'replied' | 'bounced' | 'unsubscribed' | 'finished' | 'not_enrolled';
 
 // 1. ACTUALIZACIÓN: Interfaz Contact ahora soporta custom_fields
 interface Contact {
@@ -76,7 +76,7 @@ const VERIFICATION_VARIANTS: Record<string, any> = {
 };
 
 export default function OutreachContacts() {
-  const { t, language } = useTranslation();
+  const { t, hasKey } = useTranslation();
   const api = useOutreachApi();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -704,7 +704,7 @@ export default function OutreachContacts() {
               </div>
 
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 no-scrollbar lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0">
-                {(['all', 'active', 'replied', 'paused', 'bounced', 'not_enrolled'] as const).map(s => (
+                {(['all', 'active', 'replied', 'paused', 'bounced', 'unsubscribed', 'finished', 'not_enrolled'] as const).map(s => (
                   <button
                     key={s}
                     onClick={() => setStatusFilter(s)}
@@ -715,7 +715,7 @@ export default function OutreachContacts() {
                         : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border border-transparent'
                     )}
                   >
-                    {s === 'all' ? t('outreach.contacts.allStatus') : t(`outreach.contacts.statusCfg.${s}`)}
+                    {s === 'all' ? t('outreach.contacts.allStatus') : t(`outreach.contacts.statusCfg.${s}.label`)}
                   </button>
                 ))}
               </div>
@@ -820,9 +820,18 @@ export default function OutreachContacts() {
                             </p>
                           </div>
                         </div>
-                        <OutreachBadge variant={t(`outreach.contacts.statusCfg.${contact.status}`)?.variant || 'gray'}>
-                          {t(`outreach.contacts.statusCfg.${contact.status}`)?.label || t('outreach.contacts.statusCfg.not_enrolled.label')}
-                        </OutreachBadge>
+                        {(() => {
+                          const status = contact.status || 'not_enrolled';
+                          const statusKey = `outreach.contacts.statusCfg.${status}`;
+                          const label = hasKey(`${statusKey}.label`) ? t(`${statusKey}.label`) : t('outreach.contacts.statusCfg.not_enrolled.label');
+                          const variant = hasKey(`${statusKey}.variant`) ? t(`${statusKey}.variant`) : 'gray';
+                          
+                          return (
+                            <OutreachBadge variant={variant}>
+                              {label}
+                            </OutreachBadge>
+                          );
+                        })()}
                       </div>
 
                       <div className="space-y-2">
@@ -1017,23 +1026,40 @@ export default function OutreachContacts() {
                                     </span>
                                   )}
                                   {contact.verification_status && contact.verification_status !== 'unverified' && (
-                                    <OutreachBadge
-                                      variant={t(`outreach.contacts.verificationCfg.${contact.verification_status}`)?.variant || 'gray'}
-                                      className="text-[8px] px-1 py-0 scale-90 origin-left"
-                                    >
-                                      {t(`outreach.contacts.verificationCfg.${contact.verification_status}`)?.label || t('outreach.contacts.verificationCfg.unverified.label')}
-                                    </OutreachBadge>
+                                    (() => {
+                                      const vKey = `outreach.contacts.verificationCfg.${contact.verification_status}`;
+                                      const label = hasKey(`${vKey}.label`) ? t(`${vKey}.label`) : t('outreach.contacts.verificationCfg.unverified.label');
+                                      const variant = hasKey(`${vKey}.variant`) ? t(`${vKey}.variant`) : 'gray';
+                                      
+                                      return (
+                                        <OutreachBadge
+                                          variant={variant}
+                                          className="text-[8px] px-1 py-0 scale-90 origin-left"
+                                        >
+                                          {label}
+                                        </OutreachBadge>
+                                      );
+                                    })()
                                   )}
                                 </div>
                               </td>
                               <td className="p-3">
                                   <div className="flex items-center gap-2">
-                                    <OutreachBadge 
-                                      variant={t(`outreach.contacts.statusCfg.${contact.status}`)?.variant || 'gray'} 
-                                      className="text-[9px] px-1.5 py-0"
-                                    >
-                                      {t(`outreach.contacts.statusCfg.${contact.status}`)?.label || t('outreach.contacts.statusCfg.not_enrolled.label')}
-                                    </OutreachBadge>
+                                    {(() => {
+                                      const status = contact.status || 'not_enrolled';
+                                      const statusKey = `outreach.contacts.statusCfg.${status}`;
+                                      const label = hasKey(`${statusKey}.label`) ? t(`${statusKey}.label`) : t('outreach.contacts.statusCfg.not_enrolled.label');
+                                      const variant = hasKey(`${statusKey}.variant`) ? t(`${statusKey}.variant`) : 'gray';
+                                      
+                                      return (
+                                        <OutreachBadge 
+                                          variant={variant}
+                                          className="text-[9px] px-1.5 py-0"
+                                        >
+                                          {label}
+                                        </OutreachBadge>
+                                      );
+                                    })()}
                                   </div>
                               </td>
                               <td className="p-3 text-right">

@@ -39,7 +39,7 @@ interface ContactProfilePanelProps {
 }
 
 export default function ContactProfilePanel({ contact, isOpen, onClose }: ContactProfilePanelProps) {
-  const { t, language } = useTranslation();
+  const { t, hasKey } = useTranslation();
 
 
   const [activeTab, setActiveTab] = useState<'overview' | 'activity'>('overview');
@@ -117,8 +117,8 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
   const getEventTitle = (e: any) => {
     const translationKey = `outreach.contacts.profile.eventTitles.${e.type}`;
     const title = t(translationKey);
-    if (title && title !== translationKey) return title;
-    return e.type.replace('_', ' ').toUpperCase();
+    if (typeof title === 'string' && title !== translationKey) return title;
+    return (e.type || 'activity').replace(/_/g, ' ').toUpperCase();
   };
 
 
@@ -178,10 +178,32 @@ export default function ContactProfilePanel({ contact, isOpen, onClose }: Contac
                   <p className="text-sm text-slate-400">{contact.title} {t('outreach.contacts.profile.at')} {contact.company}</p>
 
                   <div className="flex items-center gap-2 mt-2">
-                    <OutreachBadge variant={t(`outreach.contacts.statusCfg.${contact.status}`)?.variant || 'gray'}>
-                      {t(`outreach.contacts.statusCfg.${contact.status}`)?.label || t('outreach.contacts.statusCfg.not_enrolled.label')}
-                    </OutreachBadge>
-                    {contact.emailVerified && (
+                    {(() => {
+                      const status = contact.status || 'not_enrolled';
+                      const statusKey = `outreach.contacts.statusCfg.${status}`;
+                      const label = hasKey(`${statusKey}.label`) ? t(`${statusKey}.label`) : t('outreach.contacts.statusCfg.not_enrolled.label');
+                      const variant = hasKey(`${statusKey}.variant`) ? t(`${statusKey}.variant`) : 'gray';
+                      
+                      return (
+                        <OutreachBadge variant={variant}>
+                          {label}
+                        </OutreachBadge>
+                      );
+                    })()}
+                    
+                    {contact.verification_status && contact.verification_status !== 'unverified' ? (
+                      (() => {
+                        const vKey = `outreach.contacts.verificationCfg.${contact.verification_status}`;
+                        const label = hasKey(`${vKey}.label`) ? t(`${vKey}.label`) : t('outreach.contacts.verificationCfg.unverified.label');
+                        const variant = hasKey(`${vKey}.variant`) ? t(`${vKey}.variant`) : 'gray';
+                        
+                        return (
+                          <OutreachBadge variant={variant} className="text-[10px]">
+                            {label}
+                          </OutreachBadge>
+                        );
+                      })()
+                    ) : contact.emailVerified && (
                       <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-400/20">
                         <CheckCircle2 className="size-3" /> {t('outreach.contacts.profile.verified')}
                       </span>
