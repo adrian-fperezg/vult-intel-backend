@@ -33,7 +33,7 @@ export default function BulkAddToListModal({
   const [isLoading, setIsLoading] = useState(false);
 
   const filteredLists = contactLists.filter(l => 
-    l.name.toLowerCase().includes(query.toLowerCase())
+    (l.name || '').toLowerCase().includes(query.toLowerCase())
   );
 
   const handleCreateList = async () => {

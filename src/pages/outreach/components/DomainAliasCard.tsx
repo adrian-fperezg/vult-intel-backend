@@ -51,7 +51,7 @@ export const DomainAliasCard: React.FC<DomainAliasCardProps> = ({
       const data = await fetchIdentities();
       if (data) {
         // Filter identities for this domain
-        const domainAliases = data.filter(id => id.email.toLowerCase().endsWith(`@${domain.domain.toLowerCase()}`));
+        const domainAliases = data.filter(id => (id.email || '').toLowerCase().endsWith(`@${(domain.domain || '').toLowerCase()}`));
         setIdentities(domainAliases);
       }
     } catch (err: any) {

@@ -189,10 +189,10 @@ export default function OutreachInbox() {
       if (!search) return true;
       const m = t.latest_message;
       return (
-        t.subject?.toLowerCase().includes(search) ||
-        m.from_email?.toLowerCase().includes(search) ||
-        m.first_name?.toLowerCase().includes(search) ||
-        m.last_name?.toLowerCase().includes(search)
+        (t.subject || '').toLowerCase().includes(search) ||
+        (m.from_email || '').toLowerCase().includes(search) ||
+        (m.first_name || '').toLowerCase().includes(search) ||
+        (m.last_name || '').toLowerCase().includes(search)
       );
     });
   }, [messages, searchQuery, selectedIntent]);
@@ -368,7 +368,7 @@ export default function OutreachInbox() {
                     
                     <div className="flex items-center gap-4">
                       <div className="size-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-lg font-bold shadow-inner shrink-0">
-                        {(selectedThread.latest_message.first_name?.[0] || selectedThread.latest_message.from_email[0]).toUpperCase()}
+                        {(selectedThread.latest_message.first_name?.[0] || selectedThread.latest_message.from_email?.[0] || '?').toUpperCase()}
                       </div>
                       <div>
                         <p className="text-sm font-bold text-white flex items-center gap-2">
@@ -431,7 +431,7 @@ export default function OutreachInbox() {
                   {selectedThread.messages.map((m, idx) => {
                     const isOutgoing = m.from_email === m.mailbox_id || m.from_email === m.to_email; // Simplified check
                     // Better check: if from_email doesn't match the contact's email, it's likely outgoing
-                    const isIncoming = m.from_email.toLowerCase() === (m.contact_email || '').toLowerCase();
+                    const isIncoming = (m.from_email || '').toLowerCase() === (m.contact_email || '').toLowerCase();
                     
                     return (
                       <div key={m.id} className={cn(

@@ -247,7 +247,7 @@ export default function QueueMonitor() {
   // Filtering Logic
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
-      const matchSearch = job.contactName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchSearch = (job.contactName || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchSeq = seqFilter === 'ALL' || job.sequenceName === seqFilter;
       const matchSender = senderFilter === 'ALL' || job.senderEmail === senderFilter;
       const matchStep = stepFilter === 'ALL' || t('outreach.queue.stepLabel', { number: String(job.stepNumber) }) === stepFilter;
