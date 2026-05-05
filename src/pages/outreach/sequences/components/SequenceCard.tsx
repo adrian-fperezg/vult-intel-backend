@@ -29,6 +29,7 @@ interface Sequence {
   click_rate: number;
   bounce_rate: number;
   is_pinned?: boolean;
+  scheduled_start_at?: string;
   created_at: string;
 }
 
@@ -58,7 +59,8 @@ export default function SequenceCard({
     open_rate, reply_rate, click_rate, bounce_rate,
     active_contact_count = 0,
     completed_contact_count = 0,
-    is_pinned = false
+    is_pinned = false,
+    scheduled_start_at
   } = sequence;
 
   const { t } = useTranslation();
@@ -139,7 +141,9 @@ export default function SequenceCard({
             dot={status === 'active'}
             className="w-fit px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] bg-white/5 border-white/10"
           >
-            {t(`outreach.sequences.builder.${status}`)}
+            {status === 'active' && scheduled_start_at && new Date(scheduled_start_at) > new Date()
+              ? t('outreach.sequences.builder.activeScheduled')
+              : t(`outreach.sequences.builder.${status}`)}
           </OutreachBadge>
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
             <Users className="size-3 text-teal-400" />
@@ -243,7 +247,7 @@ export default function SequenceCard({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 min-w-0">
+          <div className="flex flex-col gap-4 min-w-0 min-h-[140px] justify-center">
             <div className="flex items-start gap-4 group/title min-w-0">
               <h3 className="text-2xl font-black text-white leading-tight tracking-tight group-hover:text-teal-400 transition-colors break-words flex-1">
                 {name}

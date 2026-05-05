@@ -70,7 +70,7 @@ export async function getEffectiveSequenceConfig(projectId: string, sequence: an
     restrict_sending_hours: sequence.restrict_sending_hours === true || sequence.restrict_sending_hours === 1 || projectConfig.restrict_sending_hours,
     send_window_start: sequence.send_window_start || projectConfig.sending_start_time,
     send_window_end: sequence.send_window_end || projectConfig.sending_end_time,
-    send_timezone: sequence.send_timezone || projectConfig.send_timezone,
+    send_timezone: (sequence.send_timezone && sequence.send_timezone !== 'UTC') ? sequence.send_timezone : projectConfig.send_timezone,
     send_on_weekdays: sequence.send_on_weekdays || projectConfig.send_on_weekdays,
     
     // Jitter

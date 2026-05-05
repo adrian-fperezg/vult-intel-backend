@@ -261,12 +261,20 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
         const useRecipientTz = sequence.use_recipient_timezone && contact?.inferred_timezone;
         const targetTz = useRecipientTz ? contact.inferred_timezone : config.send_timezone;
 
-        const now = DateTime.now().setZone(targetTz);
+        const now = DateTime.now().setZone(targetTz || config.send_timezone);
         const allowedDays = parseAllowedDays(config.send_on_weekdays);
         const windowStart = config.send_window_start;
         const windowEnd = config.send_window_end;
         
-        const windowDelayMs = calculateSendingDelay(now, windowStart, windowEnd, targetTz, allowedDays);
+        console.log(`[Queue] Scheduling Debug [Seq:${sequenceId}]:
+          - Now (Local): ${DateTime.now().toISO()}
+          - Now (Target TZ: ${targetTz || 'default'}): ${now.toISO()}
+          - Window: ${windowStart} - ${windowEnd}
+          - Allowed Days: ${allowedDays}
+          - Use Recipient TZ: ${sequence.use_recipient_timezone}
+        `);
+
+        const windowDelayMs = calculateSendingDelay(now, windowStart, windowEnd, targetTz || config.send_timezone, allowedDays);
 
         if (windowDelayMs > 0) {
            console.log(`[Sending Window Check] Sequence: ${sequenceId}, Contact: ${contactId}, Time: ${now.toFormat('HH:mm:ss')}, Outside Window. Delaying by ${Math.round(windowDelayMs/1000)}s`);
