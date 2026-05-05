@@ -41,7 +41,7 @@ export default function QueueMonitor() {
   const [isPurging, setIsPurging] = useState(false);
   const [isRetryingAll, setIsRetryingAll] = useState(false);
   const [retryingJobs, setRetryingJobs] = useState<Set<string>>(new Set());
-  const [snapToBusiness, setSnapToBusiness] = useState(true);
+
   const { t, language } = useTranslation();
   const { 
     fetchScheduledQueue, 
@@ -158,7 +158,7 @@ export default function QueueMonitor() {
     setIsRebalancing(true);
     try {
       const data = await rebalanceQueue({ 
-        snapToBusinessHours: snapToBusiness,
+        snapToBusinessHours: true,
         targetStartHour: 9
       });
       
@@ -318,22 +318,6 @@ export default function QueueMonitor() {
           subtitle={t('outreach.queue.subtitle')}
           actions={
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 w-full sm:w-auto mt-4 sm:mt-0">
-              {/* Business Hour Snap Toggle */}
-              <label className="flex items-center gap-3 cursor-pointer group bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-teal-500/30 transition-all w-full sm:w-auto">
-                <div className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={snapToBusiness}
-                    onChange={e => setSnapToBusiness(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-white group-hover:text-teal-400 transition-colors uppercase tracking-wider">{t('outreach.queue.horarioComercial')}</span>
-                  <span className="text-[9px] text-slate-500">{t('outreach.queue.fixClump')}</span>
-                </div>
-              </label>
 
               <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                 {failedCount > 0 && (

@@ -923,7 +923,7 @@
             "emptyTitle": "Queue is Empty",
             "failed": "Failed",
             "filteredResults": "Filtered Results",
-            "fixClump": "Fix 2 AM clump to 9 AM",
+
             "ghostConfirm": "Are you SURE you want to delete this \"Ghost\" send (ID: {{jobId}})?",
             "headers": {
                 "action": "Step Action",
@@ -934,7 +934,7 @@
                 "status": "Status",
                 "time": "Scheduled Time"
             },
-            "horarioComercial": "Business Hours",
+
             "idNotFound": "Could not identify sequence or job ID",
             "inXDays": "In {{count}} days",
             "nextSend": "Next send",

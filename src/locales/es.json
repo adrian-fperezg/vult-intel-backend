@@ -924,7 +924,7 @@
             "emptyTitle": "Cola Vacía",
             "failed": "Fallido",
             "filteredResults": "Resultados Filtrados",
-            "fixClump": "Corregir Agrupamiento",
+
             "ghostConfirm": "Confirmar limpieza de tareas fantasma",
             "headers": {
                 "action": "Acción",
@@ -935,7 +935,7 @@
                 "status": "Estado",
                 "time": "Hora"
             },
-            "horarioComercial": "Horario Comercial",
+
             "idNotFound": "ID no encontrado",
             "inXDays": "En {{count}} días",
             "nextSend": "Siguiente Envío",
