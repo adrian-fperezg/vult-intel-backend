@@ -526,7 +526,7 @@ export default function OutreachContacts() {
                             : "text-slate-400 hover:text-white hover:bg-white/5"
                         )}
                       >
-                        <Tag className="size-4 shrink-0 opacity-40" />
+                        <FolderOpen className="size-4 shrink-0 opacity-40" />
                         <span className="truncate">{list.name}</span>
                       </button>
                     ))}
@@ -769,6 +769,40 @@ export default function OutreachContacts() {
           </AnimatePresence>
 
           <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-black/20 pb-48">
+            {listFilter === 'unassigned' && filtered.length > 0 && (
+              <div className="mx-4 lg:mx-10 mt-6 lg:mt-10 p-6 rounded-[24px] bg-teal-500/5 border border-teal-500/10 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-2xl bg-teal-500/10 flex items-center justify-center text-teal-400 shrink-0">
+                    <FolderOpen className="size-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Group Unassigned Contacts</h4>
+                    <p className="text-xs text-slate-500 max-w-md">
+                      We found contacts uploaded via CSV that aren't in any list. Group them automatically based on their import source?
+                    </p>
+                  </div>
+                </div>
+                <TealButton onClick={async () => {
+                  if (!api.activeProjectId) return;
+                  const loadingToast = toast.loading('Grouping contacts...');
+                  try {
+                    const result = await (api as any).maintenanceGroupUnassigned(api.activeProjectId);
+                    toast.dismiss(loadingToast);
+                    if (result.success) {
+                      toast.success(`Successfully grouped ${result.membersLinked} contacts into ${result.listsCreated} lists.`);
+                      loadContacts();
+                      loadLists();
+                    }
+                  } catch (e) {
+                    toast.dismiss(loadingToast);
+                    toast.error('Failed to group contacts');
+                  }
+                }} className="shrink-0">
+                  <CheckCircle2 className="size-4" /> Group Now
+                </TealButton>
+              </div>
+            )}
+
             {filtered.length === 0 ? (
               <OutreachEmptyState
                 icon={<UserCheck />}

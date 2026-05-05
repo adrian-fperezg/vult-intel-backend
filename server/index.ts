@@ -4507,7 +4507,7 @@ app.post("/api/outreach/sequences/:id/activate", async (req: AuthRequest, res) =
 app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { id } = req.params;
-  const { recipients, project_id, type: recipientType } = req.body;
+  const { recipients, project_id, type: recipientType, list_name } = req.body;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
@@ -4523,30 +4523,50 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
     const addedContacts: any[] = [];
 
     await db.transaction(async (tx) => {
+      let autoListId: string | null = null;
+      if (list_name) {
+        const existingList = await tx.get("SELECT id FROM outreach_lists WHERE name = ? AND project_id = ?", list_name, project_id);
+        if (existingList) {
+          autoListId = (existingList as any).id;
+        } else {
+          autoListId = uuidv4();
+          await tx.run("INSERT INTO outreach_lists (id, user_id, project_id, name) VALUES (?, ?, ?, ?)", autoListId, userId, project_id, list_name);
+        }
+      }
+
       for (const item of list) {
         let contact_id: string;
         let contactObj: any = null;
 
         if (typeof item === 'object' && item.email) {
-          // Manual contact upsert
-          const existing = await tx.get("SELECT * FROM outreach_contacts WHERE email = ? AND user_id = ? AND project_id = ?", item.email, userId, project_id) as any;
-          if (existing) {
-            contact_id = existing.id;
-            contactObj = existing;
-          } else {
-            contact_id = item.id || uuidv4();
-            await tx.run(`
-              INSERT INTO outreach_contacts (id, user_id, project_id, first_name, last_name, email, company, industry, job_title, tags)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `, contact_id, userId, project_id, item.first_name || '', item.last_name || '', item.email, item.company || '', item.industry || '', item.job_title || '', JSON.stringify(["Not Enrolled"]));
+          // Manual/CSV contact upsert with all fields
+          const upsertRes = await tx.get(`
+            INSERT INTO outreach_contacts (
+              id, user_id, project_id, email, first_name, last_name, company, job_title, 
+              phone, linkedin, location_city, location_country, website, tags
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (project_id, email) DO UPDATE SET
+              first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
+              last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
+              company = COALESCE(EXCLUDED.company, outreach_contacts.company),
+              job_title = COALESCE(EXCLUDED.job_title, outreach_contacts.job_title),
+              phone = COALESCE(EXCLUDED.phone, outreach_contacts.phone),
+              linkedin = COALESCE(EXCLUDED.linkedin, outreach_contacts.linkedin),
+              location_city = COALESCE(EXCLUDED.location_city, outreach_contacts.location_city),
+              location_country = COALESCE(EXCLUDED.location_country, outreach_contacts.location_country),
+              website = COALESCE(EXCLUDED.website, outreach_contacts.website),
+              updated_at = CURRENT_TIMESTAMP
+            RETURNING id, email, first_name, last_name, company
+          `, 
+            item.id || uuidv4(), userId, project_id, item.email, 
+            item.first_name || '', item.last_name || '', item.company || '', item.job_title || '',
+            item.phone || '', item.linkedin || '', item.location_city || '', item.location_country || '', item.website || '',
+            JSON.stringify(["Not Enrolled"])
+          ) as any;
 
-            contactObj = {
-              id: contact_id,
-              email: item.email,
-              first_name: item.first_name || '',
-              last_name: item.last_name || '',
-              company: item.company || ''
-            };
+          if (upsertRes) {
+            contact_id = upsertRes.id;
+            contactObj = upsertRes;
           }
         } else if (typeof item === 'object' && item.id) {
           // Existing contact ID
@@ -4583,8 +4603,18 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
              `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
           }
 
+          // Link to the auto-generated list if present
+          if (autoListId && contact_id) {
+            await tx.run("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", autoListId, contact_id);
+          }
+
           if (contactObj) {
             addedContacts.push(contactObj);
+          }
+
+          // Link to auto-list if present
+          if (autoListId && contact_id) {
+            await tx.run("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", autoListId, contact_id);
           }
 
           // If active, enroll immediately (with stagger index for drip protection)
@@ -5311,7 +5341,8 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
           contactData.location || null, contactData.website || null,
           contactData.location_city || null, contactData.location_country || null,
           JSON.stringify(contactData.custom_fields),
-          timezone
+          timezone,
+          JSON.stringify(["Not Enrolled"])
         ) as any;
 
         if (!upsertRes || !upsertRes.id) {
@@ -5345,6 +5376,67 @@ app.post(["/api/outreach/contacts/import", "/api/outreach/contacts/import-csv"],
   } catch (err: any) {
     console.error("[CSV Import] Critical Failure:", err);
     res.status(500).json({ error: err.message || "Failed to import contacts" });
+  }
+});
+
+// POST /api/outreach/maintenance/group-unassigned
+app.post("/api/outreach/maintenance/group-unassigned", async (req: AuthRequest, res) => {
+  const userId = req.user?.uid;
+  const { project_id } = req.body;
+  if (!userId || !project_id) return res.status(401).json({ error: "Auth and Project ID required" });
+
+  try {
+    const unassignedContacts = await db.all(`
+      SELECT DISTINCT c.id, c.email, r.sequence_id, s.name as sequence_name
+      FROM outreach_contacts c
+      JOIN outreach_sequence_recipients r ON c.id = r.contact_id
+      JOIN outreach_sequences s ON r.sequence_id = s.id
+      LEFT JOIN outreach_list_members m ON c.id = m.contact_id
+      WHERE c.project_id = ? 
+      AND r.type = 'csv'
+      AND m.list_id IS NULL
+    `, project_id) as any[];
+
+    if (unassignedContacts.length === 0) {
+      return res.json({ success: true, message: "No unassigned CSV contacts found", listsCreated: 0, membersLinked: 0 });
+    }
+
+    const groupedBySequence: Record<string, { name: string, contacts: string[] }> = {};
+    for (const c of unassignedContacts) {
+      if (!groupedBySequence[c.sequence_id]) {
+        groupedBySequence[c.sequence_id] = { name: c.sequence_name, contacts: [] };
+      }
+      groupedBySequence[c.sequence_id].contacts.push(c.id);
+    }
+
+    let listsCreated = 0;
+    let membersLinked = 0;
+
+    await db.transaction(async (tx) => {
+      for (const [seqId, data] of Object.entries(groupedBySequence)) {
+        const listName = `Import - ${data.name}`;
+        let listId: string;
+
+        const existingList = await tx.get("SELECT id FROM outreach_lists WHERE name = ? AND project_id = ?", listName, project_id) as any;
+        if (existingList) {
+          listId = existingList.id;
+        } else {
+          listId = uuidv4();
+          await tx.run("INSERT INTO outreach_lists (id, user_id, project_id, name) VALUES (?, ?, ?, ?)", listId, userId, project_id, listName);
+          listsCreated++;
+        }
+
+        for (const contactId of data.contacts) {
+          await tx.run("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", listId, contactId);
+          membersLinked++;
+        }
+      }
+    });
+
+    res.json({ success: true, listsCreated, membersLinked });
+  } catch (error) {
+    console.error("[Maintenance Error]:", error);
+    res.status(500).json({ error: "Maintenance failed" });
   }
 });
 

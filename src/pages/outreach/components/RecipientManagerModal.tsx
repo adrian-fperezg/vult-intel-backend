@@ -38,7 +38,7 @@ export default function RecipientManagerModal({
 
   // Manual State
   const [manualRows, setManualRows] = useState<any[]>([
-    { first_name: '', last_name: '', email: '', company: '' }
+    { first_name: '', last_name: '', email: '', company: '', job_title: '', phone: '', linkedin: '', location_city: '', location_country: '', website: '' }
   ]);
 
   // CSV State
@@ -49,7 +49,13 @@ export default function RecipientManagerModal({
     first_name: '',
     last_name: '',
     email: '',
-    company: ''
+    company: '',
+    job_title: '',
+    phone: '',
+    linkedin: '',
+    location_city: '',
+    location_country: '',
+    website: ''
   });
   const [importPreview, setImportPreview] = useState<any[]>([]);
 
@@ -59,7 +65,7 @@ export default function RecipientManagerModal({
       // Limpiar selecciones al abrir para poder agregar nuevos baches
       setSelectedListIds([]);
       setSelectedContactIds([]);
-      setManualRows([{ first_name: '', last_name: '', email: '', company: '' }]);
+      setManualRows([{ first_name: '', last_name: '', email: '', company: '', job_title: '', phone: '', linkedin: '', location_city: '', location_country: '', website: '' }]);
       setCsvFile(null);
       setCsvData([]);
     }
@@ -102,7 +108,7 @@ export default function RecipientManagerModal({
   };
 
   const addManualRow = () => {
-    setManualRows([...manualRows, { first_name: '', last_name: '', email: '', company: '' }]);
+    setManualRows([...manualRows, { first_name: '', last_name: '', email: '', company: '', job_title: '', phone: '', linkedin: '', location_city: '', location_country: '', website: '' }]);
   };
 
   const removeManualRow = (index: number) => {
@@ -131,6 +137,12 @@ export default function RecipientManagerModal({
             if (h.includes('last') || h === 'lname') newMapping.last_name = header;
             if (h.includes('email') || h === 'mail') newMapping.email = header;
             if (h.includes('company') || h === 'org') newMapping.company = header;
+            if (h.includes('title') || h.includes('job') || h === 'role') newMapping.job_title = header;
+            if (h.includes('phone') || h === 'tel') newMapping.phone = header;
+            if (h.includes('linkedin')) newMapping.linkedin = header;
+            if (h.includes('city')) newMapping.location_city = header;
+            if (h.includes('country')) newMapping.location_country = header;
+            if (h.includes('website') || h === 'site' || h === 'url') newMapping.website = header;
           });
           setMapping(newMapping);
         }
@@ -144,7 +156,13 @@ export default function RecipientManagerModal({
         first_name: row[mapping.first_name] || '',
         last_name: row[mapping.last_name] || '',
         email: row[mapping.email] || '',
-        company: row[mapping.company] || ''
+        company: row[mapping.company] || '',
+        job_title: row[mapping.job_title] || '',
+        phone: row[mapping.phone] || '',
+        linkedin: row[mapping.linkedin] || '',
+        location_city: row[mapping.location_city] || '',
+        location_country: row[mapping.location_country] || '',
+        website: row[mapping.website] || ''
       }));
       setImportPreview(preview);
     }
@@ -188,8 +206,15 @@ export default function RecipientManagerModal({
           last_name: row[mapping.last_name] || '',
           email: row[mapping.email] || '',
           company: row[mapping.company] || '',
-          type: 'csv'
-        })).filter(r => r.email && r.email.includes('@'));
+          job_title: row[mapping.job_title] || '',
+          phone: row[mapping.phone] || '',
+          linkedin: row[mapping.linkedin] || '',
+          location_city: row[mapping.location_city] || '',
+          location_country: row[mapping.location_country] || '',
+          website: row[mapping.website] || '',
+          type: 'csv',
+          list_name: csvFile?.name ? `Import - ${csvFile.name}` : undefined
+        })).filter(r => r.email && String(r.email).includes('@'));
       }
 
       await onConfirm(finalRecipients);
@@ -480,6 +505,12 @@ export default function RecipientManagerModal({
                           { key: 'last_name', label: 'Last Name' },
                           { key: 'email', label: 'Email Address *' },
                           { key: 'company', label: 'Company' },
+                          { key: 'job_title', label: 'Job Title' },
+                          { key: 'phone', label: 'Phone Number' },
+                          { key: 'linkedin', label: 'LinkedIn URL' },
+                          { key: 'location_city', label: 'City' },
+                          { key: 'location_country', label: 'Country' },
+                          { key: 'website', label: 'Website' },
                         ].map(field => (
                           <div key={field.key} className="space-y-2">
                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">{field.label}</label>

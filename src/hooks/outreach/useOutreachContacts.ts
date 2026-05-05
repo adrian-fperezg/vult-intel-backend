@@ -101,6 +101,10 @@ export function useOutreachContacts() {
     (email: string) => del(`/suppression-list?email=${encodeURIComponent(email)}`),
     [del]
   );
+  const maintenanceGroupUnassigned = useCallback(
+    (projectId: string) => post<any>('/maintenance/group-unassigned', { project_id: projectId }),
+    [post]
+  );
 
   return {
     fetchContacts,
@@ -123,5 +127,6 @@ export function useOutreachContacts() {
     fetchSuppressionList,
     addToSuppressionList,
     removeFromSuppressionList,
+    maintenanceGroupUnassigned
   };
 }

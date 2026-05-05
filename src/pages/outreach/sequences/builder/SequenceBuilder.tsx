@@ -863,7 +863,11 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
     if (!sequenceId || !activeProjectId) return;
     const isManual = recipients.length > 0 && typeof recipients[0] === 'object';
     const payload = isManual
-      ? { recipients, project_id: activeProjectId }
+      ? { 
+          recipients, 
+          project_id: activeProjectId,
+          list_name: (recipients as any[]).find(r => r.list_name)?.list_name 
+        }
       : { contact_ids: recipients, project_id: activeProjectId };
 
     try {
