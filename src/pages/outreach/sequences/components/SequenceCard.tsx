@@ -131,107 +131,22 @@ export default function SequenceCard({
       <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500/5 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-teal-500/10 transition-all duration-1000" />
       <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 blur-[80px] rounded-full translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-1000" />
       
-      <div className="relative flex flex-col sm:flex-row items-start justify-between gap-6 mb-8">
-        <div className="flex flex-col gap-5 flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <OutreachBadge 
-              variant={status === 'active' ? 'green' : 'gray'} 
-              dot={status === 'active'}
-              className="w-fit px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] bg-white/5 border-white/10"
-            >
-              {t(`outreach.sequences.builder.${status}`)}
-            </OutreachBadge>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              <Users className="size-3 text-teal-400" />
-              {step_count} {t('outreach.sequences.builder.steps_label')}
-            </div>
+      {/* Header Area: Badges & Actions */}
+      <div className="relative flex items-start justify-between gap-6 mb-8">
+        <div className="flex items-center gap-3 flex-wrap">
+          <OutreachBadge 
+            variant={status === 'active' ? 'green' : 'gray'} 
+            dot={status === 'active'}
+            className="w-fit px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] bg-white/5 border-white/10"
+          >
+            {t(`outreach.sequences.builder.${status}`)}
+          </OutreachBadge>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <Users className="size-3 text-teal-400" />
+            {step_count} {t('outreach.sequences.builder.steps_label')}
           </div>
-          
-          {isEditing ? (
-            <div className="flex flex-col gap-4 mt-2" onClick={e => e.stopPropagation()}>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">{t('outreach.sequences.builder.sequenceName')}</label>
-                <input
-                  ref={nameInputRef}
-                  type="text"
-                  value={tempName}
-                  onChange={e => setTempName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) handleSaveMetadata();
-                    if (e.key === 'Escape') {
-                      setIsEditing(false);
-                      setTempName(name);
-                      setTempDescription(description || '');
-                    }
-                  }}
-                  className="bg-white/5 border border-teal-500/30 focus:border-teal-500 rounded-2xl px-4 py-3 text-sm text-white outline-none w-full transition-all shadow-inner"
-                  disabled={isSaving}
-                  placeholder={t('outreach.sequences.builder.sequenceName')}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">{t('outreach.sequences.builder.emailContentDescription')}</label>
-                <textarea
-                  value={tempDescription}
-                  onChange={e => setTempDescription(e.target.value)}
-                  className="bg-white/5 border border-white/10 focus:border-teal-500/50 rounded-2xl px-4 py-3 text-sm text-slate-300 outline-none w-full h-24 resize-none transition-all shadow-inner"
-                  disabled={isSaving}
-                  placeholder={t('outreach.sequences.builder.playbookPlaceholder')}
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleSaveMetadata}
-                  disabled={isSaving}
-                  className="flex-1 bg-teal-500 text-[#0d1117] hover:bg-teal-400 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95"
-                >
-                  {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                  {t('outreach.sequences.builder.saveSequence').toUpperCase()}
-                </button>
-                <button
-                  onClick={() => {
-                    setIsEditing(false);
-                    setTempName(name);
-                    setTempDescription(description || '');
-                  }}
-                  disabled={isSaving}
-                  className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4 min-w-0">
-              <div className="flex items-start gap-3 group/title min-w-0">
-                <h3 className="text-2xl font-black text-white leading-tight tracking-tight group-hover:text-teal-400 transition-colors break-words">
-                  {name}
-                </h3>
-                {onUpdateMetadata && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsEditing(true);
-                      setTempName(name);
-                      setTempDescription(description || '');
-                    }}
-                    className="mt-1.5 p-2 opacity-0 group-hover/title:opacity-100 bg-white/5 hover:bg-teal-500/20 text-slate-500 hover:text-teal-400 rounded-xl transition-all flex-shrink-0"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                )}
-              </div>
-              {description ? (
-                <p className="text-sm text-slate-400 leading-relaxed font-medium">
-                  {description}
-                </p>
-              ) : (
-                <p className="text-xs text-slate-600 italic font-medium">{t('outreach.sequences.builder.playbookPlaceholder')}</p>
-              )}
-            </div>
-          )}
         </div>
-        
+
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={togglePin}
@@ -269,6 +184,93 @@ export default function SequenceCard({
             <Trash2 className="size-5" />
           </button>
         </div>
+      </div>
+
+      {/* Content Area: Name & Description */}
+      <div className="relative mb-8 min-w-0">
+        {isEditing ? (
+          <div className="flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">{t('outreach.sequences.builder.sequenceName')}</label>
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={tempName}
+                onChange={e => setTempName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) handleSaveMetadata();
+                  if (e.key === 'Escape') {
+                    setIsEditing(false);
+                    setTempName(name);
+                    setTempDescription(description || '');
+                  }
+                }}
+                className="bg-white/5 border border-teal-500/30 focus:border-teal-500 rounded-2xl px-4 py-3 text-sm text-white outline-none w-full transition-all shadow-inner"
+                disabled={isSaving}
+                placeholder={t('outreach.sequences.builder.sequenceName')}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em] ml-1">{t('outreach.sequences.builder.emailContentDescription')}</label>
+              <textarea
+                value={tempDescription}
+                onChange={e => setTempDescription(e.target.value)}
+                className="bg-white/5 border border-white/10 focus:border-teal-500/50 rounded-2xl px-4 py-3 text-sm text-slate-300 outline-none w-full h-24 resize-none transition-all shadow-inner"
+                disabled={isSaving}
+                placeholder={t('outreach.sequences.builder.playbookPlaceholder')}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveMetadata}
+                disabled={isSaving}
+                className="flex-1 bg-teal-500 text-[#0d1117] hover:bg-teal-400 px-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95"
+              >
+                {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                {t('outreach.sequences.builder.saveSequence').toUpperCase()}
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditing(false);
+                  setTempName(name);
+                  setTempDescription(description || '');
+                }}
+                disabled={isSaving}
+                className="p-3 rounded-2xl bg-white/5 text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 min-w-0">
+            <div className="flex items-start gap-4 group/title min-w-0">
+              <h3 className="text-2xl font-black text-white leading-tight tracking-tight group-hover:text-teal-400 transition-colors break-words flex-1">
+                {name}
+              </h3>
+              {onUpdateMetadata && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditing(true);
+                    setTempName(name);
+                    setTempDescription(description || '');
+                  }}
+                  className="mt-1.5 p-2 opacity-0 group-hover/title:opacity-100 bg-white/5 hover:bg-teal-500/20 text-slate-500 hover:text-teal-400 rounded-xl transition-all flex-shrink-0"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+              )}
+            </div>
+            {description ? (
+              <p className="text-sm text-slate-400 leading-relaxed font-medium">
+                {description}
+              </p>
+            ) : (
+              <p className="text-xs text-slate-600 italic font-medium">{t('outreach.sequences.builder.playbookPlaceholder')}</p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 space-y-6">
