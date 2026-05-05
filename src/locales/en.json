@@ -1127,8 +1127,8 @@
                     "warmupProgress": "Warm-up progress",
                     "warmupSubtitle": "Gradually increase sending volume to establish sender reputation",
                     "zeroBounce": "ZeroBounce Integration"
-                },
-
+                }
+            },
             "campaigns": {
                 "duplicate": "Duplicate",
                 "delete": "Delete",

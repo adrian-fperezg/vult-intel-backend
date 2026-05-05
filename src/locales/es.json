@@ -1128,8 +1128,8 @@
                     "warmupProgress": "Progreso del calentamiento",
                     "warmupSubtitle": "Aumenta gradualmente el volumen de envío para establecer la reputación del remitente",
                     "zeroBounce": "Integración con ZeroBounce"
-                },
-
+                }
+            },
             "campaigns": {
                 "duplicate": "Duplicar",
                 "delete": "Eliminar",
