@@ -5393,7 +5393,7 @@ app.post("/api/outreach/maintenance/group-unassigned", async (req: AuthRequest, 
       JOIN outreach_sequences s ON r.sequence_id = s.id
       LEFT JOIN outreach_list_members m ON c.id = m.contact_id
       WHERE c.project_id = ? 
-      AND r.type = 'csv'
+      AND (r.type = 'csv' OR r.type = 'manual' OR r.type IS NULL)
       AND m.list_id IS NULL
     `, project_id) as any[];
 
