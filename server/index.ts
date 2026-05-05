@@ -3964,7 +3964,7 @@ app.get("/api/outreach/sequences", async (req: AuthRequest, res) => {
              (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('unsubscribed', 'unsubscribe') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as unsub_in_period
       FROM outreach_sequences s
       WHERE s.user_id = ? AND s.project_id = ?
-      ORDER BY s.created_at DESC
+      ORDER BY s.is_pinned DESC, s.pinned_at DESC NULLS LAST, s.created_at DESC
     `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, userId, project_id);
 
     // Calculate rates based on period envíos
@@ -4216,7 +4216,7 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     'send_timezone', 'send_on_weekdays', 'smart_send_min_delay', 'smart_send_max_delay',
     'stop_on_reply', 'mailbox_id', 'mailbox_ids', 'from_email', 'from_name',
     'scheduled_start_at', 'use_recipient_timezone', 'funnel_stage', 'smart_send',
-    'restrict_sending_hours'
+    'restrict_sending_hours', 'is_pinned', 'pinned_at', 'description'
   ];
 
   const filteredUpdates: Record<string, any> = {};
@@ -4258,6 +4258,11 @@ app.patch("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
         }
       }
     }
+  }
+
+  // Handle pinned_at logic: set current timestamp if is_pinned is being set to true
+  if (updates.is_pinned === true || updates.is_pinned === 'true') {
+    filteredUpdates['pinned_at'] = new Date().toISOString();
   }
 
   if (Object.keys(filteredUpdates).length === 0) {

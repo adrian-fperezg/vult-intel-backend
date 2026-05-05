@@ -35,6 +35,7 @@ interface Sequence {
   click_rate: number;
   bounce_rate: number;
   is_pinned?: boolean;
+  pinned_at?: string;
   created_at: string;
 }
 
@@ -166,7 +167,19 @@ export default function OutreachSequences() {
 
   const handleUpdateMetadata = async (id: string, updates: { name?: string; description?: string; is_pinned?: boolean }) => {
     const previousSequences = [...sequences];
-    setSequences(prev => prev.map(s => s.id === id ? { ...s, ...updates } as Sequence : s));
+    
+    // Optimistically update
+    setSequences(prev => prev.map(s => {
+      if (s.id === id) {
+        const next = { ...s, ...updates } as Sequence;
+        // If we are pinning, update pinned_at locally for immediate sorting
+        if (updates.is_pinned === true) {
+          next.pinned_at = new Date().toISOString();
+        }
+        return next;
+      }
+      return s;
+    }));
 
     try {
       await updateSequence(id, updates);
@@ -315,6 +328,10 @@ export default function OutreachSequences() {
                 .sort((a, b) => {
                     if (a.is_pinned && !b.is_pinned) return -1;
                     if (!a.is_pinned && b.is_pinned) return 1;
+                    // If both are pinned, sort by pinned_at
+                    if (a.is_pinned && b.is_pinned) {
+                      return new Date(b.pinned_at || 0).getTime() - new Date(a.pinned_at || 0).getTime();
+                    }
                     return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
                 })
                 .map((seq) => (
