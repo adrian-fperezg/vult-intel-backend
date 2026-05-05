@@ -56,7 +56,7 @@ export default function SequenceCard({
 }: SequenceCardProps) {
   const {
     id, name, description, status, step_count, contact_count,
-    open_rate, reply_rate, click_rate, bounce_rate,
+    open_rate = 0, reply_rate = 0, click_rate = 0, bounce_rate = 0,
     active_contact_count = 0,
     completed_contact_count = 0,
     is_pinned = false,
@@ -261,6 +261,7 @@ export default function SequenceCard({
                     setTempDescription(description || '');
                   }}
                   className="mt-1.5 p-2 opacity-0 group-hover/title:opacity-100 bg-white/5 hover:bg-teal-500/20 text-slate-500 hover:text-teal-400 rounded-xl transition-all flex-shrink-0"
+                  title={t('common.edit')}
                 >
                   <Pencil className="size-3.5" />
                 </button>
@@ -321,11 +322,11 @@ export default function SequenceCard({
       <div className="mt-10 pt-8 border-t border-white/5">
         <div className="flex items-center justify-between">
           <div className="grid grid-cols-4 gap-6 flex-1">
-            <div className="flex flex-col">
+            <div className="flex flex-col" title={t('outreach.sequences.analyticsDashboard.totalSent')}>
               <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.sent')}</span>
               <span className="text-base font-black text-slate-300 leading-none">{sequence.sent_in_period || 0}</span>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col" title={t('outreach.sequences.analyticsDashboard.openRate')}>
               <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.open')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-base font-black text-white leading-none">{open_rate}%</span>
@@ -340,7 +341,7 @@ export default function SequenceCard({
                 )}
               </div>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col" title={t('outreach.sequences.analyticsDashboard.clickRate')}>
               <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.click')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-base font-black text-white leading-none">{click_rate || 0}%</span>
@@ -355,7 +356,7 @@ export default function SequenceCard({
                 )}
               </div>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col" title={t('outreach.sequences.analyticsDashboard.replyRate')}>
               <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('outreach.sequences.builder.reply')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-base font-black text-white leading-none">{reply_rate}%</span>

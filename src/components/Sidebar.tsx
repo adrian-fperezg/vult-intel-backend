@@ -19,7 +19,8 @@ import {
   Target,
   Clapperboard,
   Radio,
-  Shield
+  Shield,
+  Send
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -45,7 +46,7 @@ const navItems = [
   { icon: Target, key: 'growthMastermind', path: '/growth-mastermind' },
   { icon: Briefcase, key: 'campaignArchitect', path: '/campaign-architect' },
   { icon: LayoutGrid, key: 'visualWorkflows', path: '/visual-workflows' },
-  { icon: null, key: 'outreach', path: '/outreach', teal: true },
+  { icon: Send, key: 'outreach', path: '/outreach', teal: true },
   { icon: Clapperboard, key: 'veoStudio', path: '/veo-studio', amber: true },
 ];
 
@@ -124,34 +125,14 @@ export default function Sidebar() {
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
-                {isTeal ? (
-                  <svg
-                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
-                    className={cn(
-                      "size-4 md:size-5 transition-colors shrink-0",
-                      isActive ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )}
-                    aria-hidden="true"
-                  >
-                    <path d="M22 2L11 13" />
-                    <path d="M22 2L15 22l-4-9-9-4 20-7z" />
-                  </svg>
-                ) : isAmber ? (
-                  <item.icon
-                    className={cn(
-                      "size-4 md:size-5 transition-colors shrink-0",
-                      isActive ? "text-amber-400" : "text-slate-500 group-hover:text-amber-400"
-                    )}
-                  />
-                ) : (
-                  <item.icon
-                    className={cn(
-                      "size-4 md:size-5 transition-colors shrink-0",
-                      isActive ? "text-primary" : "text-slate-500 group-hover:text-white"
-                    )}
-                  />
-                )}
+                <item.icon
+                  className={cn(
+                    "size-4 md:size-5 transition-colors shrink-0",
+                    isActive 
+                      ? isTeal ? "text-teal-400" : isAmber ? "text-amber-400" : "text-primary"
+                      : isTeal ? "text-slate-500 group-hover:text-teal-400" : isAmber ? "text-slate-500 group-hover:text-amber-400" : "text-slate-500 group-hover:text-white"
+                  )}
+                />
                 <span className={cn(
                   "text-sm md:text-base font-medium truncate",
                   isActive && "font-semibold",

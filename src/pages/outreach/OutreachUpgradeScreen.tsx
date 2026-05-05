@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/contexts/TranslationContext';
 import { PaperPlaneIcon, TealButton } from './OutreachCommon';
 import { Check } from 'lucide-react';
 
