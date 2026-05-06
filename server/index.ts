@@ -51,7 +51,7 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
         WHERE from_email IN (SELECT email FROM outreach_mailboxes);
 
         INSERT INTO outreach_inbox_messages 
-        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id)
+        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, is_incoming)
         SELECT 
           gen_random_uuid(), 
           contact_id, 
@@ -66,7 +66,8 @@ if (imap) console.log('[STARTUP] imap-simple loaded');
           body_html, 
           COALESCE(sent_at, created_at), 
           TRUE, 
-          mailbox_id
+          mailbox_id,
+          TRUE
         FROM outreach_individual_emails
         WHERE is_reply = True 
           AND from_email NOT IN (SELECT email FROM outreach_mailboxes)
@@ -3282,6 +3283,7 @@ app.get("/api/outreach/campaigns/funnel-stats", verifyFirebaseToken, async (req:
         COUNT(id) as count,
         SUM(sent) as total_sent,
         SUM(opens) as total_opens,
+        SUM(clicks) as total_clicks,
         SUM(replies) as total_replies,
         SUM(bounces) as total_bounces
       FROM (
@@ -3291,6 +3293,7 @@ app.get("/api/outreach/campaigns/funnel-stats", verifyFirebaseToken, async (req:
           c.funnel_stage,
           (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'sent' AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as sent,
           (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as opens,
+          (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('clicked', 'click', 'email_clicked') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as clicks,
           (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as replies,
           (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'bounced' AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as bounces
         FROM outreach_campaigns c
@@ -3304,13 +3307,14 @@ app.get("/api/outreach/campaigns/funnel-stats", verifyFirebaseToken, async (req:
           s.funnel_stage,
           (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent' AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as sent,
           (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as opens,
+          (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('clicked', 'click', 'email_clicked') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as clicks,
           (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied') AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_events.contact_id)) as replies,
           (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced' AND created_at BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = outreach_individual_emails.contact_id)) as bounces
         FROM outreach_sequences s
         WHERE s.project_id = ? AND s.status != 'archived'
       ) as sub
       GROUP BY funnel_stage
-    `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, project_id, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, project_id);
+    `, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, project_id, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, startDateStr, endDateStr, project_id);
 
     res.json(stats);
   } catch (err: any) {
@@ -5939,20 +5943,16 @@ app.get("/api/outreach/inbox", verifyFirebaseToken, async (req: AuthRequest, res
   const messages = await db
     .prepare(
       `
-    SELECT c.*, 
-           m.id as latest_message_id,
-           m.subject, m.body_text, m.body_html, m.received_at, m.from_email as sender_email,
-           m.to_email, m.mailbox_id
-    FROM outreach_contacts c
-    INNER JOIN (
-      SELECT id, contact_id, subject, body_text, body_html, received_at, from_email, to_email, mailbox_id,
-             ROW_NUMBER() OVER (PARTITION BY contact_id ORDER BY received_at DESC) as rn
-      FROM outreach_inbox_messages
-      WHERE from_email NOT IN (SELECT email FROM outreach_mailboxes)
-    ) m ON c.id = m.contact_id AND m.rn = 1
+    SELECT m.*, m.from_email as sender_email,
+           c.first_name, c.last_name, c.email as contact_email
+    FROM outreach_inbox_messages m
+    JOIN outreach_contacts c ON c.id = m.contact_id
     WHERE c.user_id = ?
       AND c.project_id = ?
-      AND c.status != 'unsubscribed'
+      AND EXISTS (
+        SELECT 1 FROM outreach_inbox_messages 
+        WHERE contact_id = c.id AND is_incoming = true
+      )
     ORDER BY m.received_at DESC
   `,
     )
@@ -6079,6 +6079,18 @@ app.post("/api/outreach/inbox/:id/reply", verifyFirebaseToken, async (req: AuthR
       replyId, userId, inboxMsg.project_id, mailbox.id, inboxMsg.contact_id, inboxMsg.sequence_id,
       fromEmail, fromName, inboxMsg.from_email, replySubject, parsedBodyHtml,
       'scheduled', inboxMsg.thread_id, inboxMsg.message_id, true
+    ]);
+    
+    // 6. Record in outreach_inbox_messages for conversation history
+    await db.run(`
+      INSERT INTO outreach_inbox_messages (
+        id, contact_id, project_id, sequence_id, thread_id, message_id,
+        from_email, to_email, subject, body_html, received_at, is_read, mailbox_id, is_incoming
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE, ?, FALSE)
+    `, [
+      uuidv4(), inboxMsg.contact_id, inboxMsg.project_id, inboxMsg.sequence_id, inboxMsg.thread_id, replyId,
+      fromEmail, inboxMsg.from_email, replySubject, parsedBodyHtml, mailbox.id
     ]);
 
     res.json({ success: true, id: replyId });
@@ -6770,6 +6782,12 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
          ${campaign_id ? 'AND e.campaign_id = ?' : ''}
         ) as opens,
         (SELECT count(*) FROM outreach_events e 
+         WHERE e.project_id = ? AND e.created_at >= ? AND e.type IN ('clicked', 'click', 'email_clicked')
+         AND (EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived') OR EXISTS (SELECT 1 FROM outreach_campaigns WHERE id = e.campaign_id AND status != 'archived'))
+         AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
+         ${campaign_id ? 'AND e.campaign_id = ?' : ''}
+        ) as clicks,
+        (SELECT count(*) FROM outreach_events e 
          WHERE e.project_id = ? AND e.created_at >= ? AND e.type IN ('replied', 'reply', 'email_replied')
          AND (EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived') OR EXISTS (SELECT 1 FROM outreach_campaigns WHERE id = e.campaign_id AND status != 'archived'))
          AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
@@ -6782,6 +6800,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
          ${campaign_id ? 'AND e.campaign_id = ?' : ''}
         ) as bounces
     `,
+      project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, startDateStr, ...(campaign_id ? [campaign_id] : []),
@@ -6804,6 +6823,12 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
          ${campaign_id ? 'AND e.campaign_id = ?' : ''}
         ) as opens,
         (SELECT count(*) FROM outreach_events e 
+         WHERE e.project_id = ? AND e.created_at BETWEEN ? AND ? AND e.type IN ('clicked', 'click', 'email_clicked')
+         AND (EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived') OR EXISTS (SELECT 1 FROM outreach_campaigns WHERE id = e.campaign_id AND status != 'archived'))
+         AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
+         ${campaign_id ? 'AND e.campaign_id = ?' : ''}
+        ) as clicks,
+        (SELECT count(*) FROM outreach_events e 
          WHERE e.project_id = ? AND e.created_at BETWEEN ? AND ? AND e.type IN ('replied', 'reply', 'email_replied')
          AND (EXISTS (SELECT 1 FROM outreach_sequences WHERE id = e.sequence_id AND status != 'archived') OR EXISTS (SELECT 1 FROM outreach_campaigns WHERE id = e.campaign_id AND status != 'archived'))
          AND EXISTS (SELECT 1 FROM outreach_contacts WHERE id = e.contact_id)
@@ -6816,6 +6841,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
          ${campaign_id ? 'AND e.campaign_id = ?' : ''}
         ) as bounces
     `,
+      project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
       project_id, previousStartDateStr, previousEndDateStr, ...(campaign_id ? [campaign_id] : []),
@@ -6920,6 +6946,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       SELECT 
         ${dayExpr} as day,
         count(CASE WHEN type IN ('opened', 'email_opened') THEN 1 END) as opens,
+        count(CASE WHEN type IN ('clicked', 'click', 'email_clicked') THEN 1 END) as clicks,
         count(CASE WHEN type IN ('replied', 'reply', 'email_replied') THEN 1 END) as replies
       FROM outreach_events e
       WHERE project_id = ? AND created_at >= ?
@@ -6935,6 +6962,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         day,
         sent: parseInt(s?.sent) || 0,
         opens: parseInt(i?.opens) || 0,
+        clicks: parseInt(i?.clicks) || 0,
         replies: parseInt(i?.replies) || 0
       };
     });
@@ -6945,6 +6973,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         name,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'sent') as sent,
         (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('opened', 'email_opened')) as opened,
+        (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('clicked', 'click', 'email_clicked')) as clicked,
         (SELECT COUNT(*) FROM outreach_events WHERE sequence_id = s.id AND type IN ('replied', 'reply', 'email_replied')) as replied,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE sequence_id = s.id AND status = 'bounced') as bounces
       FROM outreach_sequences s WHERE project_id = ? AND status != 'archived'
@@ -6953,6 +6982,7 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
         name,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'sent') as sent,
         (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('opened', 'email_opened')) as opened,
+        (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('clicked', 'click', 'email_clicked')) as clicked,
         (SELECT COUNT(*) FROM outreach_events WHERE campaign_id = c.id AND type IN ('replied', 'reply', 'email_replied')) as replied,
         (SELECT COUNT(*) FROM outreach_individual_emails WHERE campaign_id = c.id AND status = 'bounced') as bounces
       FROM outreach_campaigns c WHERE project_id = ? AND status != 'archived'
@@ -6972,6 +7002,9 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
     const replyRateCurrent = sentValue > 0 ? (Number(currentMetric?.replies || 0) / sentValue) * 100 : 0;
     const replyRatePrevious = prevSentValue > 0 ? (Number(prevMetric?.replies || 0) / prevSentValue) * 100 : 0;
 
+    const clickRateCurrent = sentValue > 0 ? (Number(currentMetric?.clicks || 0) / sentValue) * 100 : 0;
+    const clickRatePrevious = prevSentValue > 0 ? (Number(prevMetric?.clicks || 0) / prevSentValue) * 100 : 0;
+
     const bounceRateCurrent = sentValue > 0 ? (Number(currentMetric?.bounces || 0) / sentValue) * 100 : 0;
     const bounceRatePrevious = prevSentValue > 0 ? (Number(prevMetric?.bounces || 0) / prevSentValue) * 100 : 0;
 
@@ -6984,6 +7017,8 @@ app.get("/api/outreach/analytics", async (req: AuthRequest, res) => {
       sent_change: calcChange(sentValue, prevSentValue),
       open_rate: calcRate(currentMetric?.opens, sentValue),
       open_rate_change: calcRateTrend(openRateCurrent, openRatePrevious),
+      click_rate: calcRate(currentMetric?.clicks, sentValue),
+      click_rate_change: calcRateTrend(clickRateCurrent, clickRatePrevious),
       reply_rate: calcRate(currentMetric?.replies, sentValue),
       reply_rate_change: calcRateTrend(replyRateCurrent, replyRatePrevious),
       bounce_rate: calcRate(currentMetric?.bounces, sentValue),

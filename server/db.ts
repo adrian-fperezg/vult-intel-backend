@@ -299,10 +299,15 @@ export const initDb = async () => {
         opened_count INTEGER DEFAULT 0,
         replied_count INTEGER DEFAULT 0,
         bounced_count INTEGER DEFAULT 0,
+        clicked_count INTEGER DEFAULT 0,
         funnel_stage TEXT DEFAULT 'TOFU',
         use_recipient_timezone BOOLEAN DEFAULT FALSE,
         -- Multi-sender load balancing: JSON array of mailbox UUIDs e.g. '["uuid-a","uuid-b"]'
         mailbox_ids TEXT DEFAULT '[]',
+        is_pinned BOOLEAN DEFAULT FALSE,
+        pinned_at TIMESTAMP,
+        description TEXT,
+        smart_send BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -338,7 +343,12 @@ export const initDb = async () => {
       { name: 'bounced_count', type: 'INTEGER DEFAULT 0' },
       { name: 'use_recipient_timezone', type: 'BOOLEAN DEFAULT FALSE' },
       // Multi-sender load balancing pool (JSON array of mailbox UUIDs)
-      { name: 'mailbox_ids', type: "TEXT DEFAULT '[]'" }
+      { name: 'mailbox_ids', type: "TEXT DEFAULT '[]'" },
+      { name: 'is_pinned', type: 'BOOLEAN DEFAULT FALSE' },
+      { name: 'pinned_at', type: 'TIMESTAMP' },
+      { name: 'description', type: 'TEXT' },
+      { name: 'smart_send', type: 'BOOLEAN DEFAULT TRUE' },
+      { name: 'clicked_count', type: 'INTEGER DEFAULT 0' }
     ];
 
     for (const col of newSeqCols) {
@@ -934,6 +944,7 @@ export const initDb = async () => {
         mailbox_id TEXT REFERENCES outreach_mailboxes(id),
         intent TEXT,
         intent_score REAL,
+        is_incoming BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -943,6 +954,15 @@ export const initDb = async () => {
       await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS mailbox_id TEXT REFERENCES outreach_mailboxes(id)`);
       await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS intent TEXT`);
       await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS intent_score REAL`);
+      await db.run(`ALTER TABLE outreach_inbox_messages ADD COLUMN IF NOT EXISTS is_incoming BOOLEAN DEFAULT TRUE`);
+      
+      // Update existing records to correctly flag incoming vs outgoing
+      await db.run(`
+        UPDATE outreach_inbox_messages 
+        SET is_incoming = FALSE 
+        WHERE from_email IN (SELECT email FROM outreach_mailboxes)
+           OR from_email IN (SELECT email FROM outreach_mailbox_aliases)
+      `);
     } catch (err) {
       console.warn(`[DB] PG Migration for inbox columns failed:`, (err as Error).message);
     }

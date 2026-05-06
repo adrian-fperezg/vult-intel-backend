@@ -119,7 +119,6 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
           event_key: `bounced:${msg.id}`,
           metadata: { from: fromHeader, subject, gmail_id: msg.id }
         });
-        await handleCriticalBounce(original.contact_id, original.sequence_id, mailbox.project_id);
         console.log(`[Gmail Sync] Bounce handled for contact ${original.contact_id}.`);
       } else {
         // Fallback — parse the bounce body for the intended recipient
@@ -174,36 +173,23 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
       }
     }
 
-    if (isSelf) {
-      console.log(`[Gmail Sync] Skipping Gmail message ${msg.id} - Sender is the mailbox itself (Primary or Alias: ${normalizedFrom}).`);
-      continue;
-    }
+    const isIncoming = !isSelf;
 
     const potentialIds = [messageId].filter(Boolean);
     const originalEmail = await findOriginalEmail({
       potentialIds,
       threadId: msg.threadId,
-      fromEmail,
-      projectId: mailbox.project_id,
-      expectedContactEmail: fromEmail // STRICT MATCHING
+      fromEmail: isIncoming ? fromEmail : undefined, // Only search by fromEmail if it's from a lead
+      projectId: mailbox.project_id
     });
 
     if (originalEmail) {
       console.log(`[Gmail Sync] [ID: ${msgRef.id}] Linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
 
-      // SIMPLE RULE: Any reply stops the sequence for this contact.
-      if (originalEmail.sequence_id) {
-        await db.run(
-          "UPDATE outreach_sequence_enrollments SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?",
-          [originalEmail.sequence_id, originalEmail.contact_id]
-        );
-        console.log(`[Gmail Sync] Reply detected. Sequence STOPPED for contact ${originalEmail.contact_id}.`);
-      }
-
       // Persist reply record
       const replyId = uuidv4();
       const content = extractGmailContent(msg.payload);
-      const isRead = false;
+      const isRead = isIncoming ? false : true;
 
       // 1. Existing Individual Email Record (for sequencing logic)
       await db.run(`
@@ -223,52 +209,53 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
 
       await db.run(`
         INSERT INTO outreach_inbox_messages 
-        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, intent, intent_score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+        (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, intent, intent_score, is_incoming)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
         ON CONFLICT (message_id) DO NOTHING
       `, [
         inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
         originalEmail.sequence_id, msg.threadId, messageId, fromEmail, 
         mailbox.email, subject, content.text, content.html, isRead, mailbox.id,
-        aiResponse.intent, aiResponse.score
+        aiResponse.intent, aiResponse.score, isIncoming
       ]);
 
-      // Mark original as replied and contact as unread + update status
-      await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
-      
-      // Map AI Intent to Contact Status
-      let newStatus = 'replied';
-      if (aiResponse.score >= 0.7) {
-        const intent = aiResponse.intent.toLowerCase();
-        if (intent.includes('interested')) newStatus = 'interested';
-        else if (intent.includes('meeting')) newStatus = 'meeting_booked';
-        else if (intent.includes('not interested')) newStatus = 'not_interested';
+      // Only record 'replied' event and update contact status if it's an INCOMING message from the lead
+      if (isIncoming) {
+        // Mark original as replied and contact as unread + update status
+        await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
+        
+        // Map AI Intent to Contact Status
+        let newStatus = 'replied';
+        if (aiResponse.score >= 0.7) {
+          const intent = aiResponse.intent.toLowerCase();
+          if (intent.includes('interested')) newStatus = 'interested';
+          else if (intent.includes('meeting')) newStatus = 'meeting_booked';
+          else if (intent.includes('not interested')) newStatus = 'not_interested';
+        }
+
+        await recordOutreachEvent({
+          project_id: mailbox.project_id,
+          sequence_id: originalEmail.sequence_id,
+          step_id: originalEmail.step_id,
+          contact_id: originalEmail.contact_id,
+          email_id: originalEmail.id,
+          event_type: 'replied',
+          event_key: `replied:${msg.id}`,
+          metadata: { gmail_id: msg.id, subject, intent: aiResponse.intent },
+          contactStatus: newStatus
+        });
+
+        console.log(`[Gmail Sync] [ID: ${msgRef.id}] Successfully saved incoming reply for contact ${originalEmail.contact_id}`);
+
+        // Mark as read (only if it was unread and we are processing it as a new reply)
+        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
+        });
+      } else {
+        console.log(`[Gmail Sync] [ID: ${msgRef.id}] Successfully saved outgoing message to inbox history (Contact: ${originalEmail.contact_id})`);
       }
-
-      await db.run(
-        "UPDATE outreach_contacts SET is_read = FALSE, status = ? WHERE id = ?", 
-        [newStatus, originalEmail.contact_id]
-      );
-
-      await recordOutreachEvent({
-        project_id: mailbox.project_id,
-        sequence_id: originalEmail.sequence_id,
-        step_id: originalEmail.step_id,
-        contact_id: originalEmail.contact_id,
-        email_id: originalEmail.id,
-        event_type: 'replied',
-        event_key: `replied:${msg.id}`,
-        metadata: { gmail_id: msg.id, subject }
-      });
-
-      console.log(`[Gmail Sync] [ID: ${msgRef.id}] Successfully saved reply for contact ${originalEmail.contact_id}`);
-
-      // Mark as read
-      await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
-      });
 
       newCount++;
     } else {

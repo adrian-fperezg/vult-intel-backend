@@ -37,6 +37,7 @@ interface InboxMessage {
   sender_email?: string;
   email?: string;
   mailbox_id?: string;
+  is_incoming: boolean;
 }
 
 interface Thread {
@@ -61,15 +62,17 @@ const groupMessagesByThread = (messages: InboxMessage[]): Thread[] => {
     const sorted = [...msgs].sort((a, b) => 
       new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
     );
-    const latest = sorted[0];
+    // Prioritize the latest INCOMING message for the list preview
+    const latestIncoming = sorted.find(m => m.is_incoming) || sorted[0];
+    
     return {
       thread_id: tid,
-      contact_id: latest.contact_id,
-      messages: [...sorted].reverse(), // Oldest first for the actual conversation view
-      latest_message: latest,
-      subject: latest.subject,
-      is_read: sorted.every(m => m.is_read),
-      intent: latest.intent
+      contact_id: latestIncoming.contact_id,
+      messages: [...sorted].reverse(), // Oldest first for the conversation view
+      latest_message: latestIncoming,
+      subject: latestIncoming.subject,
+      is_read: sorted.filter(m => m.is_incoming).every(m => m.is_read),
+      intent: latestIncoming.intent
     };
   }).sort((a, b) => 
     new Date(b.latest_message.received_at).getTime() - new Date(a.latest_message.received_at).getTime()
@@ -429,9 +432,7 @@ export default function OutreachInbox() {
                   )}
 
                   {selectedThread.messages.map((m, idx) => {
-                    const isOutgoing = m.from_email === m.mailbox_id || m.from_email === m.to_email; // Simplified check
-                    // Better check: if from_email doesn't match the contact's email, it's likely outgoing
-                    const isIncoming = (m.from_email || '').toLowerCase() === (m.contact_email || '').toLowerCase();
+                    const isIncoming = m.is_incoming;
                     
                     return (
                       <div key={m.id} className={cn(

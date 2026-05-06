@@ -112,7 +112,6 @@ export async function pollImap(mailboxId: string) {
               email_id: original.id, event_type: 'bounced',
               event_key: `bounced:imap:${uid}`, metadata: { from, subject }
             });
-            await handleCriticalBounce(original.contact_id, original.sequence_id, mailbox.project_id);
             console.log(`[IMAP] [UID: ${uid}] Bounce handled for contact ${original.contact_id}.`);
           } else {
             // Fallback — parse the bounce body for the intended recipient's email address
@@ -171,17 +170,12 @@ export async function pollImap(mailboxId: string) {
           }
         }
 
-        if (isSelf) {
-          console.log(`[IMAP] Skipping email from ${normalizedFrom} - Sender is the mailbox itself (Primary or Alias).`);
-          await connection.addFlags(uid, ['\\Seen']);
-          continue;
-        }
+        const isIncoming = !isSelf;
 
         const originalEmail = await findOriginalEmail({
           potentialIds: potentialMessageIds,
-          fromEmail,
-          projectId: mailbox.project_id,
-          expectedContactEmail: fromEmail // STRICT MATCH: Sender must be the prospect email we sent to
+          fromEmail: isIncoming ? fromEmail : undefined,
+          projectId: mailbox.project_id
         });
 
         if (!originalEmail || !originalEmail.contact_id) {
@@ -191,15 +185,6 @@ export async function pollImap(mailboxId: string) {
         }
 
         console.log(`[IMAP] [UID: ${uid}] Successfully linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
-
-        // SIMPLE RULE: Any reply stops the sequence for this contact.
-        if (originalEmail.sequence_id) {
-          await db.run(
-            "UPDATE outreach_sequence_enrollments SET status = 'stopped', last_executed_at = CURRENT_TIMESTAMP WHERE sequence_id = ? AND contact_id = ?",
-            [originalEmail.sequence_id, originalEmail.contact_id]
-          );
-          console.log(`[IMAP] Reply detected. Sequence STOPPED for contact ${originalEmail.contact_id}.`);
-        }
 
         // Persist reply record
         const content = await extractEmailContent(msg);
@@ -223,42 +208,46 @@ export async function pollImap(mailboxId: string) {
 
         await db.run(`
           INSERT INTO outreach_inbox_messages 
-          (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, intent, intent_score)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+          (id, contact_id, project_id, sequence_id, thread_id, message_id, from_email, to_email, subject, body_text, body_html, received_at, is_read, mailbox_id, intent, intent_score, is_incoming)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
           ON CONFLICT (message_id) DO NOTHING
         `, [
           inboxMessageId, originalEmail.contact_id, originalEmail.project_id, 
           originalEmail.sequence_id, originalEmail.thread_id, messageId, from, 
-          mailbox.email, subject, content.text, content.html, false, mailbox.id,
-          aiResponse.intent, aiResponse.score
+          mailbox.email, subject, content.text, content.html, isIncoming ? false : true, mailbox.id,
+          aiResponse.intent, aiResponse.score, isIncoming
         ]);
 
-        // Mark original as replied and contact as unread + update status
-        await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
-        
-        // Map AI Intent to Contact Status
-        let newStatus = 'replied';
-        if (aiResponse.score >= 0.7) {
-          const intent = aiResponse.intent.toLowerCase();
-          if (intent.includes('interested')) newStatus = 'interested';
-          else if (intent.includes('meeting')) newStatus = 'meeting_booked';
-          else if (intent.includes('not interested')) newStatus = 'not_interested';
+        // Only record 'replied' event and update contact status if it's an INCOMING message from the lead
+        if (isIncoming) {
+          // Mark original as replied and contact as unread + update status
+          await db.run("UPDATE outreach_individual_emails SET is_reply = True, replied_at = CURRENT_TIMESTAMP WHERE id = ?", [originalEmail.id]);
+          
+          // Map AI Intent to Contact Status
+          let newStatus = 'replied';
+          if (aiResponse.score >= 0.7) {
+            const intent = aiResponse.intent.toLowerCase();
+            if (intent.includes('interested')) newStatus = 'interested';
+            else if (intent.includes('meeting')) newStatus = 'meeting_booked';
+            else if (intent.includes('not interested')) newStatus = 'not_interested';
+          }
+
+          await recordOutreachEvent({
+            project_id: mailbox.project_id, 
+            sequence_id: originalEmail.sequence_id,
+            step_id: originalEmail.step_id, 
+            contact_id: originalEmail.contact_id,
+            email_id: originalEmail.id, 
+            event_type: 'replied',
+            event_key: `replied:imap:${uid}`,
+            metadata: { subject, intent: aiResponse.intent },
+            contactStatus: newStatus
+          });
+
+          console.log(`[IMAP] [UID: ${uid}] Successfully processed incoming reply for contact ${originalEmail.contact_id}`);
+        } else {
+          console.log(`[IMAP] [UID: ${uid}] Successfully saved outgoing message to inbox history (Contact: ${originalEmail.contact_id})`);
         }
-
-        await db.run(
-          "UPDATE outreach_contacts SET is_read = FALSE, status = ? WHERE id = ?", 
-          [newStatus, originalEmail.contact_id]
-        );
-
-        await recordOutreachEvent({
-          project_id: originalEmail.project_id, sequence_id: originalEmail.sequence_id,
-          step_id: originalEmail.step_id, contact_id: originalEmail.contact_id,
-          email_id: originalEmail.id, event_type: 'replied',
-          event_key: `replied:imap:${uid}`,
-          metadata: { subject }
-        });
-
-        console.log(`[IMAP] [UID: ${uid}] Successfully processed reply for contact ${originalEmail.contact_id}`);
 
         await connection.addFlags(uid, ['\\Seen']);
 
