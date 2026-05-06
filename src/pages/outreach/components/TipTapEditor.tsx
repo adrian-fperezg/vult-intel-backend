@@ -152,42 +152,42 @@ export default function TipTapEditor({
 
   return (
     <div className={cn(
-      "flex flex-col min-h-[400px] bg-[#161b22] border border-[#30363d] rounded-xl overflow-hidden focus-within:border-teal-500/50 transition-colors",
+      "flex flex-col min-h-[300px] bg-[#161b22] border border-[#30363d] rounded-xl overflow-hidden focus-within:border-teal-500/50 transition-colors",
       className,
       disabled && "opacity-60 pointer-events-none"
     )}>
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 p-2 border-bottom border-[#30363d] bg-[#0d1117]/50">
+      <div className="flex flex-wrap items-center gap-0.5 p-1.5 border-bottom border-[#30363d] bg-[#0d1117]/50">
         <MenuButton 
           onClick={() => editor.chain().focus().toggleBold().run()}
           isActive={editor.isActive('bold')}
           title="Bold"
         >
-          <Bold className="size-4" />
+          <Bold className="size-3.5" />
         </MenuButton>
         <MenuButton 
           onClick={() => editor.chain().focus().toggleItalic().run()}
           isActive={editor.isActive('italic')}
           title="Italic"
         >
-          <Italic className="size-4" />
+          <Italic className="size-3.5" />
         </MenuButton>
         <MenuButton 
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           isActive={editor.isActive('underline')}
           title="Underline"
         >
-          <UnderlineIcon className="size-4" />
+          <UnderlineIcon className="size-3.5" />
         </MenuButton>
         
-        <div className="w-px h-4 bg-[#30363d] mx-1" />
+        <div className="w-px h-3.5 bg-[#30363d] mx-1" />
 
         <MenuButton 
           onClick={setLink}
           isActive={editor.isActive('link')}
           title="Insert Link"
         >
-          <LinkIcon className="size-4" />
+          <LinkIcon className="size-3.5" />
         </MenuButton>
 
         <MenuButton 
@@ -195,36 +195,36 @@ export default function TipTapEditor({
           isActive={editor.isActive('bulletList')}
           title="Bullet List"
         >
-          <List className="size-4" />
+          <List className="size-3.5" />
         </MenuButton>
         <MenuButton 
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           isActive={editor.isActive('orderedList')}
           title="Ordered List"
         >
-          <ListOrdered className="size-4" />
+          <ListOrdered className="size-3.5" />
         </MenuButton>
 
-        <div className="w-px h-4 bg-[#30363d] mx-1" />
+        <div className="w-px h-3.5 bg-[#30363d] mx-1" />
 
         <MenuButton 
           onClick={() => editor.chain().focus().undo().run()}
           title="Undo"
         >
-          <Undo className="size-4" />
+          <Undo className="size-3.5" />
         </MenuButton>
         <MenuButton 
           onClick={() => editor.chain().focus().redo().run()}
           title="Redo"
         >
-          <Redo className="size-4" />
+          <Redo className="size-3.5" />
         </MenuButton>
 
         <MenuButton 
           onClick={() => editor.chain().focus().insertContent('{{signature}}').run()}
           title="Insert Signature"
         >
-          <PenLine className="size-4" />
+          <PenLine className="size-3.5" />
         </MenuButton>
 
         {onAttachFile && (
@@ -232,21 +232,21 @@ export default function TipTapEditor({
             onClick={onAttachFile}
             title="Attach File"
           >
-            <Paperclip className="size-4" />
+            <Paperclip className="size-3.5" />
           </MenuButton>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           {onOptimize && (
             <button
               onClick={onOptimize}
               disabled={isOptimizing}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500/20 to-blue-500/20 hover:from-teal-500/30 hover:to-blue-500/30 border border-teal-500/30 text-teal-400 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-teal-500/20 to-blue-500/20 hover:from-teal-500/30 hover:to-blue-500/30 border border-teal-500/30 text-teal-400 rounded-lg text-[10px] font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
             >
               {isOptimizing ? (
-                <div className="size-3.5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
+                <div className="size-3 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
               ) : (
-                <Sparkles className="size-3.5" />
+                <Sparkles className="size-3" />
               )}
               {isOptimizing ? "Optimizing..." : "AI Optimize"}
             </button>
@@ -256,9 +256,9 @@ export default function TipTapEditor({
             <button
               onClick={onPreview}
               type="button"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-[#30363d] text-slate-300 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-[#30363d] text-slate-300 rounded-lg text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
             >
-              <Eye className="size-3.5" />
+              <Eye className="size-3" />
               Preview
             </button>
           )}
@@ -269,11 +269,11 @@ export default function TipTapEditor({
                 type="button" 
                 onClick={() => setShowVariables(!showVariables)}
                 className={cn(
-                  "p-1.5 flex items-center gap-1.5 text-xs font-semibold rounded transition-colors",
+                  "p-1 flex items-center gap-1 text-[10px] font-bold rounded transition-colors",
                   showVariables ? "bg-teal-500/20 text-teal-400" : "text-slate-400 hover:text-teal-400 hover:bg-white/5"
                 )}
               >
-                <Type className="size-3.5" /> Variables
+                <Type className="size-3" /> Variables
               </button>
               {showVariables && (
                 <>
@@ -316,24 +316,24 @@ export default function TipTapEditor({
 
 
       {/* Editor Content */}
-      <div className="flex-1 p-4 prose prose-invert prose-sm max-w-none focus:outline-none overflow-y-auto custom-scrollbar">
+      <div className="flex-1 p-3 prose prose-invert prose-sm max-w-none focus:outline-none overflow-y-auto custom-scrollbar">
         <EditorContent editor={editor} />
       </div>
 
       {/* Footer / Status */}
-      <div className="px-4 py-2 border-t border-[#30363d] bg-[#0d1117]/30 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-           <CloudLightning className="size-3 text-teal-500/50" />
-           <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Rich Text Mode</span>
+      <div className="px-3 py-1.5 border-t border-[#30363d] bg-[#0d1117]/30 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+           <CloudLightning className="size-2.5 text-teal-500/50" />
+           <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider">Rich Text</span>
         </div>
-        <span className="text-[10px] text-slate-600 font-mono">
-          {value.replace(/<[^>]*>?/gm, '').length} characters
+        <span className="text-[9px] text-slate-600 font-mono">
+          {value.replace(/<[^>]*>?/gm, '').length} chars
         </span>
       </div>
 
       <style>{`
         .ProseMirror {
-          min-height: 300px;
+          min-height: 150px;
           outline: none;
         }
         .ProseMirror p.is-editor-empty:first-child::before {
@@ -344,7 +344,7 @@ export default function TipTapEditor({
           height: 0;
         }
         .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
+          width: 5px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
           background: transparent;

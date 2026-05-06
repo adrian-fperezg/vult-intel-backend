@@ -239,13 +239,13 @@ export default function OutreachInbox() {
           />
         </div>
       ) : (
-        <div className="flex-1 flex gap-6 overflow-hidden min-h-0 mt-2">
+        <div className="flex-1 flex gap-4 overflow-hidden min-h-0 mt-2">
           {/* LEFT PANE: Message List */}
           <div className={cn(
-            "w-full md:w-[400px] flex flex-col bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden min-h-0 p-4 shrink-0",
+            "w-full md:w-[380px] flex flex-col bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden min-h-0 p-4 shrink-0",
             selectedThreadId && "hidden md:flex"
           )}>
-            <div className="mb-4">
+            <div className="mb-3">
               <p className="text-xs text-slate-500 font-medium">
                 {filteredThreads.length} {filteredThreads.length === 1 ? t('outreach.inbox.result') : t('outreach.inbox.results')}
               </p>
@@ -291,7 +291,7 @@ export default function OutreachInbox() {
                       exit={{ opacity: 0, scale: 0.95 }}
                       onClick={() => handleSelectThread(t)}
                       className={cn(
-                        "mx-2 mb-2 p-4 rounded-2xl cursor-pointer transition-all relative group border",
+                        "mx-1 mb-2 p-3.5 rounded-2xl cursor-pointer transition-all relative group border",
                         selectedThreadId === t.thread_id 
                           ? "bg-teal-500/10 border-teal-500/30 shadow-lg shadow-teal-900/20" 
                           : "border-transparent hover:bg-white/[0.03]",
@@ -299,14 +299,14 @@ export default function OutreachInbox() {
                       )}
                     >
                       {selectedThreadId === t.thread_id && (
-                        <div className="absolute left-0 top-4 bottom-4 w-1 bg-teal-500 rounded-full" />
+                        <div className="absolute left-0 top-3 bottom-3 w-1 bg-teal-500 rounded-full" />
                       )}
                       
                       {!t.is_read && (
                         <div className="absolute right-4 top-4 size-2 rounded-full bg-teal-400 shadow-[0_0_10px_rgba(45,212,191,0.5)]" />
                       )}
                       
-                      <div className="flex justify-between items-start mb-1 pr-6">
+                      <div className="flex justify-between items-start mb-0.5 pr-6">
                         <p className={cn(
                           "text-sm truncate",
                           (selectedThreadId === t.thread_id || !t.is_read) ? "font-bold text-white" : "font-medium text-slate-300"
@@ -320,7 +320,7 @@ export default function OutreachInbox() {
                         </span>
                       </div>
                       <p className={cn(
-                        "text-[13px] truncate mb-1",
+                        "text-[12px] truncate mb-1",
                         (selectedThreadId === t.thread_id || !t.is_read) ? "text-slate-200 font-semibold" : "text-slate-400 font-normal"
                       )}>
                         {t.subject || '(No Subject)'}
@@ -328,7 +328,7 @@ export default function OutreachInbox() {
                       
                       {/* Intent Badge */}
                       {t.intent && (
-                        <div className="flex items-center gap-1.5 mb-2 mt-1">
+                        <div className="flex items-center gap-1.5 mb-1.5 mt-0.5">
                           <span className={cn(
                             "px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border",
                             t.intent === 'Interested' && "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 capitalize",
@@ -343,7 +343,7 @@ export default function OutreachInbox() {
                         </div>
                       )}
 
-                      <p className="text-[12px] text-slate-500 line-clamp-2 leading-relaxed">
+                      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
                         {(msg.body_text || msg.body_html || '')
                           .replace(/<[^>]*>?/gm, '')
                           .substring(0, 80) || 'No preview available'}
@@ -363,20 +363,20 @@ export default function OutreachInbox() {
             {selectedThread ? (
               <div className="flex flex-col h-full min-h-0 font-sans">
                 {/* Header */}
-                <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-start gap-4">
+                <div className="p-4 md:p-5 border-b border-white/5 flex justify-between items-start gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-6">
+                    <div className="flex items-center gap-3 mb-4">
                       <button 
                         onClick={() => setSelectedThreadId(null)}
                         className="md:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors"
                       >
                         <ChevronRight className="size-5 rotate-180" />
                       </button>
-                      <h2 className="text-xl font-bold text-white truncate pr-4">{selectedThread.subject || '(No Subject)'}</h2>
+                      <h2 className="text-lg font-bold text-white truncate pr-4">{selectedThread.subject || '(No Subject)'}</h2>
                     </div>
                     
-                    <div className="flex items-center gap-4">
-                      <div className="size-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-lg font-bold shadow-inner shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="size-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-base font-bold shadow-inner shrink-0">
                         {(selectedThread.latest_message.first_name?.[0] || selectedThread.latest_message.from_email?.[0] || '?').toUpperCase()}
                       </div>
                       <div>
@@ -390,7 +390,7 @@ export default function OutreachInbox() {
                             </span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 font-medium">
+                        <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 font-medium">
                           {selectedThread.latest_message.received_at 
                             ? new Date(selectedThread.latest_message.received_at).toLocaleString([], { dateStyle: 'long', timeStyle: 'short' }) 
                             : t('outreach.inbox.dateUnavailable')}
@@ -398,40 +398,40 @@ export default function OutreachInbox() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <TealButton
                       variant="outline"
                       size="sm"
                       onClick={handleSummarize}
                       loading={isSummarizing}
-                      className="gap-2"
+                      className="gap-2 h-9"
                     >
                       <Sparkles className="size-3.5 text-teal-400" />
-                      {t('outreach.inbox.summarize')}
+                      <span className="hidden sm:inline">{t('outreach.inbox.summarize')}</span>
                     </TealButton>
                     <TealButton 
                       variant={isReplyMode ? "outline" : "solid"}
                       size="sm"
                       onClick={() => setIsReplyMode(!isReplyMode)}
-                      className="gap-2"
+                      className="gap-2 h-9"
                     >
                       <Reply className="size-3.5" />
-                      {isReplyMode ? t('outreach.inbox.cancel') : t('outreach.inbox.reply')}
+                      <span className="hidden sm:inline">{isReplyMode ? t('outreach.inbox.cancel') : t('outreach.inbox.reply')}</span>
                     </TealButton>
                   </div>
                 </div>
 
                 {/* Body Content */}
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-black/[0.1] space-y-8">
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-black/[0.1] space-y-2.5">
                   {/* AI Summary Box */}
                   {summary && summarizedId === selectedThread.thread_id && (
-                    <div className="p-4 rounded-2xl bg-teal-500/5 border border-teal-500/15 relative overflow-hidden group">
+                    <div className="p-3.5 rounded-2xl bg-teal-500/5 border border-teal-500/15 relative overflow-hidden group">
                       <div className="absolute top-0 left-0 w-1 h-full bg-teal-500/30" />
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-1.5">
                         <Sparkles className="size-3.5 text-teal-400" />
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-teal-400/80">{t('outreach.inbox.aiSummary')}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400/80">{t('outreach.inbox.aiSummary')}</span>
                       </div>
-                      <p className="text-sm text-slate-300 leading-relaxed italic">
+                      <p className="text-[13px] text-slate-300 leading-relaxed italic">
                         "{summary}"
                       </p>
                     </div>
@@ -442,16 +442,16 @@ export default function OutreachInbox() {
                     
                     return (
                       <div key={m.id} className={cn(
-                        "bg-white/[0.03] border border-white/5 rounded-2xl p-8 shadow-2xl relative",
-                        !isIncoming && "ml-12 border-teal-500/10 bg-teal-500/[0.02]",
-                        isIncoming && "mr-12"
+                        "bg-white/[0.03] border border-white/5 rounded-2xl p-4 md:p-5 shadow-xl relative",
+                        !isIncoming && "ml-6 md:ml-10 border-teal-500/10 bg-teal-500/[0.02]",
+                        isIncoming && "mr-6 md:mr-10"
                       )}>
-                        <div className="flex justify-between items-center mb-6">
+                        <div className="flex justify-between items-center mb-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-tight">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
                               {isIncoming ? t('outreach.inbox.from') : t('outreach.inbox.to')}:
                             </span>
-                            <span className="text-xs font-medium text-slate-200">{isIncoming ? m.from_email : m.to_email}</span>
+                            <span className="text-[11px] font-medium text-slate-300">{isIncoming ? m.from_email : m.to_email}</span>
                           </div>
                           <span className="text-[10px] text-slate-500 font-medium bg-white/5 px-2 py-0.5 rounded-full">
                             {new Date(m.received_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
@@ -460,11 +460,11 @@ export default function OutreachInbox() {
 
                         {m.body_html ? (
                           <div 
-                            className="[&_p]:mb-4 [&_ul]:mb-4 [&_li]:ml-4 [&_li]:list-disc whitespace-pre-wrap text-slate-200 leading-relaxed font-sans"
+                            className="[&_p]:mb-1.5 [&_ul]:mb-1.5 [&_li]:ml-4 [&_li]:list-disc text-slate-200 text-[14px] leading-relaxed font-sans overflow-x-hidden"
                             dangerouslySetInnerHTML={{ __html: m.body_html }}
                           />
                         ) : (
-                          <div className="whitespace-pre-wrap text-[15px] text-slate-200 leading-relaxed font-sans">
+                          <div className="whitespace-pre-wrap text-[14px] text-slate-200 leading-relaxed font-sans">
                             {m.body_text}
                           </div>
                         )}
@@ -477,9 +477,9 @@ export default function OutreachInbox() {
                     <motion.div 
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="bg-white/[0.03] border border-teal-500/20 rounded-2xl p-6 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
+                      className="bg-white/[0.03] border border-teal-500/20 rounded-2xl p-4 md:p-5 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
                     >
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
                         <div className="flex items-center gap-2 text-teal-400">
                           <PenLine className="size-4" />
                           <span className="text-xs font-bold uppercase tracking-wider">{t('outreach.inbox.drafting')}</span>
@@ -487,7 +487,7 @@ export default function OutreachInbox() {
                         
                         <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20">
                           <User className="size-3 text-teal-400" />
-                          <span className="text-[11px] font-medium text-teal-100/90">
+                          <span className="text-[10px] font-medium text-teal-100/90">
                             {t('outreach.inbox.respondingAs').replace('{{email}}', selectedThread.latest_message.to_email)}
                           </span>
                         </div>
@@ -497,15 +497,15 @@ export default function OutreachInbox() {
                         value={replyBody}
                         onChange={setReplyBody}
                         placeholder={t('outreach.inbox.typePlaceholder')}
-                        className="min-h-[250px] bg-[#0d1117] border-white/5"
+                        className="min-h-[180px] bg-[#0d1117] border-white/5"
                       />
 
-                      <div className="mt-4 flex justify-end gap-3">
+                      <div className="mt-3 flex justify-end gap-3">
                         <TealButton 
                           variant="solid" 
                           disabled={!replyBody.trim() || isSending}
                           onClick={handleSendReply}
-                          className="px-6 py-2.5 rounded-xl shadow-[0_0_20px_rgba(45,212,191,0.2)] hover:shadow-[0_0_25px_rgba(45,212,191,0.4)] transition-all"
+                          className="px-6 py-2 rounded-xl shadow-[0_0_20px_rgba(45,212,191,0.2)] hover:shadow-[0_0_25px_rgba(45,212,191,0.4)] transition-all"
                         >
                           {isSending ? (
                             <>
@@ -525,10 +525,10 @@ export default function OutreachInbox() {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-20 text-center text-slate-600 grayscale opacity-40">
-                <Mail className="size-24 mb-6 stroke-[1.5]" />
-                <h3 className="text-xl font-bold mb-2">{t('outreach.inbox.selectTitle')}</h3>
-                <p className="text-sm max-w-[240px]">{t('outreach.inbox.selectDesc')}</p>
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-slate-600 grayscale opacity-40">
+                <Mail className="size-16 mb-4 stroke-[1.5]" />
+                <h3 className="text-lg font-bold mb-1.5">{t('outreach.inbox.selectTitle')}</h3>
+                <p className="text-xs max-w-[200px]">{t('outreach.inbox.selectDesc')}</p>
               </div>
             )}
           </div>
