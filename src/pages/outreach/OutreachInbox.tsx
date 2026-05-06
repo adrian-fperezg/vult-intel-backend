@@ -62,8 +62,12 @@ const groupMessagesByThread = (messages: InboxMessage[]): Thread[] => {
     const sorted = [...msgs].sort((a, b) => 
       new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
     );
-    // Prioritize the latest INCOMING message for the list preview
-    const latestIncoming = sorted.find(m => m.is_incoming) || sorted[0];
+    
+    // Only include threads that have at least one incoming message
+    const incomingMessages = sorted.filter(m => m.is_incoming);
+    if (incomingMessages.length === 0) return null;
+
+    const latestIncoming = incomingMessages[0]; // Already sorted by date
     
     return {
       thread_id: tid,
@@ -71,12 +75,13 @@ const groupMessagesByThread = (messages: InboxMessage[]): Thread[] => {
       messages: [...sorted].reverse(), // Oldest first for the conversation view
       latest_message: latestIncoming,
       subject: latestIncoming.subject,
-      is_read: sorted.filter(m => m.is_incoming).every(m => m.is_read),
+      is_read: incomingMessages.every(m => m.is_read),
       intent: latestIncoming.intent
     };
-  }).sort((a, b) => 
-    new Date(b.latest_message.received_at).getTime() - new Date(a.latest_message.received_at).getTime()
-  );
+  }).filter((t): t is Thread => t !== null)
+    .sort((a, b) => 
+      new Date(b.latest_message.received_at).getTime() - new Date(a.latest_message.received_at).getTime()
+    );
 };
 
 export default function OutreachInbox() {
