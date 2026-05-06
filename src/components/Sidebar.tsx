@@ -87,9 +87,9 @@ export default function Sidebar() {
 
   const SidebarContent = () => (
     <>
-      <div className="flex flex-col gap-6 p-4 md:p-5 lg:p-6">
-        <div className="flex items-center justify-between px-1">
-          <Link to="/projects-hub" className="hover:opacity-80 transition-opacity">
+      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto custom-scrollbar gap-6 p-4 md:p-5 lg:p-6">
+        <div className="flex items-center justify-between px-1 shrink-0">
+          <Link to="/projects-hub" className="hover:opacity-80 transition-opacity no-underline">
             <Logo className="h-[4.2rem] md:h-[4.9rem]" dark={theme === 'dark'} />
           </Link>
           {/* Close button — mobile only */}
@@ -115,7 +115,7 @@ export default function Sidebar() {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group",
+                  "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group no-underline",
                   isActive
                     ? isTeal
                       ? "bg-teal-500/10 border border-teal-500/20 text-white"
@@ -153,7 +153,7 @@ export default function Sidebar() {
             <Link
               to="/admin"
               className={cn(
-                "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group mt-4",
+                "flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-xl transition-all duration-200 group mt-4 no-underline",
                 location.pathname.startsWith('/admin')
                   ? "bg-red-500/10 border border-red-500/20 text-white"
                   : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
@@ -215,7 +215,7 @@ export default function Sidebar() {
           <div className="flex flex-col gap-2">
             <Link
               to="/settings"
-              className="flex items-center gap-3 p-3 min-h-[44px] rounded-xl transition-colors hover:bg-white/5 cursor-pointer border border-transparent hover:border-surface-border"
+              className="flex items-center gap-3 p-3 min-h-[44px] rounded-xl transition-colors hover:bg-white/5 cursor-pointer border border-transparent hover:border-surface-border no-underline"
             >
               <div className="relative shrink-0">
                 <img
