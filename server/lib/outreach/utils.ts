@@ -76,6 +76,7 @@ export async function recordOutreachEvent(params: {
   project_id: string;
   sequence_id: string | null;
   step_id?: string | null;
+  campaign_id?: string | null;
   contact_id?: string | null;
   email_id?: string | null;
   event_type: 'sent' | 'opened' | 'replied' | 'bounced' | 'clicked';
@@ -83,18 +84,18 @@ export async function recordOutreachEvent(params: {
   metadata?: any;
   contactStatus?: string;
 }) {
-  const { project_id, sequence_id, step_id, contact_id, email_id, event_type, event_key, metadata, contactStatus } = params;
+  const { project_id, sequence_id, step_id, campaign_id, contact_id, email_id, event_type, event_key, metadata, contactStatus } = params;
 
   const finalMetadata = { ...(metadata || {}), ...(email_id ? { email_id } : {}) };
 
   return await db.transaction(async (tx) => {
     const event = await tx.prepare(`
-      INSERT INTO outreach_events (id, project_id, sequence_id, step_id, contact_id, type, event_key, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO outreach_events (id, project_id, sequence_id, step_id, campaign_id, contact_id, type, event_key, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (event_key) DO NOTHING
       RETURNING id, type
     `).get<{ id: string, type: string }>(
-      uuidv4(), project_id, sequence_id, step_id, contact_id, event_type, event_key,
+      uuidv4(), project_id, sequence_id, step_id, campaign_id || null, contact_id, event_type, event_key,
       JSON.stringify(finalMetadata)
     );
 
@@ -127,6 +128,12 @@ export async function recordOutreachEvent(params: {
             );
           }
         } else if (event_type === 'bounced') {
+          if (email_id) {
+            await tx.run(
+              "UPDATE outreach_individual_emails SET status = 'bounced', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+              [email_id]
+            );
+          }
           // Centralized bounce logic (Status, Tags, Sequence Stop, Suppression, Queue Purge)
           await handleCriticalBounce(contact_id, sequence_id, project_id, tx);
         } else if (event_type === 'opened' || event_type === 'clicked') {

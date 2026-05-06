@@ -1091,10 +1091,10 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
 
         await tx.prepare(`
           INSERT INTO outreach_individual_emails (
-            id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id,
+            id, user_id, project_id, mailbox_id, contact_id, sequence_id, step_id, campaign_id,
             from_email, from_name, to_email, subject, body_html, attachments, status, sender_alias
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
         `).run(
           emailId,
           campaign.user_id,
@@ -1103,6 +1103,7 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
           enrollment.contact_id,
           campaign.sequence_id,
           firstStep.id,
+          campaign.id,
           campaign.from_email,
           campaign.from_name,
           enrollment.contact_email,

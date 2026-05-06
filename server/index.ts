@@ -1342,7 +1342,7 @@ app.get("/api/track/open/:emailId", async (req, res) => {
   const userAgent = req.headers['user-agent'];
 
   try {
-    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id, campaign_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
     if (email) {
       await db.prepare(`
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent)
@@ -1359,6 +1359,7 @@ app.get("/api/track/open/:emailId", async (req, res) => {
         project_id: email.project_id,
         sequence_id: email.sequence_id,
         step_id: email.step_id,
+        campaign_id: email.campaign_id,
         contact_id: email.contact_id,
         email_id: emailId,
         event_type: 'opened',
@@ -1391,7 +1392,7 @@ app.get("/api/track/click/:emailId", async (req, res) => {
   if (!targetUrl) return res.status(400).send("Missing URL parameter");
 
   try {
-    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
+    const email = await db.prepare("SELECT id, contact_id, project_id, sequence_id, step_id, campaign_id FROM outreach_individual_emails WHERE id = ?").get(emailId) as any;
     if (email) {
       await db.prepare(`
         INSERT INTO outreach_individual_email_events (id, email_id, event_type, ip_address, user_agent, link_url)
@@ -1408,6 +1409,7 @@ app.get("/api/track/click/:emailId", async (req, res) => {
         project_id: email.project_id,
         sequence_id: email.sequence_id,
         step_id: email.step_id,
+        campaign_id: email.campaign_id,
         contact_id: email.contact_id,
         email_id: emailId,
         event_type: 'clicked' as any,
