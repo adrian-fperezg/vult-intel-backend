@@ -291,31 +291,37 @@ export default function OutreachInbox() {
                       exit={{ opacity: 0, scale: 0.95 }}
                       onClick={() => handleSelectThread(t)}
                       className={cn(
-                        "p-4 border-b border-white/5 cursor-pointer transition-all hover:bg-teal-500/5 relative group",
-                        selectedThreadId === t.thread_id && "bg-teal-500/10 border-l-4 border-l-teal-500",
-                        !t.is_read && "bg-white/[0.01]"
+                        "mx-2 mb-2 p-4 rounded-2xl cursor-pointer transition-all relative group border",
+                        selectedThreadId === t.thread_id 
+                          ? "bg-teal-500/10 border-teal-500/30 shadow-lg shadow-teal-900/20" 
+                          : "border-transparent hover:bg-white/[0.03]",
+                        !t.is_read && selectedThreadId !== t.thread_id && "bg-white/[0.01]"
                       )}
                     >
-                      {!t.is_read && (
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 size-2 rounded-full bg-teal-400 shadow-[0_0_10px_rgba(45,212,191,0.5)]" />
+                      {selectedThreadId === t.thread_id && (
+                        <div className="absolute left-0 top-4 bottom-4 w-1 bg-teal-500 rounded-full" />
                       )}
                       
-                      <div className="flex justify-between items-start mb-1 pr-4">
+                      {!t.is_read && (
+                        <div className="absolute right-4 top-4 size-2 rounded-full bg-teal-400 shadow-[0_0_10px_rgba(45,212,191,0.5)]" />
+                      )}
+                      
+                      <div className="flex justify-between items-start mb-1 pr-6">
                         <p className={cn(
-                          "text-sm truncate max-w-[200px]",
-                          !t.is_read ? "font-bold text-white" : "font-medium text-slate-300"
+                          "text-sm truncate",
+                          (selectedThreadId === t.thread_id || !t.is_read) ? "font-bold text-white" : "font-medium text-slate-300"
                         )}>
                           {msg.first_name || msg.last_name 
                             ? `${msg.first_name || ''} ${msg.last_name || ''}`.trim()
                             : msg.sender_email || msg.email}
                         </p>
-                        <span className="text-[10px] text-slate-500 font-medium">
+                        <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">
                           {msg.received_at ? new Date(msg.received_at).toLocaleDateString() : 'Just now'}
                         </span>
                       </div>
                       <p className={cn(
                         "text-[13px] truncate mb-1",
-                        !t.is_read ? "text-slate-200 font-semibold" : "text-slate-400 font-normal"
+                        (selectedThreadId === t.thread_id || !t.is_read) ? "text-slate-200 font-semibold" : "text-slate-400 font-normal"
                       )}>
                         {t.subject || '(No Subject)'}
                       </p>
