@@ -154,9 +154,14 @@ export async function recordOutreachEvent(params: {
  * Detects whether an incoming email is a bounce/NDR notification.
  * Covers: Gmail, Outlook/Exchange, Yahoo, Postfix, Sendmail, and generic MTAs.
  */
-export function isBounce(from: string, subject: string): boolean {
+export function isBounce(from: string, subject: string, bodyText: string = '', returnPath: string = ''): boolean {
   const f = from.toLowerCase();
   const s = subject.toLowerCase();
+  const b = bodyText.toLowerCase();
+  const rp = returnPath.trim();
+
+  // Return-Path: <> indicates a bounce (null sender)
+  if (rp === '<>') return true;
 
   // From-address patterns (most reliable signal)
   const fromPatterns = [
@@ -200,9 +205,19 @@ export function isBounce(from: string, subject: string): boolean {
     'undelivered',
   ];
 
+  // SMTP Error code patterns in body
+  const bodyPatterns = [
+    '550 5.4.1',
+    '550 5.1.1',
+    '550 5.1.10',
+    '550 5.7.1',
+    '554 delivery error'
+  ];
+
   return (
     fromPatterns.some(p => f.includes(p)) ||
-    subjectPatterns.some(p => s.includes(p))
+    subjectPatterns.some(p => s.includes(p)) ||
+    bodyPatterns.some(p => b.includes(p))
   );
 }
 
@@ -267,7 +282,17 @@ export async function handleCriticalBounce(contactId: string, sequenceId: string
     `, contactId);
 
     // 2. Stop ALL sequences for this contact across the project
-    await runner.run("UPDATE outreach_sequence_enrollments SET status = 'stopped' WHERE contact_id = ? AND project_id = ?", contactId, projectId);
+    const activeEnrollments = await runner.all("SELECT sequence_id FROM outreach_sequence_enrollments WHERE contact_id = ? AND project_id = ? AND status = 'active'", contactId, projectId) as any[];
+    await runner.run("UPDATE outreach_sequence_enrollments SET status = 'failed' WHERE contact_id = ? AND project_id = ?", contactId, projectId);
+
+    // 2b. Sync analytics: Increment sequence bounced counter
+    for (const enrollment of activeEnrollments) {
+      if (enrollment.sequence_id) {
+        try {
+          await runner.run('UPDATE outreach_sequences SET bounced_count = bounced_count + 1 WHERE id = ?', enrollment.sequence_id);
+        } catch (e) {}
+      }
+    }
 
     // 3. Add to Global Suppression List (Immediate Hard Stop)
     const contact = await runner.get("SELECT email FROM outreach_contacts WHERE id = ?", contactId) as any;

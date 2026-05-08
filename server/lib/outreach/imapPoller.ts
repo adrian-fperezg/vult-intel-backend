@@ -69,7 +69,7 @@ export async function pollImap(mailboxId: string) {
     console.log(`[IMAP] Searching IMAP with criteria: ${JSON.stringify(searchCriteria)}`);
 
     const fetchOptions = {
-      bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)', 'TEXT', ''],
+      bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES RETURN-PATH)', 'TEXT', ''],
       struct: true, markSeen: false
     };
 
@@ -95,11 +95,15 @@ export async function pollImap(mailboxId: string) {
         const from = (headers.from?.[0] || '').toString();
         const subject = (headers.subject?.[0] || '').toString();
         const inReplyTo = headers['in-reply-to']?.[0];
+        const returnPath = (headers['return-path']?.[0] || '').toString();
 
         console.log(`[IMAP] [UID: ${uid}] Processing email from ${from}: "${subject}"`);
 
+        // Extract body content early for bounce detection and reply persistence
+        const content = await extractEmailContent(msg);
+
         // 1. BOUNCE DETECTION
-        if (isBounce(from, subject)) {
+        if (isBounce(from, subject, content.text, returnPath)) {
           console.warn(`[IMAP] [UID: ${uid}] Bounce detected from "${from}" Subject: "${subject}"`);
 
           const original = await findOriginalEmail({ potentialIds: [messageId || String(uid)].filter(Boolean) });
@@ -115,8 +119,7 @@ export async function pollImap(mailboxId: string) {
             console.log(`[IMAP] [UID: ${uid}] Bounce handled for contact ${original.contact_id}.`);
           } else {
             // Fallback — parse the bounce body for the intended recipient's email address
-            const { text: bounceBody } = await extractEmailContent(msg);
-            const bouncedEmail = extractBouncedEmail(bounceBody);
+            const bouncedEmail = extractBouncedEmail(content.text);
 
             if (bouncedEmail) {
               console.warn(`[IMAP] [Bounce Fallback] Could not match via message-id. Resolved bounced address from body: ${bouncedEmail}`);
@@ -186,8 +189,7 @@ export async function pollImap(mailboxId: string) {
 
         console.log(`[IMAP] [UID: ${uid}] Successfully linked to original email ${originalEmail.id} (Contact: ${originalEmail.contact_id})`);
 
-        // Persist reply record
-        const content = await extractEmailContent(msg);
+        // Persist reply record using early-extracted content
         const replyId = uuidv4();
         
         // 1. Existing Individual Email Record (for sequencing logic)
