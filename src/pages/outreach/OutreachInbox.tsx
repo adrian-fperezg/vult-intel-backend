@@ -265,13 +265,14 @@ export default function OutreachInbox() {
                   placeholder={t('outreach.inbox.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-900/50 border border-white/5 rounded-lg py-1.5 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500/50 transition-all"
+                  className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all shadow-inner"
                 />
               </div>
               <select
                 value={selectedIntent}
                 onChange={(e) => setSelectedIntent(e.target.value)}
-                className="bg-slate-900/80 border border-white/5 rounded-lg py-1.5 px-3 text-xs font-semibold text-slate-300 focus:outline-none focus:border-teal-500/50 transition-all cursor-pointer"
+                className="bg-slate-900/50 border border-white/5 rounded-xl py-2 px-3 text-xs font-semibold text-slate-300 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all cursor-pointer shadow-inner appearance-none"
+                style={{ paddingRight: '2rem', backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em' }}
               >
                 <option value="All">{t('outreach.inbox.intents.all')}</option>
                 <option value="Interested">{t('outreach.inbox.intents.interested')}</option>
@@ -296,11 +297,11 @@ export default function OutreachInbox() {
                       exit={{ opacity: 0, scale: 0.95 }}
                       onClick={() => handleSelectThread(t)}
                       className={cn(
-                        "mx-1 mb-2 p-3.5 rounded-2xl cursor-pointer transition-all relative group border",
+                        "mx-1 mb-2 p-3.5 rounded-2xl cursor-pointer transition-all duration-300 relative group border backdrop-blur-md",
                         selectedThreadId === t.thread_id 
-                          ? "bg-teal-500/10 border-teal-500/30 shadow-lg shadow-teal-900/20" 
-                          : "border-transparent hover:bg-white/[0.03]",
-                        !t.is_read && selectedThreadId !== t.thread_id && "bg-white/[0.01]"
+                          ? "bg-gradient-to-r from-teal-500/10 to-teal-500/5 border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.15)]" 
+                          : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:-translate-y-0.5 hover:shadow-lg",
+                        !t.is_read && selectedThreadId !== t.thread_id && "border-white/10 bg-white/[0.03]"
                       )}
                     >
                       {selectedThreadId === t.thread_id && (
@@ -335,13 +336,13 @@ export default function OutreachInbox() {
                       {t.intent && (
                         <div className="flex items-center gap-1.5 mb-1.5 mt-0.5">
                           <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border",
-                            t.intent === 'Interested' && "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 capitalize",
-                            t.intent === 'Meeting Requested' && "bg-teal-500/10 border-teal-500/30 text-teal-300 capitalize",
-                            t.intent === 'Not Interested' && "bg-rose-500/10 border-rose-500/30 text-rose-400 capitalize",
-                            t.intent === 'Wait / Later' && "bg-amber-500/10 border-amber-500/30 text-amber-300 capitalize",
-                            t.intent === 'Wrong Person' && "bg-slate-500/10 border-slate-500/30 text-slate-300 capitalize",
-                            t.intent === 'General Inquiry' && "bg-blue-500/10 border-blue-500/30 text-blue-300 capitalize"
+                            "px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border shadow-inner",
+                            t.intent === 'Interested' && "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 capitalize shadow-emerald-500/10",
+                            t.intent === 'Meeting Requested' && "bg-teal-500/10 border-teal-500/30 text-teal-300 capitalize shadow-teal-500/10",
+                            t.intent === 'Not Interested' && "bg-rose-500/10 border-rose-500/30 text-rose-400 capitalize shadow-rose-500/10",
+                            t.intent === 'Wait / Later' && "bg-amber-500/10 border-amber-500/30 text-amber-300 capitalize shadow-amber-500/10",
+                            t.intent === 'Wrong Person' && "bg-slate-500/10 border-slate-500/30 text-slate-300 capitalize shadow-slate-500/10",
+                            t.intent === 'General Inquiry' && "bg-blue-500/10 border-blue-500/30 text-blue-300 capitalize shadow-blue-500/10"
                           )}>
                             {t.intent}
                           </span>
@@ -380,8 +381,8 @@ export default function OutreachInbox() {
                       <h2 className="text-lg font-bold text-white truncate pr-4">{selectedThread.subject || '(No Subject)'}</h2>
                     </div>
                     
-                    <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 text-base font-bold shadow-inner shrink-0">
+                    <div className="flex items-center gap-4">
+                      <div className="size-11 rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-400/10 border border-teal-500/30 flex items-center justify-center text-teal-400 text-lg font-bold shadow-[0_0_15px_rgba(20,184,166,0.1)] shrink-0 transition-transform">
                         {(selectedThread.latest_message.first_name?.[0] || selectedThread.latest_message.from_email?.[0] || '?').toUpperCase()}
                       </div>
                       <div>
@@ -447,9 +448,9 @@ export default function OutreachInbox() {
                     
                     return (
                       <div key={m.id} className={cn(
-                        "bg-white/[0.03] border border-white/5 rounded-2xl p-4 md:p-5 shadow-xl relative",
-                        !isIncoming && "ml-6 md:ml-10 border-teal-500/10 bg-teal-500/[0.02]",
-                        isIncoming && "mr-6 md:mr-10"
+                        "bg-white/[0.02] border border-white/5 rounded-3xl p-5 md:p-6 shadow-xl relative backdrop-blur-sm transition-all hover:border-white/10",
+                        !isIncoming && "ml-6 md:ml-12 border-teal-500/20 bg-gradient-to-br from-teal-500/[0.03] to-transparent shadow-[0_4px_20px_rgba(20,184,166,0.05)]",
+                        isIncoming && "mr-6 md:mr-12"
                       )}>
                         <div className="flex justify-between items-center mb-2.5">
                           <div className="flex items-center gap-2">
@@ -482,7 +483,7 @@ export default function OutreachInbox() {
                     <motion.div 
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="bg-white/[0.03] border border-teal-500/20 rounded-2xl p-4 md:p-5 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
+                      className="bg-white/[0.02] border border-teal-500/30 rounded-3xl p-5 md:p-6 shadow-[0_0_30px_rgba(20,184,166,0.05)] backdrop-blur-md animate-in fade-in slide-in-from-bottom-4"
                     >
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
                         <div className="flex items-center gap-2 text-teal-400">
@@ -530,10 +531,17 @@ export default function OutreachInbox() {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-slate-600 grayscale opacity-40">
-                <Mail className="size-16 mb-4 stroke-[1.5]" />
-                <h3 className="text-lg font-bold mb-1.5">{t('outreach.inbox.selectTitle')}</h3>
-                <p className="text-xs max-w-[200px]">{t('outreach.inbox.selectDesc')}</p>
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-slate-400">
+                <motion.div 
+                  initial={{ y: 0 }}
+                  animate={{ y: [-5, 5, -5] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  className="size-24 rounded-full bg-white/[0.02] border border-white/5 flex items-center justify-center mb-6 shadow-2xl backdrop-blur-sm"
+                >
+                  <Mail className="size-10 text-teal-500/40" />
+                </motion.div>
+                <h3 className="text-xl font-bold mb-2 text-white">{t('outreach.inbox.selectTitle')}</h3>
+                <p className="text-sm max-w-[250px] text-slate-500">{t('outreach.inbox.selectDesc')}</p>
               </div>
             )}
           </div>
