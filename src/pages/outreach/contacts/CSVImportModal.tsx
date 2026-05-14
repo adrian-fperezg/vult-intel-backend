@@ -93,6 +93,7 @@ export default function CSVImportModal({
 
   const processFile = (file: File) => {
     setFile(file);
+    setListId('CREATE_NEW');
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -171,10 +172,17 @@ export default function CSVImportModal({
         return;
       }
 
+      let targetListId = listId;
+      if (listId === 'CREATE_NEW') {
+        const listName = file.name.replace(/\.[^/.]+$/, "");
+        const newList = await api.createContactList(listName);
+        targetListId = newList.id;
+      }
+
       const csvString = Papa.unparse(mappedData);
       const newFile = new File([csvString], file.name || "mapped_contacts.csv", { type: "text/csv" });
 
-      const result = await api.importContactsCSV(newFile, listId || undefined);
+      const result = await api.importContactsCSV(newFile, targetListId || undefined);
       toast.success(t('outreach.contacts.importModal.success', { count: result.count }));
       onSuccess();
       onClose();
@@ -248,6 +256,7 @@ export default function CSVImportModal({
                     onChange={(e) => setListId(e.target.value)}
                     className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/50 appearance-none transition-all group-hover:border-slate-600"
                   >
+                    {file && <option value="CREATE_NEW">Create new list: {file.name.replace(/\.[^/.]+$/, "")}</option>}
                     <option value="">{t('outreach.contacts.importModal.dontAdd')}</option>
                     {lists.map(list => (
                       <option key={list.id} value={list.id}>{list.name}</option>
@@ -310,6 +319,7 @@ export default function CSVImportModal({
                       onChange={(e) => setListId(e.target.value)}
                       className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/50 appearance-none transition-all group-hover:border-slate-600"
                     >
+                      {file && <option value="CREATE_NEW">Create new list: {file.name.replace(/\.[^/.]+$/, "")}</option>}
                       <option value="">{t('outreach.contacts.importModal.dontAdd')}</option>
                       {lists.map(list => (
                         <option key={list.id} value={list.id}>{list.name}</option>
