@@ -363,6 +363,13 @@ export default function CSVImportModal({
         </div>
 
         <div className="p-8 border-t border-white/5 bg-[#0d1117] shrink-0">
+          <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+            <span className="text-lg leading-none mt-0.5">🛡️</span>
+            <p className="text-xs text-emerald-300 leading-relaxed">
+              <span className="font-bold">Deliverability Protection:</span> To protect your sender reputation, emails in this batch will be automatically spaced out to send every 15 minutes.
+            </p>
+          </div>
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="flex -space-x-2">
