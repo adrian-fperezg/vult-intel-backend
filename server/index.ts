@@ -4541,7 +4541,7 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
           autoListId = (existingList as any).id;
         } else {
           autoListId = uuidv4();
-          await tx.run("INSERT INTO outreach_lists (id, user_id, project_id, name) VALUES (?, ?, ?, ?)", autoListId, userId, project_id, list_name);
+          await tx.run("INSERT INTO outreach_lists (id, project_id, name) VALUES (?, ?, ?)", autoListId, project_id, list_name);
         }
       }
 
@@ -5433,7 +5433,7 @@ app.post("/api/outreach/maintenance/group-unassigned", async (req: AuthRequest, 
           listId = existingList.id;
         } else {
           listId = uuidv4();
-          await tx.run("INSERT INTO outreach_lists (id, user_id, project_id, name) VALUES (?, ?, ?, ?)", listId, userId, project_id, listName);
+          await tx.run("INSERT INTO outreach_lists (id, project_id, name) VALUES (?, ?, ?)", listId, project_id, listName);
           listsCreated++;
         }
 
