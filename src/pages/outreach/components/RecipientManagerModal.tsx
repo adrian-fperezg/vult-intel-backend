@@ -213,7 +213,7 @@ export default function RecipientManagerModal({
           location_country: row[mapping.location_country] || '',
           website: row[mapping.website] || '',
           type: 'csv',
-          list_name: csvFile?.name ? `Import - ${csvFile.name}` : undefined
+          list_name: csvFile?.name ? csvFile.name.replace(/\.[^/.]+$/, "") : undefined
         })).filter(r => r.email && String(r.email).includes('@'));
       }
 
