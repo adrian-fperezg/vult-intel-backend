@@ -6515,10 +6515,14 @@ app.get("/api/outreach/sequences/:id/step-analytics", async (req: AuthRequest, r
     if (!sequence) return res.status(403).json({ error: "Access denied: This sequence belongs to another project." });
 
     // 1. Get Sent and Bounced counts per step from outreach_individual_emails
+    // IMPORTANT: Count all post-delivery statuses ('sent', 'opened', 'clicked', 'replied')
+    // as "sent" because engagement tracking updates the status away from 'sent'.
+    // Using only status='sent' would cause the denominator to drop to 0 once emails
+    // are interacted with, making open/click/reply rates incorrectly show 0%.
     const deliveryStats = await db.all(`
       SELECT 
         step_id,
-        COUNT(CASE WHEN status = 'sent' THEN 1 END) as sent,
+        COUNT(CASE WHEN status IN ('sent', 'opened', 'clicked', 'replied') THEN 1 END) as sent,
         COUNT(CASE WHEN status = 'bounced' THEN 1 END) as bounced
       FROM outreach_individual_emails
       WHERE sequence_id = ? AND project_id = ? AND step_id IS NOT NULL
