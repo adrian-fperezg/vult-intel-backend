@@ -18,6 +18,15 @@ import SendingTab from './settings/tabs/SendingTab';
 
 type SettingsTab = 'mailboxes' | 'sending' | 'warmup' | 'snippets' | 'integrations' | 'api' | 'notifications';
 
+// ── Pre-flight checklist modal state ──
+interface SpamCheckState {
+  spf: boolean;
+  dkim: boolean;
+  dmarc: boolean;
+  noSpamWords: boolean;
+  plainText: boolean;
+}
+
 const extractVars = (html: string) => {
   const matches = html.match(/\{\{([^}]+)\}\}/g);
   if (!matches) return [];
@@ -82,6 +91,21 @@ export default function OutreachSettings() {
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [verifyingDnsId, setVerifyingDnsId] = useState<string | null>(null);
+  const [spamCheckMailbox, setSpamCheckMailbox] = useState<Mailbox | null>(null);
+  const [spamChecks, setSpamChecks] = useState<SpamCheckState>({ spf: false, dkim: false, dmarc: false, noSpamWords: false, plainText: false });
+  const [showSpamModal, setShowSpamModal] = useState(false);
+
+  const openSpamModal = (mb: Mailbox) => {
+    setSpamCheckMailbox(mb);
+    setSpamChecks({
+      spf: !!mb.spf_verified,
+      dkim: !!mb.dkim_verified,
+      dmarc: !!mb.dmarc_verified,
+      noSpamWords: false,
+      plainText: false,
+    });
+    setShowSpamModal(true);
+  };
 
   // Snippets States
   const [snippets, setSnippets] = useState<any[]>([]);
@@ -517,40 +541,85 @@ export default function OutreachSettings() {
 
 
                 {/* 1. COMPLIANCE & FOOTER */}
-                <section className="space-y-4 bg-amber-500/5 border border-amber-500/15 p-6 rounded-2xl">
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shield className="w-5 h-5 text-amber-400" />
-                        <h3 className="text-sm font-bold uppercase tracking-widest text-amber-400">{t('landing.settings.mailboxes.complianceTitle')}</h3>
-                      </div>
-                      <p className="text-sm text-slate-300 pt-1">
-                        {t('landing.settings.mailboxes.complianceDesc').split('[[BUSINESS_ADDRESS]]')[0]}
-                        <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-amber-300">{'[[BUSINESS_ADDRESS]]'}</code>
-                        {t('landing.settings.mailboxes.complianceDesc').split('[[BUSINESS_ADDRESS]]')[1]}
-                      </p>
-                      <div className="mt-5 space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">{t('landing.settings.mailboxes.businessAddress')}</label>
-                        <textarea
-                          value={businessAddress}
-                          onChange={(e) => setBusinessAddress(e.target.value)}
-                          rows={2}
-                          placeholder="e.g. 123 Main St, Suite 100, San Francisco, CA 94105"
-                          className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-amber-500/60 outline-none text-white resize-none placeholder:text-slate-600"
-                        />
-                      </div>
-                      <div className="mt-3">
-                        <TealButton
-                          onClick={handleSaveBusinessAddress}
-                          loading={savingBusinessAddress}
-                          disabled={!api.activeProjectId}
-                          className="px-6 h-[40px] font-bold"
-                        >
-                          {t('landing.settings.mailboxes.saveAddress')}
-                        </TealButton>
-                      </div>
-                    </div>
+                <section className="space-y-5 bg-amber-500/5 border border-amber-500/15 p-6 rounded-2xl">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Shield className="w-5 h-5 text-amber-400" />
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-amber-400">{t('landing.settings.mailboxes.complianceTitle')}</h3>
                   </div>
+                  <p className="text-sm text-slate-300">
+                    {t('landing.settings.mailboxes.complianceDesc').split('[[BUSINESS_ADDRESS]]')[0]}
+                    <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-amber-300">{'[[BUSINESS_ADDRESS]]'}</code>
+                    {t('landing.settings.mailboxes.complianceDesc').split('[[BUSINESS_ADDRESS]]')[1]}
+                  </p>
+
+                  {/* ── GDPR / CAN-SPAM Checklist ── */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        ok: businessAddress.trim().length > 10,
+                        label: 'Physical Address',
+                        desc: 'Required by CAN-SPAM & GDPR',
+                      },
+                      {
+                        ok: mailboxes.some(m => (m.name || '').trim().length > 0),
+                        label: 'Sender ID',
+                        desc: 'Real name on connected mailboxes',
+                      },
+                      {
+                        ok: true,
+                        label: 'Unsubscribe Link',
+                        desc: 'Added automatically via [[UNSUBSCRIBE]]',
+                      },
+                      {
+                        ok: mailboxes.some(m => m.spf_verified && m.dkim_verified),
+                        label: 'Auth Protocols',
+                        desc: 'At least one mailbox with SPF + DKIM',
+                      },
+                    ].map(({ ok, label, desc }) => (
+                      <div
+                        key={label}
+                        className={cn(
+                          'flex items-start gap-3 p-3 rounded-xl border transition-all',
+                          ok
+                            ? 'bg-emerald-500/5 border-emerald-500/15'
+                            : 'bg-amber-500/5 border-amber-500/15'
+                        )}
+                      >
+                        <div className={cn(
+                          'size-5 rounded-full flex items-center justify-center shrink-0 mt-0.5',
+                          ok ? 'bg-emerald-500/20' : 'bg-amber-500/20'
+                        )}>
+                          {ok
+                            ? <CheckCircle2 className="size-3 text-emerald-400" />
+                            : <AlertTriangle className="size-3 text-amber-400" />}
+                        </div>
+                        <div>
+                          <p className={cn('text-xs font-bold', ok ? 'text-emerald-300' : 'text-amber-300')}>{label}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Business Address input */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">{t('landing.settings.mailboxes.businessAddress')}</label>
+                    <textarea
+                      value={businessAddress}
+                      onChange={(e) => setBusinessAddress(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. 123 Main St, Suite 100, San Francisco, CA 94105"
+                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-amber-500/60 outline-none text-white resize-none placeholder:text-slate-600"
+                    />
+                  </div>
+                  <TealButton
+                    onClick={handleSaveBusinessAddress}
+                    loading={savingBusinessAddress}
+                    disabled={!api.activeProjectId}
+                    className="px-6 h-[40px] font-bold"
+                  >
+                    {t('landing.settings.mailboxes.saveAddress')}
+                  </TealButton>
                 </section>
 
                 {/* 2. DOMAIN VERIFICATION */}
@@ -743,7 +812,10 @@ export default function OutreachSettings() {
                                       >
                                         {verifyingDnsId === mb.id ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} {t('landing.settings.mailboxes.recheckDns')}
                                       </button>
-                                      <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+                                      <button
+                                        onClick={e => { e.stopPropagation(); openSpamModal(mb); }}
+                                        className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all"
+                                      >
                                         <Search className="size-3.5" /> {t('landing.settings.mailboxes.runSpamTest')}
                                       </button>
                                       <button
@@ -774,55 +846,95 @@ export default function OutreachSettings() {
 
         {/* ── WARMUP ── */}
         {activeTab === 'warmup' && (
-          <div className="space-y-6 w-full">
+          <div className="space-y-10 w-full animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
             <div>
-              <h2 className="text-xl font-bold text-white">{t('landing.settings.warmup.title')}</h2>
-              <p className="text-sm text-slate-400 mt-0.5">{t('landing.settings.warmup.desc')}</p>
+              <h2 className="text-2xl font-black text-white tracking-tight">{t('landing.settings.warmup.title')}</h2>
+              <p className="text-sm text-slate-400 mt-1">{t('landing.settings.warmup.desc')}</p>
             </div>
-            <div className="space-y-4">
-              {mailboxes.filter(m => m.warmupActive).map(mb => (
-                <div key={mb.id} className="bg-white/[0.02] border border-white/8 rounded-2xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="size-9 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
-                        <Thermometer className="size-4 text-teal-400" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-white text-sm">{mb.email}</p>
-                        <p className="text-xs text-slate-500">{t('landing.settings.warmup.dayXofY', { day: 14, total: 30 })}</p>
-                      </div>
-                    </div>
-                    <OutreachBadge variant="teal" dot>{t('landing.settings.warmup.active')}</OutreachBadge>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-500">{t('landing.settings.warmup.progress')}</span>
-                        <span className="text-teal-400 font-bold">47%</span>
-                      </div>
-                      <div className="h-1.5 bg-white/10 rounded-full">
-                        <div className="h-full w-[47%] bg-gradient-to-r from-teal-600 to-teal-400 rounded-full" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      {[
-                        { label: 'Current/Day', value: '24' },
-                        { label: 'Target/Day', value: '100' },
-                        { label: 'Delivery Rate', value: '98.7%' },
-                      ].map(({ label, value }) => (
-                        <div key={label} className="bg-black/20 rounded-xl p-3">
-                          <p className="text-lg font-bold text-teal-400">{value}</p>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{label}</p>
+
+            {/* Active warmup mailboxes */}
+            {mailboxes.filter(m => m.warmupActive).length > 0 && (
+              <div className="space-y-3">
+                <p className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Active Warmups</p>
+                {mailboxes.filter(m => m.warmupActive).map(mb => (
+                  <div key={mb.id} className="bg-white/[0.02] border border-white/8 rounded-2xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="size-9 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
+                          <Thermometer className="size-4 text-teal-400" />
                         </div>
-                      ))}
+                        <div>
+                          <p className="font-semibold text-white text-sm">{mb.email}</p>
+                          <p className="text-xs text-slate-500">Warming up — check your inbox for warmup activity</p>
+                        </div>
+                      </div>
+                      <OutreachBadge variant="teal" dot>{t('landing.settings.warmup.active')}</OutreachBadge>
                     </div>
                   </div>
-                </div>
-              ))}
-              <div className="p-4 rounded-2xl border border-dashed border-white/10 text-center text-sm text-slate-500 hover:border-teal-500/20 hover:text-teal-400 transition-all cursor-pointer">
-                <Thermometer className="size-6 mx-auto mb-2 opacity-40" />
-                Enable warmup for another mailbox
+                ))}
               </div>
+            )}
+
+            {/* Recommended Warmup Progression */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Thermometer className="size-4 text-teal-400" />
+                <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Recommended Warmup Schedule</h3>
+              </div>
+              <div className="bg-white/[0.02] border border-white/8 rounded-2xl overflow-hidden">
+                <div className="grid grid-cols-3 border-b border-white/5 bg-white/[0.02]">
+                  {['Period', 'Daily Volume', 'Notes'].map(h => (
+                    <p key={h} className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">{h}</p>
+                  ))}
+                </div>
+                {[
+                  { period: 'Week 1', volume: '5 → 15 emails/day', note: 'Start slow, build domain trust' },
+                  { period: 'Week 2', volume: '15 → 25 emails/day', note: 'Monitor bounce rate daily' },
+                  { period: 'Week 3–4', volume: '25 → 40 emails/day', note: 'Engage high-quality leads first' },
+                  { period: 'Month 2', volume: '40 → 50 emails/day', note: 'Stable zone, maintain consistency' },
+                  { period: 'Month 2+', volume: '50+ (rotate inboxes)', note: 'Add inboxes for scale, never spike' },
+                ].map(({ period, volume, note }, i) => (
+                  <div key={period} className={cn('grid grid-cols-3 border-b border-white/[0.04] last:border-0', i % 2 === 0 ? 'bg-transparent' : 'bg-white/[0.01]')}>
+                    <p className="px-5 py-4 text-xs font-bold text-white">{period}</p>
+                    <p className="px-5 py-4 text-xs font-mono text-teal-400">{volume}</p>
+                    <p className="px-5 py-4 text-xs text-slate-400">{note}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 italic pl-1">⚡ A 30–60 day warmup improves inbox placement by up to 30%. Never skip it for new domains.</p>
+            </div>
+
+            {/* Best Practices Checklist */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Shield className="size-4 text-indigo-400" />
+                <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Warmup Best Practices</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[
+                  { icon: '✅', title: 'Send to engaged leads first', desc: 'Always prioritize contacts with recent activity during warmup' },
+                  { icon: '✅', title: 'Stick to a predictable schedule', desc: 'Consistent sending patterns build ISP trust over time' },
+                  { icon: '✅', title: 'Monitor reply rates, not just opens', desc: 'Replies signal genuine engagement to inbox providers' },
+                  { icon: '✅', title: 'Avoid cold starts & random spikes', desc: 'Sudden volume jumps destroy sender reputation instantly' },
+                  { icon: '✅', title: 'Separate cold & marketing emails', desc: 'Never send newsletters and cold outreach from the same domain' },
+                  { icon: '✅', title: 'Keep sender score above 90', desc: 'Check Google Postmaster Tools weekly for reputation trends' },
+                ].map(({ icon, title, desc }) => (
+                  <div key={title} className="flex items-start gap-3 p-4 bg-white/[0.02] border border-white/8 rounded-xl">
+                    <span className="text-base shrink-0 mt-0.5">{icon}</span>
+                    <div>
+                      <p className="text-sm font-bold text-white">{title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Enable warmup CTA */}
+            <div className="p-5 rounded-2xl border border-dashed border-white/10 text-center hover:border-teal-500/20 transition-all">
+              <Thermometer className="size-8 mx-auto mb-2 text-teal-400 opacity-40" />
+              <p className="text-sm font-bold text-slate-400">Enable warmup for another mailbox</p>
+              <p className="text-xs text-slate-600 mt-1">Connect a mailbox first, then activate warmup from the Mailboxes tab</p>
             </div>
           </div>
         )}
@@ -1620,6 +1732,97 @@ export default function OutreachSettings() {
                   loading={snippetSaving}
                 >
                   {editingSnippet ? 'Save Changes' : 'Create'}
+                </TealButton>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* SPAM PRE-FLIGHT MODAL */}
+        {showSpamModal && spamCheckMailbox && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowSpamModal(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-lg bg-[#0d1117] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-indigo-500/5 to-transparent">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                    <Search className="size-4 text-indigo-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">Pre-flight Spam Check</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">{spamCheckMailbox.email}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowSpamModal(false)} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                  <XCircle className="size-4" />
+                </button>
+              </div>
+
+              {/* Score */}
+              <div className="px-6 pt-5">
+                {(() => {
+                  const score = Object.values(spamChecks).filter(Boolean).length;
+                  const color = score >= 4 ? 'text-emerald-400' : score >= 2 ? 'text-amber-400' : 'text-red-400';
+                  const label = score >= 4 ? 'Inbox-ready' : score >= 2 ? 'Needs work' : 'High risk';
+                  return (
+                    <div className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/8 rounded-xl">
+                      <div>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">Pre-flight Score</p>
+                        <p className={`text-2xl font-black mt-0.5 ${color}`}>{score}/5</p>
+                      </div>
+                      <div className={cn('px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border', score >= 4 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : score >= 2 ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-red-500/10 border-red-500/20 text-red-400')}>
+                        {label}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Checklist */}
+              <div className="p-6 space-y-3">
+                {([
+                  { key: 'spf', label: 'SPF Record', desc: 'Domain has a valid Sender Policy Framework record', auto: true },
+                  { key: 'dkim', label: 'DKIM Signature', desc: 'Emails are cryptographically signed to prevent tampering', auto: true },
+                  { key: 'dmarc', label: 'DMARC Policy', desc: 'Domain policy controls what happens when auth fails', auto: true },
+                  { key: 'noSpamWords', label: 'No Spam Trigger Words', desc: 'Email avoids "Act now", "Free trial", "Guaranteed", ALL CAPS', auto: false },
+                  { key: 'plainText', label: 'Plain Text Mode', desc: 'Email uses minimal HTML or plain text, no images in cold emails', auto: false },
+                ] as Array<{ key: keyof SpamCheckState; label: string; desc: string; auto: boolean }>).map(({ key, label, desc, auto }) => (
+                  <div
+                    key={key}
+                    onClick={() => !auto && setSpamChecks(prev => ({ ...prev, [key]: !prev[key] }))}
+                    className={cn(
+                      'flex items-start gap-3 p-3.5 rounded-xl border transition-all',
+                      spamChecks[key] ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-white/[0.02] border-white/8',
+                      !auto && 'cursor-pointer hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <div className={cn(
+                      'size-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 border transition-all',
+                      spamChecks[key] ? 'bg-emerald-500 border-emerald-400' : 'bg-white/5 border-white/20'
+                    )}>
+                      {spamChecks[key] && <CheckCircle2 className="size-3 text-white" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-white">{label}</p>
+                        {auto && <span className="text-[9px] uppercase font-black text-slate-600 tracking-widest">auto-detected</span>}
+                        {!auto && <span className="text-[9px] uppercase font-black text-indigo-500/60 tracking-widest">manual</span>}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-6 pb-6">
+                <TealButton onClick={() => setShowSpamModal(false)} className="w-full py-3 font-black">
+                  Done
                 </TealButton>
               </div>
             </motion.div>

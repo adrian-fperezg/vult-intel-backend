@@ -66,6 +66,43 @@ export const SendingTab: React.FC = () => {
     }
   };
 
+  // ── Safety zone calculation ──
+  const getDailyLimitZone = (limit: number): {
+    label: string;
+    color: string;
+    bg: string;
+    border: string;
+    dot: string;
+    tip: string;
+  } => {
+    if (limit <= 50) return {
+      label: 'Safe Zone',
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-500/10',
+      border: 'border-emerald-500/30',
+      dot: 'bg-emerald-500',
+      tip: 'Optimal range. Inbox providers trust consistent, low-volume senders.',
+    };
+    if (limit <= 100) return {
+      label: 'Caution',
+      color: 'text-amber-400',
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500/30',
+      dot: 'bg-amber-500',
+      tip: 'Higher volume requires multiple warmed inboxes (inbox rotation). Monitor bounce rate closely.',
+    };
+    return {
+      label: 'High Risk',
+      color: 'text-red-400',
+      bg: 'bg-red-500/10',
+      border: 'border-red-500/30',
+      dot: 'bg-red-500',
+      tip: 'Sending >100/day from a single inbox can trigger spam filters. Use inbox rotation across 3+ domains.',
+    };
+  };
+
+  const zone = getDailyLimitZone(globalDailyLimit);
+
   if (!api.activeProjectId) {
     return (
       <OutreachEmptyState 
@@ -122,7 +159,7 @@ export const SendingTab: React.FC = () => {
           </div>
         </div>
 
-        {/* Daily Limits */}
+        {/* Daily Limits — with Safety Zone Indicator */}
         <div className="p-10 rounded-[2rem] bg-white/[0.02] border border-white/10 space-y-8 hover:bg-white/[0.03] transition-all duration-300">
           <div className="flex items-center gap-4">
             <div className="size-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]">
@@ -136,17 +173,51 @@ export const SendingTab: React.FC = () => {
 
           <div className="space-y-6">
             <div className="space-y-2">
-              <label className="text-[10px] uppercase font-black text-slate-500 tracking-[0.2em]">{t('landing.settings.sending.maxEmails')}</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-[0.2em]">{t('landing.settings.sending.maxEmails')}</label>
+                {/* ── Safety Zone Badge ── */}
+                <div className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all duration-300', zone.bg, zone.border, zone.color)}>
+                  <span className={cn('size-1.5 rounded-full animate-pulse', zone.dot)} />
+                  {zone.label}
+                </div>
+              </div>
               <input 
                 type="number"
                 value={globalDailyLimit}
                 onChange={e => setGlobalDailyLimit(parseInt(e.target.value) || 0)}
-                className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white focus:border-indigo-500/40 outline-none transition-all placeholder:text-slate-700"
+                className={cn(
+                  'w-full bg-black/40 border rounded-2xl px-5 py-4 text-sm text-white outline-none transition-all duration-300 placeholder:text-slate-700',
+                  globalDailyLimit <= 50
+                    ? 'border-emerald-500/20 focus:border-emerald-500/40'
+                    : globalDailyLimit <= 100
+                    ? 'border-amber-500/20 focus:border-amber-500/40'
+                    : 'border-red-500/30 focus:border-red-500/50'
+                )}
               />
             </div>
+
+            {/* Contextual tip that updates with the zone */}
+            <div className={cn('rounded-xl p-4 border transition-all duration-300', zone.bg, zone.border)}>
+              <p className={cn('text-xs leading-relaxed font-medium', zone.color)}>
+                <span className="font-black">💡 </span>{zone.tip}
+              </p>
+            </div>
+
             <p className="text-xs text-slate-400 leading-relaxed italic border-l-2 border-indigo-500/30 pl-4 py-1">
               {t('landing.settings.sending.maxEmailsDesc')}
             </p>
+
+            {/* Inbox rotation tip for high volume */}
+            {globalDailyLimit > 50 && (
+              <div className="rounded-xl p-4 bg-white/[0.02] border border-white/8 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Inbox Rotation Formula</p>
+                <p className="text-xs text-slate-400">
+                  To send <span className="text-white font-bold">{globalDailyLimit}</span> emails/day safely, you need at least{' '}
+                  <span className="text-teal-400 font-black">{Math.ceil(globalDailyLimit / 50)}</span> warmed inboxes across{' '}
+                  <span className="text-teal-400 font-black">{Math.max(1, Math.ceil(globalDailyLimit / 100))}</span> domains.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

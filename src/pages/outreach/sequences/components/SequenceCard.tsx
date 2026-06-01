@@ -291,29 +291,45 @@ export default function SequenceCard({
           <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-6 group-hover:bg-white/[0.05] transition-all overflow-hidden">
             <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-600 mb-2 truncate" title={t('outreach.sequences.campaigns.performance')}>{t('outreach.sequences.campaigns.performance')}</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-teal-400 leading-none">{active_contact_count}</span>
+              <span className="text-3xl font-black text-teal-400 leading-none" title="Contacts still receiving emails">{active_contact_count}</span>
               <span className="text-sm text-slate-600">/</span>
-              <span className="text-lg font-black text-slate-400 leading-none">{completed_contact_count}</span>
+              <span className="text-lg font-black text-slate-400 leading-none" title="Contacts that have finished the sequence">{completed_contact_count}</span>
             </div>
           </div>
         </div>
 
         {/* Funnel Completion Progress */}
         <div className="px-1">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="size-2 rounded-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('outreach.sequences.campaigns.funnelStage')}</span>
             </div>
             <span className="text-xs font-black text-white">{completionPercent}%</span>
           </div>
-          <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
-            <motion.div 
+
+          {/* Progress bar */}
+          <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5 mb-3">
+            <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${completionPercent}%` }}
               transition={{ duration: 1, ease: "easeOut" }}
               className="h-full bg-gradient-to-r from-teal-500 to-blue-500 rounded-full shadow-[0_0_15px_rgba(20,184,166,0.3)]"
             />
+          </div>
+
+          {/* Legend row */}
+          <div className="flex items-center justify-between text-[10px]">
+            <div className="flex items-center gap-1.5" title="Contacts that have completed or exited the sequence">
+              <span className="inline-block size-2 rounded-full bg-gradient-to-r from-teal-500 to-blue-500" />
+              <span className="text-slate-500 font-bold uppercase tracking-wider">Done</span>
+              <span className="text-white font-black ml-0.5">{completed_contact_count}</span>
+            </div>
+            <div className="flex items-center gap-1.5" title="Contacts still in the sequence">
+              <span className="inline-block size-2 rounded-full bg-white/10" />
+              <span className="text-slate-500 font-bold uppercase tracking-wider">Pending</span>
+              <span className="text-white font-black ml-0.5">{active_contact_count}</span>
+            </div>
           </div>
         </div>
       </div>

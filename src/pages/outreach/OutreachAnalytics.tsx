@@ -48,6 +48,7 @@ export default function OutreachAnalytics() {
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bounceAlertDismissed, setBounceAlertDismissed] = useState(false);
   const { fetchAnalytics, getFunnelStats, generateAiReport, exportAiReport, activeProjectId } = useOutreachApi();
 
   /** Returns a localized sub-label like "Industry avg: 21.5% (you: +3.2pp)" */
@@ -232,6 +233,52 @@ export default function OutreachAnalytics() {
             />
           </div>
         </div>
+
+        {/* ── BOUNCE RATE ALERT BANNER ── */}
+        {!bounceAlertDismissed && data && parseFloat(data.bounce_rate ?? '0') > 2 && (() => {
+          const bounceVal = parseFloat(data.bounce_rate ?? '0');
+          const isCritical = bounceVal > 6;
+          return (
+            <div className={`rounded-2xl border p-5 flex items-start gap-4 animate-in fade-in slide-in-from-top-2 duration-300 ${isCritical ? 'bg-red-500/10 border-red-500/25' : 'bg-amber-500/8 border-amber-500/20'}`}>
+              <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${isCritical ? 'bg-red-500/20' : 'bg-amber-500/15'}`}>
+                <AlertTriangle className={`size-5 ${isCritical ? 'text-red-400' : 'text-amber-400'}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className={`text-sm font-black ${isCritical ? 'text-red-300' : 'text-amber-300'}`}>
+                    {isCritical ? '🛑 Critical Bounce Rate — Pause Sending Now' : '⚠️ Bounce Rate Above Safe Threshold'}
+                  </p>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black border ${isCritical ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-amber-500/15 border-amber-500/25 text-amber-400'}`}>
+                    {bounceVal.toFixed(1)}% bounce
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mb-3">
+                  {isCritical
+                    ? 'Your bounce rate exceeds 6%. ISPs are flagging your domain. Stop all campaigns immediately, validate your contact list, and re-warm your inbox before resuming.'
+                    : 'Bounce rate above 2% signals list hygiene issues. Remove hard bounces immediately, validate remaining contacts, and avoid sending to unengaged leads.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    isCritical ? '🛑 Pause all campaigns' : '🧹 Clean your list',
+                    '✅ Remove hard bounces',
+                    '🔍 Validate remaining contacts',
+                    isCritical ? '🔄 Re-warm your inbox' : '📊 Monitor daily',
+                  ].map(step => (
+                    <span key={step} className="text-[10px] font-bold text-slate-400 bg-white/5 border border-white/8 px-2 py-1 rounded-lg">
+                      {step}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setBounceAlertDismissed(true)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Core KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
