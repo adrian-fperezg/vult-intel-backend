@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, GitBranch, FolderOpen, Search, Loader2, Calendar, ChevronDown
+  Plus, GitBranch, FolderOpen, Search, Loader2, Calendar, ChevronDown, RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OutreachEmptyState, TealButton, OutreachConfirmDialog, TimeframeFilter } from './OutreachCommon';
@@ -53,6 +53,7 @@ export default function OutreachSequences() {
   } = useOutreachApi();
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'draft'>('all');
   const [globalStats, setGlobalStats] = useState<any>(null);
@@ -289,11 +290,23 @@ export default function OutreachSequences() {
           />
         </div>
         <button
-          onClick={handleCreate}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+          onClick={async () => {
+            setIsRefreshing(true);
+            await loadData();
+            setIsRefreshing(false);
+          }}
+          disabled={isRefreshing}
+          title="Refresh sequences"
+          className="relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 border border-teal-500/20 bg-teal-500/8 hover:bg-teal-500/15 hover:border-teal-500/40 text-teal-400 hover:text-teal-300 shadow-lg shadow-teal-900/10 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed group overflow-hidden"
         >
-          <Plus className="size-4" />
-          <span>{t('outreach.sequences.builder.createSequence')}</span>
+          {/* Subtle shimmer on hover */}
+          <span className="absolute inset-0 bg-gradient-to-r from-transparent via-teal-400/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out" />
+          <RefreshCw
+            className={`size-4 transition-transform duration-500 ${
+              isRefreshing ? 'animate-spin' : 'group-hover:rotate-180'
+            }`}
+          />
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
