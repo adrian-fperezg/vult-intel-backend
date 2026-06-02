@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
-import { findOriginalEmail, recordOutreachEvent, isBounce, isOutOfOffice, handleCriticalBounce, extractBouncedEmail } from './utils.js';
+import { findOriginalEmail, recordOutreachEvent, isBounce, isOutOfOffice, isTransientDeferral, handleCriticalBounce, extractBouncedEmail } from './utils.js';
 import { analyzeLeadIntent } from "./intentDetection.js";
 import { google } from "googleapis";
 
@@ -100,6 +100,18 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const precedence = headers.find(h => h.name.toLowerCase() === 'precedence')?.value || '';
 
     console.log(`[Gmail Sync] [ID: ${msgRef.id}] Processing email from ${fromHeader}: "${subject}"`);
+
+    // ⏳ TRANSIENT DEFERRAL GUARD: Must run BEFORE isBounce().
+    // 4xx warnings (e.g. "450 4.7.9 Application queue quota exceeded") come from
+    // mailer-daemon and contain "undelivered", which would trigger isBounce() as a
+    // false positive — permanently suppressing a contact whose email will still be delivered.
+    {
+      const deferralContent = extractGmailContent(msg.payload);
+      if (isTransientDeferral(subject, deferralContent.text || deferralContent.html)) {
+        console.log(`[Gmail Sync] [Deferral] Transient warning detected (4xx) for subject "${subject}". Ignoring — contact NOT suppressed.`);
+        continue;
+      }
+    }
 
     if (isBounce(fromHeader, subject)) {
       console.warn(`[Gmail Sync] [ID: ${msgRef.id}] Bounce detected from "${fromHeader}" Subject: "${subject}"`);

@@ -151,6 +151,68 @@ export async function recordOutreachEvent(params: {
 }
 
 /**
+ * Detects whether an incoming email is a TRANSIENT deferral warning, NOT a permanent bounce.
+ * These are "4xx" class SMTP errors — the sending MTA is still retrying delivery and the
+ * message will likely be delivered eventually. We must NOT suppress the contact.
+ *
+ * Must be checked BEFORE isBounce() because deferral warnings often come from mailer-daemon
+ * and contain the word "undelivered", which would trigger isBounce() as a false positive.
+ *
+ * Signals:
+ *   - SMTP 4xx codes in the body (450, 451, 452, 421)
+ *   - "THIS IS A WARNING MESSAGE ONLY" header block (Sendmail / Postfix style)
+ *   - "Will keep trying" / "Deferred:" body phrases
+ *   - "Application queue quota exceeded" (O365 throttle)
+ */
+export function isTransientDeferral(subject: string, bodyText: string = ''): boolean {
+  const s = subject.toLowerCase();
+  const b = bodyText.toLowerCase().slice(0, 4000);
+
+  // 4xx SMTP codes in body — definitive transient signal
+  const transientCodes = [
+    '450 ',    // Generic transient failure
+    '450 4.7', // O365 application queue / rate limiting
+    '451 ',    // Local error in processing
+    '452 ',    // Insufficient system storage
+    '421 ',    // Service not available (try again later)
+    'deferred: 4',           // "Deferred: 450 ..." or "Deferred: 4xx ..."
+    'application queue quota exceeded',
+    'queue quota exceeded',
+    'too many connections',
+    'temporarily deferred',
+    'temporarily rejected',
+    'try again later',
+    'please try again',
+    'will keep trying',
+    'keep trying until',
+  ];
+
+  // Subject patterns that indicate a warning (not final failure)
+  const warningSubjectPatterns = [
+    'warning: ',
+    'delayed mail',
+    'mail delay',
+    'delivery delayed',
+    'message delayed',
+  ];
+
+  // Body phrases that only appear in warning NDRs, never in hard bounces
+  const warningBodyPatterns = [
+    'this is a warning message only',
+    'you do not need to resend your message',
+    'message still undelivered after',
+    'will keep trying until message is',
+    'will retry for',
+  ];
+
+  return (
+    transientCodes.some(p => b.includes(p)) ||
+    warningSubjectPatterns.some(p => s.includes(p)) ||
+    warningBodyPatterns.some(p => b.includes(p))
+  );
+}
+
+/**
  * Detects whether an incoming email is a bounce/NDR notification.
  * Covers: Gmail, Outlook/Exchange, Yahoo, Postfix, Sendmail, and generic MTAs.
  */
