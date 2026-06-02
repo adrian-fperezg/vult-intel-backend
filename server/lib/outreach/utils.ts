@@ -211,7 +211,9 @@ export function isBounce(from: string, subject: string, bodyText: string = '', r
     '550 5.1.1',
     '550 5.1.10',
     '550 5.7.1',
-    '554 delivery error'
+    '554 delivery error',
+    '554 5.4.14',   // Hop count exceeded / mail loop (Exchange/O365 hybrid misconfiguration)
+    '5.4.14',       // Short-form loop detection code
   ];
 
   return (
