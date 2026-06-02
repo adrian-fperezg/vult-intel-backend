@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import db from "../../db.js";
-import { findOriginalEmail, recordOutreachEvent, isBounce, handleCriticalBounce, extractBouncedEmail } from './utils.js';
+import { findOriginalEmail, recordOutreachEvent, isBounce, isOutOfOffice, handleCriticalBounce, extractBouncedEmail } from './utils.js';
 import { analyzeLeadIntent } from "./intentDetection.js";
 import { google } from "googleapis";
 
@@ -96,6 +96,8 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
     const fromHeader = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
     const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
     const messageId = headers.find(h => h.name.toLowerCase() === 'message-id')?.value || msg.id;
+    const autoSubmitted = headers.find(h => h.name.toLowerCase() === 'auto-submitted')?.value || '';
+    const precedence = headers.find(h => h.name.toLowerCase() === 'precedence')?.value || '';
 
     console.log(`[Gmail Sync] [ID: ${msgRef.id}] Processing email from ${fromHeader}: "${subject}"`);
 
@@ -143,6 +145,23 @@ export async function syncMailbox(mailboxId: string, getAccessToken: (id: string
         }
       }
       continue;
+    }
+
+    // ✈️ OUT-OF-OFFICE GUARD: Detect auto-replies and skip sequence-stop logic.
+    // We extract the body here (before the full processing block) only for OOO detection.
+    // This avoids stopping sequences for vacation/absence auto-replies.
+    {
+      const oooContent = extractGmailContent(msg.payload);
+      if (isOutOfOffice(fromHeader, subject, oooContent.text, autoSubmitted, precedence)) {
+        console.log(`[Gmail Sync] [OOO] Auto-reply detected from "${fromHeader}" (Subject: "${subject}"). Skipping — sequence will continue.`);
+        // Mark as read to keep the inbox clean, then move on
+        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}/modify`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
+        }).catch(() => {}); // Non-fatal if this fails
+        continue;
+      }
     }
 
     const emailMatch = fromHeader.match(/<(.+)>/) || [null, fromHeader.trim()];

@@ -227,6 +227,118 @@ export function isBounce(from: string, subject: string, bodyText: string = '', r
 }
 
 /**
+ * Detects whether an incoming email is an Out-of-Office (OOO) auto-reply.
+ * If true, the sequence should NOT be stopped and the contact should NOT be marked as replied.
+ *
+ * Detection layers (ordered by reliability):
+ *   1. Auto-Submitted header (RFC 3834) — most reliable, set by all major mail servers
+ *   2. Subject-line patterns (EN / ES / FR / DE / PT)
+ *   3. Body text patterns (first 2 KB only for performance)
+ *   4. From-address patterns for known OOO mailers
+ */
+export function isOutOfOffice(
+  from: string,
+  subject: string,
+  bodyText: string = '',
+  autoSubmitted: string = '',
+  precedence: string = ''
+): boolean {
+  // 1. Auto-Submitted header (RFC 3834) — definitive signal
+  const as = autoSubmitted.toLowerCase().trim();
+  if (as === 'auto-replied' || as === 'auto-generated' || as === 'auto-notified') return true;
+
+  // Precedence: auto-reply is also a strong signal
+  if (precedence.toLowerCase().trim() === 'auto-reply') return true;
+
+  const s = subject.toLowerCase();
+  const f = from.toLowerCase();
+  const b = bodyText.toLowerCase().slice(0, 2000); // Only scan first 2 KB
+
+  // 2. Subject-line patterns (EN / ES / FR / DE / PT)
+  const subjectPatterns = [
+    // English
+    'out of office',
+    'out of the office',
+    'automatic reply',
+    'auto reply',
+    'auto-reply',
+    'autoreply',
+    'on vacation',
+    'away from the office',
+    'away from office',
+    "i am away",
+    "i'm away",
+    "i am out",
+    "i'm out",
+    'be back',
+    'currently out',
+    'on leave',
+    'annual leave',
+    'maternity leave',
+    'paternity leave',
+    'sabbatical',
+    // Spanish
+    'fuera de la oficina',
+    'fuera de oficina',
+    'ausente de la oficina',
+    'respuesta automática',
+    'respuesta automatica',
+    'vacaciones',
+    'de vacaciones',
+    // French
+    'hors du bureau',
+    "en dehors du bureau",
+    'absence du bureau',
+    // German
+    'außer haus',
+    'abwesend',
+    'nicht im büro',
+    // Portuguese
+    'fora do escritório',
+    'fora do escritorio',
+    'ausente do escritório',
+  ];
+
+  // 3. From-address patterns for known OOO/auto-reply mailers
+  const fromPatterns = [
+    'noreply-ooo',
+    'no-reply-ooo',
+    'out-of-office',
+    'outofoffice',
+    'autoresponder',
+    'auto-responder',
+    'vacation-reply',
+  ];
+
+  // 4. Body text patterns (English & Spanish)
+  const bodyPatterns = [
+    'i am currently out of the office',
+    "i'm currently out of the office",
+    'i am out of the office',
+    "i'm out of the office",
+    'i am away from the office',
+    "i'm away from the office",
+    'i will be out of the office',
+    "i'll be out of the office",
+    'i will return',
+    "i'll return",
+    'will be back',
+    'currently unavailable and will',
+    'on annual leave',
+    'on vacation until',
+    'fuera de la oficina',
+    'estaré fuera',
+    'estoy fuera',
+  ];
+
+  return (
+    subjectPatterns.some(p => s.includes(p)) ||
+    fromPatterns.some(p => f.includes(p)) ||
+    bodyPatterns.some(p => b.includes(p))
+  );
+}
+
+/**
  * Attempts to extract the original bounced email address from a bounce notification body.
  * Most MTAs include the failed address in a recognisable pattern inside the NDR body.
  * Returns null if no address can be reliably identified.
