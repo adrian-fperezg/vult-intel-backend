@@ -4547,99 +4547,109 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
       }
 
       for (const item of list) {
-        let contact_id: string;
-        let contactObj: any = null;
+        // Use a savepoint per item so a single bad contact doesn't abort the whole
+        // PostgreSQL transaction (error 25P02 / "current transaction is aborted").
+        const savepointName = `sp_recipient_${uuidv4().replace(/-/g, '')}`;
+        try {
+          await tx.exec(`SAVEPOINT ${savepointName}`);
 
-        if (typeof item === 'object' && item.email) {
-          // Manual/CSV contact upsert with all fields
-          const upsertRes = await tx.get(`
-            INSERT INTO outreach_contacts (
-              id, user_id, project_id, email, first_name, last_name, company, job_title, 
-              phone, linkedin, location_city, location_country, website, tags
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (project_id, email) DO UPDATE SET
-              first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
-              last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
-              company = COALESCE(EXCLUDED.company, outreach_contacts.company),
-              job_title = COALESCE(EXCLUDED.job_title, outreach_contacts.job_title),
-              phone = COALESCE(EXCLUDED.phone, outreach_contacts.phone),
-              linkedin = COALESCE(EXCLUDED.linkedin, outreach_contacts.linkedin),
-              location_city = COALESCE(EXCLUDED.location_city, outreach_contacts.location_city),
-              location_country = COALESCE(EXCLUDED.location_country, outreach_contacts.location_country),
-              website = COALESCE(EXCLUDED.website, outreach_contacts.website),
-              updated_at = CURRENT_TIMESTAMP
-            RETURNING id, email, first_name, last_name, company
-          `, 
-            item.id || uuidv4(), userId, project_id, item.email, 
-            item.first_name || '', item.last_name || '', item.company || '', item.job_title || '',
-            item.phone || '', item.linkedin || '', item.location_city || '', item.location_country || '', item.website || '',
-            JSON.stringify(["Not Enrolled"])
-          ) as any;
+          let contact_id: string | undefined;
+          let contactObj: any = null;
 
-          if (upsertRes) {
-            contact_id = upsertRes.id;
-            contactObj = upsertRes;
+          if (typeof item === 'object' && item.email) {
+            // Manual/CSV contact upsert with all fields
+            const upsertRes = await tx.get(`
+              INSERT INTO outreach_contacts (
+                id, user_id, project_id, email, first_name, last_name, company, job_title, 
+                phone, linkedin, location_city, location_country, website, tags
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (project_id, email) DO UPDATE SET
+                first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
+                last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
+                company = COALESCE(EXCLUDED.company, outreach_contacts.company),
+                job_title = COALESCE(EXCLUDED.job_title, outreach_contacts.job_title),
+                phone = COALESCE(EXCLUDED.phone, outreach_contacts.phone),
+                linkedin = COALESCE(EXCLUDED.linkedin, outreach_contacts.linkedin),
+                location_city = COALESCE(EXCLUDED.location_city, outreach_contacts.location_city),
+                location_country = COALESCE(EXCLUDED.location_country, outreach_contacts.location_country),
+                website = COALESCE(EXCLUDED.website, outreach_contacts.website),
+                updated_at = CURRENT_TIMESTAMP
+              RETURNING id, email, first_name, last_name, company
+            `, 
+              item.id || uuidv4(), userId, project_id, item.email, 
+              item.first_name || '', item.last_name || '', item.company || '', item.job_title || '',
+              item.phone || '', item.linkedin || '', item.location_city || '', item.location_country || '', item.website || '',
+              JSON.stringify(["Not Enrolled"])
+            ) as any;
+
+            if (upsertRes) {
+              contact_id = upsertRes.id;
+              contactObj = upsertRes;
+            }
+          } else if (typeof item === 'object' && item.id) {
+            // Existing contact ID
+            contact_id = item.id;
+            contactObj = await tx.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?", contact_id, userId, project_id);
+          } else if (typeof item === 'object' && item.list_id) {
+            // It's a list - expand it and add its members
+            const listMembers = await tx.all("SELECT contact_id FROM outreach_list_members WHERE list_id = ?", item.list_id) as any[];
+            for (const member of listMembers) {
+              const memberContactId = member.contact_id;
+              const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, memberContactId);
+              if (!existing) {
+                await tx.run(`
+                    INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+                    VALUES (?, ?, ?, ?, ?)
+                `, uuidv4(), id, project_id, memberContactId, recipientType || 'individual');
+              }
+
+              const c = await tx.get("SELECT * FROM outreach_contacts WHERE id = ?", memberContactId);
+              if (c) addedContacts.push(c);
+            }
+            await tx.exec(`RELEASE SAVEPOINT ${savepointName}`);
+            continue; // Skip the individual add logic since we handled the list
+          } else {
+            contact_id = typeof item === 'string' ? item : item.id;
           }
-        } else if (typeof item === 'object' && item.id) {
-          // Existing contact ID
-          contact_id = item.id;
-          contactObj = await tx.get("SELECT * FROM outreach_contacts WHERE id = ? AND user_id = ? AND project_id = ?", contact_id, userId, project_id);
-        } else if (typeof item === 'object' && item.list_id) {
-          // It's a list - expand it and add its members
-          const listMembers = await tx.all("SELECT contact_id FROM outreach_list_members WHERE list_id = ?", item.list_id) as any[];
-          for (const member of listMembers) {
-            const memberContactId = member.contact_id;
-            const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, memberContactId);
+
+          if (contact_id) {
+            // Insert into sequence recipients with conflict handling
+            const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, contact_id);
             if (!existing) {
               await tx.run(`
-                      INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
-                      VALUES (?, ?, ?, ?, ?)
-                  `, uuidv4(), id, project_id, memberContactId, recipientType || 'individual');
+                INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
+                VALUES (?, ?, ?, ?, ?)
+              `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
             }
 
-            const c = await tx.get("SELECT * FROM outreach_contacts WHERE id = ?", memberContactId);
-            if (c) addedContacts.push(c);
-          }
-          continue; // Skip the individual add logic since we handled the list
-        } else {
-          contact_id = typeof item === 'string' ? item : item.id;
-        }
+            // Link to the auto-generated list if present (single insert, no duplicate)
+            if (autoListId && contact_id) {
+              await tx.run("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", autoListId, contact_id);
+            }
 
-        if (contact_id) {
-          // Insert into sequence recipients with conflict handling
-          const existing = await tx.get("SELECT id FROM outreach_sequence_recipients WHERE sequence_id = ? AND contact_id = ?", id, contact_id);
-          if (!existing) {
-            await tx.run(`
-               INSERT INTO outreach_sequence_recipients (id, sequence_id, project_id, contact_id, type)
-               VALUES (?, ?, ?, ?, ?)
-             `, uuidv4(), id, project_id, contact_id, recipientType || 'individual');
-          }
+            if (contactObj) {
+              addedContacts.push(contactObj);
+            }
 
-          // Link to the auto-generated list if present
-          if (autoListId && contact_id) {
-            await tx.run("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", autoListId, contact_id);
-          }
-
-          if (contactObj) {
-            addedContacts.push(contactObj);
+            // If active, enroll immediately (with stagger index for drip protection)
+            const seq = await tx.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
+            if (seq?.status === 'active') {
+              // Count currently-enrolled contacts to determine stagger offset for this contact
+              const enrolledCount = await tx.get<{ n: number }>(
+                "SELECT COUNT(*) as n FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?",
+                id, project_id
+              );
+              const staggerIndex = (enrolledCount?.n ?? 1) - 1; // Use existing count as position
+              await enrollContactInSequence(project_id, id, contact_id, tx, staggerIndex);
+            }
           }
 
-          // Link to auto-list if present
-          if (autoListId && contact_id) {
-            await tx.run("INSERT INTO outreach_list_members (list_id, contact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", autoListId, contact_id);
-          }
-
-          // If active, enroll immediately (with stagger index for drip protection)
-          const seq = await tx.get("SELECT status FROM outreach_sequences WHERE id = ?", id) as any;
-          if (seq?.status === 'active') {
-            // Count currently-enrolled contacts to determine stagger offset for this contact
-            const enrolledCount = await tx.get<{ n: number }>(
-              "SELECT COUNT(*) as n FROM outreach_sequence_enrollments WHERE sequence_id = ? AND project_id = ?",
-              id, project_id
-            );
-            const staggerIndex = (enrolledCount?.n ?? 1) - 1; // Use existing count as position
-            await enrollContactInSequence(project_id, id, contact_id, tx, staggerIndex);
-          }
+          await tx.exec(`RELEASE SAVEPOINT ${savepointName}`);
+        } catch (itemErr) {
+          // Roll back only this item's work; the rest of the batch can continue
+          console.warn(`[Assign Recipients] Skipping contact due to error, rolling back to savepoint:`, (itemErr as Error).message, item);
+          try { await tx.exec(`ROLLBACK TO SAVEPOINT ${savepointName}`); } catch (_) {}
+          try { await tx.exec(`RELEASE SAVEPOINT ${savepointName}`); } catch (_) {}
         }
       }
     });
