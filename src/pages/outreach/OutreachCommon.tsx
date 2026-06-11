@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/TranslationContext';
 import { useSettings } from '@/contexts/SettingsContext';
-import { Clock } from 'lucide-react';
+import { Clock, CalendarRange } from 'lucide-react';
 
 // ─── TEAL COLOR TOKENS ───────────────────────────────────────────────────────
 export const TEAL = {
@@ -279,12 +279,25 @@ export function OutreachConfirmDialog({
 }
 
 // ─── TIMEFRAME FILTER ────────────────────────────────────────────────────────
-export const TIMEFRAME_OPTIONS = ['7d', '30d', '90d', 'all'] as const;
+export const TIMEFRAME_OPTIONS = ['7d', '30d', '90d', 'all', 'custom'] as const;
 export type TimeframeOption = typeof TIMEFRAME_OPTIONS[number];
+
+/** Encodes a custom date range as a timeframe string the API understands */
+export function encodeCustomTimeframe(start: string, end: string): string {
+  return `custom:${start}:${end}`;
+}
+
+/** Decodes a custom:YYYY-MM-DD:YYYY-MM-DD string back to { start, end } */
+export function decodeCustomTimeframe(tf: string): { start: string; end: string } | null {
+  if (!tf.startsWith('custom:')) return null;
+  const parts = tf.split(':');
+  if (parts.length === 3) return { start: parts[1], end: parts[2] };
+  return null;
+}
 
 interface TimeframeFilterProps {
   value: string;
-  onChange: (value: TimeframeOption) => void;
+  onChange: (value: string) => void;
   className?: string;
   variant?: 'select' | 'buttons';
   options?: TimeframeOption[]; // Optional subset of options
@@ -294,23 +307,98 @@ export function TimeframeFilter({ value, onChange, className, variant = 'select'
   const { t } = useTranslation();
   const displayOptions = options || (TIMEFRAME_OPTIONS as unknown as TimeframeOption[]);
 
+  // Determine if we're currently in custom mode
+  const isCustomActive = value.startsWith('custom:');
+  const decoded = decodeCustomTimeframe(value);
+
+  // Local state for the date picker (shown when 'custom' button is clicked)
+  const today = new Date().toISOString().split('T')[0];
+  const [showPicker, setShowPicker] = useState(false);
+  const [startDate, setStartDate] = useState(decoded?.start || today);
+  const [endDate, setEndDate] = useState(decoded?.end || today);
+
+  const handleApplyCustom = () => {
+    if (startDate && endDate && startDate <= endDate) {
+      onChange(encodeCustomTimeframe(startDate, endDate));
+      setShowPicker(false);
+    }
+  };
+
   if (variant === 'buttons') {
     return (
-      <div className={cn("flex items-center bg-white/5 rounded-xl border border-white/5 p-1", className)}>
-        {displayOptions.map((opt) => (
-          <button
-            key={opt}
-            onClick={() => onChange(opt)}
-            className={cn(
-              "px-4 py-1.5 text-sm font-semibold rounded-lg transition-all",
-              value === opt 
-                ? "bg-white/10 text-white shadow-sm ring-1 ring-white/10" 
-                : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
-            )}
-          >
-            {t(`outreach.common.timeframe.${opt}`)}
-          </button>
-        ))}
+      <div className={cn("flex flex-wrap items-center gap-2", className)}>
+        <div className="flex items-center bg-white/5 rounded-xl border border-white/5 p-1">
+          {displayOptions.map((opt) => {
+            const isActive = opt === 'custom' ? isCustomActive : value === opt;
+            return (
+              <button
+                key={opt}
+                onClick={() => {
+                  if (opt === 'custom') {
+                    setShowPicker((prev) => !prev);
+                  } else {
+                    setShowPicker(false);
+                    onChange(opt);
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold rounded-lg transition-all",
+                  isActive
+                    ? "bg-white/10 text-white shadow-sm ring-1 ring-white/10"
+                    : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                )}
+              >
+                {opt === 'custom' && <CalendarRange className="size-3.5" />}
+                {opt === 'custom' && isCustomActive && decoded
+                  ? `${decoded.start} → ${decoded.end}`
+                  : t(`outreach.common.timeframe.${opt}`)}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Inline Date Range Picker */}
+        {showPicker && (
+          <div className="flex items-center gap-2 bg-[#161b22] border border-white/10 rounded-xl px-4 py-2.5 shadow-2xl animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">From</label>
+              <input
+                type="date"
+                value={startDate}
+                max={endDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-white/5 border border-white/8 text-white text-xs font-semibold rounded-lg px-3 py-1.5 outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all cursor-pointer"
+                style={{ colorScheme: 'dark' }}
+              />
+            </div>
+            <span className="text-slate-600 text-sm">→</span>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">To</label>
+              <input
+                type="date"
+                value={endDate}
+                min={startDate}
+                max={today}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-white/5 border border-white/8 text-white text-xs font-semibold rounded-lg px-3 py-1.5 outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all cursor-pointer"
+                style={{ colorScheme: 'dark' }}
+              />
+            </div>
+            <button
+              onClick={handleApplyCustom}
+              disabled={!startDate || !endDate || startDate > endDate}
+              className="px-4 py-1.5 bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-[#0d1117] text-xs font-black rounded-lg transition-all active:scale-95"
+            >
+              Apply
+            </button>
+            <button
+              onClick={() => setShowPicker(false)}
+              className="px-3 py-1.5 text-slate-500 hover:text-white text-xs font-semibold transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -321,8 +409,10 @@ export function TimeframeFilter({ value, onChange, className, variant = 'select'
         <Clock className="size-4 text-slate-500" />
       </div>
       <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as TimeframeOption)}
+        value={isCustomActive ? 'custom' : value}
+        onChange={(e) => {
+          if (e.target.value !== 'custom') onChange(e.target.value as TimeframeOption);
+        }}
         className="bg-white/5 border border-white/5 text-slate-300 text-sm font-semibold rounded-xl px-4 py-2 outline-none hover:bg-white/10 transition-all cursor-pointer appearance-none pr-8 relative"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,

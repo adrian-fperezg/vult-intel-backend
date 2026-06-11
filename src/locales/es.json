@@ -588,7 +588,8 @@
                 "Q2": "Q2 (Abr-Jun)",
                 "Q3": "T3 (Jul-Sep)",
                 "Q4": "Q4 (Oct-Dic)",
-                "all": "Todo el tiempo"
+                "all": "Todo el tiempo",
+                "custom": "Personalizado"
             }
         },
         "contacts": {

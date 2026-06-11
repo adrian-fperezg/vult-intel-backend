@@ -3571,7 +3571,21 @@ function getTimeframeBounds(timeframe: string = '30d', userTz: string = 'UTC') {
   let endDate = now.endOf('day');
   let grouping: 'day' | 'week' | 'month' = 'day';
 
-  switch (timeframe) {
+  // Handle custom date range: "custom:YYYY-MM-DD:YYYY-MM-DD"
+  if (timeframe.startsWith('custom:')) {
+    const parts = timeframe.split(':');
+    if (parts.length === 3) {
+      const parsedStart = DateTime.fromISO(parts[1], { zone: userTz });
+      const parsedEnd = DateTime.fromISO(parts[2], { zone: userTz });
+      if (parsedStart.isValid && parsedEnd.isValid) {
+        startDate = parsedStart.startOf('day');
+        endDate = parsedEnd.endOf('day');
+        const diffDays = endDate.diff(startDate, 'days').days;
+        if (diffDays > 60) grouping = 'week';
+        if (diffDays > 180) grouping = 'month';
+      }
+    }
+  } else switch (timeframe) {
     case '1d':
       startDate = now.startOf('day');
       break;
