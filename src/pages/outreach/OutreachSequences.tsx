@@ -99,7 +99,7 @@ export default function OutreachSequences() {
     }
   }, [searchParams]);
 
-  const handleCreate = async () => {
+  const handleCreate = useCallback(async () => {
     const toastId = toast.loading('Creating new sequence...');
     try {
       const newSeq = await createSequence('New Outreach Sequence');
@@ -112,7 +112,13 @@ export default function OutreachSequences() {
       console.error('Error creating sequence:', error);
       toast.error('Failed to create sequence', { id: toastId });
     }
-  };
+  }, [createSequence]);
+
+  useEffect(() => {
+    const handleCustomEvent = () => handleCreate();
+    window.addEventListener('outreach-create-sequence', handleCustomEvent);
+    return () => window.removeEventListener('outreach-create-sequence', handleCustomEvent);
+  }, [handleCreate]);
 
   const handleDelete = async (id: string) => {
     const toastId = toast.loading('Deleting sequence...');
