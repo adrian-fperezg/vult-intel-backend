@@ -14,9 +14,7 @@ BEGIN
   -- Since `id` might be the PK but the code doesn't provide it anymore, we should drop the `id` column entirely 
   -- to match db.ts schema and prevent INSERT failures.
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='suppression_list' AND column_name='id') THEN
-    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'suppression_list_pkey') THEN
-      ALTER TABLE suppression_list DROP CONSTRAINT suppression_list_pkey CASCADE;
-    END IF;
+    ALTER TABLE suppression_list DROP CONSTRAINT IF EXISTS suppression_list_pkey CASCADE;
     ALTER TABLE suppression_list DROP COLUMN id;
   END IF;
 
