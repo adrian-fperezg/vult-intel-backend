@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, Plus, Trash2, ArrowRight, Settings,
-  Search, Filter, Mail, ChevronRight, X,
+  Search, Filter, Mail, ChevronRight, ChevronDown, X,
   Save, Clock, Paperclip, AlertCircle, Check, FileText,
   Mailbox, Globe, ShieldCheck, UserPlus, Play, Pause, ArrowLeft,
   Eye, MousePointer2, MessageSquare, SendHorizontal
@@ -554,7 +554,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   };
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRecipientModalOpen, setIsRecipientModalOpen] = useState(false);
-
+  const [expandedRecipientId, setExpandedRecipientId] = useState<string | null>(null);
 
 
   const [previewData, setPreviewData] = useState<{
@@ -1436,58 +1436,108 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
                     </thead>
                     <tbody className="divide-y divide-white/5">
                       {(sequence as any).recipients.map((r: any) => (
-                        <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
-                          <td className="px-6 py-4">
-                            <span className="text-sm font-medium text-white">{r.email}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-sm text-slate-300">{r.first_name} {r.last_name}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-sm text-slate-400 italic opacity-70">{r.company || '—'}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            {r.enrollment_status ? (
-                              <OutreachBadge 
-                                variant={
-                                  r.enrollment_status === 'active' ? 'green' : 
-                                  r.enrollment_status === 'paused' ? 'yellow' : 
-                                  r.enrollment_status === 'bounced' ? 'red' : 
-                                  r.enrollment_status === 'completed' ? 'teal' : 'gray'
-                                }
-                              >
-                                {r.enrollment_status.charAt(0).toUpperCase() + r.enrollment_status.slice(1)}
-                              </OutreachBadge>
-                            ) : (
-                              <span className="text-xs text-slate-600 font-medium italic">Not Enrolled</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex justify-end items-center gap-1">
-                              {r.enrollment_status && r.enrollment_status !== 'completed' && (
-                                <button
-                                  onClick={() => handleToggleRecipientStatus(r.contact_id, r.enrollment_status)}
-                                  className={cn(
-                                    "p-2 rounded-lg transition-colors opacity-0 group-hover:opacity-100",
-                                    r.enrollment_status === 'active' 
-                                      ? "hover:bg-amber-500/10 text-amber-500/60 hover:text-amber-400" 
-                                      : "hover:bg-emerald-500/10 text-emerald-500/60 hover:text-emerald-400"
-                                  )}
-                                  title={r.enrollment_status === 'active' ? t('outreach.sequences.recipients.tooltipPause') : t('outreach.sequences.recipients.tooltipResume')}
+                        <React.Fragment key={r.id}>
+                          <tr 
+                            className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
+                            onClick={() => setExpandedRecipientId(expandedRecipientId === r.id ? null : r.id)}
+                          >
+                            <td className="px-6 py-4">
+                              <span className="text-sm font-medium text-white">{r.email}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm text-slate-300">{r.first_name} {r.last_name}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm text-slate-400 italic opacity-70">{r.company || '—'}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              {r.enrollment_status ? (
+                                <OutreachBadge 
+                                  variant={
+                                    r.enrollment_status === 'active' ? 'green' : 
+                                    r.enrollment_status === 'paused' ? 'yellow' : 
+                                    r.enrollment_status === 'bounced' ? 'red' : 
+                                    r.enrollment_status === 'completed' ? 'teal' : 'gray'
+                                  }
                                 >
-                                  {r.enrollment_status === 'active' ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                                </button>
+                                  {r.enrollment_status.charAt(0).toUpperCase() + r.enrollment_status.slice(1)}
+                                </OutreachBadge>
+                              ) : (
+                                <span className="text-xs text-slate-600 font-medium italic">Not Enrolled</span>
                               )}
-                              <button
-                                onClick={() => handleRemoveRecipient(r.contact_id)}
-                                className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                                title={t('outreach.sequences.recipients.tooltipRemove')}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end items-center gap-1">
+                                {r.enrollment_status && r.enrollment_status !== 'completed' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleRecipientStatus(r.contact_id, r.enrollment_status);
+                                    }}
+                                    className={cn(
+                                      "p-2 rounded-lg transition-colors opacity-0 group-hover:opacity-100",
+                                      r.enrollment_status === 'active' 
+                                        ? "hover:bg-amber-500/10 text-amber-500/60 hover:text-amber-400" 
+                                        : "hover:bg-emerald-500/10 text-emerald-500/60 hover:text-emerald-400"
+                                    )}
+                                    title={r.enrollment_status === 'active' ? t('outreach.sequences.recipients.tooltipPause') : t('outreach.sequences.recipients.tooltipResume')}
+                                  >
+                                    {r.enrollment_status === 'active' ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveRecipient(r.contact_id);
+                                  }}
+                                  className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 mr-2"
+                                  title={t('outreach.sequences.recipients.tooltipRemove')}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                                <ChevronDown className={cn("size-4 text-slate-500 transition-transform duration-200", expandedRecipientId === r.id && "rotate-180")} />
+                              </div>
+                            </td>
+                          </tr>
+                          
+                          {/* EXPANDABLE CUSTOM FIELDS ROW */}
+                          {expandedRecipientId === r.id && (
+                            <tr className="bg-white/[0.01]">
+                              <td colSpan={5} className="px-6 py-4 border-b-0">
+                                {(() => {
+                                  let customFields = {};
+                                  try {
+                                    customFields = typeof r.custom_fields === 'string' ? JSON.parse(r.custom_fields) : (r.custom_fields || {});
+                                  } catch(e) {}
+                                  const hasCustomFields = Object.keys(customFields).length > 0;
+                                  
+                                  return (
+                                    <div className="py-2">
+                                      {hasCustomFields ? (
+                                        <div>
+                                          <p className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-3">{t('outreach.contacts.customFields') || 'CUSTOM FIELDS'}</p>
+                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            {Object.entries(customFields).map(([key, value]) => (
+                                              <div key={key} className="bg-[#161b22] p-3 rounded-lg border border-white/5">
+                                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate">{key}</p>
+                                                <p className="text-xs text-white font-medium truncate mt-1">{String(value)}</p>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-2 text-slate-500 text-xs italic py-2">
+                                          <span className="size-1.5 rounded-full bg-slate-700" />
+                                          No additional custom fields available for this contact.
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>

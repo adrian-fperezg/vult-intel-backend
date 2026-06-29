@@ -4198,7 +4198,7 @@ app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     );
 
     const recipients = await db.all(`
-      SELECT r.*, c.email, c.first_name, c.last_name, c.company, 
+      SELECT r.*, c.email, c.first_name, c.last_name, c.company, c.custom_fields,
              CASE 
                WHEN EXISTS (
                  SELECT 1 FROM outreach_individual_emails ie 
