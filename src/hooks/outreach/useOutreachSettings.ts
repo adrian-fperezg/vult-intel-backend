@@ -44,10 +44,16 @@ export function useOutreachSettings() {
   const updateIcp = useCallback((data: any) => post<any>('/icp', data), [post]);
   const deleteIcp = useCallback(() => del('/icp'), [del]);
 
-  const fetchSnippets = useCallback(() => get<any[]>('/snippets'), [get]);
+  const fetchSnippets = useCallback(
+    (sequenceId?: string) => {
+      const url = sequenceId ? `/snippets?sequence_id=${encodeURIComponent(sequenceId)}` : '/snippets';
+      return get<any[]>(url);
+    },
+    [get]
+  );
 
   const createSnippet = useCallback(
-    (data: { name: string; body: string; vars?: string[]; type?: string }) =>
+    (data: { name: string; body: string; vars?: string[]; type?: string; sequence_id?: string }) =>
       post<any>('/snippets', data),
     [post]
   );

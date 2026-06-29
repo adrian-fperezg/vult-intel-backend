@@ -433,26 +433,61 @@ function StepNode({
                   )}
                 </div>
 
-                <div className="pt-2 border-t border-white/5 mt-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
-                      <MessageSquare className="size-3.5" />
+                {/* ── Manual Reply Playbook (collapsible) ─────────────── */}
+                {(() => {
+                  const [playbookOpen, setPlaybookOpen] = React.useState(false);
+                  const hasContent = !!(step.config.manual_reply_notes?.replace(/<[^>]*>?/gm, '').trim());
+                  return (
+                    <div className="pt-2 border-t border-white/5 mt-6">
+                      <button
+                        type="button"
+                        onClick={() => setPlaybookOpen(o => !o)}
+                        className="w-full flex items-center justify-between gap-2 group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
+                            <MessageSquare className="size-3.5" />
+                          </div>
+                          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider cursor-pointer">
+                            {t('outreach.sequences.builder.manualPlaybook')}
+                          </label>
+                          {hasContent && (
+                            <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          )}
+                        </div>
+                        <ChevronRight
+                          className={`size-3.5 text-slate-500 transition-transform duration-200 ${playbookOpen ? 'rotate-90' : ''}`}
+                        />
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {playbookOpen && (
+                          <motion.div
+                            key="playbook"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2, ease: 'easeInOut' }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-3 w-full bg-[#161b22] border border-white/10 rounded-xl overflow-hidden focus-within:border-emerald-500/40 transition-all">
+                              <TipTapEditor
+                                value={step.config.manual_reply_notes || ''}
+                                onChange={val => onUpdateConfig(step.id, { manual_reply_notes: val })}
+                                placeholder={t('outreach.sequences.builder.playbookPlaceholder')}
+                                className="min-h-[120px] bg-transparent border-0"
+                              />
+                            </div>
+                            <p className="text-[9px] text-slate-600 mt-2 italic flex items-center gap-1.5 ml-1">
+                              <AlertCircle className="size-2.5" />
+                              {t('outreach.sequences.builder.playbookGuidance')}
+                            </p>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
-                    <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">{t('outreach.sequences.builder.manualPlaybook')}</label>
-                  </div>
-                  <div className="w-full bg-[#161b22] border border-white/10 rounded-xl overflow-hidden focus-within:border-emerald-500/40 transition-all">
-                    <TipTapEditor
-                      value={step.config.manual_reply_notes || ''}
-                      onChange={val => onUpdateConfig(step.id, { manual_reply_notes: val })}
-                      placeholder={t('outreach.sequences.builder.playbookPlaceholder')}
-                      className="min-h-[120px] bg-transparent border-0"
-                    />
-                  </div>
-                  <p className="text-[9px] text-slate-600 mt-2 italic flex items-center gap-1.5 ml-1">
-                    <AlertCircle className="size-2.5" />
-                    {t('outreach.sequences.builder.playbookGuidance')}
-                  </p>
-                </div>
+                  );
+                })()}
               </div>
             </div>
       </motion.div>
@@ -616,7 +651,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         api.getSequence(sequenceId),
         api.fetchMailboxes(),
         api.fetchIdentities(),
-        api.fetchSnippets()
+        api.fetchSnippets(sequenceId)  // pass sequenceId to get per-sequence custom fields
       ]);
       if (seqData) {
         // ── Bug Fix: Normalize and Resolve mailbox_ids on load ────────────────
@@ -1488,6 +1523,12 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         isOpen={isRecipientModalOpen}
         onClose={() => setIsRecipientModalOpen(false)}
         onConfirm={handleAssignRecipients}
+        onSnippetsCreated={async () => {
+          // Re-fetch snippets after CSV import so new custom fields appear immediately
+          const freshSnippets = await api.fetchSnippets(sequenceId);
+          setSnippets(freshSnippets || []);
+        }}
+        sequenceId={sequenceId}
         api={api}
       />
 

@@ -19,34 +19,42 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const { fetchSnippets, activeProjectId } = useOutreachApi();
   const [signature, setSignature] = useState("");
+  const [signatureLoaded, setSignatureLoaded] = useState(false);
   const { theme } = useSettings();
 
   useEffect(() => {
+    if (!isOpen || !activeProjectId) return;
+    if (signatureLoaded) return; // already fetched for this session
+
     const getSignature = async () => {
       try {
         const snippets = await fetchSnippets();
         if (snippets) {
           const sigSnippet = snippets.find((s: any) => s.type === 'signature');
-          if (sigSnippet) setSignature(sigSnippet.body);
+          // Use real body if available, else show key as fallback
+          setSignature(sigSnippet?.body || '{{signature}}');
         }
       } catch (error) {
         console.error("Error fetching signature:", error);
+        setSignature('{{signature}}');
+      } finally {
+        setSignatureLoaded(true);
       }
     };
 
-    // Only fetch if modal is open, we have a project, and the content likely needs a signature
-    const needsSignature = (body?.includes('{{signature}}') || subject?.includes('{{signature}}'));
-    if (isOpen && activeProjectId && needsSignature && !signature) {
-      getSignature();
-    }
-  }, [isOpen, activeProjectId, fetchSnippets, body, subject, signature]);
+    getSignature();
+  }, [isOpen, activeProjectId, fetchSnippets, signatureLoaded]);
+
+  // Reset on close so next open re-fetches fresh
+  useEffect(() => {
+    if (!isOpen) setSignatureLoaded(false);
+  }, [isOpen]);
 
   const mergedRecipientData = { ...recipientData, signature };
 
   const recipientName = recipientData ? `${recipientData.first_name || ''} ${recipientData.last_name || ''}`.trim() || recipientData.email : null;
   const displayTo = recipientData?.email || to;
-
-
+  const usingRealData = !!recipientData;
 
   if (!isOpen) return null;
 
@@ -170,10 +178,29 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
             </div>
           </div>
 
-          {/* Footer Warning */}
-          <div className="px-6 py-3 bg-primary/5 text-primary/70 text-[11px] font-medium text-center uppercase tracking-widest flex items-center justify-center gap-2">
-            <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-            Sandbox Environment: Using realistic mock data for preview
+          {/* Footer */}
+          <div className="px-6 py-3 border-t border-surface-border/30 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+              {usingRealData ? (
+                <>
+                  <div className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+                  <span>Previewing with real contact data</span>
+                  {signature && signature !== '{{signature}}' && (
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-tight">
+                      ✓ Real Signature
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="size-1.5 rounded-full bg-amber-500" />
+                  <span>No recipients in sequence — showing snippet keys as placeholders</span>
+                </>
+              )}
+            </div>
+            {signature && signature !== '{{signature}}' && (
+              <div className="text-[10px] text-slate-600 italic">Signature loaded from your saved snippets</div>
+            )}
           </div>
         </motion.div>
       </div>

@@ -8025,17 +8025,48 @@ console.log('[VEO] Veo Studio Pack routes registered');
 // ─── SNIPPETS ─────────────────────────────────────────────────────────────────
 
 // GET /api/outreach/snippets
+// Optional query param: ?sequence_id=xxx
+// - custom_field snippets: only returned when sequence_id matches (per-sequence CSV fields)
+// - standard/signature/snippet types: always returned (global to project)
 app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const projectId = req.headers['x-project-id'] as string || req.query.project_id as string;
+  const sequenceId = req.query.sequence_id as string | undefined;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!projectId) return res.status(400).json({ error: "Project ID required" });
 
   try {
-    // 1. Fetch dynamic/custom snippets from DB
-    const dbSnippets = await db.all("SELECT id, name, snippet_key, body, type FROM outreach_snippets WHERE project_id = ? ORDER BY type, name ASC", projectId);
+    // 1. Fetch non-custom_field snippets (global: signatures, rich text)
+    const globalSnippets = await db.all(
+      `SELECT id, name, snippet_key, body, type, sequence_id FROM outreach_snippets
+       WHERE project_id = ? AND type != 'custom_field'
+       ORDER BY type, name ASC`,
+      projectId
+    );
 
-    // 2. Define Standard system fields
+    // 2. Fetch custom_field snippets — scoped to this sequence (or all if no sequenceId)
+    let customFieldSnippets: any[] = [];
+    if (sequenceId) {
+      customFieldSnippets = await db.all(
+        `SELECT id, name, snippet_key, body, type, sequence_id FROM outreach_snippets
+         WHERE project_id = ? AND type = 'custom_field' AND sequence_id = ?
+         ORDER BY name ASC`,
+        projectId, sequenceId
+      );
+    }
+    // If no sequenceId provided (e.g. Settings page), show all custom_fields for backwards compat
+    else {
+      customFieldSnippets = await db.all(
+        `SELECT id, name, snippet_key, body, type, sequence_id FROM outreach_snippets
+         WHERE project_id = ? AND type = 'custom_field'
+         ORDER BY name ASC`,
+        projectId
+      );
+    }
+
+    const dbSnippets = [...globalSnippets, ...customFieldSnippets];
+
+    // 3. Define Standard system fields
     const standardFields = [
       { key: 'first_name', label: 'First Name', type: 'standard' },
       { key: 'last_name', label: 'Last Name', type: 'standard' },
@@ -8046,17 +8077,18 @@ app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, 
       { key: 'linkedin', label: 'LinkedIn', type: 'standard' }
     ];
 
-    // 3. Map DB snippets to the same structure
+    // 4. Map DB snippets to the same structure
     const customSnippets = dbSnippets.map((s: any) => ({
       id: s.id,
       key: s.snippet_key || s.name,
       label: s.name,
       name: s.name,
       body: s.body,
-      type: s.type || 'snippet'
+      type: s.type || 'snippet',
+      sequence_id: s.sequence_id || null
     }));
 
-    // 4. Combine and return
+    // 5. Combine and return
     const allVariables = [...standardFields];
     customSnippets.forEach(cs => {
       if (!allVariables.find(v => v.key === cs.key)) {
@@ -8072,25 +8104,40 @@ app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, 
 
 
 // POST /api/outreach/snippets
+// Accepts optional `sequence_id` in body for per-sequence custom_field snippets (CSV imports).
 app.post("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const projectId = req.headers['x-project-id'] as string;
   if (!userId) return res.status(401).json({ error: "Auth required" });
   if (!projectId) return res.status(400).json({ error: "Project ID required" });
 
-  const { name, body, vars, type } = req.body;
-  if (!name || !body) return res.status(400).json({ error: "Name and body are required" });
+  const { name, body, vars, type, sequence_id } = req.body;
+  if (!name || body === undefined || body === null) return res.status(400).json({ error: "Name and body are required" });
 
   const id = uuidv4();
   // snippet_key is the stable, machine-readable lookup key used by processEmail.
   // It mirrors `name` at creation time. Storing it explicitly avoids relying on
   // the one-time backfill migration which only ran for pre-existing rows.
-  const snippetKey = name.toLowerCase();
+  const snippetKey = name.toLowerCase().replace(/\s+/g, '_');
+  const resolvedSequenceId = sequence_id || null;
+
   try {
+    // For custom_field snippets: if one already exists for this project+sequence+key, skip insert (idempotent)
+    if (type === 'custom_field' && resolvedSequenceId) {
+      const existing = await db.get(
+        `SELECT id FROM outreach_snippets WHERE project_id = ? AND sequence_id = ? AND snippet_key = ? AND type = 'custom_field'`,
+        projectId, resolvedSequenceId, snippetKey
+      ) as any;
+      if (existing) {
+        const existingFull = await db.get("SELECT * FROM outreach_snippets WHERE id = ?", existing.id);
+        return res.status(200).json(existingFull);
+      }
+    }
+
     await db.prepare(`
-      INSERT INTO outreach_snippets (id, user_id, project_id, name, snippet_key, body, vars, type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, userId, projectId, name, snippetKey, body, JSON.stringify(vars || []), type || 'standard');
+      INSERT INTO outreach_snippets (id, user_id, project_id, name, snippet_key, body, vars, type, sequence_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, projectId, name, snippetKey, body || '', JSON.stringify(vars || []), type || 'standard', resolvedSequenceId);
 
     const newSnippet = await db.get("SELECT * FROM outreach_snippets WHERE id = ?", id);
     res.status(201).json(newSnippet);

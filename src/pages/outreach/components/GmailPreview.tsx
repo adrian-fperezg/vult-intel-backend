@@ -99,39 +99,50 @@ function parseWithChips(content: string, data?: Record<string, any>) {
      if (data.first_name) norm.name = data.first_name;
    }
 
+   const mockSignature = `
+     <div style="margin-top: 24px; font-family: Arial, sans-serif; font-size: 13px; color: #5f6368; line-height: 1.4;">
+       <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+         <div style="width: 44px; height: 44px; border-radius: 50%; background-color: #1da1f2; color: white; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;">A</div>
+         <div>
+           <div style="font-weight: bold; color: #202124; font-size: 14px;">Adrian Perez</div>
+           <div style="color: #5f6368;">Founder &amp; CEO</div>
+           <div><a href="https://vultintel.com" style="color: #1a73e8; text-decoration: none; font-weight: 500;">Vult Intel</a></div>
+         </div>
+       </div>
+       <div style="margin-bottom: 12px;">
+         <a href="https://vultintel.com" style="color: #1a73e8; text-decoration: none;">Website</a> &nbsp;|&nbsp; <a href="tel:+1234567890" style="color: #1a73e8; text-decoration: none;">Book a Call</a>
+       </div>
+       <hr style="border: none; border-top: 1px solid #dadce0; margin: 12px 0;" />
+       <div style="font-size: 10px; color: #9aa0a6; max-width: 400px; line-height: 1.3;">
+         This email and any attachments are confidential and may also be privileged. If you are not the intended recipient, please delete all copies and notify the sender immediately.
+       </div>
+     </div>`;
+
+   // Resolve signature: prefer real signature from server, then mock, then show key as placeholder
+   const resolvedSignature = norm.signature
+     ? norm.signature === '{{signature}}'
+       ? `<span style="background:#fff3cd;color:#856404;font-family:monospace;padding:1px 4px;border-radius:3px;font-size:12px;">{{signature}}</span>`
+       : norm.signature
+     : mockSignature;
+
    const mockData: Record<string, string> = {
-     first_name: "Teja",
-     last_name: "Smith",
-     name: "Teja Smith",
-     company: "Acme Corp",
-     company_name: "Acme Corp",
-     title: "VP of Engineering",
+     first_name: norm.first_name || "Teja",
+     last_name: norm.last_name || "Smith",
+     name: norm.name || "Teja Smith",
+     company: norm.company || "Acme Corp",
+     company_name: norm.company_name || "Acme Corp",
+     email: norm.email || "teja@acmecorp.com",
+     job_title: norm.job_title || "VP of Engineering",
+     title: norm.job_title || "VP of Engineering",
      industry: "Software Development",
-     signature: `
-       <div style="margin-top: 24px; font-family: Arial, sans-serif; font-size: 13px; color: #5f6368; line-height: 1.4;">
-         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-           <div style="width: 44px; height: 44px; border-radius: 50%; background-color: #1da1f2; color: white; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;">A</div>
-           <div>
-             <div style="font-weight: bold; color: #202124; font-size: 14px;">Adrian Perez</div>
-             <div style="color: #5f6368;">Founder & CEO</div>
-             <div><a href="https://vultintel.com" style="color: #1a73e8; text-decoration: none; font-weight: 500;">Vult Intel</a></div>
-           </div>
-         </div>
-         <div style="margin-bottom: 12px;">
-           <a href="https://vultintel.com" style="color: #1a73e8; text-decoration: none;">Website</a> &nbsp;|&nbsp; <a href="tel:+1234567890" style="color: #1a73e8; text-decoration: none;">Book a Call</a>
-         </div>
-         <hr style="border: none; border-top: 1px solid #dadce0; margin: 12px 0;" />
-         <div style="font-size: 10px; color: #9aa0a6; max-width: 400px; line-height: 1.3;">
-           This email and any attachments are confidential and may also be privileged. If you are not the intended recipient, please delete all copies and notify the sender immediately.
-         </div>
-       </div>`
+     signature: resolvedSignature,
    };
 
-   const mergedVariables = { ...mockData, ...norm };
+   const mergedVariables = { ...mockData, ...norm, signature: resolvedSignature };
    
    return parseSnippets(content, {
      variables: mergedVariables,
-     snippets: { signature: mockData.signature },
+     snippets: { signature: resolvedSignature },
      fallbackMode: 'mock'
    });
 }

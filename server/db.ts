@@ -1015,6 +1015,11 @@ export const initDb = async () => {
       await db.run(`UPDATE outreach_snippets SET snippet_key = LOWER(name) WHERE snippet_key IS NULL`);
     }
 
+    if (!snippetColNames.includes('sequence_id')) {
+      console.log("[DB] Adding 'sequence_id' column to outreach_snippets (for per-sequence CSV custom fields)");
+      await db.run(`ALTER TABLE outreach_snippets ADD COLUMN sequence_id TEXT DEFAULT NULL`);
+    }
+
     // Backfill current_step_id for enrollments
     const unmigratedEnrollments = await db.all("SELECT id FROM outreach_sequence_enrollments WHERE current_step_id IS NULL LIMIT 1");
     if (unmigratedEnrollments.length > 0) {

@@ -1,19 +1,27 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Search, Plus, Upload, Users, UserPlus,
   FileText, Check, AlertCircle, ChevronRight,
-  Trash2, Download, Loader2
+  Trash2, Download, Loader2, Braces
 } from 'lucide-react';
-import { TealButton, OutreachBadge } from '../OutreachCommon'; // O '../../OutreachCommon' dependiendo de la carpeta
+import { TealButton, OutreachBadge } from '../OutreachCommon';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
+
+// Fields that map to standard contact properties (won't become snippet variables)
+const STANDARD_FIELD_KEYS = new Set([
+  'first_name', 'last_name', 'email', 'company', 'job_title',
+  'phone', 'linkedin', 'location_city', 'location_country', 'website'
+]);
 
 interface RecipientManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (recipients: any[]) => Promise<void>;
+  onSnippetsCreated?: () => void;  // called after CSV custom fields are registered
+  sequenceId?: string;             // scopes custom_field snippets to this sequence
   api: any;
 }
 
@@ -23,6 +31,8 @@ export default function RecipientManagerModal({
   isOpen,
   onClose,
   onConfirm,
+  onSnippetsCreated,
+  sequenceId,
   api
 }: RecipientManagerModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('crm');
@@ -62,14 +72,25 @@ export default function RecipientManagerModal({
   useEffect(() => {
     if (isOpen) {
       loadCrmData();
-      // Limpiar selecciones al abrir para poder agregar nuevos baches
+      // Reset selections on open
       setSelectedListIds([]);
       setSelectedContactIds([]);
       setManualRows([{ first_name: '', last_name: '', email: '', company: '', job_title: '', phone: '', linkedin: '', location_city: '', location_country: '', website: '' }]);
       setCsvFile(null);
       setCsvData([]);
+      setMapping({ first_name: '', last_name: '', email: '', company: '', job_title: '', phone: '', linkedin: '', location_city: '', location_country: '', website: '' });
     }
   }, [isOpen]);
+
+  // Derive custom snippet fields: CSV headers that are NOT mapped to any standard field
+  const customSnippetFields = useMemo(() => {
+    if (!csvFile || csvHeaders.length === 0) return [];
+    const mappedValues = new Set(Object.values(mapping).filter(Boolean));
+    return csvHeaders.filter(h => !mappedValues.has(h));
+  }, [csvFile, csvHeaders, mapping]);
+
+  // Sanitize a header name to a safe snippet_key
+  const toSnippetKey = (name: string) => name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 
   const loadCrmData = async () => {
     setIsLoading(true);
@@ -168,19 +189,17 @@ export default function RecipientManagerModal({
     }
   }, [mapping, csvData]);
 
-  // ── Final Confirm (EL CAMBIO PRINCIPAL ESTÁ AQUÍ) ──────────────────────────
+  // ── Final Confirm ──────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     setIsSaving(true);
     try {
       let finalRecipients: any[] = [];
 
       if (activeTab === 'crm') {
-        // Formato mixto que el backend espera: { id: '...' } y { list_id: '...' }
         finalRecipients = [
           ...selectedContactIds.map(id => ({ id })),
           ...selectedListIds.map(listId => ({ list_id: listId }))
         ];
-
         if (finalRecipients.length === 0) {
           toast.error("Please select at least one contact or list.");
           setIsSaving(false);
@@ -195,6 +214,7 @@ export default function RecipientManagerModal({
           return;
         }
         finalRecipients = validRows.map(r => ({ ...r, type: 'manual' }));
+
       } else if (activeTab === 'csv') {
         if (!mapping.email) {
           toast.error('Email mapping is required');
@@ -212,13 +232,35 @@ export default function RecipientManagerModal({
           location_city: row[mapping.location_city] || '',
           location_country: row[mapping.location_country] || '',
           website: row[mapping.website] || '',
+          // Attach custom field values so the backend can store them per-contact
+          custom_fields: Object.fromEntries(
+            customSnippetFields.map(h => [toSnippetKey(h), row[h] || ''])
+          ),
           type: 'csv',
           list_name: csvFile?.name ? csvFile.name.replace(/\.[^/.]+$/, "") : undefined
         })).filter(r => r.email && String(r.email).includes('@'));
+
+        // ── Register non-standard CSV columns as per-sequence snippet variables ──
+        if (sequenceId && customSnippetFields.length > 0 && api.createSnippet) {
+          const createPromises = customSnippetFields.map(header =>
+            api.createSnippet({
+              name: header,
+              body: '',           // placeholder — value is resolved per-contact at send time
+              type: 'custom_field',
+              sequence_id: sequenceId
+            }).catch((err: any) => {
+              // Non-fatal: log but don't block enrollment
+              console.warn(`[RecipientManagerModal] Failed to register snippet for "${header}":`, err);
+            })
+          );
+          await Promise.all(createPromises);
+          // Notify SequenceBuilder to reload its snippets state
+          onSnippetsCreated?.();
+        }
       }
 
       await onConfirm(finalRecipients);
-      onClose(); // Solo cerramos si fue exitoso
+      onClose();
     } catch (err) {
       toast.error('Failed to assign recipients');
     } finally {
@@ -527,6 +569,35 @@ export default function RecipientManagerModal({
                           </div>
                         ))}
                       </div>
+
+                      {/* ── Custom Snippet Fields Panel ─────────────────────── */}
+                      {customSnippetFields.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4 space-y-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="size-6 rounded-lg bg-teal-500/20 flex items-center justify-center">
+                              <Braces className="size-3.5 text-teal-400" />
+                            </div>
+                            <p className="text-xs font-black text-teal-400 uppercase tracking-widest">
+                              Snippet Variables
+                            </p>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-relaxed">
+                            These columns will be registered as <span className="text-teal-300 font-bold">variables</span> available in your email editor for this sequence.
+                          </p>
+                          <div className="space-y-1.5">
+                            {customSnippetFields.map(header => (
+                              <div key={header} className="flex items-center justify-between px-3 py-2 bg-[#0d1117]/60 rounded-xl border border-white/5">
+                                <span className="text-xs text-slate-300 font-medium truncate">{header}</span>
+                                <span className="text-[10px] font-mono text-teal-500/80 ml-2 shrink-0">{`{{${toSnippetKey(header)}}}`}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
                     </div>
 
                     <div className="space-y-4">
