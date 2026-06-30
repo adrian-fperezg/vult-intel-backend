@@ -4203,7 +4203,7 @@ app.get("/api/outreach/sequences/:id", async (req: AuthRequest, res) => {
     );
 
     const recipients = await db.all(`
-      SELECT r.*, c.email, c.first_name, c.last_name, c.company, c.custom_fields,
+      SELECT r.*, c.email, c.first_name, c.last_name, c.company, c.custom_fields, c.location_city, c.location_country, c.website,
              CASE 
                WHEN EXISTS (
                  SELECT 1 FROM outreach_individual_emails ie 
@@ -4580,8 +4580,8 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
             const upsertRes = await tx.get(`
               INSERT INTO outreach_contacts (
                 id, user_id, project_id, email, first_name, last_name, company, job_title, 
-                phone, linkedin, location_city, location_country, website, tags
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                phone, linkedin, location_city, location_country, website, custom_fields, tags
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT (project_id, email) DO UPDATE SET
                 first_name = COALESCE(EXCLUDED.first_name, outreach_contacts.first_name),
                 last_name = COALESCE(EXCLUDED.last_name, outreach_contacts.last_name),
@@ -4592,12 +4592,14 @@ app.post("/api/outreach/sequences/:id/recipients", async (req: AuthRequest, res)
                 location_city = COALESCE(EXCLUDED.location_city, outreach_contacts.location_city),
                 location_country = COALESCE(EXCLUDED.location_country, outreach_contacts.location_country),
                 website = COALESCE(EXCLUDED.website, outreach_contacts.website),
+                custom_fields = COALESCE(EXCLUDED.custom_fields, outreach_contacts.custom_fields),
                 updated_at = CURRENT_TIMESTAMP
               RETURNING id, email, first_name, last_name, company
             `, 
               item.id || uuidv4(), userId, project_id, item.email, 
               item.first_name || '', item.last_name || '', item.company || '', item.job_title || '',
               item.phone || '', item.linkedin || '', item.location_city || '', item.location_country || '', item.website || '',
+              item.custom_fields ? JSON.stringify(item.custom_fields) : null,
               JSON.stringify(["Not Enrolled"])
             ) as any;
 
