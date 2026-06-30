@@ -18,6 +18,7 @@ import CampaignArchitectLayout from './components/CampaignArchitectLayout';
 import PersonaStudioLayout from './components/PersonaStudioLayout';
 import OutreachLayout from './pages/OutreachLayout';
 import VeoStudioLayout from './pages/VeoStudioLayout';
+import SocialStudioLayout from './pages/SocialStudioLayout';
 import AuthPage from './pages/AuthPage';
 import AdminDashboard from './pages/AdminDashboard';
 import Privacy from './pages/Privacy';
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="outreach" element={<OutreachLayout />} />
             <Route path="veo-studio" element={<VeoStudioLayout />} />
+            <Route path="social-studio" element={<SocialStudioLayout />} />
             <Route path="admin" element={<AdminDashboard />} />
           </Route>
           {/* Catch-all route to redirect back to Landing or 404 */}

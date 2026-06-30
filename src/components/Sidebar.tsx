@@ -47,6 +47,7 @@ const navItems = [
   { icon: Briefcase, key: 'campaignArchitect', path: '/campaign-architect' },
   { icon: LayoutGrid, key: 'visualWorkflows', path: '/visual-workflows' },
   { icon: Send, key: 'outreach', path: '/outreach', teal: true },
+  { icon: Share2, key: 'socialStudio', path: '/social-studio', violet: true },
   { icon: Clapperboard, key: 'veoStudio', path: '/veo-studio', amber: true },
 ];
 
@@ -110,6 +111,7 @@ export default function Sidebar() {
             const isActive = location.pathname.startsWith(item.path);
             const isTeal = (item as any).teal;
             const isAmber = (item as any).amber;
+            const isViolet = (item as any).violet;
             return (
               <Link
                 key={item.path}
@@ -121,7 +123,9 @@ export default function Sidebar() {
                       ? "bg-teal-500/10 border border-teal-500/20 text-white"
                       : isAmber
                         ? "bg-amber-500/10 border border-amber-500/20 text-white"
-                        : "bg-primary/10 border border-primary/20 text-white"
+                        : isViolet
+                          ? "bg-violet-500/10 border border-violet-500/20 text-white"
+                          : "bg-primary/10 border border-primary/20 text-white"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 )}
               >
@@ -129,8 +133,8 @@ export default function Sidebar() {
                   className={cn(
                     "size-4 md:size-5 transition-colors shrink-0",
                     isActive 
-                      ? isTeal ? "text-teal-400" : isAmber ? "text-amber-400" : "text-primary"
-                      : isTeal ? "text-slate-500 group-hover:text-teal-400" : isAmber ? "text-slate-500 group-hover:text-amber-400" : "text-slate-500 group-hover:text-white"
+                      ? isTeal ? "text-teal-400" : isAmber ? "text-amber-400" : isViolet ? "text-violet-400" : "text-primary"
+                      : isTeal ? "text-slate-500 group-hover:text-teal-400" : isAmber ? "text-slate-500 group-hover:text-amber-400" : isViolet ? "text-slate-500 group-hover:text-violet-400" : "text-slate-500 group-hover:text-white"
                   )}
                 />
                 <span className={cn(
@@ -143,7 +147,7 @@ export default function Sidebar() {
                 {isActive && (
                   <ChevronRight className={cn(
                     "size-3 ml-auto shrink-0",
-                    isTeal ? "text-teal-400/60" : isAmber ? "text-amber-400/60" : "text-primary/60"
+                    isTeal ? "text-teal-400/60" : isAmber ? "text-amber-400/60" : isViolet ? "text-violet-400/60" : "text-primary/60"
                   )} />
                 )}
               </Link>

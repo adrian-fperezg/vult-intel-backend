@@ -70,10 +70,25 @@ export function useOutreachBaseApi() {
       if (!res.ok) {
         let errorMsg = `POST ${path} failed: ${res.status}`;
         try {
-          const errorData = await res.json();
-          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const errorData = await res.json();
+            console.error(`[API Error] POST ${path}:`, errorData);
+            
+            if (errorData.error) {
+              if (typeof errorData.error === 'object') {
+                errorMsg += ` - ${errorData.error.message || JSON.stringify(errorData.error)}`;
+              } else {
+                errorMsg += ` - ${errorData.error}`;
+              }
+            } else if (errorData.message) {
+              errorMsg += ` - ${errorData.message}`;
+            } else {
+              errorMsg += ` - ${JSON.stringify(errorData)}`;
+            }
+          }
         } catch {
-          // No JSON body
+          errorMsg += " - No additional error details provided by server.";
         }
         throw new Error(errorMsg);
       }
@@ -133,10 +148,25 @@ export function useOutreachBaseApi() {
       if (!res.ok) {
         let errorMsg = `POST ${path} failed: ${res.status}`;
         try {
-          const errorData = await res.json();
-          if (errorData.error) errorMsg += ` - ${errorData.error}`;
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const errorData = await res.json();
+            console.error(`[API Error] POST ${path}:`, errorData);
+            
+            if (errorData.error) {
+              if (typeof errorData.error === 'object') {
+                errorMsg += ` - ${errorData.error.message || JSON.stringify(errorData.error)}`;
+              } else {
+                errorMsg += ` - ${errorData.error}`;
+              }
+            } else if (errorData.message) {
+              errorMsg += ` - ${errorData.message}`;
+            } else {
+              errorMsg += ` - ${JSON.stringify(errorData)}`;
+            }
+          }
         } catch {
-          // No JSON body
+          errorMsg += " - No additional error details provided by server.";
         }
         throw new Error(errorMsg);
       }

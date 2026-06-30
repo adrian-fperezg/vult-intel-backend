@@ -121,6 +121,7 @@ import { encryptToken, decryptToken } from "./lib/outreach/encrypt.js";
 import { syncMailbox, setupGmailWatch, syncMailboxHistory } from "./lib/outreach/gmailSync.js";
 import hunterRoutes from "./routes/outreach/hunter.js";
 import roadmapRoutes from "./routes/admin/roadmap.js";
+import socialRoutes from "./routes/social/index.js";
 import { getAccountInformation } from "./lib/outreach/hunter.js";
 import { getZeroBounceCredits } from "./lib/outreach/zerobounce.js";
 import { getPDLUsage } from "./lib/outreach/pdl.js";
@@ -133,6 +134,7 @@ import { AnalyticsData, AiReportResponse } from "../shared/types/outreach";
 import { sendAlert } from "./lib/notifier.js";
 import { checkDNS } from "./utils/dnsChecker.js";
 import { radarQueue, initRadarScheduler } from "./queues/radarQueue.js";
+import { runSocialPublisherCron } from "./lib/social/publisher.js";
 import { processRadarRun } from "./lib/radar/radarService.js";
 
 
@@ -309,6 +311,9 @@ const startServices = async () => {
     await resetRepeatableJobs();
     await initRadarScheduler();
     console.log('[QUEUE] Background jobs initialized and scheduled.');
+
+    // Social Studio: publish scheduled posts every minute
+    setInterval(() => runSocialPublisherCron(), 60 * 1000);
 
   } catch (err) {
     console.error('[CRITICAL STARTUP ERROR] Initialization failed, but proceeding anyway:', err);
@@ -7542,6 +7547,9 @@ app.delete("/api/outreach/icp", async (req: AuthRequest, res) => {
 
 // ─── HUNTER.IO INTEGRATION ────────────────────────────────────────────────────
 app.use("/api/outreach/hunter", hunterRoutes);
+
+// ─── SOCIAL STUDIO ────────────────────────────────────────────────────────────
+app.use("/api/social", verifyFirebaseToken, socialRoutes);
 
 // ─── ADMIN ROADMAP ────────────────────────────────────────────────────────────
 app.use("/api/admin/roadmap", roadmapRoutes);
