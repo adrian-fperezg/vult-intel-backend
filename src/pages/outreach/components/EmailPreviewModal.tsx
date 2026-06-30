@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Monitor, Smartphone, Mail, User } from 'lucide-react';
+import { X, Monitor, Smartphone, Mail, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../../lib/utils';
 import { useSettings } from '../../../contexts/SettingsContext';
@@ -13,14 +13,21 @@ interface EmailPreviewModalProps {
   body: string;
   to?: string;
   recipientData?: any;
+  recipients?: any[];
 }
 
-export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com", recipientData }: EmailPreviewModalProps) {
+export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com", recipientData, recipients = [] }: EmailPreviewModalProps) {
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const { fetchSnippets, activeProjectId } = useOutreachApi();
   const [signature, setSignature] = useState("");
+  const [allSnippets, setAllSnippets] = useState<any[]>([]);
   const [signatureLoaded, setSignatureLoaded] = useState(false);
+  const [currentRecipientIndex, setCurrentRecipientIndex] = useState(0);
   const { theme } = useSettings();
+
+  useEffect(() => {
+    if (isOpen) setCurrentRecipientIndex(0);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !activeProjectId) return;
@@ -30,6 +37,7 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
       try {
         const snippets = await fetchSnippets();
         if (snippets) {
+          setAllSnippets(snippets);
           const sigSnippet = snippets.find((s: any) => s.type === 'signature');
           // Use real body if available, else show key as fallback
           setSignature(sigSnippet?.body || '{{signature}}');
@@ -50,11 +58,27 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
     if (!isOpen) setSignatureLoaded(false);
   }, [isOpen]);
 
-  const mergedRecipientData = { ...recipientData, signature };
+  const activeRecipient = recipients && recipients.length > 0 
+    ? recipients[currentRecipientIndex] 
+    : recipientData;
 
-  const recipientName = recipientData ? `${recipientData.first_name || ''} ${recipientData.last_name || ''}`.trim() || recipientData.email : null;
-  const displayTo = recipientData?.email || to;
-  const usingRealData = !!recipientData;
+  const mergedRecipientData = { ...activeRecipient, signature };
+
+  const recipientName = activeRecipient ? `${activeRecipient.first_name || ''} ${activeRecipient.last_name || ''}`.trim() || activeRecipient.email : null;
+  const displayTo = activeRecipient?.email || to;
+  const usingRealData = !!activeRecipient;
+
+  const handleNext = () => {
+    if (recipients.length > 0) {
+      setCurrentRecipientIndex((prev) => (prev + 1) % recipients.length);
+    }
+  };
+
+  const handlePrev = () => {
+    if (recipients.length > 0) {
+      setCurrentRecipientIndex((prev) => (prev - 1 + recipients.length) % recipients.length);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -79,10 +103,21 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
               <div className="flex flex-col">
                 <h3 className="font-semibold text-lg leading-tight">Email Preview</h3>
                 <div className="flex items-center gap-2 mt-1">
-                  {recipientData ? (
+                  {recipientData || (recipients && recipients.length > 0) ? (
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[10px] font-bold text-teal-400 uppercase tracking-tight">
                       <div className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
                       Previewing as: {recipientName}
+                      {recipients && recipients.length > 1 && (
+                        <div className="flex items-center gap-1 ml-2 pl-2 border-l border-teal-500/30">
+                          <button onClick={handlePrev} className="p-0.5 hover:bg-teal-500/20 rounded transition-colors text-teal-400">
+                            <ChevronLeft className="size-3" />
+                          </button>
+                          <span className="text-[9px] text-teal-500/80">{currentRecipientIndex + 1} / {recipients.length}</span>
+                          <button onClick={handleNext} className="p-0.5 hover:bg-teal-500/20 rounded transition-colors text-teal-400">
+                            <ChevronRight className="size-3" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-400 uppercase tracking-tight">
@@ -156,6 +191,7 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                      bodyHtml={body}
                      recipientData={mergedRecipientData}
                      recipientEmail={displayTo}
+                     allSnippets={allSnippets}
                    />
                 </div>
               ) : (
@@ -165,6 +201,7 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                      bodyHtml={body}
                      recipientData={mergedRecipientData}
                      recipientEmail={displayTo}
+                     allSnippets={allSnippets}
                    />
                 </div>
               )}

@@ -570,17 +570,16 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
   });
 
   const handlePreview = (subject: string, body: string) => {
-    let randomRecipient = null;
+    let firstRecipient = null;
     if (sequence?.recipients && sequence.recipients.length > 0) {
-      const randomIndex = Math.floor(Math.random() * sequence.recipients.length);
-      randomRecipient = sequence.recipients[randomIndex];
+      firstRecipient = sequence.recipients[0];
     }
 
     setPreviewData({
       subject,
       body,
       isOpen: true,
-      recipientData: randomRecipient
+      recipientData: firstRecipient
     });
   };
 
@@ -1588,6 +1587,7 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         subject={previewData.subject}
         body={previewData.body}
         recipientData={previewData.recipientData}
+        recipients={(sequence as any)?.recipients || []}
       />
     </div>
   );

@@ -10,6 +10,7 @@ export interface GmailPreviewProps {
   senderEmail?: string;
   recipientEmail?: string;
   recipientData?: Record<string, any>;
+  allSnippets?: any[];
   timestamp?: Date;
   className?: string;
 }
@@ -21,22 +22,23 @@ export default function GmailPreview({
   senderEmail = "adrian@vultintel.com",
   recipientEmail = "recipient@example.com",
   recipientData,
+  allSnippets,
   timestamp = new Date(),
   className
 }: GmailPreviewProps) {
   
   // Custom parsing for the preview
   const parsedSubject = useMemo(() => {
-    return parseWithChips(subject || "(No Subject)", recipientData);
-  }, [subject, recipientData]);
+    return parseWithChips(subject || "(No Subject)", recipientData, allSnippets);
+  }, [subject, recipientData, allSnippets]);
 
   const parsedBody = useMemo(() => {
     let body = bodyHtml || "<p>(Empty Body)</p>";
-    if (!body.includes('{{signature}}')) {
-      body += '<br><br>{{signature}}';
+    if (!body.includes('{{signature}}') && !body.match(/\{\{sig_[^}]+\}\}/)) {
+      body += '<br>{{signature}}';
     }
-    return parseWithChips(body, recipientData);
-  }, [bodyHtml, recipientData]);
+    return parseWithChips(body, recipientData, allSnippets);
+  }, [bodyHtml, recipientData, allSnippets]);
 
   const initial = senderName.charAt(0).toUpperCase() || "A";
   const timeString = timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -92,7 +94,7 @@ export default function GmailPreview({
   );
 }
 
-function parseWithChips(content: string, data?: Record<string, any>) {
+function parseWithChips(content: string, data?: Record<string, any>, allSnippets?: any[]) {
    if (!content) return "";
    
    const norm: Record<string, any> = {};
@@ -157,9 +159,18 @@ function parseWithChips(content: string, data?: Record<string, any>) {
 
    const mergedVariables = { ...mockData, ...norm, signature: resolvedSignature };
    
+   const snippetDict: Record<string, string> = { signature: resolvedSignature };
+   if (allSnippets) {
+     allSnippets.forEach(s => {
+       if (s.key && s.body) {
+         snippetDict[s.key.toLowerCase()] = s.body;
+       }
+     });
+   }
+   
    return parseSnippets(content, {
      variables: mergedVariables,
-     snippets: { signature: resolvedSignature },
+     snippets: snippetDict,
      fallbackMode: 'leave'
    });
 }
