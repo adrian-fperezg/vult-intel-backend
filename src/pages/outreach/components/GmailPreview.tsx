@@ -32,6 +32,9 @@ export default function GmailPreview({
 
   const parsedBody = useMemo(() => {
     let body = bodyHtml || "<p>(Empty Body)</p>";
+    if (!body.includes('{{signature}}')) {
+      body += '<br><br>{{signature}}';
+    }
     return parseWithChips(body, recipientData);
   }, [bodyHtml, recipientData]);
 
@@ -95,6 +98,21 @@ function parseWithChips(content: string, data?: Record<string, any>) {
    const norm: Record<string, any> = {};
    if (data) {
      Object.entries(data).forEach(([k,v]) => norm[k.toLowerCase()] = v);
+     
+     // Merge custom_fields if they exist
+     if (data.custom_fields) {
+       let parsedCustom = {};
+       try {
+         parsedCustom = typeof data.custom_fields === 'string' 
+           ? JSON.parse(data.custom_fields) 
+           : data.custom_fields;
+       } catch(e) {}
+       
+       Object.entries(parsedCustom).forEach(([k,v]) => {
+         norm[k.toLowerCase()] = v;
+       });
+     }
+     
      if (data.company) norm.company_name = data.company;
      if (data.first_name) norm.name = data.first_name;
    }
@@ -125,7 +143,7 @@ function parseWithChips(content: string, data?: Record<string, any>) {
        : norm.signature
      : mockSignature;
 
-   const mockData: Record<string, string> = {
+   const mockData: Record<string, string> = data ? {} : {
      first_name: norm.first_name || "Teja",
      last_name: norm.last_name || "Smith",
      name: norm.name || "Teja Smith",
@@ -135,7 +153,6 @@ function parseWithChips(content: string, data?: Record<string, any>) {
      job_title: norm.job_title || "VP of Engineering",
      title: norm.job_title || "VP of Engineering",
      industry: "Software Development",
-     signature: resolvedSignature,
    };
 
    const mergedVariables = { ...mockData, ...norm, signature: resolvedSignature };
@@ -143,6 +160,6 @@ function parseWithChips(content: string, data?: Record<string, any>) {
    return parseSnippets(content, {
      variables: mergedVariables,
      snippets: { signature: resolvedSignature },
-     fallbackMode: 'mock'
+     fallbackMode: 'leave'
    });
 }
