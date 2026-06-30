@@ -14,9 +14,11 @@ interface EmailPreviewModalProps {
   to?: string;
   recipientData?: any;
   recipients?: any[];
+  senderName?: string;
+  senderEmail?: string;
 }
 
-export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com", recipientData, recipients = [] }: EmailPreviewModalProps) {
+export default function EmailPreviewModal({ isOpen, onClose, subject, body, to = "recipient@example.com", recipientData, recipients = [], senderName, senderEmail }: EmailPreviewModalProps) {
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const { fetchSnippets, activeProjectId } = useOutreachApi();
   const [signature, setSignature] = useState("");
@@ -165,13 +167,14 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
           </div>
 
           {/* Email Content Area */}
-          <div className="flex-1 overflow-auto bg-surface-dark/30 p-4 md:p-8 flex justify-center items-start">
-            <div 
-              className={cn(
-                "transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] overflow-hidden shadow-2xl flex flex-col",
-                viewMode === 'desktop' ? "w-full max-w-4xl min-h-[600px] border border-surface-border/50 rounded-xl bg-white" : "w-[375px] h-[667px] border-[12px] border-[#222] rounded-[40px] bg-white relative"
-              )}
-            >
+          <div className="flex-1 overflow-auto bg-surface-dark/30 custom-scrollbar">
+            <div className="min-h-full flex items-center justify-center p-4 md:p-8">
+              <div 
+                className={cn(
+                  "transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] overflow-hidden shadow-2xl flex flex-col",
+                  viewMode === 'desktop' ? "w-full max-w-4xl min-h-[600px] border border-surface-border/50 rounded-xl bg-white" : "w-[375px] h-[667px] border-[12px] border-[#222] rounded-[40px] bg-white relative"
+                )}
+              >
               {/* Mobile Status Bar Simulation */}
               {viewMode === 'mobile' && (
                 <div className="h-6 w-full flex justify-between px-6 pt-1 items-center bg-white">
@@ -192,6 +195,8 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                      recipientData={mergedRecipientData}
                      recipientEmail={displayTo}
                      allSnippets={allSnippets}
+                     senderName={senderName}
+                     senderEmail={senderEmail}
                    />
                 </div>
               ) : (
@@ -202,6 +207,8 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                      recipientData={mergedRecipientData}
                      recipientEmail={displayTo}
                      allSnippets={allSnippets}
+                     senderName={senderName}
+                     senderEmail={senderEmail}
                    />
                 </div>
               )}
@@ -212,6 +219,7 @@ export default function EmailPreviewModal({ isOpen, onClose, subject, body, to =
                   <div className="w-24 h-1 bg-black/20 rounded-full" />
                 </div>
               )}
+            </div>
             </div>
           </div>
 

@@ -1588,6 +1588,8 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         body={previewData.body}
         recipientData={previewData.recipientData}
         recipients={(sequence as any)?.recipients || []}
+        senderName={sequence?.from_name}
+        senderEmail={sequence?.from_email}
       />
     </div>
   );
