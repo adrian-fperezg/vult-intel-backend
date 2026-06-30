@@ -111,7 +111,7 @@ export default function OutreachLeadFinder() {
     try {
       setIsCheckingConnection(true);
       const settings = await api.fetchSettings();
-      setHasConnection(!!settings?.hasHunterKey);
+      setHasConnection(!!settings?.hunter?.connected);
     } catch (err) {
       console.error('Failed to fetch settings:', err);
       setHasConnection(false);
