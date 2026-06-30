@@ -275,7 +275,7 @@ router.get("/account", async (req: AuthRequest, res) => {
 router.post("/ai-extract", async (req: AuthRequest, res) => {
   const userId = req.user?.uid;
   const { project_id, projectId, prompt, icpContext } = req.body;
-  const pId = project_id || projectId;
+  const pId = (req.headers['x-project-id'] as string) || project_id || projectId;
 
   if (!userId) return res.status(401).json({ error: "Auth required" });
 
@@ -284,10 +284,14 @@ router.post("/ai-extract", async (req: AuthRequest, res) => {
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
     let text = "";
+    
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI Request timed out")), 20000)
+    );
 
     if (GEMINI_KEY) {
       const ai = new GoogleGenAI({ apiKey: GEMINI_KEY as string });
-      const response = await ai.models.generateContent({
+      const apiCall = ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `User Request: ${prompt}\n\nExisting ICP Context for this project:\n${JSON.stringify(icpContext || {})}`,
         config: {
@@ -313,17 +317,19 @@ router.post("/ai-extract", async (req: AuthRequest, res) => {
           DO NOT include any Markdown formatting or backticks.`
         }
       });
+      const response = await Promise.race([apiCall, timeoutPromise]) as any;
       text = response.text || "";
     } else if (ANTHROPIC_KEY) {
       const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
-      const response = await anthropic.messages.create({
+      const apiCall = anthropic.messages.create({
         model: "claude-3-haiku-20240307",
         max_tokens: 1000,
         temperature: 0,
         system: `You are a Lead Generation Parameter Extractor for Hunter.io.`,
         messages: [{ role: "user", content: prompt }],
       });
-      text = (response.content[0] as any).text;
+      const response = await Promise.race([apiCall, timeoutPromise]) as any;
+      text = response.content[0].text;
     } else {
       throw new Error("No AI API keys configured (Gemini or Anthropic required)");
     }
