@@ -424,6 +424,12 @@ export const emailWorker = new Worker('email-queue', async (job: Job) => {
             last_name: contact.last_name || "",
             company: contact.company || "",
             email: contact.email || "",
+            job_title: contact.job_title || "",
+            phone: contact.phone || "",
+            linkedin: contact.linkedin || "",
+            location_city: contact.location_city || "",
+            location_country: contact.location_country || "",
+            website: contact.website || "",
             ...customFields
           };
 
@@ -1070,11 +1076,22 @@ export const campaignWorker = new Worker('campaign-queue', async (job: Job) => {
         let subject = stepConfig.subject || "";
         let bodyHtml = stepConfig.body_html || "";
         
+        const customFields = typeof enrollment.custom_fields === 'string'
+          ? JSON.parse(enrollment.custom_fields || "{}") 
+          : (enrollment.custom_fields || {});
+
         const variables = {
           first_name: enrollment.first_name || "",
           last_name: enrollment.last_name || "",
           company: enrollment.company || "",
-          email: enrollment.contact_email || ""
+          email: enrollment.contact_email || "",
+          job_title: enrollment.job_title || "",
+          phone: enrollment.phone || "",
+          linkedin: enrollment.linkedin || "",
+          location_city: enrollment.location_city || "",
+          location_country: enrollment.location_country || "",
+          website: enrollment.website || "",
+          ...customFields
         };
 
         // NOTE: fallbackMode:'leave' preserves {{signature}} and other snippet tags

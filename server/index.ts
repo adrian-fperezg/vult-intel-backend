@@ -8082,7 +8082,10 @@ app.get("/api/outreach/snippets", verifyFirebaseToken, async (req: AuthRequest, 
       { key: 'company', label: 'Company', type: 'standard' },
       { key: 'job_title', label: 'Title', type: 'standard' },
       { key: 'phone', label: 'Phone', type: 'standard' },
-      { key: 'linkedin', label: 'LinkedIn', type: 'standard' }
+      { key: 'linkedin', label: 'LinkedIn', type: 'standard' },
+      { key: 'location_city', label: 'City', type: 'standard' },
+      { key: 'location_country', label: 'Country', type: 'standard' },
+      { key: 'website', label: 'Website', type: 'standard' }
     ];
 
     // 4. Map DB snippets to the same structure

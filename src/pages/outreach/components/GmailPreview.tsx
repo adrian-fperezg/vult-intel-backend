@@ -35,7 +35,7 @@ export default function GmailPreview({
   const parsedBody = useMemo(() => {
     let body = bodyHtml || "<p>(Empty Body)</p>";
     if (!body.includes('{{signature}}') && !body.match(/\{\{sig_[^}]+\}\}/)) {
-      body += '<br>{{signature}}';
+      body += '{{signature}}';
     }
     return parseWithChips(body, recipientData, allSnippets);
   }, [bodyHtml, recipientData, allSnippets]);
@@ -120,7 +120,7 @@ function parseWithChips(content: string, data?: Record<string, any>, allSnippets
    }
 
    const mockSignature = `
-     <div style="margin-top: 24px; font-family: Arial, sans-serif; font-size: 13px; color: #5f6368; line-height: 1.4;">
+     <div style="margin-top: 16px; font-family: Arial, sans-serif; font-size: 13px; color: #5f6368; line-height: 1.4;">
        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
          <div style="width: 44px; height: 44px; border-radius: 50%; background-color: #1da1f2; color: white; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;">A</div>
          <div>
@@ -138,11 +138,9 @@ function parseWithChips(content: string, data?: Record<string, any>, allSnippets
        </div>
      </div>`;
 
-   // Resolve signature: prefer real signature from server, then mock, then show key as placeholder
-   const resolvedSignature = norm.signature
-     ? norm.signature === '{{signature}}'
-       ? `<span style="background:#fff3cd;color:#856404;font-family:monospace;padding:1px 4px;border-radius:3px;font-size:12px;">{{signature}}</span>`
-       : norm.signature
+   // Resolve signature: prefer real signature from server, then mock (no snippet chip placeholder)
+   const resolvedSignature = norm.signature && norm.signature !== '{{signature}}'
+     ? norm.signature
      : mockSignature;
 
    const mockData: Record<string, string> = data ? {} : {

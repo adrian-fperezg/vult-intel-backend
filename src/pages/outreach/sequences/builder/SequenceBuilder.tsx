@@ -1581,16 +1581,41 @@ export default function SequenceBuilder({ sequenceId, onBack }: SequenceBuilderP
         api={api}
       />
 
-      <EmailPreviewModal
-        isOpen={previewData.isOpen}
-        onClose={() => setPreviewData(prev => ({ ...prev, isOpen: false }))}
-        subject={previewData.subject}
-        body={previewData.body}
-        recipientData={previewData.recipientData}
-        recipients={(sequence as any)?.recipients || []}
-        senderName={sequence?.from_name}
-        senderEmail={sequence?.from_email}
-      />
+      {(() => {
+        let name = sequence?.from_name;
+        let email = sequence?.from_email;
+        if (!name || !email) {
+          const firstMailboxRaw = sequence?.mailbox_ids?.[0] || sequence?.mailbox_id;
+          if (firstMailboxRaw) {
+            let mailboxId = firstMailboxRaw;
+            let aliasEmail = '';
+            if (firstMailboxRaw.includes(':')) {
+              [mailboxId, aliasEmail] = firstMailboxRaw.split(':');
+            }
+            const matchingIdentity = identities.find(i => 
+               i.mailbox_id === mailboxId && 
+               (aliasEmail ? i.email === aliasEmail : !i.is_alias)
+            );
+            if (matchingIdentity) {
+              if (!name) name = matchingIdentity.name;
+              if (!email) email = matchingIdentity.email;
+            }
+          }
+        }
+        
+        return (
+          <EmailPreviewModal
+            isOpen={previewData.isOpen}
+            onClose={() => setPreviewData(prev => ({ ...prev, isOpen: false }))}
+            subject={previewData.subject}
+            body={previewData.body}
+            recipientData={previewData.recipientData}
+            recipients={(sequence as any)?.recipients || []}
+            senderName={name}
+            senderEmail={email}
+          />
+        );
+      })()}
     </div>
   );
 }
